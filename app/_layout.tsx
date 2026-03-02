@@ -1,4 +1,3 @@
-// template
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -8,13 +7,22 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
+import Colors from "@/constants/colors";
+
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
+    <Stack
+      screenOptions={{
+        headerBackTitle: "Back",
+        headerStyle: { backgroundColor: Colors.dark.background },
+        headerTintColor: Colors.dark.text,
+        contentStyle: { backgroundColor: Colors.dark.background },
+      }}
+    >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="invite/[code]" options={{ title: "Invite", presentation: "modal" }} />
     </Stack>
   );
 }
