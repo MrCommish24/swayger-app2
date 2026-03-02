@@ -34,8 +34,14 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+let supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+let supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+if (supabaseUrl && !supabaseUrl.startsWith("http") && supabaseAnonKey.startsWith("http")) {
+  const temp = supabaseUrl;
+  supabaseUrl = supabaseAnonKey;
+  supabaseAnonKey = temp;
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
