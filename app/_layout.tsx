@@ -1,17 +1,57 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import {
+  Stack,
+  useRouter,
+  useSegments,
+  useRootNavigationState,
+} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
+function useProtectedRoute() {
+  const { session, isLoading, needsUsername } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+  const navigationState = useRootNavigationState();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!navigationState?.key) return;
+
+    const inAuthGroup = segments[0] === "auth";
+    const inUsernameSetup = segments[0] === "username-setup";
+
+    if (!session && !inAuthGroup) {
+      router.replace("/auth");
+    } else if (session && needsUsername && !inUsernameSetup) {
+      router.replace("/username-setup");
+    } else if (session && !needsUsername && (inAuthGroup || inUsernameSetup)) {
+      router.replace("/(tabs)");
+    }
+  }, [session, isLoading, needsUsername, segments, navigationState?.key]);
+}
+
 function RootLayoutNav() {
+  const { isLoading } = useAuth();
+
+  useProtectedRoute();
+
+  useEffect(() => {
+    if (!isLoading) {
+      SplashScreen.hideAsync();
+    }
+  }, [isLoading]);
+
   return (
     <Stack
       screenOptions={{
@@ -22,22 +62,25 @@ function RootLayoutNav() {
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="invite/[code]" options={{ title: "Invite", presentation: "modal" }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="username-setup" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="invite/[code]"
+        options={{ title: "Invite", presentation: "modal" }}
+      />
     </Stack>
   );
 }
 
 export default function RootLayout() {
-  useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
-
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView>
           <KeyboardProvider>
-            <RootLayoutNav />
+            <AuthProvider>
+              <RootLayoutNav />
+            </AuthProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>
       </QueryClientProvider>
