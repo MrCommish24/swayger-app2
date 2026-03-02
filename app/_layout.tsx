@@ -30,6 +30,9 @@ function useProtectedRoute() {
 
     const inAuthGroup = segments[0] === "auth";
     const inUsernameSetup = segments[0] === "username-setup";
+    const inAuthCallback = segments[0] === "auth-callback";
+
+    if (inAuthCallback) return;
 
     if (!session && !inAuthGroup) {
       router.replace("/auth");
@@ -65,6 +68,7 @@ function RootLayoutNav() {
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="username-setup" options={{ headerShown: false }} />
       <Stack.Screen
         name="invite/[code]"

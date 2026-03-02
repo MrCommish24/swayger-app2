@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -11,19 +11,34 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
-import { showError, showMessage } from "@/lib/helpers";
+import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  async function handleSendOtp() {
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const getRedirectUrl = useCallback(() => {
+    return Linking.createURL("auth-callback");
+  }, []);
+
+  async function handleSendLink() {
     const trimmed = email.trim().toLowerCase();
     if (!trimmed) {
       showError("Please enter your email address.");
@@ -31,17 +46,21 @@ export default function AuthScreen() {
     }
     setLoading(true);
     try {
+      const redirectTo = getRedirectUrl();
+      if (__DEV__) console.log("[auth] Redirect URL:", redirectTo);
+
       const { error } = await supabase.auth.signInWithOtp({
         email: trimmed,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: redirectTo,
         },
       });
       if (error) {
         showError(error.message);
       } else {
-        setOtpSent(true);
-        showMessage("Check your email", "We sent you a login code.");
+        setLinkSent(true);
+        setCooldown(RESEND_COOLDOWN_SECONDS);
       }
     } catch {
       showError("Something went wrong. Try again.");
@@ -50,27 +69,9 @@ export default function AuthScreen() {
     }
   }
 
-  async function handleVerifyOtp() {
-    const trimmed = otp.trim();
-    if (!trimmed) {
-      showError("Please enter the code from your email.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: trimmed,
-        type: "email",
-      });
-      if (error) {
-        showError(error.message);
-      }
-    } catch {
-      showError("Something went wrong. Try again.");
-    } finally {
-      setLoading(false);
-    }
+  async function handleResend() {
+    if (cooldown > 0) return;
+    await handleSendLink();
   }
 
   return (
@@ -83,7 +84,7 @@ export default function AuthScreen() {
         <Text style={styles.title}>Swayger</Text>
         <Text style={styles.subtitle}>Sign in to get started</Text>
 
-        {!otpSent ? (
+        {!linkSent ? (
           <View style={styles.form}>
             <TextInput
               style={styles.input}
@@ -102,50 +103,50 @@ export default function AuthScreen() {
                 pressed && styles.buttonPressed,
                 loading && styles.buttonDisabled,
               ]}
-              onPress={handleSendOtp}
+              onPress={handleSendLink}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.buttonText}>Send Login Code</Text>
+                <Text style={styles.buttonText}>Send Login Link</Text>
               )}
             </Pressable>
           </View>
         ) : (
           <View style={styles.form}>
-            <Text style={styles.sentTo}>Code sent to {email}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter 6-digit code"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-              autoComplete="one-time-code"
-              editable={!loading}
-              maxLength={6}
-            />
+            <View style={styles.sentContainer}>
+              <Ionicons name="mail-outline" size={32} color={Colors.dark.tint} />
+              <Text style={styles.sentTitle}>Check your email</Text>
+              <Text style={styles.sentTo}>
+                We sent a login link to {email}. Tap the link in the email to sign in.
+              </Text>
+            </View>
+
             <Pressable
               style={({ pressed }) => [
                 styles.button,
-                pressed && styles.buttonPressed,
+                pressed && cooldown === 0 && styles.buttonPressed,
+                cooldown > 0 && styles.buttonDisabled,
                 loading && styles.buttonDisabled,
               ]}
-              onPress={handleVerifyOtp}
-              disabled={loading}
+              onPress={handleResend}
+              disabled={cooldown > 0 || loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFFFFF" />
+              ) : cooldown > 0 ? (
+                <Text style={styles.buttonText}>Resend in {cooldown}s</Text>
               ) : (
-                <Text style={styles.buttonText}>Verify Code</Text>
+                <Text style={styles.buttonText}>Resend Link</Text>
               )}
             </Pressable>
+
             <Pressable
               style={styles.linkButton}
               onPress={() => {
-                setOtpSent(false);
-                setOtp("");
+                setLinkSent(false);
+                setCooldown(0);
               }}
             >
               <Text style={styles.linkText}>Use a different email</Text>
@@ -184,10 +185,21 @@ const styles = StyleSheet.create({
     width: "100%",
     gap: 16,
   },
+  sentContainer: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+  },
+  sentTitle: {
+    fontSize: 18,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+  },
   sentTo: {
     fontSize: 14,
     color: Colors.dark.textSecondary,
     textAlign: "center",
+    lineHeight: 20,
   },
   input: {
     backgroundColor: Colors.dark.surface,

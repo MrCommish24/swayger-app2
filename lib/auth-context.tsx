@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
+import { Platform } from "react-native";
+import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
 import { Profile } from "@/types";
 
@@ -64,7 +66,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      if (hash) {
+        const hashParams = new URLSearchParams(hash.substring(1));
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+        if (accessToken && refreshToken) {
+          supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+        }
+      }
+    }
   }, []);
 
   async function fetchProfile(userId: string) {

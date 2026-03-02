@@ -1,0 +1,54 @@
+Implement working Supabase magic-link deep linking for Expo Managed + Expo Router.
+
+Problem:
+Supabase email login sends a magic link that opens a dead webpage. We need the link to deep link back into the Expo app and complete auth.
+
+Requirements:
+
+1) Add an auth callback route
+- Create a route: /auth-callback
+  File: app/auth-callback.tsx (or app/auth-callback/index.tsx if preferred)
+- This screen should show a loading indicator and “Signing you in…”
+
+2) Configure deep linking in Expo
+- In app config (app.json or app.config.ts), set a custom scheme: "swayger"
+- Ensure Expo Router linking is enabled (it should be by default)
+- Make sure the app can open URLs like:
+  swayger://auth-callback
+  exp://.../--/auth-callback
+
+3) Update Supabase sign-in call to include redirectTo
+- When calling supabase.auth.signInWithOtp({ email }), pass:
+  options: { emailRedirectTo: <deep link to auth-callback> }
+- Use Linking.createURL('auth-callback') to generate the correct redirect URL for Expo.
+  Example:
+    const redirectTo = Linking.createURL('auth-callback');
+
+4) Handle the magic link when the app opens
+- In the /auth-callback screen, parse the incoming URL for Supabase auth params.
+- Use supabase.auth.exchangeCodeForSession(url) if present/appropriate.
+- Also handle the hash-token style callback (access_token/refresh_token in URL fragment) by calling supabase.auth.setSession if needed.
+- After successful session creation, navigate to the Home tab.
+- If already authenticated, immediately redirect to Home.
+
+5) Improve UX
+- After user submits email, show “Check your email and tap the link to return to Swayger.”
+- Add a “Resend” button with a short cooldown.
+
+6) Add robust logging (dev only)
+- Console log the incoming callback URL and which handling path was used (exchangeCodeForSession vs setSession), but never log full tokens.
+
+7) Keep everything Expo Go compatible
+- No native code changes beyond setting scheme.
+- No server required.
+
+Deliverables:
+- Tapping the magic link on the phone opens the app and logs the user in successfully.
+- User returns to the correct screen after login.
+
+Notes:
+- The Supabase dashboard Redirect URLs will include:
+  swayger://auth-callback
+  exp://localhost:19000/--/auth-callback
+  exp://127.0.0.1:19000/--/auth-callback
+So the app must use auth-callback as the redirect path.
