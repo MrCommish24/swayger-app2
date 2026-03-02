@@ -31,7 +31,12 @@ export default function AuthScreen() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
+      const { error } = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
       if (error) {
         showError(error.message);
       } else {
