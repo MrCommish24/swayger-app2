@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -11,44 +10,40 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { Swayger } from "@/types";
 import { formatDateTime } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 
+async function fetchUserSwaygers(userId: string): Promise<Swayger[]> {
+  const { data, error } = await supabase
+    .from("swaygers")
+    .select("*")
+    .or(`creator_id.eq.${userId},opponent_id.eq.${userId}`)
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+  return (data ?? []) as Swayger[];
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
-  const [swaygers, setSwaygers] = useState<Swayger[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (user) {
-      fetchSwaygers();
-    }
-  }, [user]);
-
-  async function fetchSwaygers() {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("swaygers")
-        .select("*")
-        .or(`creator_id.eq.${user!.id},opponent_id.eq.${user!.id}`)
-        .order("updated_at", { ascending: false })
-        .limit(10);
-
-      if (!error && data) {
-        setSwaygers(data as Swayger[]);
-      }
-    } catch {
-    } finally {
-      setLoading(false);
-    }
-  }
+  const {
+    data: swaygers = [],
+    isLoading,
+    error,
+  } = useQuery<Swayger[]>({
+    queryKey: ["swaygers", "mine", user?.id],
+    queryFn: () => fetchUserSwaygers(user!.id),
+    enabled: !!user,
+  });
 
   function renderSwaygerItem({ item }: { item: Swayger }) {
     return (
@@ -85,9 +80,14 @@ export default function HomeScreen() {
         <Text style={styles.title}>Swayger</Text>
       </View>
 
-      {loading ? (
+      {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.tint} />
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.accentGold} />
+          <Text style={styles.emptyText}>Could not load swaygers.</Text>
         </View>
       ) : swaygers.length === 0 ? (
         <View style={styles.centered}>

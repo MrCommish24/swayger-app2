@@ -19,7 +19,7 @@ import Colors from "@/constants/colors";
 SplashScreen.preventAutoHideAsync();
 
 function useProtectedRoute() {
-  const { session, isLoading, needsUsername } = useAuth();
+  const { session, isLoading, needsUsername, profileError } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
@@ -33,12 +33,14 @@ function useProtectedRoute() {
 
     if (!session && !inAuthGroup) {
       router.replace("/auth");
-    } else if (session && needsUsername && !inUsernameSetup) {
+    } else if (session && needsUsername && !profileError && !inUsernameSetup) {
       router.replace("/username-setup");
     } else if (session && !needsUsername && (inAuthGroup || inUsernameSetup)) {
       router.replace("/(tabs)");
+    } else if (session && profileError && (inAuthGroup || inUsernameSetup)) {
+      router.replace("/(tabs)");
     }
-  }, [session, isLoading, needsUsername, segments, navigationState?.key]);
+  }, [session, isLoading, needsUsername, profileError, segments, navigationState?.key]);
 }
 
 function RootLayoutNav() {
