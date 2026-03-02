@@ -1,0 +1,65 @@
+Implement Supabase integration + authentication + profile bootstrap for the Swayger Expo Router app.
+
+Context:
+- Expo Managed React Native TypeScript app with Expo Router tabs already working.
+- Supabase project already created with tables + RLS + seeded categories.
+- We use “EXPO_PUBLIC_SUPABASE_URL” and “EXPO_PUBLIC_SUPABASE_ANON_KEY” as environment variables (set in Replit Secrets). Do NOT hardcode secrets.
+
+Requirements (do in this order):
+
+1) Add dependencies
+- Install @supabase/supabase-js
+- Install react-native-url-polyfill
+- If needed for secure session storage, use expo-secure-store (preferred) or fallback to AsyncStorage.
+
+2) Create Supabase client
+- Create /lib/supabase.ts
+- Import 'react-native-url-polyfill/auto'
+- Initialize a supabase client using the env vars.
+- Set up auth session persistence suitable for Expo (persistSession true).
+- Export supabase.
+
+3) Auth flow (email OTP/magic link)
+- Build a simple Auth screen (if not already) that supports:
+  - user enters email
+  - send OTP/magic link via supabase.auth.signInWithOtp({ email })
+  - show success message “Check your email”
+- Add a “Dev shortcut” option for OTP if Supabase uses OTP flow (handle both).
+- Implement a minimal “Sign out” button in Profile.
+
+4) Routing guard
+- Add an auth gate so unauthenticated users see the Auth screen.
+- Once authenticated, show the tab navigator.
+- On app launch, restore session and avoid flicker (loading state).
+
+5) Profile bootstrap
+- On first login, ensure a row exists in public.profiles for auth.uid():
+  - If not exists, prompt user to set a unique username (simple screen/modal).
+  - Insert profile row with id = auth.uid(), username, display_name optional.
+- Add basic username validation:
+  - lowercase, 3–20 chars, letters/numbers/underscore only
+  - show “username taken” if unique constraint fails
+
+6) Home screen data smoke test
+- On Home tab, after auth+profile ready, fetch:
+  - latest 10 swaygers where creator_id or opponent_id = auth.uid()
+  - order by updated_at desc
+- Render a simple list with: title, status, stake_units, expires_at (formatted)
+- If empty, show “No swaygers yet. Create one.”
+
+7) Code quality
+- TypeScript types for core rows: Profile, Swayger, Category.
+- Centralized error handling helper (toast/alert ok).
+- Keep UI minimal and clean in dark theme, matching existing style.
+
+Constraints:
+- Do NOT implement Create Swayger flow yet (that is Prompt 3).
+- Do NOT implement invites, settlement, leaderboards yet.
+- Do NOT create server/edge functions.
+- Ensure it runs in Expo Go without native changes.
+
+Deliverables:
+- Working auth login/logout
+- Profile creation prompt on first login
+- Home screen shows swayger list from Supabase
+- Clear README snippet explaining which env vars are required
