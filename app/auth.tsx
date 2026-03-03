@@ -29,6 +29,7 @@ export default function AuthScreen() {
   const [linkSent, setLinkSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [authMode, setAuthMode] = useState<AuthMode>("password");
+  const [needsPassword, setNeedsPassword] = useState(false);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -91,16 +92,40 @@ export default function AuthScreen() {
       });
       if (error) {
         if (error.message.includes("Invalid login credentials")) {
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: trimmed,
-            password,
-          });
-          if (signUpError) {
-            showError(signUpError.message);
-          }
+          setNeedsPassword(true);
+          showError(
+            "Wrong password, or you haven't set one yet. Use the magic link to sign in first, then set a password from settings."
+          );
         } else {
           showError(error.message);
         }
+      }
+    } catch {
+      showError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSetPassword() {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) {
+      showError("Please enter your email address first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const redirectTo = getRedirectUrl();
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo,
+      });
+      if (error) {
+        showError(error.message);
+      } else {
+        showError(
+          "Password reset email sent! Check your inbox, click the link, then come back and sign in with your new password."
+        );
+        setNeedsPassword(false);
       }
     } catch {
       showError("Something went wrong. Try again.");
@@ -163,6 +188,21 @@ export default function AuthScreen() {
                 <Text style={styles.buttonText}>Sign In</Text>
               )}
             </Pressable>
+            {needsPassword && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.buttonPressed,
+                  loading && styles.buttonDisabled,
+                ]}
+                onPress={handleSetPassword}
+                disabled={loading}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  Send password reset email
+                </Text>
+              </Pressable>
+            )}
             <Pressable
               style={styles.linkButton}
               onPress={() => setAuthMode("magic-link")}
@@ -329,6 +369,20 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#FFFFFF",
     fontSize: 16,
+    fontWeight: "600" as const,
+  },
+  secondaryButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: Colors.dark.tint,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryButtonText: {
+    color: Colors.dark.tint,
+    fontSize: 15,
     fontWeight: "600" as const,
   },
   linkButton: {
