@@ -1,9 +1,9 @@
 import "react-native-url-polyfill/auto";
 import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-const ExpoSecureStoreAdapter = {
+const StorageAdapter = {
   getItem: (key: string) => {
     if (Platform.OS === "web") {
       try {
@@ -12,7 +12,7 @@ const ExpoSecureStoreAdapter = {
         return null;
       }
     }
-    return SecureStore.getItemAsync(key);
+    return AsyncStorage.getItem(key);
   },
   setItem: (key: string, value: string) => {
     if (Platform.OS === "web") {
@@ -21,7 +21,7 @@ const ExpoSecureStoreAdapter = {
       } catch {}
       return;
     }
-    return SecureStore.setItemAsync(key, value);
+    return AsyncStorage.setItem(key, value) as unknown as void;
   },
   removeItem: (key: string) => {
     if (Platform.OS === "web") {
@@ -30,7 +30,7 @@ const ExpoSecureStoreAdapter = {
       } catch {}
       return;
     }
-    return SecureStore.deleteItemAsync(key);
+    return AsyncStorage.removeItem(key) as unknown as void;
   },
 };
 
@@ -45,9 +45,10 @@ if (supabaseUrl && !supabaseUrl.startsWith("http") && supabaseAnonKey.startsWith
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
+    storage: StorageAdapter,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    detectSessionInUrl: Platform.OS === "web",
+    flowType: "pkce",
   },
 });

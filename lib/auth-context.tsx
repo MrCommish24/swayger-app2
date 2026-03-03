@@ -35,6 +35,66 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+function extractAuthParams(url: string): { code?: string; accessToken?: string; refreshToken?: string } {
+  try {
+    const parsed = Linking.parse(url);
+    const qp = parsed.queryParams ?? {};
+
+    if (qp.code) {
+      return { code: qp.code as string };
+    }
+    if (qp.access_token && qp.refresh_token) {
+      return { accessToken: qp.access_token as string, refreshToken: qp.refresh_token as string };
+    }
+
+    if (url.includes("#")) {
+      const hash = url.split("#")[1];
+      const hashParams = new URLSearchParams(hash);
+      const at = hashParams.get("access_token");
+      const rt = hashParams.get("refresh_token");
+      if (at && rt) {
+        return { accessToken: at, refreshToken: rt };
+      }
+    }
+  } catch (e) {
+    if (__DEV__) console.log("[auth] extractAuthParams error:", e);
+  }
+  return {};
+}
+
+async function handleAuthUrl(url: string): Promise<boolean> {
+  if (!url.includes("auth-callback")) return false;
+  if (__DEV__) console.log("[auth] Handling auth callback URL");
+
+  const params = extractAuthParams(url);
+
+  if (params.code) {
+    if (__DEV__) console.log("[auth] Exchanging code for session");
+    const { error } = await supabase.auth.exchangeCodeForSession(params.code);
+    if (error) {
+      if (__DEV__) console.log("[auth] exchangeCode error:", error.message);
+      return false;
+    }
+    return true;
+  }
+
+  if (params.accessToken && params.refreshToken) {
+    if (__DEV__) console.log("[auth] Setting session from tokens");
+    const { error } = await supabase.auth.setSession({
+      access_token: params.accessToken,
+      refresh_token: params.refreshToken,
+    });
+    if (error) {
+      if (__DEV__) console.log("[auth] setSession error:", error.message);
+      return false;
+    }
+    return true;
+  }
+
+  if (__DEV__) console.log("[auth] No auth params found in URL");
+  return false;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -43,14 +103,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
+    async function init() {
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl && initialUrl.includes("auth-callback")) {
+        if (__DEV__) console.log("[auth] Processing initial deep link");
+        await handleAuthUrl(initialUrl);
+      }
+
+      const { data: { session: s } } = await supabase.auth.getSession();
       setSession(s);
       if (s?.user) {
         fetchProfile(s.user.id);
       } else {
         setIsLoading(false);
       }
-    });
+    }
+
+    init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, s) => {
@@ -69,6 +138,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", async (event) => {
+      if (__DEV__) console.log("[auth] Incoming URL event");
+      await handleAuthUrl(event.url);
+    });
+
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
