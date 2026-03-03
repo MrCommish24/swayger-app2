@@ -1,0 +1,55 @@
+I’m getting this Supabase error when clicking “+ Create Workspace”:
+“Infinite recursion detected in policy for relation ‘workspace_members’”.
+
+Fix this properly. The root cause is Row Level Security policies on workspace_members referencing workspace_members inside their own policy (EXISTS subquery), which triggers recursion.
+
+I want you to:
+
+Inspect my current Supabase schema + RLS policies for these tables:
+
+workspaces
+
+workspace_members
+
+Identify exactly which policy is recursively referencing workspace_members.
+
+Replace the RLS approach with a non-recursive design that still enforces security.
+
+Implementation requirements:
+
+Keep RLS ON.
+
+Do NOT query workspace_members from within an RLS policy on workspace_members in a way that triggers recursion.
+
+Use ONE of these safe patterns (pick the cleanest for my app):
+A) Use workspaces.owner_id checks where possible + a SECURITY DEFINER helper function like is_workspace_member(workspace_id) that bypasses RLS to check membership, then reference that function inside policies.
+OR
+B) Use an RPC (SECURITY DEFINER) to handle “join workspace by invite code” and “create workspace + add owner membership” so the client doesn’t directly insert into workspace_members, keeping policies simple.
+
+What to change in the app flow:
+
+When creating a workspace, ensure it:
+
+Inserts into workspaces (with owner_id = current user)
+
+Adds owner into workspace_members
+
+Does not fail due to RLS recursion
+
+When joining by invite code, ensure it:
+
+Validates invite_code
+
+Inserts membership for the logged-in user (role viewer)
+
+Prevents duplicate memberships gracefully
+
+Definition of done:
+
+I can create a workspace successfully (no recursion error).
+
+I can open workspace detail screen and see members.
+
+Another user can join by invite code and see the workspace on their dashboard.
+
+When you implement the fix, also add a short “RLS Policies Summary” section in the README or a visible internal notes section in the app that explains the final policy logic at a high level (no secrets).
