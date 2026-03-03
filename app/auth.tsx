@@ -191,7 +191,7 @@ export default function AuthScreen() {
                 />
                 <Text style={styles.sentTitle}>Enter the code</Text>
                 <Text style={styles.sentTo}>
-                  We sent a 6-digit code to {email}. Enter it below.
+                  We sent a code to {email}. Enter it below.
                 </Text>
               </View>
 
