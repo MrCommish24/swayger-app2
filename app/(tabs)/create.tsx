@@ -15,39 +15,43 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { createWorkspace } from "@/lib/workspace";
+import { createSwayger } from "@/lib/swayger";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 
-const SCORING_OPTIONS = [
-  { value: "points", label: "Points", icon: "star-outline" as const },
-  { value: "wins", label: "Win/Loss", icon: "trophy-outline" as const },
-  { value: "spread", label: "Spread", icon: "trending-up-outline" as const },
-  { value: "custom", label: "Custom", icon: "settings-outline" as const },
+const SPORT_OPTIONS = [
+  { value: "NFL", label: "NFL", icon: "american-football-outline" as const },
+  { value: "NBA", label: "NBA", icon: "basketball-outline" as const },
+  { value: "MLB", label: "MLB", icon: "baseball-outline" as const },
+  { value: "Soccer", label: "Soccer", icon: "football-outline" as const },
+  { value: "NHL", label: "NHL", icon: "snow-outline" as const },
+  { value: "Other", label: "Other", icon: "trophy-outline" as const },
 ];
 
-export default function CreateWorkspaceScreen() {
+export default function CreateSwaygerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [name, setName] = useState("");
-  const [scoringType, setScoringType] = useState("points");
+  const [title, setTitle] = useState("");
+  const [sport, setSport] = useState("NFL");
+  const [stake, setStake] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () => createWorkspace(name, scoringType, user!.id),
+    mutationFn: () => createSwayger(title, sport, user!.id),
     onSuccess: (result) => {
       if (result.error) {
         showError(result.error);
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
-      setName("");
-      setScoringType("points");
-      if (result.workspace) {
-        router.push(`/workspace/${result.workspace.id}`);
+      queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+      setTitle("");
+      setSport("NFL");
+      setStake("");
+      if (result.swayger) {
+        router.push(`/swayger/${result.swayger.id}`);
       } else {
         router.push("/(tabs)");
       }
@@ -58,12 +62,12 @@ export default function CreateWorkspaceScreen() {
   });
 
   function handleCreate() {
-    if (!name.trim()) {
-      showError("Please enter a workspace name.");
+    if (!title.trim()) {
+      showError("Please enter a title for your Swayger.");
       return;
     }
-    if (name.trim().length < 2) {
-      showError("Name must be at least 2 characters.");
+    if (title.trim().length < 2) {
+      showError("Title must be at least 2 characters.");
       return;
     }
     mutation.mutate();
@@ -80,51 +84,51 @@ export default function CreateWorkspaceScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Create Workspace</Text>
+          <Text style={styles.title}>Create Swayger</Text>
           <Text style={styles.subtitle}>
-            Set up a league for your group
+            Set up a new wager for your crew
           </Text>
         </View>
 
         <View style={styles.form}>
           <View>
-            <Text style={styles.label}>Workspace Name</Text>
+            <Text style={styles.label}>Title</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Sunday League"
+              placeholder="e.g. Sunday NFL Picks"
               placeholderTextColor={Colors.dark.tabIconDefault}
-              value={name}
-              onChangeText={setName}
+              value={title}
+              onChangeText={setTitle}
               editable={!mutation.isPending}
               maxLength={50}
             />
           </View>
 
           <View>
-            <Text style={styles.label}>Scoring Type</Text>
-            <View style={styles.scoringGrid}>
-              {SCORING_OPTIONS.map((opt) => (
+            <Text style={styles.label}>Sport</Text>
+            <View style={styles.sportGrid}>
+              {SPORT_OPTIONS.map((opt) => (
                 <Pressable
                   key={opt.value}
                   style={[
-                    styles.scoringOption,
-                    scoringType === opt.value && styles.scoringOptionActive,
+                    styles.sportOption,
+                    sport === opt.value && styles.sportOptionActive,
                   ]}
-                  onPress={() => setScoringType(opt.value)}
+                  onPress={() => setSport(opt.value)}
                 >
                   <Ionicons
                     name={opt.icon}
                     size={20}
                     color={
-                      scoringType === opt.value
+                      sport === opt.value
                         ? Colors.dark.tint
                         : Colors.dark.textSecondary
                     }
                   />
                   <Text
                     style={[
-                      styles.scoringLabel,
-                      scoringType === opt.value && styles.scoringLabelActive,
+                      styles.sportLabel,
+                      sport === opt.value && styles.sportLabelActive,
                     ]}
                   >
                     {opt.label}
@@ -134,21 +138,34 @@ export default function CreateWorkspaceScreen() {
             </View>
           </View>
 
+          <View>
+            <Text style={styles.label}>Stake (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Loser buys dinner"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={stake}
+              onChangeText={setStake}
+              editable={!mutation.isPending}
+              maxLength={100}
+            />
+          </View>
+
           <Pressable
             style={({ pressed }) => [
               styles.button,
               pressed && styles.buttonPressed,
-              (mutation.isPending || !name.trim()) && styles.buttonDisabled,
+              (mutation.isPending || !title.trim()) && styles.buttonDisabled,
             ]}
             onPress={handleCreate}
-            disabled={mutation.isPending || !name.trim()}
+            disabled={mutation.isPending || !title.trim()}
           >
             {mutation.isPending ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Ionicons name="add" size={20} color="#FFFFFF" />
-                <Text style={styles.buttonText}>Create Workspace</Text>
+                <Ionicons name="flash" size={20} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Create Swayger</Text>
               </>
             )}
           </Pressable>
@@ -203,13 +220,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.dark.text,
   },
-  scoringGrid: {
+  sportGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-  scoringOption: {
-    flexBasis: "47%",
+  sportOption: {
+    flexBasis: "30%",
     flexGrow: 1,
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
@@ -221,16 +238,16 @@ const styles = StyleSheet.create({
     gap: 6,
     flexDirection: "row",
   },
-  scoringOptionActive: {
+  sportOptionActive: {
     borderColor: Colors.dark.tint,
     backgroundColor: "rgba(29, 161, 242, 0.08)",
   },
-  scoringLabel: {
+  sportLabel: {
     fontSize: 14,
     color: Colors.dark.textSecondary,
     fontWeight: "500" as const,
   },
-  scoringLabelActive: {
+  sportLabelActive: {
     color: Colors.dark.tint,
   },
   button: {

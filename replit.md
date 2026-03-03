@@ -1,13 +1,13 @@
 # Swayger
 
-A mobile-first app built with Expo (React Native) and an Express backend, using Supabase for auth and data.
+A mobile-first app built with Expo (React Native) and an Express backend, using Supabase for auth and data. A "Swayger" is a wager/bet that users create and invite others to participate in.
 
 ## Architecture
 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
-- **Auth**: Supabase magic link via `@supabase/supabase-js`
-- **Data**: Supabase (workspaces, workspace_members, profiles tables)
+- **Auth**: Supabase OTP code + magic link + password sign-in via `@supabase/supabase-js`
+- **Data**: Supabase (workspaces, workspace_members, profiles tables — labeled as "Swaygers" and "Participants" in UI)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
 - **Session Storage**: AsyncStorage (native), localStorage (web)
@@ -22,17 +22,17 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 ```
 app/
   _layout.tsx          # Root layout with providers + auth routing guard
-  auth.tsx             # Magic link sign-in screen
+  auth.tsx             # Sign-in screen (OTP code, magic link, password)
   auth-callback.tsx    # Deep link callback for magic link auth
   username-setup.tsx   # First-login username selection
   (tabs)/
-    _layout.tsx        # Tab navigator (Home, Create, Leaderboard, Profile)
-    index.tsx          # Dashboard — shows user's workspaces with Create/Join
-    create.tsx         # Create Workspace form
+    _layout.tsx        # Tab navigator (Swaygers, Create, Leaderboard, Profile)
+    index.tsx          # Dashboard — "My Swaygers" with Create/Join buttons
+    create.tsx         # Create Swayger form (title, sport, stake)
     leaderboard.tsx    # Leaderboard screen (placeholder)
-    profile.tsx        # Profile screen with sign-out
-  workspace/
-    [id].tsx           # Workspace detail (invite code, members, actions)
+    profile.tsx        # Profile screen with set password + sign-out
+  swayger/
+    [id].tsx           # Swayger detail (invite code/link, participants)
   invite/
     [code].tsx         # Dynamic invite route
 components/            # Reusable components (ErrorBoundary, etc.)
@@ -41,13 +41,14 @@ constants/
 lib/
   supabase.ts          # Supabase client initialization (AsyncStorage adapter)
   auth-context.tsx     # Auth context provider (session, profile, routing)
-  workspace.ts         # Workspace CRUD functions (create, join, fetch)
+  swayger.ts           # Swayger CRUD functions (create, join, fetch)
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
-  index.ts             # TypeScript types: Profile, Workspace, WorkspaceMember, etc.
+  index.ts             # TypeScript types: Profile, SwaygerData, SwaygerParticipant, etc.
 supabase-migrations/
   001_workspaces.sql   # SQL for workspaces, workspace_members, profiles + RLS
+  002_fix_rls_recursion.sql # Fix RLS recursion with SECURITY DEFINER helper
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
@@ -55,21 +56,33 @@ server/
 
 ## Auth Flow
 
-1. Unauthenticated → `/auth` (magic link sign-in)
-2. Magic link tapped → `/auth-callback` (exchanges tokens, creates session)
+1. Unauthenticated → `/auth` (email + OTP code, or password sign-in)
+2. OTP code entered → verified in-app via `verifyOtp`; or magic link → `/auth-callback`
 3. Authenticated, no profile → `/username-setup` (choose username)
-4. Authenticated + profile → `/(tabs)` (dashboard)
+4. Authenticated + profile → `/(tabs)` (My Swaygers dashboard)
 
 Deep linking configured with scheme `swayger://` for magic link callbacks.
 
-## Workspace System
+## Swayger System
 
-- Users create workspaces with a name and scoring type
-- Each workspace gets a unique 6-char invite code (A-Z, 2-9, no confusing chars)
-- Creator becomes "owner" automatically
-- Other users join via invite code and become "viewer"
-- Roles: owner, editor, viewer (editor not yet used)
-- Workspace detail shows invite code, member list with roles, action buttons
+- **Concept**: A "Swayger" is a wager/bet. Users create Swaygers and invite participants.
+- Users create a Swayger with a title and sport (NFL, NBA, MLB, Soccer, NHL, Other)
+- Each Swayger gets a unique invite code (6-8 chars, A-Z, 2-9)
+- Creator becomes "owner" in DB (displayed as "Creator" in UI)
+- Other users join via invite code and become "viewer" in DB (displayed as "Participant" in UI)
+- Swayger detail shows invite code + copy link, participants with Creator/Participant labels
+- Status shown as "Open" (implied default)
+
+## DB → UI Mapping (Option A)
+
+- `workspaces` table → "Swaygers" in UI
+- `workspaces.name` → Swayger title
+- `workspaces.scoring_type` → Sport (default "NFL")
+- `workspaces.owner_id` → Creator
+- `workspace_members` → Participants
+- DB role `owner` → UI label "Creator"
+- DB role `viewer`/`editor` → UI label "Participant"
+- RPC functions `create_workspace` / `join_workspace_by_code` still used (DB names unchanged)
 
 ## Theme (Brand Colors)
 
@@ -82,10 +95,11 @@ Deep linking configured with scheme `swayger://` for magic link callbacks.
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
-- `workspaces` — leagues (name, scoring_type, invite_code, owner_id)
-- `workspace_members` — memberships (workspace_id, user_id, role)
+- `workspaces` — swaygers (name, scoring_type, invite_code, owner_id)
+- `workspace_members` — participants (workspace_id, user_id, role)
 
-All tables have RLS policies. Run `supabase-migrations/001_workspaces.sql` in Supabase SQL Editor.
+RLS uses `is_workspace_member()` SECURITY DEFINER function to avoid recursion.
+Run both migration files in Supabase SQL Editor: `001_workspaces.sql` then `002_fix_rls_recursion.sql`.
 
 ## Workflows
 

@@ -15,16 +15,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { fetchMyWorkspaces, joinWorkspaceByCode } from "@/lib/workspace";
-import { WorkspaceWithRole } from "@/types";
+import { fetchMySwaygers, joinSwaygerByCode, displayRole } from "@/lib/swayger";
+import { SwaygerWithRole } from "@/types";
 import Colors from "@/constants/colors";
 
 function RoleBadge({ role }: { role: string }) {
-  const isOwner = role === "owner";
+  const isCreator = role === "owner";
   return (
-    <View style={[styles.roleBadge, isOwner && styles.roleBadgeOwner]}>
-      <Text style={[styles.roleBadgeText, isOwner && styles.roleBadgeTextOwner]}>
-        {role.charAt(0).toUpperCase() + role.slice(1)}
+    <View style={[styles.roleBadge, isCreator && styles.roleBadgeCreator]}>
+      <Text style={[styles.roleBadgeText, isCreator && styles.roleBadgeTextCreator]}>
+        {displayRole(role)}
       </Text>
     </View>
   );
@@ -42,33 +42,29 @@ export default function DashboardScreen() {
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const {
-    data: workspaces = [],
+    data: swaygers = [],
     isLoading,
     error,
     refetch,
-  } = useQuery<WorkspaceWithRole[]>({
-    queryKey: ["workspaces", "mine", user?.id],
-    queryFn: () => fetchMyWorkspaces(user!.id),
+  } = useQuery<SwaygerWithRole[]>({
+    queryKey: ["swaygers", "mine", user?.id],
+    queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
 
   const joinMutation = useMutation({
-    mutationFn: () => joinWorkspaceByCode(inviteCode, user!.id),
+    mutationFn: () => joinSwaygerByCode(inviteCode, user!.id),
     onSuccess: (result) => {
       if (result.error) {
         setJoinError(result.error);
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       setJoinModalVisible(false);
       setInviteCode("");
       setJoinError(null);
-      if (result.workspaceId) {
-        if (result.alreadyMember) {
-          router.push(`/workspace/${result.workspaceId}`);
-        } else {
-          router.push(`/workspace/${result.workspaceId}`);
-        }
+      if (result.swaygerId) {
+        router.push(`/swayger/${result.swaygerId}`);
       }
     },
     onError: () => {
@@ -85,11 +81,11 @@ export default function DashboardScreen() {
     joinMutation.mutate();
   }
 
-  function renderWorkspaceCard({ item }: { item: WorkspaceWithRole }) {
+  function renderSwaygerCard({ item }: { item: SwaygerWithRole }) {
     return (
       <Pressable
         style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-        onPress={() => router.push(`/workspace/${item.id}`)}
+        onPress={() => router.push(`/swayger/${item.id}`)}
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>
@@ -99,8 +95,12 @@ export default function DashboardScreen() {
         </View>
         <View style={styles.cardDetails}>
           <View style={styles.detailRow}>
-            <Ionicons name="trophy-outline" size={14} color={Colors.dark.textSecondary} />
-            <Text style={styles.detailText}>{item.scoring_type}</Text>
+            <Ionicons name="american-football-outline" size={14} color={Colors.dark.textSecondary} />
+            <Text style={styles.detailText}>{item.scoring_type || "NFL"}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="radio-button-on" size={10} color="#22C55E" />
+            <Text style={styles.detailText}>Open</Text>
           </View>
         </View>
       </Pressable>
@@ -110,7 +110,7 @@ export default function DashboardScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Swayger</Text>
+        <Text style={styles.title}>My Swaygers</Text>
       </View>
 
       <View style={styles.actions}>
@@ -119,7 +119,7 @@ export default function DashboardScreen() {
           onPress={() => router.push("/(tabs)/create")}
         >
           <Ionicons name="add" size={18} color="#FFFFFF" />
-          <Text style={styles.actionButtonText}>Create</Text>
+          <Text style={styles.actionButtonText}>Create Swayger</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.actionButtonOutline, pressed && styles.actionButtonPressed]}
@@ -130,7 +130,7 @@ export default function DashboardScreen() {
           }}
         >
           <Ionicons name="enter-outline" size={18} color={Colors.dark.tint} />
-          <Text style={styles.actionButtonOutlineText}>Join</Text>
+          <Text style={styles.actionButtonOutlineText}>Join Swayger</Text>
         </Pressable>
       </View>
 
@@ -141,26 +141,26 @@ export default function DashboardScreen() {
       ) : error ? (
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.accentGold} />
-          <Text style={styles.emptyText}>Could not load workspaces.</Text>
+          <Text style={styles.emptyText}>Could not load swaygers.</Text>
           <Pressable style={styles.retryButton} onPress={() => refetch()}>
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
-      ) : workspaces.length === 0 ? (
+      ) : swaygers.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="people-outline" size={48} color={Colors.dark.tint} />
-          <Text style={styles.emptyText}>No workspaces yet.</Text>
+          <Ionicons name="flash-outline" size={48} color={Colors.dark.tint} />
+          <Text style={styles.emptyText}>No Swaygers yet.</Text>
           <Text style={styles.emptySubtext}>
-            Create a workspace or join one with an invite code.
+            Create one or join with a code.
           </Text>
         </View>
       ) : (
         <FlatList
-          data={workspaces}
+          data={swaygers}
           keyExtractor={(item) => item.id}
-          renderItem={renderWorkspaceCard}
+          renderItem={renderSwaygerCard}
           contentContainerStyle={styles.listContent}
-          scrollEnabled={workspaces.length > 0}
+          scrollEnabled={swaygers.length > 0}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -176,7 +176,7 @@ export default function DashboardScreen() {
           onPress={() => setJoinModalVisible(false)}
         >
           <Pressable style={styles.modalContent} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Join Workspace</Text>
+            <Text style={styles.modalTitle}>Join Swayger</Text>
             <Text style={styles.modalSubtitle}>
               Enter the invite code shared with you
             </Text>
@@ -206,7 +206,7 @@ export default function DashboardScreen() {
               {joinMutation.isPending ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={styles.modalButtonText}>Join</Text>
+                <Text style={styles.modalButtonText}>Join Swayger</Text>
               )}
             </Pressable>
             <Pressable
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  roleBadgeOwner: {
+  roleBadgeCreator: {
     backgroundColor: "rgba(245, 166, 35, 0.15)",
   },
   roleBadgeText: {
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
     fontWeight: "600" as const,
   },
-  roleBadgeTextOwner: {
+  roleBadgeTextCreator: {
     color: Colors.dark.accentGold,
   },
   cardDetails: {

@@ -7,7 +7,7 @@ export interface Profile {
   updated_at: string;
 }
 
-export interface Workspace {
+export interface SwaygerData {
   id: string;
   owner_id: string;
   name: string;
@@ -16,7 +16,7 @@ export interface Workspace {
   created_at: string;
 }
 
-export interface WorkspaceMember {
+export interface SwaygerParticipant {
   id: string;
   workspace_id: string;
   user_id: string;
@@ -24,7 +24,7 @@ export interface WorkspaceMember {
   created_at: string;
 }
 
-export interface WorkspaceMemberWithProfile extends WorkspaceMember {
+export interface SwaygerParticipantWithProfile extends SwaygerParticipant {
   profiles: {
     username: string;
     display_name: string | null;
@@ -32,27 +32,6 @@ export interface WorkspaceMemberWithProfile extends WorkspaceMember {
   } | null;
 }
 
-export interface WorkspaceWithRole extends Workspace {
+export interface SwaygerWithRole extends SwaygerData {
   role: "owner" | "editor" | "viewer";
-}
-
-export interface Swayger {
-  id: string;
-  title: string;
-  description: string | null;
-  creator_id: string;
-  opponent_id: string | null;
-  category_id: string | null;
-  status: string;
-  stake_units: number | null;
-  expires_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  icon: string | null;
-  created_at: string;
 }

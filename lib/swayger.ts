@@ -1,8 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import {
-  Workspace,
-  WorkspaceMemberWithProfile,
-  WorkspaceWithRole,
+  SwaygerData,
+  SwaygerParticipantWithProfile,
+  SwaygerWithRole,
 } from "@/types";
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -29,37 +29,37 @@ async function generateUniqueInviteCode(): Promise<string> {
   return generateInviteCode(8);
 }
 
-export async function createWorkspace(
-  name: string,
-  scoringType: string,
+export async function createSwayger(
+  title: string,
+  sport: string,
   _userId: string
-): Promise<{ workspace: Workspace | null; error: string | null }> {
+): Promise<{ swayger: SwaygerData | null; error: string | null }> {
   const inviteCode = await generateUniqueInviteCode();
 
   const { data, error } = await supabase.rpc("create_workspace", {
-    p_name: name.trim(),
-    p_scoring_type: scoringType,
+    p_name: title.trim(),
+    p_scoring_type: sport || "NFL",
     p_invite_code: inviteCode,
   });
 
-  if (error) return { workspace: null, error: error.message };
+  if (error) return { swayger: null, error: error.message };
 
-  const workspaceId = data as string;
+  const swaygerId = data as string;
 
-  const { data: workspace, error: fetchError } = await supabase
+  const { data: swayger, error: fetchError } = await supabase
     .from("workspaces")
     .select("*")
-    .eq("id", workspaceId)
+    .eq("id", swaygerId)
     .single();
 
-  if (fetchError) return { workspace: null, error: fetchError.message };
+  if (fetchError) return { swayger: null, error: fetchError.message };
 
-  return { workspace: workspace as Workspace, error: null };
+  return { swayger: swayger as SwaygerData, error: null };
 }
 
-export async function fetchMyWorkspaces(
+export async function fetchMySwaygers(
   userId: string
-): Promise<WorkspaceWithRole[]> {
+): Promise<SwaygerWithRole[]> {
   const { data: memberships, error: memError } = await supabase
     .from("workspace_members")
     .select("workspace_id, role")
@@ -67,65 +67,70 @@ export async function fetchMyWorkspaces(
 
   if (memError || !memberships || memberships.length === 0) return [];
 
-  const workspaceIds = memberships.map((m) => m.workspace_id);
+  const ids = memberships.map((m) => m.workspace_id);
 
-  const { data: workspaces, error: wsError } = await supabase
+  const { data: swaygers, error: wsError } = await supabase
     .from("workspaces")
     .select("*")
-    .in("id", workspaceIds)
+    .in("id", ids)
     .order("created_at", { ascending: false });
 
-  if (wsError || !workspaces) return [];
+  if (wsError || !swaygers) return [];
 
   const roleMap = new Map(memberships.map((m) => [m.workspace_id, m.role]));
 
-  return workspaces.map((ws) => ({
-    ...(ws as Workspace),
-    role: (roleMap.get(ws.id) ?? "viewer") as "owner" | "editor" | "viewer",
+  return swaygers.map((s) => ({
+    ...(s as SwaygerData),
+    role: (roleMap.get(s.id) ?? "viewer") as "owner" | "editor" | "viewer",
   }));
 }
 
-export async function fetchWorkspace(
-  workspaceId: string
-): Promise<Workspace | null> {
+export async function fetchSwayger(
+  swaygerId: string
+): Promise<SwaygerData | null> {
   const { data, error } = await supabase
     .from("workspaces")
     .select("*")
-    .eq("id", workspaceId)
+    .eq("id", swaygerId)
     .single();
 
   if (error) return null;
-  return data as Workspace;
+  return data as SwaygerData;
 }
 
-export async function fetchWorkspaceMembers(
-  workspaceId: string
-): Promise<WorkspaceMemberWithProfile[]> {
+export async function fetchSwaygerParticipants(
+  swaygerId: string
+): Promise<SwaygerParticipantWithProfile[]> {
   const { data, error } = await supabase
     .from("workspace_members")
     .select("*, profiles(username, display_name, avatar_url)")
-    .eq("workspace_id", workspaceId)
+    .eq("workspace_id", swaygerId)
     .order("created_at", { ascending: true });
 
   if (error || !data) return [];
-  return data as WorkspaceMemberWithProfile[];
+  return data as SwaygerParticipantWithProfile[];
 }
 
-export async function joinWorkspaceByCode(
+export async function joinSwaygerByCode(
   inviteCode: string,
   _userId: string
-): Promise<{ workspaceId: string | null; error: string | null; alreadyMember: boolean }> {
+): Promise<{ swaygerId: string | null; error: string | null; alreadyMember: boolean }> {
   const { data, error } = await supabase.rpc("join_workspace_by_code", {
     p_invite_code: inviteCode.trim().toUpperCase(),
   });
 
-  if (error) return { workspaceId: null, error: error.message, alreadyMember: false };
+  if (error) return { swaygerId: null, error: error.message, alreadyMember: false };
 
   const result = data as { error: string | null; workspace_id: string | null; already_member: boolean };
 
   return {
-    workspaceId: result.workspace_id,
+    swaygerId: result.workspace_id,
     error: result.error,
     alreadyMember: result.already_member,
   };
+}
+
+export function displayRole(dbRole: string): string {
+  if (dbRole === "owner") return "Creator";
+  return "Participant";
 }

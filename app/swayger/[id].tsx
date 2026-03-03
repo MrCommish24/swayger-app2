@@ -5,7 +5,6 @@ import {
   View,
   Pressable,
   Platform,
-  FlatList,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
@@ -14,47 +13,72 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
-import { fetchWorkspace, fetchWorkspaceMembers } from "@/lib/workspace";
+import { fetchSwayger, fetchSwaygerParticipants, displayRole } from "@/lib/swayger";
 import { useAuth } from "@/lib/auth-context";
-import { Workspace, WorkspaceMemberWithProfile } from "@/types";
+import { SwaygerData, SwaygerParticipantWithProfile } from "@/types";
 import Colors from "@/constants/colors";
 
 function InviteSection({ inviteCode }: { inviteCode: string }) {
-  const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   async function handleCopyCode() {
     await Clipboard.setStringAsync(inviteCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  }
+
+  async function handleCopyLink() {
+    const link = Platform.OS === "web"
+      ? window.location.href
+      : `swayger://invite/${inviteCode}`;
+    await Clipboard.setStringAsync(link);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Invite Code</Text>
+      <Text style={styles.sectionTitle}>Invite</Text>
       <View style={styles.inviteRow}>
         <Text style={styles.inviteCode}>{inviteCode}</Text>
-        <Pressable
-          style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
-          onPress={handleCopyCode}
-        >
-          <Ionicons
-            name={copied ? "checkmark" : "copy-outline"}
-            size={18}
-            color={copied ? "#4CAF50" : Colors.dark.tint}
-          />
-          <Text style={[styles.copyText, copied && { color: "#4CAF50" }]}>
-            {copied ? "Copied" : "Copy"}
-          </Text>
-        </Pressable>
+        <View style={styles.inviteButtons}>
+          <Pressable
+            style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
+            onPress={handleCopyCode}
+          >
+            <Ionicons
+              name={codeCopied ? "checkmark" : "copy-outline"}
+              size={16}
+              color={codeCopied ? "#22C55E" : Colors.dark.tint}
+            />
+            <Text style={[styles.copyText, codeCopied && { color: "#22C55E" }]}>
+              {codeCopied ? "Copied" : "Copy code"}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.copyButton, pressed && styles.copyButtonPressed]}
+            onPress={handleCopyLink}
+          >
+            <Ionicons
+              name={linkCopied ? "checkmark" : "link-outline"}
+              size={16}
+              color={linkCopied ? "#22C55E" : Colors.dark.tint}
+            />
+            <Text style={[styles.copyText, linkCopied && { color: "#22C55E" }]}>
+              {linkCopied ? "Copied" : "Copy link"}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
-function MemberItem({ member }: { member: WorkspaceMemberWithProfile }) {
+function ParticipantItem({ member }: { member: SwaygerParticipantWithProfile }) {
   const profile = member.profiles;
   const displayName = profile?.display_name || profile?.username || "Unknown";
-  const isOwner = member.role === "owner";
+  const isCreator = member.role === "owner";
 
   return (
     <View style={styles.memberRow}>
@@ -69,16 +93,16 @@ function MemberItem({ member }: { member: WorkspaceMemberWithProfile }) {
           <Text style={styles.memberUsername}>@{profile.username}</Text>
         )}
       </View>
-      <View style={[styles.memberRoleBadge, isOwner && styles.memberRoleBadgeOwner]}>
-        <Text style={[styles.memberRoleText, isOwner && styles.memberRoleTextOwner]}>
-          {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+      <View style={[styles.memberRoleBadge, isCreator && styles.memberRoleBadgeCreator]}>
+        <Text style={[styles.memberRoleText, isCreator && styles.memberRoleTextCreator]}>
+          {displayRole(member.role)}
         </Text>
       </View>
     </View>
   );
 }
 
-export default function WorkspaceDetailScreen() {
+export default function SwaygerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -86,26 +110,26 @@ export default function WorkspaceDetailScreen() {
   const { user } = useAuth();
 
   const {
-    data: workspace,
-    isLoading: wsLoading,
-  } = useQuery<Workspace | null>({
-    queryKey: ["workspace", id],
-    queryFn: () => fetchWorkspace(id!),
+    data: swayger,
+    isLoading: swaygerLoading,
+  } = useQuery<SwaygerData | null>({
+    queryKey: ["swayger", id],
+    queryFn: () => fetchSwayger(id!),
     enabled: !!id,
   });
 
   const {
-    data: members = [],
-    isLoading: membersLoading,
-  } = useQuery<WorkspaceMemberWithProfile[]>({
-    queryKey: ["workspace-members", id],
-    queryFn: () => fetchWorkspaceMembers(id!),
+    data: participants = [],
+    isLoading: participantsLoading,
+  } = useQuery<SwaygerParticipantWithProfile[]>({
+    queryKey: ["swayger-participants", id],
+    queryFn: () => fetchSwaygerParticipants(id!),
     enabled: !!id,
   });
 
-  const isOwner = workspace?.owner_id === user?.id;
+  const isCreator = swayger?.owner_id === user?.id;
 
-  if (wsLoading) {
+  if (swaygerLoading) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: isWeb ? 67 : insets.top }]}>
         <ActivityIndicator size="large" color={Colors.dark.tint} />
@@ -113,11 +137,11 @@ export default function WorkspaceDetailScreen() {
     );
   }
 
-  if (!workspace) {
+  if (!swayger) {
     return (
       <View style={[styles.container, styles.centered, { paddingTop: isWeb ? 67 : insets.top }]}>
         <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.accentGold} />
-        <Text style={styles.errorText}>Workspace not found.</Text>
+        <Text style={styles.errorText}>Swayger not found.</Text>
         <Pressable onPress={() => router.back()}>
           <Text style={styles.linkText}>Go back</Text>
         </Pressable>
@@ -136,71 +160,44 @@ export default function WorkspaceDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.dark.text} />
         </Pressable>
         <View style={styles.headerContent}>
-          <Text style={styles.workspaceName}>{workspace.name}</Text>
+          <Text style={styles.swaygerTitle}>{swayger.name}</Text>
           <View style={styles.headerMeta}>
             <View style={styles.metaChip}>
-              <Ionicons name="trophy-outline" size={14} color={Colors.dark.textSecondary} />
-              <Text style={styles.metaText}>{workspace.scoring_type}</Text>
+              <Ionicons name="american-football-outline" size={14} color={Colors.dark.textSecondary} />
+              <Text style={styles.metaText}>{swayger.scoring_type || "NFL"}</Text>
             </View>
-            {isOwner && (
-              <View style={[styles.metaChip, styles.ownerChip]}>
-                <Ionicons name="shield-outline" size={14} color={Colors.dark.accentGold} />
-                <Text style={[styles.metaText, { color: Colors.dark.accentGold }]}>Owner</Text>
+            <View style={styles.metaChip}>
+              <Ionicons name="radio-button-on" size={10} color="#22C55E" />
+              <Text style={styles.metaText}>Open</Text>
+            </View>
+            {isCreator && (
+              <View style={[styles.metaChip, styles.creatorChip]}>
+                <Ionicons name="flash" size={14} color={Colors.dark.accentGold} />
+                <Text style={[styles.metaText, { color: Colors.dark.accentGold }]}>Creator</Text>
               </View>
             )}
           </View>
         </View>
       </View>
 
-      <InviteSection inviteCode={workspace.invite_code} />
+      <InviteSection inviteCode={swayger.invite_code} />
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Members</Text>
-          <Text style={styles.memberCount}>{members.length}</Text>
+          <Text style={styles.sectionTitle}>Participants</Text>
+          <Text style={styles.participantCount}>{participants.length}</Text>
         </View>
-        {membersLoading ? (
+        {participantsLoading ? (
           <ActivityIndicator color={Colors.dark.tint} style={{ marginVertical: 20 }} />
-        ) : members.length === 0 ? (
-          <Text style={styles.emptyMembersText}>No members yet.</Text>
+        ) : participants.length === 0 ? (
+          <Text style={styles.emptyParticipantsText}>No participants yet.</Text>
         ) : (
-          <View style={styles.membersList}>
-            {members.map((m) => (
-              <MemberItem key={m.id} member={m} />
+          <View style={styles.participantsList}>
+            {participants.map((p) => (
+              <ParticipantItem key={p.id} member={p} />
             ))}
           </View>
         )}
-      </View>
-
-      <View style={styles.section}>
-        <View style={styles.buttonsColumn}>
-          {isOwner && (
-            <Pressable
-              style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-              onPress={() => {}}
-            >
-              <Ionicons name="create-outline" size={20} color={Colors.dark.tint} />
-              <Text style={styles.actionBtnText}>Edit Workspace</Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
-            </Pressable>
-          )}
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-            onPress={() => {}}
-          >
-            <Ionicons name="people-outline" size={20} color={Colors.dark.tint} />
-            <Text style={styles.actionBtnText}>Manage Roster</Text>
-            <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.actionBtn, styles.actionBtnPrimary, pressed && styles.actionBtnPressed]}
-            onPress={() => {}}
-          >
-            <Ionicons name="play-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.actionBtnPrimaryText}>Start Weekly Session</Text>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
-          </Pressable>
-        </View>
       </View>
     </ScrollView>
   );
@@ -246,13 +243,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 8,
   },
-  workspaceName: {
+  swaygerTitle: {
     fontSize: 26,
     fontWeight: "bold" as const,
     color: Colors.dark.text,
   },
   headerMeta: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   metaChip: {
@@ -264,7 +262,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
   },
-  ownerChip: {
+  creatorChip: {
     backgroundColor: "rgba(245, 166, 35, 0.1)",
   },
   metaText: {
@@ -289,26 +287,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
   },
-  memberCount: {
+  participantCount: {
     fontSize: 14,
     color: Colors.dark.tabIconDefault,
     marginBottom: 12,
   },
   inviteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     backgroundColor: Colors.dark.surface,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.dark.border,
+    gap: 12,
   },
   inviteCode: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "bold" as const,
     color: Colors.dark.tint,
-    letterSpacing: 4,
+    letterSpacing: 6,
+    textAlign: "center",
+  },
+  inviteButtons: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
   },
   copyButton: {
     flexDirection: "row",
@@ -323,15 +325,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   copyText: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.dark.tint,
     fontWeight: "500" as const,
   },
-  emptyMembersText: {
+  emptyParticipantsText: {
     fontSize: 14,
     color: Colors.dark.tabIconDefault,
   },
-  membersList: {
+  participantsList: {
     gap: 8,
   },
   memberRow: {
@@ -373,7 +375,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  memberRoleBadgeOwner: {
+  memberRoleBadgeCreator: {
     backgroundColor: "rgba(245, 166, 35, 0.15)",
   },
   memberRoleText: {
@@ -381,39 +383,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
     fontWeight: "600" as const,
   },
-  memberRoleTextOwner: {
+  memberRoleTextCreator: {
     color: Colors.dark.accentGold,
-  },
-  buttonsColumn: {
-    gap: 10,
-  },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  actionBtnPrimary: {
-    backgroundColor: Colors.dark.accent,
-    borderColor: Colors.dark.accent,
-  },
-  actionBtnPressed: {
-    opacity: 0.8,
-  },
-  actionBtnText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "500" as const,
-    color: Colors.dark.text,
-  },
-  actionBtnPrimaryText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "600" as const,
-    color: "#FFFFFF",
   },
 });

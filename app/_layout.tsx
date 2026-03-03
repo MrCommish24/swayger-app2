@@ -7,7 +7,6 @@ import {
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -71,7 +70,7 @@ function RootLayoutNav() {
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="username-setup" options={{ headerShown: false }} />
       <Stack.Screen
-        name="workspace/[id]"
+        name="swayger/[id]"
         options={{ headerShown: false }}
       />
       <Stack.Screen

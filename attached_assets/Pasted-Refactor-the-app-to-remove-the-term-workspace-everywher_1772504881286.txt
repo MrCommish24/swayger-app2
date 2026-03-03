@@ -1,0 +1,120 @@
+Refactor the app to remove the term “workspace” everywhere. In this product, a “Swayger” IS the wager/bet, and users create a Swayger and invite people to it. Choose Option A: repurpose the existing “workspaces” + “workspace_members” tables and RPCs rather than renaming tables in Supabase.
+
+OPTION A MAPPING (do this consistently across UI + logic):
+
+“workspace” concept becomes “swayger” concept
+
+workspaces.name => swayger title
+
+workspaces.scoring_type => sport (default “NFL” if empty)
+
+workspaces.owner_id => swayger creator (created_by)
+
+workspaces.invite_code stays invite_code
+
+workspace_members becomes swayger participants
+
+role mapping: owner => creator, viewer/editor => participant (keep the column values as-is in DB, but label them correctly in UI)
+
+UI / COPY CHANGES (must remove “workspace” language completely):
+
+Dashboard title: “My Swaygers”
+
+Buttons:
+
+“+ Create Swayger”
+
+“Join Swayger”
+
+Create form:
+
+Field: Title (required)
+
+Field: Sport (default NFL; store in scoring_type column)
+
+Optional: Stake (store as description for now if no column exists; do NOT block flow on stake)
+
+Join form:
+
+Input: Invite Code
+
+Button: “Join Swayger”
+
+Replace “Members” with “Participants”
+
+Replace “Workspace Detail” with “Swayger Detail”
+
+ROUTES:
+
+Change routes to reflect Swayger:
+
+/swaygers (dashboard list)
+
+/swaygers/:id (detail)
+If you must keep backward compatibility, you can route /workspaces/* to the same components but DO NOT show “workspace” in the UI.
+
+SWAYGER DETAIL SCREEN (/swaygers/:id):
+Show:
+
+Title
+
+Sport
+
+Status (if status doesn’t exist yet, show “Open” as implied default)
+
+Creator email
+Invite section:
+
+Invite code displayed prominently
+
+“Copy code” button
+
+“Copy link” button (copies current URL)
+Participants section:
+
+List participant emails + roles, but label roles as Creator/Participant (even if stored as owner/viewer)
+
+FUNCTIONAL BEHAVIOR:
+Create Swayger:
+
+When user creates, call existing create_workspace RPC (do not rename DB function yet) but treat it as create_swayger in the UI:
+
+p_name = title
+
+p_scoring_type = sport (default NFL)
+
+p_invite_code = generated invite code (same logic as before)
+
+After creation, redirect to /swaygers/:id
+
+Ensure creator is shown as “Creator” in participants.
+
+Join Swayger:
+
+When user joins, call existing join_workspace_by_code RPC (do not rename DB function yet) but treat it as join_swayger in UI:
+
+invite code input
+
+If already_member true, redirect to /swaygers/:id
+
+If success, redirect to /swaygers/:id
+
+SECURITY / PERMISSIONS:
+
+Keep current RLS + helper function logic as-is (is_workspace_member) since Option A keeps tables.
+
+Enforce: only participants can view a Swayger and its participants list.
+
+Only creator can cancel/delete (if cancel exists). If cancel isn’t implemented, skip.
+
+DEFINITION OF DONE:
+
+No UI text says “workspace” anywhere.
+
+I can create a Swayger, see an invite code, copy link/code.
+
+Another user can join by invite code and then see the Swayger in “My Swaygers”.
+
+Swayger detail shows Participants with correct Creator/Participant labeling.
+
+After finishing, update navigation and empty states to match Swayger language (“No Swaygers yet. Create one or join with a code.”).
