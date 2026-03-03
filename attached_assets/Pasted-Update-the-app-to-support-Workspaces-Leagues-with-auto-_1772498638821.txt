@@ -1,0 +1,117 @@
+Update the app to support Workspaces (Leagues) with auto-generated invite codes and a Workspace Detail screen that displays the invite code and allows users to join by code.
+
+Context:
+Supabase auth (magic link) is working. Users can log in successfully. We are building Swayger from scratch and want clean architecture.
+
+Requirements:
+
+Workspaces with Auto-Generated Invite Code
+When a user creates a new Workspace:
+
+Automatically generate a short invite code (6–8 characters, uppercase letters and numbers, avoid confusing characters like O/0/I/1).
+
+The invite code must be unique across all workspaces.
+
+Store invite_code on the workspace record.
+
+The creator automatically becomes the Owner.
+
+Membership Model
+Add a workspace membership system so multiple users can belong to a workspace.
+
+Roles: owner, editor, viewer (start with owner and viewer but structure for future expansion).
+
+A user can belong to multiple workspaces.
+
+Store memberships in a separate table.
+
+Workspace Detail Screen
+Create a route like /workspaces/:id
+
+The screen must display:
+
+Workspace name
+
+Scoring type
+
+Invite section:
+
+Clearly display invite code
+
+Copy code button
+
+Optional copy invite link button
+
+Members section:
+
+List all members (email + role)
+
+Clearly indicate who is Owner
+
+Buttons:
+
+Edit workspace
+
+Manage roster (can be placeholder if not built)
+
+Start Weekly Session (can be placeholder)
+
+Join Workspace by Invite Code
+Add a “Join Workspace” button on the Dashboard.
+When clicked:
+
+Show modal or page with single input for invite code.
+
+On submit:
+
+Validate code exists.
+
+If valid, create membership for current user with role viewer.
+
+If already a member, show friendly message and redirect to workspace.
+
+If invalid, show clear error.
+
+Dashboard Updates
+Dashboard should show all workspaces where user is owner or member.
+Each card shows:
+
+Workspace name
+
+Role badge (Owner or Viewer)
+
+Button: Open
+
+Include:
+
+Create Workspace button
+
+Join Workspace button
+
+Database Structure
+Implement tables similar to:
+
+workspaces: id, owner_id, name, scoring_type, invite_code, created_at
+
+workspace_members: id, workspace_id, user_id, role, created_at
+
+Security
+Users can only:
+
+View workspaces they belong to.
+
+View members for workspaces they belong to.
+Invite codes should not be sequential or predictable.
+Handle all errors gracefully.
+
+Definition of Done:
+
+I can create a workspace and it generates an invite code automatically.
+
+I can view the workspace detail screen and copy the invite code.
+
+A second user can join using the invite code.
+
+Both users appear in the members list with correct roles.
+
+Dashboard reflects ownership and membership correctly.

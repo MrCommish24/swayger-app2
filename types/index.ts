@@ -7,6 +7,35 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface Workspace {
+  id: string;
+  owner_id: string;
+  name: string;
+  scoring_type: string;
+  invite_code: string;
+  created_at: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  role: "owner" | "editor" | "viewer";
+  created_at: string;
+}
+
+export interface WorkspaceMemberWithProfile extends WorkspaceMember {
+  profiles: {
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  } | null;
+}
+
+export interface WorkspaceWithRole extends Workspace {
+  role: "owner" | "editor" | "viewer";
+}
+
 export interface Swayger {
   id: string;
   title: string;

@@ -6,10 +6,11 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
-- **Auth**: Supabase email OTP (magic link) via `@supabase/supabase-js`
+- **Auth**: Supabase magic link via `@supabase/supabase-js`
+- **Data**: Supabase (workspaces, workspace_members, profiles tables)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
-- **Session Storage**: expo-secure-store (native), localStorage (web)
+- **Session Storage**: AsyncStorage (native), localStorage (web)
 
 ## Environment Variables
 
@@ -21,41 +22,54 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 ```
 app/
   _layout.tsx          # Root layout with providers + auth routing guard
-  auth.tsx             # Email OTP sign-in screen
+  auth.tsx             # Magic link sign-in screen
+  auth-callback.tsx    # Deep link callback for magic link auth
   username-setup.tsx   # First-login username selection
   (tabs)/
     _layout.tsx        # Tab navigator (Home, Create, Leaderboard, Profile)
-    index.tsx          # Home screen — shows user's swaygers from Supabase
-    create.tsx         # Create screen (placeholder)
+    index.tsx          # Dashboard — shows user's workspaces with Create/Join
+    create.tsx         # Create Workspace form
     leaderboard.tsx    # Leaderboard screen (placeholder)
     profile.tsx        # Profile screen with sign-out
+  workspace/
+    [id].tsx           # Workspace detail (invite code, members, actions)
   invite/
     [code].tsx         # Dynamic invite route
 components/            # Reusable components (ErrorBoundary, etc.)
 constants/
   colors.ts            # Dark theme color palette (brand colors)
 lib/
-  supabase.ts          # Supabase client initialization
+  supabase.ts          # Supabase client initialization (AsyncStorage adapter)
   auth-context.tsx     # Auth context provider (session, profile, routing)
+  workspace.ts         # Workspace CRUD functions (create, join, fetch)
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
-  index.ts             # TypeScript types: Profile, Swayger, Category
+  index.ts             # TypeScript types: Profile, Workspace, WorkspaceMember, etc.
+supabase-migrations/
+  001_workspaces.sql   # SQL for workspaces, workspace_members, profiles + RLS
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
-  storage.ts           # Storage interface
-shared/
-  schema.ts            # Drizzle schema + Zod validation
 ```
 
 ## Auth Flow
 
-1. Unauthenticated → `/auth` (email OTP sign-in)
-2. Authenticated, no profile → `/username-setup` (choose username)
-3. Authenticated + profile → `/(tabs)` (main app)
+1. Unauthenticated → `/auth` (magic link sign-in)
+2. Magic link tapped → `/auth-callback` (exchanges tokens, creates session)
+3. Authenticated, no profile → `/username-setup` (choose username)
+4. Authenticated + profile → `/(tabs)` (dashboard)
 
-Routing guard in `app/_layout.tsx` uses `useSegments` + `useRouter` + `useRootNavigationState` to redirect.
+Deep linking configured with scheme `swayger://` for magic link callbacks.
+
+## Workspace System
+
+- Users create workspaces with a name and scoring type
+- Each workspace gets a unique 6-char invite code (A-Z, 2-9, no confusing chars)
+- Creator becomes "owner" automatically
+- Other users join via invite code and become "viewer"
+- Roles: owner, editor, viewer (editor not yet used)
+- Workspace detail shows invite code, member list with roles, action buttons
 
 ## Theme (Brand Colors)
 
@@ -64,6 +78,14 @@ Routing guard in `app/_layout.tsx` uses `useSegments` + `useRouter` + `useRootNa
 - Accent/Tint: #1DA1F2 (cyan blue)
 - Accent Gold: #F5A623
 - Teal: #0D7377
+
+## Supabase Tables
+
+- `profiles` — user profiles (username, display_name, avatar_url)
+- `workspaces` — leagues (name, scoring_type, invite_code, owner_id)
+- `workspace_members` — memberships (workspace_id, user_id, role)
+
+All tables have RLS policies. Run `supabase-migrations/001_workspaces.sql` in Supabase SQL Editor.
 
 ## Workflows
 

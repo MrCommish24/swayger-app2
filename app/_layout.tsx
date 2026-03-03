@@ -71,6 +71,10 @@ function RootLayoutNav() {
       <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
       <Stack.Screen name="username-setup" options={{ headerShown: false }} />
       <Stack.Screen
+        name="workspace/[id]"
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="invite/[code]"
         options={{ title: "Invite", presentation: "modal" }}
       />
