@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,18 +19,17 @@ import Colors from "@/constants/colors";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-type AuthMode = "magic-link" | "password";
+type AuthStep = "enter-email" | "enter-code" | "password-login";
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [linkSent, setLinkSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const [authMode, setAuthMode] = useState<AuthMode>("password");
-  const [needsPassword, setNeedsPassword] = useState(false);
+  const [step, setStep] = useState<AuthStep>("enter-email");
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -43,7 +43,7 @@ export default function AuthScreen() {
     return Linking.createURL("auth-callback", { scheme: "swayger" });
   }, []);
 
-  async function handleSendLink() {
+  async function handleSendCode() {
     const trimmed = email.trim().toLowerCase();
     if (!trimmed) {
       showError("Please enter your email address.");
@@ -64,8 +64,33 @@ export default function AuthScreen() {
       if (error) {
         showError(error.message);
       } else {
-        setLinkSent(true);
+        setStep("enter-code");
         setCooldown(RESEND_COOLDOWN_SECONDS);
+        setOtpCode("");
+      }
+    } catch {
+      showError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyCode() {
+    const trimmed = email.trim().toLowerCase();
+    const code = otpCode.trim();
+    if (!code || code.length < 6) {
+      showError("Please enter the 6-digit code from your email.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: trimmed,
+        token: code,
+        type: "email",
+      });
+      if (error) {
+        showError(error.message);
       }
     } catch {
       showError("Something went wrong. Try again.");
@@ -91,41 +116,7 @@ export default function AuthScreen() {
         password,
       });
       if (error) {
-        if (error.message.includes("Invalid login credentials")) {
-          setNeedsPassword(true);
-          showError(
-            "Wrong password, or you haven't set one yet. Use the magic link to sign in first, then set a password from settings."
-          );
-        } else {
-          showError(error.message);
-        }
-      }
-    } catch {
-      showError("Something went wrong. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSetPassword() {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed) {
-      showError("Please enter your email address first.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const redirectTo = getRedirectUrl();
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
-        redirectTo,
-      });
-      if (error) {
         showError(error.message);
-      } else {
-        showError(
-          "Password reset email sent! Check your inbox, click the link, then come back and sign in with your new password."
-        );
-        setNeedsPassword(false);
       }
     } catch {
       showError("Something went wrong. Try again.");
@@ -136,7 +127,7 @@ export default function AuthScreen() {
 
   async function handleResend() {
     if (cooldown > 0) return;
-    await handleSendLink();
+    await handleSendCode();
   }
 
   return (
@@ -144,158 +135,176 @@ export default function AuthScreen() {
       style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.content}>
-        <Ionicons name="flash" size={48} color={Colors.dark.tint} />
-        <Text style={styles.title}>Swayger</Text>
-        <Text style={styles.subtitle}>Sign in to get started</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.content}>
+          <Ionicons name="flash" size={48} color={Colors.dark.tint} />
+          <Text style={styles.title}>Swayger</Text>
+          <Text style={styles.subtitle}>Sign in to get started</Text>
 
-        {authMode === "password" ? (
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Email address"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-              editable={!loading}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password"
-              editable={!loading}
-            />
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                pressed && styles.buttonPressed,
-                loading && styles.buttonDisabled,
-              ]}
-              onPress={handlePasswordSignIn}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
-              )}
-            </Pressable>
-            {needsPassword && (
+          {step === "enter-email" && (
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email address"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                editable={!loading}
+              />
               <Pressable
                 style={({ pressed }) => [
-                  styles.secondaryButton,
+                  styles.button,
                   pressed && styles.buttonPressed,
                   loading && styles.buttonDisabled,
                 ]}
-                onPress={handleSetPassword}
+                onPress={handleSendCode}
                 disabled={loading}
               >
-                <Text style={styles.secondaryButtonText}>
-                  Send password reset email
-                </Text>
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Send Sign-In Code</Text>
+                )}
               </Pressable>
-            )}
-            <Pressable
-              style={styles.linkButton}
-              onPress={() => setAuthMode("magic-link")}
-            >
-              <Text style={styles.linkText}>Use magic link instead</Text>
-            </Pressable>
-          </View>
-        ) : !linkSent ? (
-          <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Email address"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-              editable={!loading}
-            />
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                pressed && styles.buttonPressed,
-                loading && styles.buttonDisabled,
-              ]}
-              onPress={handleSendLink}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.buttonText}>Send Login Link</Text>
-              )}
-            </Pressable>
-            <Pressable
-              style={styles.linkButton}
-              onPress={() => setAuthMode("password")}
-            >
-              <Text style={styles.linkText}>Use password instead</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.form}>
-            <View style={styles.sentContainer}>
-              <Ionicons name="mail-outline" size={32} color={Colors.dark.tint} />
-              <Text style={styles.sentTitle}>Check your email</Text>
-              <Text style={styles.sentTo}>
-                We sent a login link to {email}. Tap the link in the email to sign in.
-              </Text>
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => setStep("password-login")}
+              >
+                <Text style={styles.linkText}>Sign in with password</Text>
+              </Pressable>
             </View>
+          )}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                pressed && cooldown === 0 && styles.buttonPressed,
-                cooldown > 0 && styles.buttonDisabled,
-                loading && styles.buttonDisabled,
-              ]}
-              onPress={handleResend}
-              disabled={cooldown > 0 || loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : cooldown > 0 ? (
-                <Text style={styles.buttonText}>Resend in {cooldown}s</Text>
-              ) : (
-                <Text style={styles.buttonText}>Resend Link</Text>
-              )}
-            </Pressable>
+          {step === "enter-code" && (
+            <View style={styles.form}>
+              <View style={styles.sentContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={32}
+                  color={Colors.dark.tint}
+                />
+                <Text style={styles.sentTitle}>Enter the code</Text>
+                <Text style={styles.sentTo}>
+                  We sent a 6-digit code to {email}. Enter it below.
+                </Text>
+              </View>
 
-            <Pressable
-              style={styles.linkButton}
-              onPress={() => {
-                setLinkSent(false);
-                setCooldown(0);
-              }}
-            >
-              <Text style={styles.linkText}>Use a different email</Text>
-            </Pressable>
+              <TextInput
+                style={[styles.input, styles.codeInput]}
+                placeholder="000000"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={otpCode}
+                onChangeText={(text) =>
+                  setOtpCode(text.replace(/[^0-9]/g, "").slice(0, 6))
+                }
+                keyboardType="number-pad"
+                maxLength={6}
+                editable={!loading}
+                autoFocus
+              />
 
-            <Pressable
-              style={styles.linkButton}
-              onPress={() => {
-                setLinkSent(false);
-                setAuthMode("password");
-              }}
-            >
-              <Text style={styles.linkText}>Use password instead</Text>
-            </Pressable>
-          </View>
-        )}
-      </View>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed,
+                  (loading || otpCode.length < 6) && styles.buttonDisabled,
+                ]}
+                onPress={handleVerifyCode}
+                disabled={loading || otpCode.length < 6}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify Code</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && cooldown === 0 && styles.buttonPressed,
+                  (cooldown > 0 || loading) && styles.buttonDisabled,
+                ]}
+                onPress={handleResend}
+                disabled={cooldown > 0 || loading}
+              >
+                {cooldown > 0 ? (
+                  <Text style={styles.secondaryButtonText}>
+                    Resend in {cooldown}s
+                  </Text>
+                ) : (
+                  <Text style={styles.secondaryButtonText}>Resend Code</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => {
+                  setStep("enter-email");
+                  setOtpCode("");
+                  setCooldown(0);
+                }}
+              >
+                <Text style={styles.linkText}>Use a different email</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {step === "password-login" && (
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email address"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                editable={!loading}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete="password"
+                editable={!loading}
+              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed,
+                  loading && styles.buttonDisabled,
+                ]}
+                onPress={handlePasswordSignIn}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Sign In</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => setStep("enter-email")}
+              >
+                <Text style={styles.linkText}>Use email code instead</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -304,6 +313,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   content: {
     flex: 1,
@@ -352,6 +364,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: Colors.dark.text,
+  },
+  codeInput: {
+    textAlign: "center",
+    fontSize: 24,
+    letterSpacing: 8,
   },
   button: {
     backgroundColor: Colors.dark.accent,
