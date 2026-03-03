@@ -18,13 +18,17 @@ import Colors from "@/constants/colors";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
+type AuthMode = "magic-link" | "password";
+
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [authMode, setAuthMode] = useState<AuthMode>("password");
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -69,6 +73,42 @@ export default function AuthScreen() {
     }
   }
 
+  async function handlePasswordSignIn() {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) {
+      showError("Please enter your email address.");
+      return;
+    }
+    if (!password) {
+      showError("Please enter your password.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmed,
+        password,
+      });
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: trimmed,
+            password,
+          });
+          if (signUpError) {
+            showError(signUpError.message);
+          }
+        } else {
+          showError(error.message);
+        }
+      }
+    } catch {
+      showError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleResend() {
     if (cooldown > 0) return;
     await handleSendLink();
@@ -84,7 +124,53 @@ export default function AuthScreen() {
         <Text style={styles.title}>Swayger</Text>
         <Text style={styles.subtitle}>Sign in to get started</Text>
 
-        {!linkSent ? (
+        {authMode === "password" ? (
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email address"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+              editable={!loading}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="password"
+              editable={!loading}
+            />
+            <Pressable
+              style={({ pressed }) => [
+                styles.button,
+                pressed && styles.buttonPressed,
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handlePasswordSignIn}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>Sign In</Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.linkButton}
+              onPress={() => setAuthMode("magic-link")}
+            >
+              <Text style={styles.linkText}>Use magic link instead</Text>
+            </Pressable>
+          </View>
+        ) : !linkSent ? (
           <View style={styles.form}>
             <TextInput
               style={styles.input}
@@ -111,6 +197,12 @@ export default function AuthScreen() {
               ) : (
                 <Text style={styles.buttonText}>Send Login Link</Text>
               )}
+            </Pressable>
+            <Pressable
+              style={styles.linkButton}
+              onPress={() => setAuthMode("password")}
+            >
+              <Text style={styles.linkText}>Use password instead</Text>
             </Pressable>
           </View>
         ) : (
@@ -150,6 +242,16 @@ export default function AuthScreen() {
               }}
             >
               <Text style={styles.linkText}>Use a different email</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.linkButton}
+              onPress={() => {
+                setLinkSent(false);
+                setAuthMode("password");
+              }}
+            >
+              <Text style={styles.linkText}>Use password instead</Text>
             </Pressable>
           </View>
         )}
