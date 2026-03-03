@@ -79,7 +79,7 @@ export default function AuthScreen() {
     const trimmed = email.trim().toLowerCase();
     const code = otpCode.trim();
     if (!code || code.length < 6) {
-      showError("Please enter the 6-digit code from your email.");
+      showError("Please enter the code from your email.");
       return;
     }
     setLoading(true);
@@ -201,10 +201,10 @@ export default function AuthScreen() {
                 placeholderTextColor={Colors.dark.tabIconDefault}
                 value={otpCode}
                 onChangeText={(text) =>
-                  setOtpCode(text.replace(/[^0-9]/g, "").slice(0, 6))
+                  setOtpCode(text.replace(/[^0-9]/g, "").slice(0, 8))
                 }
                 keyboardType="number-pad"
-                maxLength={6}
+                maxLength={8}
                 editable={!loading}
                 autoFocus
               />
@@ -217,6 +217,7 @@ export default function AuthScreen() {
                 ]}
                 onPress={handleVerifyCode}
                 disabled={loading || otpCode.length < 6}
+                testID="verify-code-button"
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
