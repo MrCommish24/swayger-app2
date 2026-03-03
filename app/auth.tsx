@@ -35,7 +35,7 @@ export default function AuthScreen() {
   }, [cooldown]);
 
   const getRedirectUrl = useCallback(() => {
-    return Linking.createURL("auth-callback");
+    return Linking.createURL("auth-callback", { scheme: "swayger" });
   }, []);
 
   async function handleSendLink() {

@@ -34,7 +34,7 @@ function useProtectedRoute() {
 
     if (inAuthCallback) return;
 
-    if (!session && !inAuthGroup) {
+    if (!session && !inAuthGroup && !inAuthCallback) {
       router.replace("/auth");
     } else if (session && needsUsername && !profileError && !inUsernameSetup) {
       router.replace("/username-setup");
