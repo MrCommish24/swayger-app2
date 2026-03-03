@@ -21,7 +21,7 @@ import Colors from "@/constants/colors";
 export default function UsernameSetupScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user, setProfile, setNeedsUsername } = useAuth();
+  const { user, setProfile, setNeedsUsername, signOut } = useAuth();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -127,6 +127,10 @@ export default function UsernameSetupScreen() {
               <Text style={styles.buttonText}>Continue</Text>
             )}
           </Pressable>
+
+          <Pressable style={styles.linkButton} onPress={signOut}>
+            <Text style={styles.linkText}>Sign out</Text>
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -196,5 +200,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600" as const,
+  },
+  linkButton: {
+    alignItems: "center" as const,
+    paddingVertical: 8,
+  },
+  linkText: {
+    color: Colors.dark.tint,
+    fontSize: 14,
   },
 });
