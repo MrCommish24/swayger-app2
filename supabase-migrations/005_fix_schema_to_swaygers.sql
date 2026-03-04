@@ -568,7 +568,11 @@ BEGIN
       COALESCE(w.stake_units, 1),
       COALESCE(w.creator_pick, 'No pick'),
       w.opponent_pick,
-      COALESCE(w.status, 'pending_invite'),
+      (CASE
+        WHEN w.status IN ('open','draft') THEN 'pending_invite'
+        WHEN w.status IN ('pending_invite','active','settlement_proposed','settled','declined','canceled','expired','expired_active') THEN w.status
+        ELSE 'pending_invite'
+      END)::public.swayger_status,
       COALESCE(w.expires_at, now() + interval '7 days'),
       w.settled_outcome,
       w.created_at,
