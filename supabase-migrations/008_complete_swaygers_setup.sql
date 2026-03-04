@@ -147,33 +147,31 @@ CREATE INDEX IF NOT EXISTS idx_swaygers_opponent ON swaygers(opponent_id);
 CREATE INDEX IF NOT EXISTS idx_swaygers_status ON swaygers(status);
 
 -- ── 5. swayger_invites table ────────────────────────────────────────────────
+-- Drop and recreate to ensure clean schema (invite codes are re-migrated below).
 
-CREATE TABLE IF NOT EXISTS swayger_invites (
+DROP TABLE IF EXISTS swayger_invites CASCADE;
+
+CREATE TABLE swayger_invites (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   swayger_id UUID NOT NULL REFERENCES swaygers(id) ON DELETE CASCADE,
   invite_code TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Fix: if swayger_invites has extra NOT NULL columns from a prior migration,
--- make them nullable so our INSERT (swayger_id, invite_code) doesn't fail.
-DO $$
-DECLARE
-  v_col RECORD;
-BEGIN
-  FOR v_col IN
-    SELECT column_name FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'swayger_invites'
-    AND is_nullable = 'NO'
-    AND column_name NOT IN ('id', 'swayger_id', 'invite_code', 'created_at')
-  LOOP
-    EXECUTE format('ALTER TABLE swayger_invites ALTER COLUMN %I DROP NOT NULL', v_col.column_name);
-    RAISE NOTICE 'Made swayger_invites.% nullable', v_col.column_name;
-  END LOOP;
-END $$;
-
 CREATE INDEX IF NOT EXISTS idx_swayger_invites_code ON swayger_invites(invite_code);
 CREATE INDEX IF NOT EXISTS idx_swayger_invites_swayger ON swayger_invites(swayger_id);
+
+ALTER TABLE swayger_invites ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Authenticated can look up invites"
+  ON swayger_invites FOR SELECT
+  USING (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Creator can insert invites"
+  ON swayger_invites FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM swaygers WHERE id = swayger_id AND creator_id = auth.uid())
+  );
 
 -- ── 6. settlement_proposals table ───────────────────────────────────────────
 
