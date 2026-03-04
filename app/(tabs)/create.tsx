@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   categoryOption: {
-    flexBasis: "30%",
+    flexBasis: "46%",
     flexGrow: 1,
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     flexDirection: "row",
   },
   categoryOptionActive: {
