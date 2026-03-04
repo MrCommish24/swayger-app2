@@ -155,6 +155,23 @@ CREATE TABLE IF NOT EXISTS swayger_invites (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Fix: if swayger_invites has extra NOT NULL columns from a prior migration,
+-- make them nullable so our INSERT (swayger_id, invite_code) doesn't fail.
+DO $$
+DECLARE
+  v_col RECORD;
+BEGIN
+  FOR v_col IN
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'swayger_invites'
+    AND is_nullable = 'NO'
+    AND column_name NOT IN ('id', 'swayger_id', 'invite_code', 'created_at')
+  LOOP
+    EXECUTE format('ALTER TABLE swayger_invites ALTER COLUMN %I DROP NOT NULL', v_col.column_name);
+    RAISE NOTICE 'Made swayger_invites.% nullable', v_col.column_name;
+  END LOOP;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_swayger_invites_code ON swayger_invites(invite_code);
 CREATE INDEX IF NOT EXISTS idx_swayger_invites_swayger ON swayger_invites(swayger_id);
 
