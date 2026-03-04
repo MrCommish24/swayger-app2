@@ -1,0 +1,151 @@
+Implement Swayger gameplay v1: add picks/legs, accept/decline flow, and real status transitions.
+
+Current state:
+
+“Swaygers” are stored in the existing workspaces table (Option A mapping).
+
+Participants are stored in workspace_members.
+
+Create Swayger screen collects Title, Sport, Stake (stake currently optional/free text).
+
+Swayger Detail screen shows invite code + participants, but there is no wager content or accept/decline mechanics yet.
+
+Goal:
+A Swayger should contain 1+ “picks/legs” (the actual wager), and non-creators should be able to accept or decline it. The Swayger status should update and the UI should reflect state.
+
+Database (Supabase) — add wager content
+Create new table(s) for wager content (do NOT rename existing tables):
+A) swayger_legs (recommended)
+
+id (uuid, pk)
+
+swayger_id (uuid, fk to workspaces.id)
+
+created_by (uuid, fk auth.users)
+
+market_type (text) e.g., player_prop, spread, moneyline, team_total, custom
+
+selection (text) required (e.g., “Josh Allen OVER 1.5 Pass TDs”)
+
+odds (text optional) e.g., “-110”
+
+line (text optional) e.g., “1.5”, “-3.5”
+
+notes (text optional)
+
+created_at
+
+B) swayger_state (if you need status without changing existing workspaces schema)
+Preferred: add columns to workspaces if missing:
+
+status (text) default “open”
+
+stake_text (text) OR stake_amount numeric + currency (keep it simple)
+
+expires_at (timestamp optional)
+
+If you can’t safely alter workspaces, create a swayger_meta table keyed by swayger_id. But prefer adding columns.
+
+RLS policies
+
+Only participants (workspace_members) can SELECT legs for a swayger they belong to.
+
+Only the creator (workspaces.owner_id) can INSERT/UPDATE/DELETE legs while status is “draft” or “open”.
+
+After a swayger is “accepted”, legs become read-only.
+
+Create Swayger screen improvements
+Update Create Swayger UI to capture wager content:
+
+Title (required)
+
+Sport (default NFL)
+
+Stake (optional)
+
+Add legs section:
+
+At least 1 leg required
+
+Fields: market_type dropdown + selection text + odds optional + line optional
+
+“+ Add another leg” button
+
+On submit:
+
+Create swayger (via existing create_workspace RPC or new RPC if needed)
+
+Insert legs tied to the created swayger
+
+Set status = “open” (or “draft” with a Publish button, your choice, but must be usable end-to-end)
+
+Redirect to Swayger Detail
+
+Swayger Detail screen upgrades
+Display wager content prominently:
+
+Status chip (Open / Accepted / Declined / Canceled)
+
+Stake
+
+Legs list (each leg shows market_type, selection, line, odds)
+Add action buttons based on identity + status:
+
+If current user is NOT creator and status is “open”:
+
+“Accept Swayger”
+
+“Decline” (Decline should record decision; Swayger can remain open for others OR close it—choose one behavior and implement it consistently)
+
+If creator and status is “open”:
+
+“Edit Swayger” (allows editing legs + stake)
+
+“Cancel Swayger” (sets status canceled)
+
+If accepted:
+
+Show who accepted (the challenger) clearly in Participants list
+
+Acceptance/Decline mechanics (must be real, not just UI)
+Implement a clean state transition model:
+
+“Accept”:
+
+Create or update a participant record for the accepting user (workspace_members) with role viewer/editor (keep DB role values) but show UI label “Challenger/Participant”.
+
+Set swayger status to “accepted”
+
+Lock legs from editing
+
+“Decline”:
+
+Record a decline decision. If there is no decision column on workspace_members, add a new table swayger_responses:
+
+id, swayger_id, user_id, response (accepted/declined), created_at
+
+UI should show “You declined this Swayger” if applicable.
+
+Decide behavior: either keep swayger open for others OR mark as declined if it was a direct 1:1 invite. Implement the simpler one: keep open, but show “Declined by you”.
+
+Make it shareable + clear
+
+Keep Copy Code and Copy Link.
+
+If user opens a swayger link and they are not a participant yet:
+
+Show a “Join this Swayger” button that calls join_workspace_by_code behind the scenes, then reveals accept/decline buttons.
+
+Definition of done
+
+I can create a Swayger with at least 1 leg and see legs on the detail screen after refresh.
+
+A second user can open via link/code, join, and accept.
+
+Status updates to Accepted and editing is locked.
+
+UI reflects creator vs challenger clearly.
+
+Keep everything in the existing Expo Router structure and use React Query for all reads/writes. Add loading + error states and no fake success messages.
+
+If you run this and the agent asks “Should decline close the Swayger or keep it open?”, choose: KEEP IT OPEN (v1).

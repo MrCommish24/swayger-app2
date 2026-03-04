@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { fetchMySwaygers, joinSwaygerByCode, displayRole } from "@/lib/swayger";
+import { fetchMySwaygers, joinSwaygerByCode, displayRole, displayStatus } from "@/lib/swayger";
 import { SwaygerWithRole } from "@/types";
 import Colors from "@/constants/colors";
 
@@ -99,8 +99,8 @@ export default function DashboardScreen() {
             <Text style={styles.detailText}>{item.scoring_type || "NFL"}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Ionicons name="radio-button-on" size={10} color="#22C55E" />
-            <Text style={styles.detailText}>Open</Text>
+            <Ionicons name="radio-button-on" size={10} color={displayStatus(item.status || "open").color} />
+            <Text style={[styles.detailText, { color: displayStatus(item.status || "open").color }]}>{displayStatus(item.status || "open").label}</Text>
           </View>
         </View>
       </Pressable>

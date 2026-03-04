@@ -1,8 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import {
   SwaygerData,
+  SwaygerLeg,
+  SwaygerResponse,
   SwaygerParticipantWithProfile,
   SwaygerWithRole,
+  LegInput,
 } from "@/types";
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -32,7 +35,9 @@ async function generateUniqueInviteCode(): Promise<string> {
 export async function createSwayger(
   title: string,
   sport: string,
-  _userId: string
+  userId: string,
+  stakeText?: string,
+  legs?: LegInput[]
 ): Promise<{ swayger: SwaygerData | null; error: string | null }> {
   const inviteCode = await generateUniqueInviteCode();
 
@@ -45,6 +50,36 @@ export async function createSwayger(
   if (error) return { swayger: null, error: error.message };
 
   const swaygerId = data as string;
+
+  if (stakeText?.trim()) {
+    await supabase
+      .from("workspaces")
+      .update({ stake_text: stakeText.trim() })
+      .eq("id", swaygerId);
+  }
+
+  if (legs && legs.length > 0) {
+    const legRows = legs
+      .filter((l) => l.selection.trim())
+      .map((l) => ({
+        swayger_id: swaygerId,
+        created_by: userId,
+        market_type: l.market_type || "custom",
+        selection: l.selection.trim(),
+        odds: l.odds.trim() || null,
+        line: l.line.trim() || null,
+      }));
+
+    if (legRows.length > 0) {
+      const { error: legError } = await supabase
+        .from("swayger_legs")
+        .insert(legRows);
+
+      if (legError) {
+        return { swayger: null, error: `Created swayger but failed to add legs: ${legError.message}` };
+      }
+    }
+  }
 
   const { data: swayger, error: fetchError } = await supabase
     .from("workspaces")
@@ -98,6 +133,31 @@ export async function fetchSwayger(
   return data as SwaygerData;
 }
 
+export async function fetchSwaygerLegs(
+  swaygerId: string
+): Promise<SwaygerLeg[]> {
+  const { data, error } = await supabase
+    .from("swayger_legs")
+    .select("*")
+    .eq("swayger_id", swaygerId)
+    .order("created_at", { ascending: true });
+
+  if (error || !data) return [];
+  return data as SwaygerLeg[];
+}
+
+export async function fetchSwaygerResponses(
+  swaygerId: string
+): Promise<SwaygerResponse[]> {
+  const { data, error } = await supabase
+    .from("swayger_responses")
+    .select("*")
+    .eq("swayger_id", swaygerId);
+
+  if (error || !data) return [];
+  return data as SwaygerResponse[];
+}
+
 export async function fetchSwaygerParticipants(
   swaygerId: string
 ): Promise<SwaygerParticipantWithProfile[]> {
@@ -109,6 +169,42 @@ export async function fetchSwaygerParticipants(
 
   if (error || !data) return [];
   return data as SwaygerParticipantWithProfile[];
+}
+
+export async function acceptSwayger(
+  swaygerId: string
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc("accept_swayger", {
+    p_swayger_id: swaygerId,
+  });
+
+  if (error) return { error: error.message };
+  const result = data as { error: string | null };
+  return { error: result.error };
+}
+
+export async function declineSwayger(
+  swaygerId: string
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc("decline_swayger", {
+    p_swayger_id: swaygerId,
+  });
+
+  if (error) return { error: error.message };
+  const result = data as { error: string | null };
+  return { error: result.error };
+}
+
+export async function cancelSwayger(
+  swaygerId: string
+): Promise<{ error: string | null }> {
+  const { data, error } = await supabase.rpc("cancel_swayger", {
+    p_swayger_id: swaygerId,
+  });
+
+  if (error) return { error: error.message };
+  const result = data as { error: string | null };
+  return { error: result.error };
 }
 
 export async function joinSwaygerByCode(
@@ -133,4 +229,31 @@ export async function joinSwaygerByCode(
 export function displayRole(dbRole: string): string {
   if (dbRole === "owner") return "Creator";
   return "Participant";
+}
+
+export function displayStatus(status: string): { label: string; color: string } {
+  switch (status) {
+    case "open":
+      return { label: "Open", color: "#22C55E" };
+    case "accepted":
+      return { label: "Accepted", color: "#3B82F6" };
+    case "declined":
+      return { label: "Declined", color: "#EF4444" };
+    case "canceled":
+      return { label: "Canceled", color: "#6B7280" };
+    default:
+      return { label: status, color: "#8B95A5" };
+  }
+}
+
+export function displayMarketType(mt: string): string {
+  switch (mt) {
+    case "player_prop": return "Player Prop";
+    case "spread": return "Spread";
+    case "moneyline": return "Moneyline";
+    case "team_total": return "Team Total";
+    case "over_under": return "Over/Under";
+    case "custom": return "Custom";
+    default: return mt;
+  }
 }

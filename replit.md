@@ -7,7 +7,7 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
 - **Auth**: Supabase OTP code + magic link + password sign-in via `@supabase/supabase-js`
-- **Data**: Supabase (workspaces, workspace_members, profiles tables — labeled as "Swaygers" and "Participants" in UI)
+- **Data**: Supabase (workspaces, workspace_members, profiles, swayger_legs, swayger_responses tables — labeled as "Swaygers" and "Participants" in UI)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
 - **Session Storage**: AsyncStorage (native), localStorage (web)
@@ -28,11 +28,11 @@ app/
   (tabs)/
     _layout.tsx        # Tab navigator (Swaygers, Create, Leaderboard, Profile)
     index.tsx          # Dashboard — "My Swaygers" with Create/Join buttons
-    create.tsx         # Create Swayger form (title, sport, stake)
+    create.tsx         # Create Swayger form (title, sport, stake, legs)
     leaderboard.tsx    # Leaderboard screen (placeholder)
     profile.tsx        # Profile screen with set password + sign-out
   swayger/
-    [id].tsx           # Swayger detail (invite code/link, participants)
+    [id].tsx           # Swayger detail (status, stake, legs, accept/decline, invite, participants)
   invite/
     [code].tsx         # Dynamic invite route
 components/            # Reusable components (ErrorBoundary, etc.)
@@ -41,14 +41,15 @@ constants/
 lib/
   supabase.ts          # Supabase client initialization (AsyncStorage adapter)
   auth-context.tsx     # Auth context provider (session, profile, routing)
-  swayger.ts           # Swayger CRUD functions (create, join, fetch)
+  swayger.ts           # Swayger CRUD + gameplay functions (create, join, fetch, accept, decline, cancel)
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
-  index.ts             # TypeScript types: Profile, SwaygerData, SwaygerParticipant, etc.
+  index.ts             # TypeScript types: Profile, SwaygerData, SwaygerLeg, SwaygerResponse, LegInput, etc.
 supabase-migrations/
   001_workspaces.sql   # SQL for workspaces, workspace_members, profiles + RLS
   002_fix_rls_recursion.sql # Fix RLS recursion with SECURITY DEFINER helper
+  003_swayger_gameplay.sql  # Adds status/stake to workspaces, creates swayger_legs + swayger_responses + RPCs
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
@@ -66,12 +67,29 @@ Deep linking configured with scheme `swayger://` for magic link callbacks.
 ## Swayger System
 
 - **Concept**: A "Swayger" is a wager/bet. Users create Swaygers and invite participants.
-- Users create a Swayger with a title and sport (NFL, NBA, MLB, Soccer, NHL, Other)
+- Users create a Swayger with title, sport (NFL/NBA/MLB/Soccer/NHL/Other), optional stake text, and 1+ pick legs
+- Each leg has: market type (Player Prop, Spread, Moneyline, Over/Under, Team Total, Custom), selection text, optional line and odds
 - Each Swayger gets a unique invite code (6-8 chars, A-Z, 2-9)
 - Creator becomes "owner" in DB (displayed as "Creator" in UI)
 - Other users join via invite code and become "viewer" in DB (displayed as "Participant" in UI)
-- Swayger detail shows invite code + copy link, participants with Creator/Participant labels
-- Status shown as "Open" (implied default)
+- Non-creators can Accept or Decline a Swayger while it's open
+- Accepting sets status to "accepted" and locks legs from editing; the acceptor is labeled "Challenger"
+- Declining records the decision but keeps the Swayger open for others ("Declined by you" banner)
+- Creator can cancel an open Swayger (sets status to "canceled")
+- Status chips: Open (green), Accepted (blue), Declined (red), Canceled (gray)
+
+## Gameplay v1 Tables
+
+- `swayger_legs` — pick legs (swayger_id, market_type, selection, odds, line, notes)
+- `swayger_responses` — accept/decline decisions per user (swayger_id, user_id, response)
+- `workspaces.status` — open | accepted | canceled (default 'open')
+- `workspaces.stake_text` — optional free-text stake description
+
+## Gameplay RPCs (SECURITY DEFINER)
+
+- `accept_swayger(p_swayger_id)` — records acceptance, sets status to 'accepted'
+- `decline_swayger(p_swayger_id)` — records decline, keeps swayger open
+- `cancel_swayger(p_swayger_id)` — creator only, sets status to 'canceled'
 
 ## DB → UI Mapping (Option A)
 
@@ -81,7 +99,7 @@ Deep linking configured with scheme `swayger://` for magic link callbacks.
 - `workspaces.owner_id` → Creator
 - `workspace_members` → Participants
 - DB role `owner` → UI label "Creator"
-- DB role `viewer`/`editor` → UI label "Participant"
+- DB role `viewer`/`editor` → UI label "Participant" (or "Challenger" if accepted)
 - RPC functions `create_workspace` / `join_workspace_by_code` still used (DB names unchanged)
 
 ## Theme (Brand Colors)
@@ -95,11 +113,13 @@ Deep linking configured with scheme `swayger://` for magic link callbacks.
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
-- `workspaces` — swaygers (name, scoring_type, invite_code, owner_id)
+- `workspaces` — swaygers (name, scoring_type, invite_code, owner_id, status, stake_text)
 - `workspace_members` — participants (workspace_id, user_id, role)
+- `swayger_legs` — pick legs (swayger_id, market_type, selection, odds, line)
+- `swayger_responses` — accept/decline tracking (swayger_id, user_id, response)
 
 RLS uses `is_workspace_member()` SECURITY DEFINER function to avoid recursion.
-Run both migration files in Supabase SQL Editor: `001_workspaces.sql` then `002_fix_rls_recursion.sql`.
+Run all 3 migration files in Supabase SQL Editor in order: `001_workspaces.sql`, `002_fix_rls_recursion.sql`, `003_swayger_gameplay.sql`.
 
 ## Workflows
 

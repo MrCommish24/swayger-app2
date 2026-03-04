@@ -13,6 +13,28 @@ export interface SwaygerData {
   name: string;
   scoring_type: string;
   invite_code: string;
+  status: string;
+  stake_text: string | null;
+  created_at: string;
+}
+
+export interface SwaygerLeg {
+  id: string;
+  swayger_id: string;
+  created_by: string;
+  market_type: string;
+  selection: string;
+  odds: string | null;
+  line: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface SwaygerResponse {
+  id: string;
+  swayger_id: string;
+  user_id: string;
+  response: "accepted" | "declined";
   created_at: string;
 }
 
@@ -34,4 +56,11 @@ export interface SwaygerParticipantWithProfile extends SwaygerParticipant {
 
 export interface SwaygerWithRole extends SwaygerData {
   role: "owner" | "editor" | "viewer";
+}
+
+export interface LegInput {
+  market_type: string;
+  selection: string;
+  odds: string;
+  line: string;
 }
