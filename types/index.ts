@@ -19,27 +19,28 @@ export type SwaygerStatus =
 
 export interface SwaygerData {
   id: string;
-  owner_id: string;
+  creator_id: string;
   opponent_id: string | null;
-  name: string;
+  title: string;
   description: string | null;
   category: string;
   stake_units: number;
-  creator_pick: string | null;
+  creator_pick: string;
   opponent_pick: string | null;
   status: SwaygerStatus;
-  invite_code: string;
-  expires_at: string | null;
+  expires_at: string;
   source_swayger_id: string | null;
   rematch_type: string | null;
   settled_outcome: string | null;
-  scoring_type: string | null;
   created_at: string;
-  updated_at: string | null;
+  updated_at: string;
 }
 
-export interface SwaygerWithRole extends SwaygerData {
-  role: "owner" | "editor" | "viewer";
+export interface SwaygerInvite {
+  id: string;
+  swayger_id: string;
+  invite_code: string;
+  created_at: string;
 }
 
 export interface SettlementProposal {
@@ -51,20 +52,4 @@ export interface SettlementProposal {
   opponent_confirmed: boolean;
   created_at: string;
   updated_at: string | null;
-}
-
-export interface SwaygerParticipant {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  role: "owner" | "editor" | "viewer";
-  created_at: string;
-}
-
-export interface SwaygerParticipantWithProfile extends SwaygerParticipant {
-  profiles: {
-    username: string;
-    display_name: string | null;
-    avatar_url: string | null;
-  } | null;
 }

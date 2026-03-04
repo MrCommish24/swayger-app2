@@ -1,0 +1,62 @@
+We found the root cause of schema-verify failures: the v1 migration is adding Swayger fields/RPCs to a template table named `workspaces` and using `workspace_members`, but the app (and intended architecture) should use a dedicated `swaygers` table.
+
+Fix this by moving v1 to a clean `swaygers`-first schema.
+
+Deliverables:
+
+1) Create a new migration: supabase-migrations/005_fix_schema_to_swaygers.sql (safe + additive)
+   - Create table public.swaygers with columns:
+     id uuid pk default gen_random_uuid()
+     creator_id uuid not null references auth.users(id)
+     opponent_id uuid null references auth.users(id)
+     title text not null
+     description text null
+     category text not null default 'Other'
+     stake_units int not null default 1
+     creator_pick text not null
+     opponent_pick text null
+     status text not null default 'pending_invite'
+     expires_at timestamptz not null
+     source_swayger_id uuid null references swaygers(id)
+     rematch_type text null
+     settled_outcome text null
+     created_at timestamptz not null default now()
+     updated_at timestamptz not null default now()
+
+   - Create settlement_proposals table referencing swaygers(id) (if it already exists referencing workspaces, create a new one settlement_proposals_v1 or migrate it to reference swaygers).
+   - Create swayger_invites table with invite_code (6-digit) referencing swaygers(id).
+
+   - Enable RLS on all v1 tables.
+   - RLS policies:
+     * swaygers: select/update allowed only if auth.uid() = creator_id OR auth.uid() = opponent_id
+     * swaygers insert allowed only if creator_id = auth.uid()
+     * invites readable to authenticated for code lookup, but acceptance updates only by participant
+     * settlement_proposals select/insert/update only by participants of the referenced swayger
+
+2) Update/replace all RPCs to use swaygers instead of workspaces:
+   - accept_swayger(swayger_id, opponent_pick)
+   - decline_swayger(swayger_id)
+   - cancel_swayger(swayger_id)
+   - propose_settlement(swayger_id, outcome)
+   - confirm_settlement(swayger_id, proposal_id)
+
+   Remove dependency on workspace_members/is_workspace_member. Use creator_id/opponent_id checks.
+
+3) Data migration (best-effort, non-breaking):
+   - If workspaces currently store swayger-like rows, copy them into swaygers:
+     * workspaces.owner_id -> swaygers.creator_id
+     * workspaces.name or title field -> swaygers.title
+     * workspaces.description -> swaygers.description
+     * status/category/stake_units/creator_pick/opponent_pick/opponent_id/expires_at/settled_outcome -> map if present
+   - If a column doesn’t exist, skip mapping safely.
+
+4) Update the app code to use public.swaygers as the single source of truth:
+   - Update service layer queries
+   - Update types
+   - Update schema verification checks to validate swaygers table/columns and settlement_proposals/invites.
+
+5) Keep backwards compatibility:
+   - Do NOT drop workspaces or old tables.
+   - After this, the app should run end-to-end with the v1 loop and schema-verify should pass.
+
+After implementing, instruct me to run the new migration 005_fix_schema_to_swaygers.sql in Supabase SQL Editor.

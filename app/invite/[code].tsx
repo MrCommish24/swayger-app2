@@ -17,14 +17,14 @@ import { useAuth } from "@/lib/auth-context";
 import {
   joinSwaygerByCode,
   fetchSwayger,
-  fetchSwaygerParticipants,
+  fetchParticipantProfiles,
   acceptSwayger,
   declineSwayger,
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
 import { showError, showMessage, formatDateTime } from "@/lib/helpers";
-import { SwaygerData, SwaygerParticipantWithProfile } from "@/types";
+import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
 
 export default function InviteScreen() {
@@ -62,15 +62,15 @@ export default function InviteScreen() {
     enabled: !!joinedId,
   });
 
-  const { data: participants = [] } = useQuery<SwaygerParticipantWithProfile[]>({
-    queryKey: ["invite-participants", joinedId],
-    queryFn: () => fetchSwaygerParticipants(joinedId!),
-    enabled: !!joinedId,
+  const { data: profiles } = useQuery({
+    queryKey: ["invite-profiles", swayger?.creator_id, swayger?.opponent_id],
+    queryFn: () => fetchParticipantProfiles(swayger!.creator_id, swayger!.opponent_id),
+    enabled: !!swayger,
   });
 
-  const isCreator = swayger?.owner_id === user?.id;
-  const isMember = participants.some((p) => p.user_id === user?.id);
-  const canAccept = swayger && !isCreator && isMember && swayger.status === "pending_invite" && !swayger.opponent_id;
+  const isCreator = swayger?.creator_id === user?.id;
+  const isOpponent = swayger?.opponent_id === user?.id;
+  const canAccept = swayger && !isCreator && isOpponent && swayger.status === "pending_invite";
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptSwayger(joinedId!, opponentPick),
@@ -160,7 +160,7 @@ export default function InviteScreen() {
   }
 
   const st = displayStatus(swayger.status);
-  const creatorProfile = participants.find((p) => p.role === "owner")?.profiles;
+  const creatorName = profiles?.creator?.display_name || profiles?.creator?.username || "Unknown";
 
   return (
     <ScrollView
@@ -175,7 +175,7 @@ export default function InviteScreen() {
       </View>
 
       <View style={styles.previewCard}>
-        <Text style={styles.swaygerName}>{swayger.name}</Text>
+        <Text style={styles.swaygerName}>{swayger.title}</Text>
         <View style={styles.metaRow}>
           <View style={styles.chip}>
             <Ionicons
@@ -198,9 +198,7 @@ export default function InviteScreen() {
         <View style={styles.detailsGrid}>
           <View style={styles.detailItem}>
             <Text style={styles.detailLabel}>Creator</Text>
-            <Text style={styles.detailValue}>
-              {creatorProfile?.display_name || creatorProfile?.username || "Unknown"}
-            </Text>
+            <Text style={styles.detailValue}>{creatorName}</Text>
           </View>
           <View style={styles.detailItem}>
             <Text style={styles.detailLabel}>Stake</Text>

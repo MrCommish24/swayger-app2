@@ -19,7 +19,8 @@ import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import {
   fetchSwayger,
-  fetchSwaygerParticipants,
+  fetchSwaygerInvite,
+  fetchParticipantProfiles,
   fetchSettlementProposals,
   acceptSwayger,
   declineSwayger,
@@ -27,7 +28,6 @@ import {
   proposeSettlement,
   confirmSettlement,
   createRematch,
-  joinSwaygerByCode,
   displayStatus,
   displayOutcome,
   categoryIcon,
@@ -36,7 +36,7 @@ import { useAuth } from "@/lib/auth-context";
 import { showError, showMessage, formatDateTime } from "@/lib/helpers";
 import {
   SwaygerData,
-  SwaygerParticipantWithProfile,
+  SwaygerInvite,
   SettlementProposal,
 } from "@/types";
 import Colors from "@/constants/colors";
@@ -142,11 +142,16 @@ function PickCard({
   );
 }
 
-function ParticipantItem({ member }: { member: SwaygerParticipantWithProfile }) {
-  const profile = member.profiles;
+function ParticipantRow({
+  profile,
+  roleLabel,
+  isCreatorRole,
+}: {
+  profile: { username: string; display_name: string | null; avatar_url: string | null } | null;
+  roleLabel: string;
+  isCreatorRole: boolean;
+}) {
   const displayName = profile?.display_name || profile?.username || "Unknown";
-  const isCreator = member.role === "owner";
-
   return (
     <View style={styles.memberRow}>
       <View style={styles.memberAvatar}>
@@ -160,9 +165,9 @@ function ParticipantItem({ member }: { member: SwaygerParticipantWithProfile }) 
           <Text style={styles.memberUsername}>@{profile.username}</Text>
         )}
       </View>
-      <View style={[styles.memberRoleBadge, isCreator && styles.memberRoleBadgeCreator]}>
-        <Text style={[styles.memberRoleText, isCreator && styles.memberRoleTextCreator]}>
-          {isCreator ? "Creator" : "Opponent"}
+      <View style={[styles.memberRoleBadge, isCreatorRole && styles.memberRoleBadgeCreator]}>
+        <Text style={[styles.memberRoleText, isCreatorRole && styles.memberRoleTextCreator]}>
+          {roleLabel}
         </Text>
       </View>
     </View>
@@ -303,12 +308,17 @@ export default function SwaygerDetailScreen() {
     enabled: !!id,
   });
 
-  const { data: participants = [], isLoading: participantsLoading } =
-    useQuery<SwaygerParticipantWithProfile[]>({
-      queryKey: ["swayger-participants", id],
-      queryFn: () => fetchSwaygerParticipants(id!),
-      enabled: !!id,
-    });
+  const { data: invite } = useQuery<SwaygerInvite | null>({
+    queryKey: ["swayger-invite", id],
+    queryFn: () => fetchSwaygerInvite(id!),
+    enabled: !!id,
+  });
+
+  const { data: profiles, isLoading: profilesLoading } = useQuery({
+    queryKey: ["swayger-profiles", swayger?.creator_id, swayger?.opponent_id],
+    queryFn: () => fetchParticipantProfiles(swayger!.creator_id, swayger!.opponent_id),
+    enabled: !!swayger,
+  });
 
   const { data: proposals = [] } = useQuery<SettlementProposal[]>({
     queryKey: ["settlement-proposals", id],
@@ -316,30 +326,21 @@ export default function SwaygerDetailScreen() {
     enabled: !!id && (swayger?.status === "active" || swayger?.status === "settlement_proposed" || swayger?.status === "settled"),
   });
 
-  const isCreator = swayger?.owner_id === user?.id;
-  const isMember = participants.some((p) => p.user_id === user?.id);
+  const isCreator = swayger?.creator_id === user?.id;
+  const isOpponent = swayger?.opponent_id === user?.id;
   const status = swayger?.status || "pending_invite";
-  const canAccept = !isCreator && isMember && status === "pending_invite" && !swayger?.opponent_id;
-  const canJoin = !isMember && !isCreator && !!swayger && status === "pending_invite";
+  const canAccept = !isCreator && isOpponent && status === "pending_invite";
   const canCancel = isCreator && !["settled", "canceled", "declined"].includes(status);
   const canSettle = (status === "active" || status === "settlement_proposed") &&
-    (isCreator || swayger?.opponent_id === user?.id);
+    (isCreator || isOpponent);
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["swayger", id] });
-    queryClient.invalidateQueries({ queryKey: ["swayger-participants", id] });
+    queryClient.invalidateQueries({ queryKey: ["swayger-invite", id] });
+    queryClient.invalidateQueries({ queryKey: ["swayger-profiles"] });
     queryClient.invalidateQueries({ queryKey: ["settlement-proposals", id] });
     queryClient.invalidateQueries({ queryKey: ["swaygers"] });
   }
-
-  const joinMutation = useMutation({
-    mutationFn: () => joinSwaygerByCode(swayger!.invite_code, user!.id),
-    onSuccess: (result) => {
-      if (result.error) { showError(result.error); return; }
-      invalidateAll();
-    },
-    onError: () => showError("Failed to join. Try again."),
-  });
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptSwayger(id!, opponentPick),
@@ -404,7 +405,7 @@ export default function SwaygerDetailScreen() {
   });
 
   const anyPending =
-    joinMutation.isPending || acceptMutation.isPending || declineMutation.isPending ||
+    acceptMutation.isPending || declineMutation.isPending ||
     cancelMutation.isPending || proposeMutation.isPending || confirmMutation.isPending ||
     rematchMutation.isPending;
 
@@ -439,7 +440,7 @@ export default function SwaygerDetailScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.dark.text} />
         </Pressable>
         <View style={styles.headerContent}>
-          <Text style={styles.swaygerTitle}>{swayger.name}</Text>
+          <Text style={styles.swaygerTitle}>{swayger.title}</Text>
           <View style={styles.headerMeta}>
             <View style={styles.metaChip}>
               <Ionicons
@@ -563,29 +564,6 @@ export default function SwaygerDetailScreen() {
         </View>
       )}
 
-      {canJoin && (
-        <View style={styles.section}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.acceptButton,
-              pressed && styles.btnPressed,
-              anyPending && styles.btnDisabled,
-            ]}
-            onPress={() => joinMutation.mutate()}
-            disabled={anyPending}
-          >
-            {joinMutation.isPending ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Ionicons name="enter-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.acceptButtonText}>Join this Swayger</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
-      )}
-
       {canSettle && (
         <SettlementSection
           swayger={swayger}
@@ -679,24 +657,31 @@ export default function SwaygerDetailScreen() {
         </View>
       )}
 
-      {status === "pending_invite" && isCreator && (
-        <InviteSection inviteCode={swayger.invite_code} swaygerName={swayger.name} />
+      {status === "pending_invite" && isCreator && invite?.invite_code && (
+        <InviteSection inviteCode={invite.invite_code} swaygerName={swayger.title} />
       )}
 
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Participants</Text>
-          <Text style={styles.participantCount}>{participants.length}</Text>
-        </View>
-        {participantsLoading ? (
+        <Text style={styles.sectionTitle}>Participants</Text>
+        {profilesLoading ? (
           <ActivityIndicator color={Colors.dark.tint} style={{ marginVertical: 20 }} />
-        ) : participants.length === 0 ? (
-          <Text style={styles.emptyText}>No participants yet.</Text>
         ) : (
           <View style={styles.participantsList}>
-            {participants.map((p) => (
-              <ParticipantItem key={p.id} member={p} />
-            ))}
+            <ParticipantRow
+              profile={profiles?.creator || null}
+              roleLabel="Creator"
+              isCreatorRole
+            />
+            {swayger.opponent_id && (
+              <ParticipantRow
+                profile={profiles?.opponent || null}
+                roleLabel="Opponent"
+                isCreatorRole={false}
+              />
+            )}
+            {!swayger.opponent_id && (
+              <Text style={styles.emptyText}>Waiting for opponent...</Text>
+            )}
           </View>
         )}
       </View>

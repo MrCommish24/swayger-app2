@@ -19,8 +19,8 @@ interface LeaderboardEntry {
 
 async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
   const { data: settled, error } = await supabase
-    .from("workspaces")
-    .select("id, owner_id, opponent_id, settled_outcome, stake_units")
+    .from("swaygers")
+    .select("id, creator_id, opponent_id, settled_outcome, stake_units")
     .eq("status", "settled")
     .not("settled_outcome", "is", null);
 
@@ -32,7 +32,7 @@ async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
 
   const userIds = new Set<string>();
   settled.forEach((s) => {
-    if (s.owner_id) userIds.add(s.owner_id);
+    if (s.creator_id) userIds.add(s.creator_id);
     if (s.opponent_id) userIds.add(s.opponent_id);
   });
 
@@ -62,7 +62,7 @@ async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
 
   settled.forEach((s) => {
     const stake = s.stake_units || 1;
-    const creator = s.owner_id ? getEntry(s.owner_id) : null;
+    const creator = s.creator_id ? getEntry(s.creator_id) : null;
     const opponent = s.opponent_id ? getEntry(s.opponent_id) : null;
 
     switch (s.settled_outcome) {

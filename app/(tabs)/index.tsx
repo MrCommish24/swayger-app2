@@ -17,7 +17,7 @@ import {
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
-import { SwaygerWithRole } from "@/types";
+import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
 
 export default function DashboardScreen() {
@@ -31,15 +31,15 @@ export default function DashboardScreen() {
     isLoading,
     error,
     refetch,
-  } = useQuery<SwaygerWithRole[]>({
+  } = useQuery<SwaygerData[]>({
     queryKey: ["swaygers", "mine", user?.id],
     queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
 
-  function renderSwaygerCard({ item }: { item: SwaygerWithRole }) {
+  function renderSwaygerCard({ item }: { item: SwaygerData }) {
     const st = displayStatus(item.status || "pending_invite");
-    const isCreator = item.owner_id === user?.id;
+    const isCreator = item.creator_id === user?.id;
 
     return (
       <Pressable
@@ -48,7 +48,7 @@ export default function DashboardScreen() {
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.name}
+            {item.title}
           </Text>
           <View style={[styles.roleBadge, isCreator && styles.roleBadgeCreator]}>
             <Text style={[styles.roleBadgeText, isCreator && styles.roleBadgeTextCreator]}>

@@ -21,27 +21,46 @@ export async function verifyGameplaySchema(): Promise<SchemaCheck[]> {
   const results: SchemaCheck[] = [];
 
   const requiredCols = [
-    "status", "description", "category", "stake_units",
-    "creator_pick", "opponent_pick", "opponent_id",
+    "creator_id", "opponent_id", "title", "description", "category",
+    "stake_units", "creator_pick", "opponent_pick", "status",
     "expires_at", "settled_outcome", "updated_at",
   ];
 
-  const { data: wsData, error: wsErr } = await supabase
-    .from("workspaces")
+  const { data: swData, error: swErr } = await supabase
+    .from("swaygers")
     .select(requiredCols.join(", ") + ", id")
     .limit(1);
 
-  if (wsErr) {
+  if (swErr) {
     results.push({
-      name: "workspaces v1 columns",
+      name: "swaygers table + v1 columns",
       status: "missing",
-      detail: wsErr.message,
+      detail: swErr.message,
     });
   } else {
     results.push({
-      name: "workspaces v1 columns",
+      name: "swaygers table + v1 columns",
       status: "ok",
-      detail: `All required columns present (${wsData?.length ?? 0} row(s))`,
+      detail: `All required columns present (${swData?.length ?? 0} row(s))`,
+    });
+  }
+
+  const { error: siErr } = await supabase
+    .from("swayger_invites")
+    .select("id, swayger_id, invite_code")
+    .limit(1);
+
+  if (siErr) {
+    results.push({
+      name: "swayger_invites table",
+      status: "missing",
+      detail: siErr.message,
+    });
+  } else {
+    results.push({
+      name: "swayger_invites table",
+      status: "ok",
+      detail: "Table exists and is queryable",
     });
   }
 
@@ -64,18 +83,9 @@ export async function verifyGameplaySchema(): Promise<SchemaCheck[]> {
     });
   }
 
-  const { error: legsErr } = await supabase
-    .from("swayger_legs")
-    .select("id")
-    .limit(1);
-
-  results.push({
-    name: "swayger_legs (legacy, unused)",
-    status: "ok",
-    detail: legsErr ? "Not present (clean)" : "Still exists (unused by v1, safe to ignore)",
-  });
-
   const rpcs = [
+    { name: "create_swayger", params: { p_title: "test", p_description: null, p_category: "Other", p_stake_units: 1, p_creator_pick: "test", p_invite_code: "ZZZZZZ" } },
+    { name: "join_swayger_by_code", params: { p_invite_code: "ZZZZZZ" } },
     { name: "accept_swayger", params: { p_swayger_id: "00000000-0000-0000-0000-000000000000", p_opponent_pick: "test" } },
     { name: "decline_swayger", params: { p_swayger_id: "00000000-0000-0000-0000-000000000000" } },
     { name: "cancel_swayger", params: { p_swayger_id: "00000000-0000-0000-0000-000000000000" } },
@@ -100,7 +110,7 @@ export async function verifyGameplaySchema(): Promise<SchemaCheck[]> {
 }
 
 export async function runSchemaVerification(): Promise<void> {
-  console.log("[schema-verify] Starting v1 schema verification...");
+  console.log("[schema-verify] Starting v1.1 schema verification...");
   const checks = await verifyGameplaySchema();
   let allGood = true;
 
@@ -112,8 +122,8 @@ export async function runSchemaVerification(): Promise<void> {
   }
 
   if (allGood) {
-    console.log("[schema-verify] All v1 schema checks passed.");
+    console.log("[schema-verify] All v1.1 schema checks passed.");
   } else {
-    console.error("[schema-verify] Some checks failed. Run 004_v1_refactor.sql in Supabase SQL Editor.");
+    console.error("[schema-verify] Some checks failed. Run 005_fix_schema_to_swaygers.sql in Supabase SQL Editor.");
   }
 }

@@ -1,8 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import {
   SwaygerData,
-  SwaygerWithRole,
-  SwaygerParticipantWithProfile,
+  SwaygerInvite,
   SettlementProposal,
 } from "@/types";
 
@@ -20,7 +19,7 @@ async function generateUniqueInviteCode(): Promise<string> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = generateInviteCode();
     const { data } = await supabase
-      .from("workspaces")
+      .from("swayger_invites")
       .select("id")
       .eq("invite_code", code)
       .maybeSingle();
@@ -39,41 +38,25 @@ export async function createSwayger(
 ): Promise<{ swayger: SwaygerData | null; error: string | null }> {
   const inviteCode = await generateUniqueInviteCode();
 
-  const { data, error } = await supabase.rpc("create_workspace", {
-    p_name: title.trim(),
-    p_scoring_type: category || "Other",
+  const { data, error } = await supabase.rpc("create_swayger", {
+    p_title: title.trim(),
+    p_description: description?.trim() || null,
+    p_category: category || "Other",
+    p_stake_units: Math.max(1, stakeUnits),
+    p_creator_pick: creatorPick.trim(),
     p_invite_code: inviteCode,
   });
 
   if (error) {
-    console.error("[swayger] createSwayger RPC error:", error.message, error.code, error.details);
+    console.error("[swayger] create_swayger RPC error:", error.message, error.code, error.details);
     return { swayger: null, error: error.message };
   }
 
   const swaygerId = data as string;
   console.log("[swayger] Created swayger:", swaygerId);
 
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-  const { error: updateErr } = await supabase
-    .from("workspaces")
-    .update({
-      category: category || "Other",
-      stake_units: Math.max(1, stakeUnits),
-      creator_pick: creatorPick.trim(),
-      description: description?.trim() || null,
-      status: "pending_invite",
-      expires_at: expiresAt,
-    })
-    .eq("id", swaygerId);
-
-  if (updateErr) {
-    console.error("[swayger] Failed to update swayger fields:", updateErr.message, updateErr.code);
-    return { swayger: null, error: `Created but failed to set details: ${updateErr.message}` };
-  }
-
   const { data: swayger, error: fetchError } = await supabase
-    .from("workspaces")
+    .from("swaygers")
     .select("*")
     .eq("id", swaygerId)
     .single();
@@ -86,43 +69,23 @@ export async function createSwayger(
   return { swayger: swayger as SwaygerData, error: null };
 }
 
-export async function fetchMySwaygers(userId: string): Promise<SwaygerWithRole[]> {
-  const { data: memberships, error: memError } = await supabase
-    .from("workspace_members")
-    .select("workspace_id, role")
-    .eq("user_id", userId);
-
-  if (memError) {
-    console.error("[swayger] fetchMySwaygers memberships error:", memError.message);
-    return [];
-  }
-  if (!memberships || memberships.length === 0) return [];
-
-  const ids = memberships.map((m) => m.workspace_id);
-
-  const { data: swaygers, error: wsError } = await supabase
-    .from("workspaces")
+export async function fetchMySwaygers(userId: string): Promise<SwaygerData[]> {
+  const { data, error } = await supabase
+    .from("swaygers")
     .select("*")
-    .in("id", ids)
+    .or(`creator_id.eq.${userId},opponent_id.eq.${userId}`)
     .order("created_at", { ascending: false });
 
-  if (wsError) {
-    console.error("[swayger] fetchMySwaygers workspaces error:", wsError.message);
+  if (error) {
+    console.error("[swayger] fetchMySwaygers error:", error.message);
     return [];
   }
-  if (!swaygers) return [];
-
-  const roleMap = new Map(memberships.map((m) => [m.workspace_id, m.role]));
-
-  return swaygers.map((s) => ({
-    ...(s as SwaygerData),
-    role: (roleMap.get(s.id) ?? "viewer") as "owner" | "editor" | "viewer",
-  }));
+  return (data || []) as SwaygerData[];
 }
 
 export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | null> {
   const { data, error } = await supabase
-    .from("workspaces")
+    .from("swaygers")
     .select("*")
     .eq("id", swaygerId)
     .single();
@@ -134,37 +97,45 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
   return data as SwaygerData;
 }
 
-export async function fetchSwaygerParticipants(swaygerId: string): Promise<SwaygerParticipantWithProfile[]> {
-  const { data: members, error: memErr } = await supabase
-    .from("workspace_members")
+export async function fetchSwaygerInvite(swaygerId: string): Promise<SwaygerInvite | null> {
+  const { data, error } = await supabase
+    .from("swayger_invites")
     .select("*")
-    .eq("workspace_id", swaygerId)
-    .order("created_at", { ascending: true });
+    .eq("swayger_id", swaygerId)
+    .maybeSingle();
 
-  if (memErr) {
-    console.error("[swayger] fetchSwaygerParticipants error:", memErr.message);
-    return [];
+  if (error) {
+    console.error("[swayger] fetchSwaygerInvite error:", error.message);
+    return null;
   }
-  if (!members || members.length === 0) return [];
+  return data as SwaygerInvite | null;
+}
 
-  const userIds = members.map((m) => m.user_id);
-  const { data: profiles, error: profErr } = await supabase
+export async function fetchParticipantProfiles(
+  creatorId: string,
+  opponentId: string | null
+): Promise<{ creator: { username: string; display_name: string | null; avatar_url: string | null } | null; opponent: { username: string; display_name: string | null; avatar_url: string | null } | null }> {
+  const ids = [creatorId];
+  if (opponentId) ids.push(opponentId);
+
+  const { data: profiles, error } = await supabase
     .from("profiles")
     .select("id, username, display_name, avatar_url")
-    .in("id", userIds);
+    .in("id", ids);
 
-  if (profErr) {
-    console.error("[swayger] fetchSwaygerParticipants profiles error:", profErr.message);
+  if (error) {
+    console.error("[swayger] fetchParticipantProfiles error:", error.message);
+    return { creator: null, opponent: null };
   }
 
   const profileMap = new Map(
     (profiles || []).map((p) => [p.id, { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url }])
   );
 
-  return members.map((m) => ({
-    ...m,
-    profiles: profileMap.get(m.user_id) || null,
-  })) as SwaygerParticipantWithProfile[];
+  return {
+    creator: profileMap.get(creatorId) || null,
+    opponent: opponentId ? profileMap.get(opponentId) || null : null,
+  };
 }
 
 export async function fetchSettlementProposals(swaygerId: string): Promise<SettlementProposal[]> {
@@ -281,7 +252,7 @@ export async function createRematch(
   const newStake = rematchType === "double_or_nothing" ? original.stake_units * 2 : original.stake_units;
 
   const result = await createSwayger(
-    original.name,
+    original.title,
     original.category,
     newStake,
     original.creator_pick || "",
@@ -292,7 +263,7 @@ export async function createRematch(
   if (result.error || !result.swayger) return result;
 
   const { error: linkErr } = await supabase
-    .from("workspaces")
+    .from("swaygers")
     .update({
       source_swayger_id: swaygerId,
       rematch_type: rematchType,
@@ -309,29 +280,23 @@ export async function createRematch(
 export async function joinSwaygerByCode(
   inviteCode: string,
   _userId: string
-): Promise<{ swaygerId: string | null; error: string | null; alreadyMember: boolean }> {
+): Promise<{ swaygerId: string | null; error: string | null }> {
   console.log("[swayger] Joining by code:", inviteCode.trim().toUpperCase());
-  const { data, error } = await supabase.rpc("join_workspace_by_code", {
+  const { data, error } = await supabase.rpc("join_swayger_by_code", {
     p_invite_code: inviteCode.trim().toUpperCase(),
   });
 
   if (error) {
-    console.error("[swayger] join_workspace_by_code error:", error.message, error.code);
-    return { swaygerId: null, error: error.message, alreadyMember: false };
+    console.error("[swayger] join_swayger_by_code error:", error.message, error.code);
+    return { swaygerId: null, error: error.message };
   }
 
-  const result = data as { error: string | null; workspace_id: string | null; already_member: boolean };
+  const result = data as { error: string | null; swayger_id: string | null };
   if (result.error) console.error("[swayger] join business error:", result.error);
   return {
-    swaygerId: result.workspace_id,
+    swaygerId: result.swayger_id,
     error: result.error,
-    alreadyMember: result.already_member,
   };
-}
-
-export function displayRole(dbRole: string): string {
-  if (dbRole === "owner") return "Creator";
-  return "Opponent";
 }
 
 export function displayStatus(status: string): { label: string; color: string } {

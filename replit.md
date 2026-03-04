@@ -7,7 +7,7 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
 - **Auth**: Supabase OTP code + magic link + password sign-in via `@supabase/supabase-js`
-- **Data**: Supabase (workspaces, workspace_members, profiles, settlement_proposals tables — labeled as "Swaygers" and "Participants" in UI)
+- **Data**: Supabase (`swaygers`, `swayger_invites`, `profiles`, `settlement_proposals` tables)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
 - **Session Storage**: AsyncStorage (native), localStorage (web)
@@ -47,13 +47,14 @@ lib/
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
-  index.ts             # TypeScript types: Profile, SwaygerData, SettlementProposal, SwaygerParticipant
+  index.ts             # TypeScript types: Profile, SwaygerData, SwaygerInvite, SettlementProposal
 supabase-migrations/
-  001_workspaces.sql       # SQL for workspaces, workspace_members, profiles + RLS
+  001_workspaces.sql       # SQL for original workspaces, workspace_members, profiles + RLS
   002_fix_rls_recursion.sql # Fix RLS recursion with SECURITY DEFINER helper
-  003_swayger_gameplay.sql  # (LEGACY v0 — legs/responses model, superseded by 004)
+  003_swayger_gameplay.sql  # (LEGACY v0 — legs/responses model, superseded)
   003_verify_and_fix.sql    # (LEGACY v0 — verification for legs model)
-  004_v1_refactor.sql       # V1 refactor: drops legs/responses, adds 1v1 wager contract model + settlement engine
+  004_v1_refactor.sql       # V1 refactor: adds 1v1 wager columns to workspaces (intermediate step)
+  005_fix_schema_to_swaygers.sql # V1.1: Creates dedicated `swaygers` table, `swayger_invites`, all gameplay RPCs
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
@@ -68,7 +69,7 @@ server/
 
 Deep linking configured with scheme `swayger://` for magic link callbacks.
 
-## Swayger v1 System (1v1 Wager Contracts)
+## Swayger v1.1 System (1v1 Wager Contracts)
 
 ### Core Loop
 
@@ -77,10 +78,10 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 ### How It Works
 
 - Users create a Swayger with: title, description (optional), category (Sports/Entertainment/Gaming/Lifestyle/Politics/Other), stake units (1-100), and their pick/prediction
-- Each Swayger gets a unique invite code (6 chars, A-Z, 2-9)
-- Creator can share via: Copy Code, OS Share sheet ("Join my Swayger. Code: XXXXXX"), or QR code (encodes "SWAYGER:XXXXXX")
+- Each Swayger gets a unique invite code (6 chars, A-Z, 2-9) stored in `swayger_invites` table
+- Creator can share via: Copy Code, OS Share sheet, or QR code (encodes "SWAYGER:XXXXXX")
 - Opponents can join via: entering code on Join screen, or scanning QR code (expo-camera barcode scanner)
-- Creator shares the code with an opponent who joins and enters their own pick
+- Joining sets the user as `opponent_id` on the swayger
 - Accepting locks both picks and activates the Swayger
 - Either participant can propose a settlement outcome: Creator Wins, Opponent Wins, Draw, or No Contest
 - The other participant must confirm the same proposal for it to settle
@@ -97,17 +98,25 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 - `canceled` — creator canceled the Swayger
 - `expired` / `expired_active` — past expiry date
 
-### Key DB Columns on `workspaces`
+### Key DB Columns on `swaygers`
 
+- `creator_id` — creator's user UUID
+- `opponent_id` — opponent's user UUID (set when they join via invite code)
+- `title` — swayger title
+- `description` — optional description
 - `category` — Sports, Entertainment, Gaming, Lifestyle, Politics, Other
 - `stake_units` — integer (1-100)
 - `creator_pick` — creator's prediction text
 - `opponent_pick` — opponent's prediction text (set on accept)
-- `opponent_id` — opponent's user UUID (set on accept)
 - `expires_at` — auto-set to 7 days from creation
 - `settled_outcome` — creator, opponent, draw, or no_contest
 - `source_swayger_id` — links to original swayger for rematches
 - `rematch_type` — run_it_back or double_or_nothing
+
+### `swayger_invites` Table
+
+- `swayger_id` — FK to swaygers
+- `invite_code` — unique 6-char code
 
 ### Settlement Proposals Table
 
@@ -116,21 +125,13 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 
 ### Gameplay RPCs (SECURITY DEFINER)
 
+- `create_swayger(p_title, p_description, p_category, p_stake_units, p_creator_pick, p_invite_code)` — creates swayger + invite record
+- `join_swayger_by_code(p_invite_code)` — sets caller as opponent
 - `accept_swayger(p_swayger_id, p_opponent_pick)` — accept + set opponent pick, status → active
 - `decline_swayger(p_swayger_id)` — decline invite
 - `cancel_swayger(p_swayger_id)` — creator only, cancel
 - `propose_settlement(p_swayger_id, p_outcome)` — propose an outcome
 - `confirm_settlement(p_swayger_id, p_proposal_id)` — confirm a proposal; settles if both confirmed
-
-## DB → UI Mapping
-
-- `workspaces` table → "Swaygers" in UI
-- `workspaces.name` → Swayger title
-- `workspaces.owner_id` → Creator
-- `workspace_members` → Participants
-- DB role `owner` → UI label "Creator"
-- DB role `viewer`/`editor` → UI label "Opponent"
-- RPC functions `create_workspace` / `join_workspace_by_code` still used (DB names unchanged)
 
 ## Theme (Brand Colors)
 
@@ -143,24 +144,22 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
-- `workspaces` — swaygers (name, category, invite_code, owner_id, status, stake_units, creator_pick, opponent_pick, etc.)
-- `workspace_members` — participants (workspace_id, user_id, role)
+- `swaygers` — 1v1 wager contracts (title, category, creator_id, opponent_id, status, etc.)
+- `swayger_invites` — invite codes (swayger_id, invite_code)
 - `settlement_proposals` — settlement proposals (swayger_id, proposed_by, outcome, confirmations)
-
-RLS uses `is_workspace_member()` SECURITY DEFINER function to avoid recursion.
 
 ### Migration Order
 
 Run in Supabase SQL Editor in order:
-1. `001_workspaces.sql` — base tables
+1. `001_workspaces.sql` — base tables (profiles, workspaces legacy)
 2. `002_fix_rls_recursion.sql` — RLS fix
-3. `004_v1_refactor.sql` — v1 wager contract model (safe/additive, does NOT drop old tables)
+3. `005_fix_schema_to_swaygers.sql` — creates `swaygers`, `swayger_invites`, `settlement_proposals` tables, all gameplay RPCs, migrates data from workspaces
 
-Old tables (`swayger_legs`, `swayger_responses`) are left intact but unused by v1 code.
+Note: Migrations 003 and 004 are superseded by 005. If starting fresh, only 001 + 002 + 005 are needed.
 
 ## Smoke Test Checklist
 
-After running `004_v1_refactor.sql`, verify the following manually:
+After running `005_fix_schema_to_swaygers.sql`, verify the following manually:
 
 1. **Create Swayger**: Go to Create tab → fill in title, category, stake units, your pick → submit. Should redirect to detail screen showing status "Pending".
 2. **Invite Code**: On the detail screen, the invite code should be visible with copy buttons.
