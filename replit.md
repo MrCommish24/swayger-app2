@@ -145,7 +145,31 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 - `settlement_proposals` — settlement proposals (swayger_id, proposed_by, outcome, confirmations)
 
 RLS uses `is_workspace_member()` SECURITY DEFINER function to avoid recursion.
-Run migrations in Supabase SQL Editor in order: `001_workspaces.sql`, `002_fix_rls_recursion.sql`, then `004_v1_refactor.sql`.
+
+### Migration Order
+
+Run in Supabase SQL Editor in order:
+1. `001_workspaces.sql` — base tables
+2. `002_fix_rls_recursion.sql` — RLS fix
+3. `004_v1_refactor.sql` — v1 wager contract model (safe/additive, does NOT drop old tables)
+
+Old tables (`swayger_legs`, `swayger_responses`) are left intact but unused by v1 code.
+
+## Smoke Test Checklist
+
+After running `004_v1_refactor.sql`, verify the following manually:
+
+1. **Create Swayger**: Go to Create tab → fill in title, category, stake units, your pick → submit. Should redirect to detail screen showing status "Pending".
+2. **Invite Code**: On the detail screen, the invite code should be visible with copy buttons.
+3. **Join via Code**: Second user enters the invite code from dashboard "Join" button → should land on the swayger detail.
+4. **Accept Swayger**: As the opponent, enter a pick and tap Accept → status should change to "Active", both picks visible.
+5. **Propose Settlement**: Either participant taps a settlement outcome → proposal card appears with one confirmation.
+6. **Confirm Settlement**: Other participant taps "Confirm Settlement" → status becomes "Settled", result shows.
+7. **Leaderboard**: After settling, both users appear on the Leaderboard tab with win/loss records.
+8. **Rematch**: Creator of a settled swayger sees "Run it Back" and "Double or Nothing" buttons → creates a new swayger.
+9. **Cancel**: Creator can cancel a pending swayger → status becomes "Canceled".
+10. **Decline**: Opponent can decline a pending swayger → status becomes "Declined".
+11. **Schema Health**: In Profile (dev mode), Dev: Schema Health panel shows all green checks.
 
 ## Workflows
 

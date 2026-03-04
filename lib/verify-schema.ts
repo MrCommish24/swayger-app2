@@ -69,19 +69,11 @@ export async function verifyGameplaySchema(): Promise<SchemaCheck[]> {
     .select("id")
     .limit(1);
 
-  if (legsErr) {
-    results.push({
-      name: "swayger_legs (should be dropped)",
-      status: "ok",
-      detail: "Correctly removed",
-    });
-  } else {
-    results.push({
-      name: "swayger_legs (should be dropped)",
-      status: "error",
-      detail: "Table still exists — run 004_v1_refactor.sql",
-    });
-  }
+  results.push({
+    name: "swayger_legs (legacy, unused)",
+    status: "ok",
+    detail: legsErr ? "Not present (clean)" : "Still exists (unused by v1, safe to ignore)",
+  });
 
   const rpcs = [
     { name: "accept_swayger", params: { p_swayger_id: "00000000-0000-0000-0000-000000000000", p_opponent_pick: "test" } },

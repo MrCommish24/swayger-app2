@@ -1,7 +1,8 @@
 -- ============================================================================
 -- Swayger v1 Refactor: 1v1 social wager contract model
--- Removes legs/lines/odds/parlay. Adds settlement engine + rematches.
--- Safe to run multiple times (idempotent).
+-- SAFE migration — additive only, does NOT drop existing tables or data.
+-- Old tables (swayger_legs, swayger_responses) are left intact but unused.
+-- Idempotent — safe to run multiple times.
 -- Run AFTER 001 + 002 migrations.
 -- ============================================================================
 
@@ -21,18 +22,7 @@ AS $$
   );
 $$;
 
--- ── 1. Drop old gameplay v1 tables (legs/responses) ─────────────────────────
-
-DROP TABLE IF EXISTS swayger_legs CASCADE;
-DROP TABLE IF EXISTS swayger_responses CASCADE;
-
--- ── 2. Drop old RPCs that reference dropped tables ──────────────────────────
-
-DROP FUNCTION IF EXISTS accept_swayger(UUID);
-DROP FUNCTION IF EXISTS decline_swayger(UUID);
-DROP FUNCTION IF EXISTS cancel_swayger(UUID);
-
--- ── 3. Add new columns to workspaces ────────────────────────────────────────
+-- ── 1. Add new columns to workspaces (all idempotent) ───────────────────────
 
 DO $$
 BEGIN
@@ -85,17 +75,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='workspaces' AND column_name='settled_outcome') THEN
     ALTER TABLE workspaces ADD COLUMN settled_outcome TEXT;
   END IF;
-
-  -- Drop old columns that are no longer needed
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='workspaces' AND column_name='stake_text') THEN
-    ALTER TABLE workspaces DROP COLUMN stake_text;
-  END IF;
 END $$;
 
--- Update any existing 'open' status rows to 'pending_invite'
+-- Migrate any old-status rows to new status values
 UPDATE workspaces SET status = 'pending_invite' WHERE status IN ('open', 'draft');
 
--- ── 4. Settlement proposals table ───────────────────────────────────────────
+-- ── 2. Settlement proposals table ───────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS settlement_proposals (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -133,7 +118,20 @@ CREATE POLICY "Participants can update proposals"
   ON settlement_proposals FOR UPDATE
   USING (is_workspace_member(swayger_id));
 
--- ── 5. RPC: Accept a swayger (opponent sets pick, status -> active) ─────────
+-- ── 3. Ensure workspaces UPDATE RLS allows owner to update own workspace ────
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Owners can update workspaces" ON workspaces;
+END $$;
+
+CREATE POLICY "Owners can update workspaces"
+  ON workspaces FOR UPDATE
+  USING (owner_id = auth.uid());
+
+-- ── 4. RPC: Accept a swayger (opponent sets pick, status -> active) ─────────
+
+-- Drop old single-arg version first so CREATE OR REPLACE doesn't conflict
+DROP FUNCTION IF EXISTS accept_swayger(UUID);
 
 CREATE OR REPLACE FUNCTION accept_swayger(p_swayger_id UUID, p_opponent_pick TEXT)
 RETURNS JSON
@@ -190,7 +188,7 @@ BEGIN
 END;
 $$;
 
--- ── 6. RPC: Decline a swayger ───────────────────────────────────────────────
+-- ── 5. RPC: Decline a swayger ───────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION decline_swayger(p_swayger_id UUID)
 RETURNS JSON
@@ -232,7 +230,7 @@ BEGIN
 END;
 $$;
 
--- ── 7. RPC: Cancel a swayger (creator only) ─────────────────────────────────
+-- ── 6. RPC: Cancel a swayger (creator only) ─────────────────────────────────
 
 CREATE OR REPLACE FUNCTION cancel_swayger(p_swayger_id UUID)
 RETURNS JSON
@@ -274,7 +272,7 @@ BEGIN
 END;
 $$;
 
--- ── 8. RPC: Propose settlement ──────────────────────────────────────────────
+-- ── 7. RPC: Propose settlement ──────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION propose_settlement(p_swayger_id UUID, p_outcome TEXT)
 RETURNS JSON
@@ -335,7 +333,7 @@ BEGIN
 END;
 $$;
 
--- ── 9. RPC: Confirm settlement (other party confirms same proposal) ─────────
+-- ── 8. RPC: Confirm settlement (other party confirms same proposal) ─────────
 
 CREATE OR REPLACE FUNCTION confirm_settlement(p_swayger_id UUID, p_proposal_id UUID)
 RETURNS JSON
@@ -408,7 +406,7 @@ BEGIN
 END;
 $$;
 
--- ── 10. Verification ────────────────────────────────────────────────────────
+-- ── 9. Verification ────────────────────────────────────────────────────────
 
 DO $$
 DECLARE
@@ -416,8 +414,11 @@ DECLARE
   v_cols TEXT[] := ARRAY['status','description','category','stake_units','creator_pick','opponent_pick','opponent_id','expires_at','source_swayger_id','rematch_type','updated_at','settled_outcome'];
   v_col TEXT;
 BEGIN
-  RAISE NOTICE '── Swayger v1 Schema Verification ──';
+  RAISE NOTICE '══════════════════════════════════════════';
+  RAISE NOTICE '  Swayger v1 Schema Verification';
+  RAISE NOTICE '══════════════════════════════════════════';
 
+  -- Check all required columns on workspaces
   FOREACH v_col IN ARRAY v_cols LOOP
     SELECT count(*) INTO v_count FROM information_schema.columns
     WHERE table_schema='public' AND table_name='workspaces' AND column_name=v_col;
@@ -426,28 +427,30 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Check settlement_proposals table
   SELECT count(*) INTO v_count FROM information_schema.tables
   WHERE table_schema='public' AND table_name='settlement_proposals';
   IF v_count = 1 THEN RAISE NOTICE 'OK: settlement_proposals table exists';
   ELSE RAISE WARNING 'MISSING: settlement_proposals table';
   END IF;
 
-  SELECT count(*) INTO v_count FROM information_schema.tables
-  WHERE table_schema='public' AND table_name='swayger_legs';
-  IF v_count = 0 THEN RAISE NOTICE 'OK: swayger_legs dropped';
-  ELSE RAISE WARNING 'STALE: swayger_legs still exists';
-  END IF;
-
-  SELECT count(*) INTO v_count FROM information_schema.tables
-  WHERE table_schema='public' AND table_name='swayger_responses';
-  IF v_count = 0 THEN RAISE NOTICE 'OK: swayger_responses dropped';
-  ELSE RAISE WARNING 'STALE: swayger_responses still exists';
-  END IF;
-
+  -- Check RPCs
   SELECT count(*) INTO v_count FROM pg_proc
   WHERE proname = 'accept_swayger' AND pronamespace = 'public'::regnamespace;
   IF v_count >= 1 THEN RAISE NOTICE 'OK: accept_swayger RPC exists';
   ELSE RAISE WARNING 'MISSING: accept_swayger RPC';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM pg_proc
+  WHERE proname = 'decline_swayger' AND pronamespace = 'public'::regnamespace;
+  IF v_count >= 1 THEN RAISE NOTICE 'OK: decline_swayger RPC exists';
+  ELSE RAISE WARNING 'MISSING: decline_swayger RPC';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM pg_proc
+  WHERE proname = 'cancel_swayger' AND pronamespace = 'public'::regnamespace;
+  IF v_count >= 1 THEN RAISE NOTICE 'OK: cancel_swayger RPC exists';
+  ELSE RAISE WARNING 'MISSING: cancel_swayger RPC';
   END IF;
 
   SELECT count(*) INTO v_count FROM pg_proc
@@ -462,5 +465,32 @@ BEGIN
   ELSE RAISE WARNING 'MISSING: confirm_settlement RPC';
   END IF;
 
-  RAISE NOTICE '── Verification complete ──';
+  -- Check RLS on settlement_proposals
+  SELECT count(*) INTO v_count FROM pg_policies
+  WHERE schemaname = 'public' AND tablename = 'settlement_proposals';
+  RAISE NOTICE 'settlement_proposals has % RLS policies (expected 3)', v_count;
+
+  -- Check workspaces update policy
+  SELECT count(*) INTO v_count FROM pg_policies
+  WHERE schemaname = 'public' AND tablename = 'workspaces' AND policyname = 'Owners can update workspaces';
+  IF v_count = 1 THEN RAISE NOTICE 'OK: Owners can update workspaces policy exists';
+  ELSE RAISE WARNING 'MISSING: Owners can update workspaces policy';
+  END IF;
+
+  -- Note: old tables (swayger_legs, swayger_responses) intentionally left intact
+  SELECT count(*) INTO v_count FROM information_schema.tables
+  WHERE table_schema='public' AND table_name='swayger_legs';
+  IF v_count = 1 THEN RAISE NOTICE 'NOTE: swayger_legs table still exists (unused by v1, left intact)';
+  ELSE RAISE NOTICE 'INFO: swayger_legs table does not exist (already clean)';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM information_schema.tables
+  WHERE table_schema='public' AND table_name='swayger_responses';
+  IF v_count = 1 THEN RAISE NOTICE 'NOTE: swayger_responses table still exists (unused by v1, left intact)';
+  ELSE RAISE NOTICE 'INFO: swayger_responses table does not exist (already clean)';
+  END IF;
+
+  RAISE NOTICE '══════════════════════════════════════════';
+  RAISE NOTICE '  Verification complete';
+  RAISE NOTICE '══════════════════════════════════════════';
 END $$;
