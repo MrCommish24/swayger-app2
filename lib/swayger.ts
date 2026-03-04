@@ -135,18 +135,36 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
 }
 
 export async function fetchSwaygerParticipants(swaygerId: string): Promise<SwaygerParticipantWithProfile[]> {
-  const { data, error } = await supabase
+  const { data: members, error: memErr } = await supabase
     .from("workspace_members")
-    .select("*, profiles(username, display_name, avatar_url)")
+    .select("*")
     .eq("workspace_id", swaygerId)
     .order("created_at", { ascending: true });
 
-  if (error) {
-    console.error("[swayger] fetchSwaygerParticipants error:", error.message);
+  if (memErr) {
+    console.error("[swayger] fetchSwaygerParticipants error:", memErr.message);
     return [];
   }
-  if (!data) return [];
-  return data as SwaygerParticipantWithProfile[];
+  if (!members || members.length === 0) return [];
+
+  const userIds = members.map((m) => m.user_id);
+  const { data: profiles, error: profErr } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url")
+    .in("id", userIds);
+
+  if (profErr) {
+    console.error("[swayger] fetchSwaygerParticipants profiles error:", profErr.message);
+  }
+
+  const profileMap = new Map(
+    (profiles || []).map((p) => [p.id, { username: p.username, display_name: p.display_name, avatar_url: p.avatar_url }])
+  );
+
+  return members.map((m) => ({
+    ...m,
+    profiles: profileMap.get(m.user_id) || null,
+  })) as SwaygerParticipantWithProfile[];
 }
 
 export async function fetchSettlementProposals(swaygerId: string): Promise<SettlementProposal[]> {
