@@ -75,7 +75,11 @@ function RootLayoutNav() {
       />
       <Stack.Screen
         name="invite/[code]"
-        options={{ title: "Invite", presentation: "modal" }}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="join"
+        options={{ headerShown: false }}
       />
     </Stack>
   );

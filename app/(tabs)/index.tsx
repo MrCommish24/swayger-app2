@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,17 +6,14 @@ import {
   Platform,
   FlatList,
   ActivityIndicator,
-  Modal,
-  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import {
   fetchMySwaygers,
-  joinSwaygerByCode,
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
@@ -29,11 +25,6 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const [joinModalVisible, setJoinModalVisible] = useState(false);
-  const [inviteCode, setInviteCode] = useState("");
-  const [joinError, setJoinError] = useState<string | null>(null);
 
   const {
     data: swaygers = [],
@@ -45,33 +36,6 @@ export default function DashboardScreen() {
     queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
-
-  const joinMutation = useMutation({
-    mutationFn: () => joinSwaygerByCode(inviteCode, user!.id),
-    onSuccess: (result) => {
-      if (result.error) {
-        setJoinError(result.error);
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["swaygers"] });
-      setJoinModalVisible(false);
-      setInviteCode("");
-      setJoinError(null);
-      if (result.swaygerId) {
-        router.push(`/swayger/${result.swaygerId}`);
-      }
-    },
-    onError: () => setJoinError("Something went wrong. Try again."),
-  });
-
-  function handleJoinSubmit() {
-    if (!inviteCode.trim()) {
-      setJoinError("Please enter an invite code.");
-      return;
-    }
-    setJoinError(null);
-    joinMutation.mutate();
-  }
 
   function renderSwaygerCard({ item }: { item: SwaygerWithRole }) {
     const st = displayStatus(item.status || "pending_invite");
@@ -130,11 +94,7 @@ export default function DashboardScreen() {
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.actionButtonOutline, pressed && styles.actionButtonPressed]}
-          onPress={() => {
-            setJoinModalVisible(true);
-            setJoinError(null);
-            setInviteCode("");
-          }}
+          onPress={() => router.push("/join")}
         >
           <Ionicons name="enter-outline" size={18} color={Colors.dark.tint} />
           <Text style={styles.actionButtonOutlineText}>Join</Text>
@@ -170,51 +130,6 @@ export default function DashboardScreen() {
         />
       )}
 
-      <Modal
-        visible={joinModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setJoinModalVisible(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setJoinModalVisible(false)}>
-          <Pressable style={styles.modalContent} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Join Swayger</Text>
-            <Text style={styles.modalSubtitle}>Enter the invite code shared with you</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Invite code"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={inviteCode}
-              onChangeText={(t) => {
-                setInviteCode(t.toUpperCase());
-                setJoinError(null);
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              maxLength={8}
-            />
-            {joinError && <Text style={styles.modalError}>{joinError}</Text>}
-            <Pressable
-              style={({ pressed }) => [
-                styles.modalButton,
-                pressed && styles.actionButtonPressed,
-                joinMutation.isPending && styles.buttonDisabled,
-              ]}
-              onPress={handleJoinSubmit}
-              disabled={joinMutation.isPending}
-            >
-              {joinMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.modalButtonText}>Join</Text>
-              )}
-            </Pressable>
-            <Pressable style={styles.modalCancel} onPress={() => setJoinModalVisible(false)}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }
@@ -256,19 +171,4 @@ const styles = StyleSheet.create({
   cardDetails: { flexDirection: "row", gap: 16 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailText: { fontSize: 13, color: Colors.dark.textSecondary },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 32 },
-  modalContent: { backgroundColor: Colors.dark.surface, borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, gap: 12 },
-  modalTitle: { fontSize: 20, fontWeight: "bold" as const, color: Colors.dark.text, textAlign: "center" },
-  modalSubtitle: { fontSize: 14, color: Colors.dark.textSecondary, textAlign: "center" },
-  modalInput: {
-    backgroundColor: Colors.dark.background, borderWidth: 1, borderColor: Colors.dark.border,
-    borderRadius: 10, paddingHorizontal: 16, paddingVertical: 14, fontSize: 18, color: Colors.dark.text,
-    textAlign: "center", letterSpacing: 4, fontWeight: "600" as const,
-  },
-  modalError: { color: "#EF4444", fontSize: 13, textAlign: "center" },
-  modalButton: { backgroundColor: Colors.dark.accent, paddingVertical: 14, borderRadius: 10, alignItems: "center" },
-  buttonDisabled: { opacity: 0.6 },
-  modalButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" as const },
-  modalCancel: { alignItems: "center", paddingVertical: 8 },
-  modalCancelText: { color: Colors.dark.textSecondary, fontSize: 14 },
 });

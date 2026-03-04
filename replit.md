@@ -34,7 +34,8 @@ app/
   swayger/
     [id].tsx           # Swayger detail (contract view, accept/decline, settlement, rematch)
   invite/
-    [code].tsx         # Dynamic invite route
+    [code].tsx         # Invite join flow — preview swayger, accept/decline with opponent pick
+  join.tsx             # Join Swayger screen — enter code or scan QR
 components/            # Reusable components (ErrorBoundary, etc.)
 constants/
   colors.ts            # Dark theme color palette (brand colors)
@@ -77,6 +78,8 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 
 - Users create a Swayger with: title, description (optional), category (Sports/Entertainment/Gaming/Lifestyle/Politics/Other), stake units (1-100), and their pick/prediction
 - Each Swayger gets a unique invite code (6 chars, A-Z, 2-9)
+- Creator can share via: Copy Code, OS Share sheet ("Join my Swayger. Code: XXXXXX"), or QR code (encodes "SWAYGER:XXXXXX")
+- Opponents can join via: entering code on Join screen, or scanning QR code (expo-camera barcode scanner)
 - Creator shares the code with an opponent who joins and enters their own pick
 - Accepting locks both picks and activates the Swayger
 - Either participant can propose a settlement outcome: Creator Wins, Opponent Wins, Draw, or No Contest
@@ -161,7 +164,7 @@ After running `004_v1_refactor.sql`, verify the following manually:
 
 1. **Create Swayger**: Go to Create tab → fill in title, category, stake units, your pick → submit. Should redirect to detail screen showing status "Pending".
 2. **Invite Code**: On the detail screen, the invite code should be visible with copy buttons.
-3. **Join via Code**: Second user enters the invite code from dashboard "Join" button → should land on the swayger detail.
+3. **Join via Code**: Second user taps "Join" → enters code (or scans QR) → sees swayger preview → accepts with opponent pick.
 4. **Accept Swayger**: As the opponent, enter a pick and tap Accept → status should change to "Active", both picks visible.
 5. **Propose Settlement**: Either participant taps a settlement outcome → proposal card appears with one confirmation.
 6. **Confirm Settlement**: Other participant taps "Confirm Settlement" → status becomes "Settled", result shows.

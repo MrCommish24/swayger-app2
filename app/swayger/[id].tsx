@@ -9,12 +9,14 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
+import QRCode from "react-native-qrcode-svg";
 import {
   fetchSwayger,
   fetchSwaygerParticipants,
@@ -49,9 +51,8 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
-function InviteSection({ inviteCode }: { inviteCode: string }) {
+function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
   const [codeCopied, setCodeCopied] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
 
   async function handleCopyCode() {
     await Clipboard.setStringAsync(inviteCode);
@@ -59,47 +60,53 @@ function InviteSection({ inviteCode }: { inviteCode: string }) {
     setTimeout(() => setCodeCopied(false), 2000);
   }
 
-  async function handleCopyLink() {
-    const link =
-      Platform.OS === "web"
-        ? window.location.href
-        : `swayger://invite/${inviteCode}`;
-    await Clipboard.setStringAsync(link);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
+  async function handleShare() {
+    const message = `Join my Swayger "${swaygerName}". Code: ${inviteCode}`;
+    try {
+      await Share.share({ message });
+    } catch {
+      await Clipboard.setStringAsync(message);
+    }
   }
 
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Invite Opponent</Text>
-      <View style={styles.inviteRow}>
+      <View style={styles.inviteCard}>
         <Text style={styles.inviteCode}>{inviteCode}</Text>
+
+        <View style={styles.qrContainer}>
+          <View style={styles.qrWrapper}>
+            <QRCode
+              value={`SWAYGER:${inviteCode}`}
+              size={160}
+              backgroundColor="#FFFFFF"
+              color="#0B1120"
+            />
+          </View>
+          <Text style={styles.qrHint}>Opponent can scan this to join</Text>
+        </View>
+
         <View style={styles.inviteButtons}>
           <Pressable
-            style={({ pressed }) => [styles.copyButton, pressed && styles.btnPressed]}
+            style={({ pressed }) => [styles.inviteActionBtn, pressed && styles.btnPressed]}
             onPress={handleCopyCode}
           >
             <Ionicons
               name={codeCopied ? "checkmark" : "copy-outline"}
-              size={16}
+              size={18}
               color={codeCopied ? "#22C55E" : Colors.dark.tint}
             />
-            <Text style={[styles.copyText, codeCopied && { color: "#22C55E" }]}>
-              {codeCopied ? "Copied" : "Copy code"}
+            <Text style={[styles.inviteActionText, codeCopied && { color: "#22C55E" }]}>
+              {codeCopied ? "Copied!" : "Copy Code"}
             </Text>
           </Pressable>
           <Pressable
-            style={({ pressed }) => [styles.copyButton, pressed && styles.btnPressed]}
-            onPress={handleCopyLink}
+            style={({ pressed }) => [styles.inviteActionBtn, styles.inviteShareBtn, pressed && styles.btnPressed]}
+            onPress={handleShare}
           >
-            <Ionicons
-              name={linkCopied ? "checkmark" : "link-outline"}
-              size={16}
-              color={linkCopied ? "#22C55E" : Colors.dark.tint}
-            />
-            <Text style={[styles.copyText, linkCopied && { color: "#22C55E" }]}>
-              {linkCopied ? "Copied" : "Copy link"}
-            </Text>
+            <Ionicons name="share-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.inviteShareText}>Share Invite</Text>
           </Pressable>
         </View>
       </View>
@@ -673,7 +680,7 @@ export default function SwaygerDetailScreen() {
       )}
 
       {status === "pending_invite" && isCreator && (
-        <InviteSection inviteCode={swayger.invite_code} />
+        <InviteSection inviteCode={swayger.invite_code} swaygerName={swayger.name} />
       )}
 
       <View style={styles.section}>
@@ -779,17 +786,28 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "600" as const },
   btnPressed: { opacity: 0.8 },
   btnDisabled: { opacity: 0.5 },
-  inviteRow: {
-    backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 16,
-    borderWidth: 1, borderColor: Colors.dark.border, gap: 12,
+  inviteCard: {
+    backgroundColor: Colors.dark.surface, borderRadius: 16, padding: 20,
+    borderWidth: 1, borderColor: Colors.dark.border, gap: 16, alignItems: "center" as const,
   },
   inviteCode: {
     fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.tint,
-    letterSpacing: 6, textAlign: "center",
+    letterSpacing: 6, textAlign: "center" as const,
   },
-  inviteButtons: { flexDirection: "row", justifyContent: "center", gap: 16 },
-  copyButton: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12 },
-  copyText: { fontSize: 14, color: Colors.dark.tint, fontWeight: "500" as const },
+  qrContainer: { alignItems: "center" as const, gap: 8 },
+  qrWrapper: {
+    backgroundColor: "#FFFFFF", padding: 12, borderRadius: 12,
+  },
+  qrHint: { fontSize: 12, color: Colors.dark.tabIconDefault },
+  inviteButtons: { flexDirection: "row" as const, gap: 12, width: "100%" as const },
+  inviteActionBtn: {
+    flex: 1, flexDirection: "row" as const, alignItems: "center" as const,
+    justifyContent: "center" as const, gap: 6, paddingVertical: 14, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border, backgroundColor: Colors.dark.surfaceLight,
+  },
+  inviteActionText: { fontSize: 14, color: Colors.dark.tint, fontWeight: "600" as const },
+  inviteShareBtn: { backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent },
+  inviteShareText: { fontSize: 14, color: "#FFFFFF", fontWeight: "600" as const },
   proposalCard: {
     backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 16,
     borderWidth: 1, borderColor: Colors.dark.border, gap: 10,
