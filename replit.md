@@ -1,13 +1,13 @@
 # Swayger
 
-A mobile-first app built with Expo (React Native) and an Express backend, using Supabase for auth and data. A "Swayger" is a wager/bet that users create and invite others to participate in.
+A mobile-first app built with Expo (React Native) and an Express backend, using Supabase for auth and data. A "Swayger" is a simple 1v1 social wager contract between two users, settled by mutual agreement.
 
 ## Architecture
 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
 - **Auth**: Supabase OTP code + magic link + password sign-in via `@supabase/supabase-js`
-- **Data**: Supabase (workspaces, workspace_members, profiles, swayger_legs, swayger_responses tables — labeled as "Swaygers" and "Participants" in UI)
+- **Data**: Supabase (workspaces, workspace_members, profiles, settlement_proposals tables — labeled as "Swaygers" and "Participants" in UI)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
 - **Session Storage**: AsyncStorage (native), localStorage (web)
@@ -28,11 +28,11 @@ app/
   (tabs)/
     _layout.tsx        # Tab navigator (Swaygers, Create, Leaderboard, Profile)
     index.tsx          # Dashboard — "My Swaygers" with Create/Join buttons
-    create.tsx         # Create Swayger form (title, sport, stake, legs)
-    leaderboard.tsx    # Leaderboard screen (placeholder)
-    profile.tsx        # Profile screen with set password + sign-out
+    create.tsx         # Create Swayger form (title, description, category, stake units, creator pick)
+    leaderboard.tsx    # Leaderboard screen (ranked by wins from settled Swaygers)
+    profile.tsx        # Profile screen with set password + sign-out + dev schema panel
   swayger/
-    [id].tsx           # Swayger detail (status, stake, legs, accept/decline, invite, participants)
+    [id].tsx           # Swayger detail (contract view, accept/decline, settlement, rematch)
   invite/
     [code].tsx         # Dynamic invite route
 components/            # Reusable components (ErrorBoundary, etc.)
@@ -41,17 +41,18 @@ constants/
 lib/
   supabase.ts          # Supabase client initialization (AsyncStorage adapter)
   auth-context.tsx     # Auth context provider (session, profile, routing)
-  swayger.ts           # Swayger CRUD + gameplay functions (create, join, fetch, accept, decline, cancel) — all ops log errors to console
-  verify-schema.ts     # Schema verification utility — probes tables/RPCs on login (dev only), logs [schema-verify] results
+  swayger.ts           # Swayger CRUD + gameplay functions — all ops log errors with [swayger] prefix
+  verify-schema.ts     # Schema verification utility — probes tables/RPCs (dev only), logs [schema-verify]
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
-  index.ts             # TypeScript types: Profile, SwaygerData, SwaygerLeg, SwaygerResponse, LegInput, etc.
+  index.ts             # TypeScript types: Profile, SwaygerData, SettlementProposal, SwaygerParticipant
 supabase-migrations/
   001_workspaces.sql       # SQL for workspaces, workspace_members, profiles + RLS
   002_fix_rls_recursion.sql # Fix RLS recursion with SECURITY DEFINER helper
-  003_swayger_gameplay.sql  # Adds status/stake to workspaces, creates swayger_legs + swayger_responses + RPCs
-  003_verify_and_fix.sql    # Self-contained idempotent script: creates all tables/columns/policies/RPCs + runs verification
+  003_swayger_gameplay.sql  # (LEGACY v0 — legs/responses model, superseded by 004)
+  003_verify_and_fix.sql    # (LEGACY v0 — verification for legs model)
+  004_v1_refactor.sql       # V1 refactor: drops legs/responses, adds 1v1 wager contract model + settlement engine
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
@@ -66,42 +67,66 @@ server/
 
 Deep linking configured with scheme `swayger://` for magic link callbacks.
 
-## Swayger System
+## Swayger v1 System (1v1 Wager Contracts)
 
-- **Concept**: A "Swayger" is a wager/bet. Users create Swaygers and invite participants.
-- Users create a Swayger with title, sport (NFL/NBA/MLB/Soccer/NHL/Other), optional stake text, and 1+ pick legs
-- Each leg has: market type (Player Prop, Spread, Moneyline, Over/Under, Team Total, Custom), selection text, optional line and odds
-- Each Swayger gets a unique invite code (6-8 chars, A-Z, 2-9)
-- Creator becomes "owner" in DB (displayed as "Creator" in UI)
-- Other users join via invite code and become "viewer" in DB (displayed as "Participant" in UI)
-- Non-creators can Accept or Decline a Swayger while it's open
-- Accepting sets status to "accepted" and locks legs from editing; the acceptor is labeled "Challenger"
-- Declining records the decision but keeps the Swayger open for others ("Declined by you" banner)
-- Creator can cancel an open Swayger (sets status to "canceled")
-- Status chips: Open (green), Accepted (blue), Declined (red), Canceled (gray)
+### Core Loop
 
-## Gameplay v1 Tables
+Create → Invite → Accept (opponent_pick) → Active → Propose Settlement → Mutual Confirm → Settled → Leaderboard → Rematch
 
-- `swayger_legs` — pick legs (swayger_id, market_type, selection, odds, line, notes)
-- `swayger_responses` — accept/decline decisions per user (swayger_id, user_id, response)
-- `workspaces.status` — open | accepted | canceled (default 'open')
-- `workspaces.stake_text` — optional free-text stake description
+### How It Works
 
-## Gameplay RPCs (SECURITY DEFINER)
+- Users create a Swayger with: title, description (optional), category (Sports/Entertainment/Gaming/Lifestyle/Politics/Other), stake units (1-100), and their pick/prediction
+- Each Swayger gets a unique invite code (6 chars, A-Z, 2-9)
+- Creator shares the code with an opponent who joins and enters their own pick
+- Accepting locks both picks and activates the Swayger
+- Either participant can propose a settlement outcome: Creator Wins, Opponent Wins, Draw, or No Contest
+- The other participant must confirm the same proposal for it to settle
+- Settled Swaygers feed into the leaderboard (wins, losses, units won/lost)
+- Creators of settled Swaygers can create rematches: "Run it Back" (same stake) or "Double or Nothing" (2x stake)
 
-- `accept_swayger(p_swayger_id)` — records acceptance, sets status to 'accepted'
-- `decline_swayger(p_swayger_id)` — records decline, keeps swayger open
-- `cancel_swayger(p_swayger_id)` — creator only, sets status to 'canceled'
+### Statuses
 
-## DB → UI Mapping (Option A)
+- `pending_invite` — created, waiting for opponent to accept
+- `active` — both picks locked, wager is live
+- `settlement_proposed` — one party proposed an outcome, awaiting other's confirmation
+- `settled` — both parties confirmed, final outcome recorded
+- `declined` — opponent declined the invite
+- `canceled` — creator canceled the Swayger
+- `expired` / `expired_active` — past expiry date
+
+### Key DB Columns on `workspaces`
+
+- `category` — Sports, Entertainment, Gaming, Lifestyle, Politics, Other
+- `stake_units` — integer (1-100)
+- `creator_pick` — creator's prediction text
+- `opponent_pick` — opponent's prediction text (set on accept)
+- `opponent_id` — opponent's user UUID (set on accept)
+- `expires_at` — auto-set to 7 days from creation
+- `settled_outcome` — creator, opponent, draw, or no_contest
+- `source_swayger_id` — links to original swayger for rematches
+- `rematch_type` — run_it_back or double_or_nothing
+
+### Settlement Proposals Table
+
+- `settlement_proposals` — tracks proposed outcomes with creator_confirmed/opponent_confirmed flags
+- Both must confirm for settlement to finalize
+
+### Gameplay RPCs (SECURITY DEFINER)
+
+- `accept_swayger(p_swayger_id, p_opponent_pick)` — accept + set opponent pick, status → active
+- `decline_swayger(p_swayger_id)` — decline invite
+- `cancel_swayger(p_swayger_id)` — creator only, cancel
+- `propose_settlement(p_swayger_id, p_outcome)` — propose an outcome
+- `confirm_settlement(p_swayger_id, p_proposal_id)` — confirm a proposal; settles if both confirmed
+
+## DB → UI Mapping
 
 - `workspaces` table → "Swaygers" in UI
 - `workspaces.name` → Swayger title
-- `workspaces.scoring_type` → Sport (default "NFL")
 - `workspaces.owner_id` → Creator
 - `workspace_members` → Participants
 - DB role `owner` → UI label "Creator"
-- DB role `viewer`/`editor` → UI label "Participant" (or "Challenger" if accepted)
+- DB role `viewer`/`editor` → UI label "Opponent"
 - RPC functions `create_workspace` / `join_workspace_by_code` still used (DB names unchanged)
 
 ## Theme (Brand Colors)
@@ -115,13 +140,12 @@ Deep linking configured with scheme `swayger://` for magic link callbacks.
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
-- `workspaces` — swaygers (name, scoring_type, invite_code, owner_id, status, stake_text)
+- `workspaces` — swaygers (name, category, invite_code, owner_id, status, stake_units, creator_pick, opponent_pick, etc.)
 - `workspace_members` — participants (workspace_id, user_id, role)
-- `swayger_legs` — pick legs (swayger_id, market_type, selection, odds, line)
-- `swayger_responses` — accept/decline tracking (swayger_id, user_id, response)
+- `settlement_proposals` — settlement proposals (swayger_id, proposed_by, outcome, confirmations)
 
 RLS uses `is_workspace_member()` SECURITY DEFINER function to avoid recursion.
-Run all 3 migration files in Supabase SQL Editor in order: `001_workspaces.sql`, `002_fix_rls_recursion.sql`, `003_swayger_gameplay.sql`.
+Run migrations in Supabase SQL Editor in order: `001_workspaces.sql`, `002_fix_rls_recursion.sql`, then `004_v1_refactor.sql`.
 
 ## Workflows
 

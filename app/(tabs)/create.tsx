@@ -15,30 +15,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { createSwayger } from "@/lib/swayger";
+import { createSwayger, CATEGORIES } from "@/lib/swayger";
 import { showError } from "@/lib/helpers";
-import { LegInput } from "@/types";
 import Colors from "@/constants/colors";
-
-const SPORT_OPTIONS = [
-  { value: "NFL", label: "NFL", icon: "american-football-outline" as const },
-  { value: "NBA", label: "NBA", icon: "basketball-outline" as const },
-  { value: "MLB", label: "MLB", icon: "baseball-outline" as const },
-  { value: "Soccer", label: "Soccer", icon: "football-outline" as const },
-  { value: "NHL", label: "NHL", icon: "snow-outline" as const },
-  { value: "Other", label: "Other", icon: "trophy-outline" as const },
-];
-
-const MARKET_TYPES = [
-  { value: "player_prop", label: "Player Prop" },
-  { value: "spread", label: "Spread" },
-  { value: "moneyline", label: "Moneyline" },
-  { value: "over_under", label: "Over/Under" },
-  { value: "team_total", label: "Team Total" },
-  { value: "custom", label: "Custom" },
-];
-
-const EMPTY_LEG: LegInput = { market_type: "custom", selection: "", odds: "", line: "" };
 
 export default function CreateSwaygerScreen() {
   const router = useRouter();
@@ -48,31 +27,16 @@ export default function CreateSwaygerScreen() {
   const queryClient = useQueryClient();
 
   const [title, setTitle] = useState("");
-  const [sport, setSport] = useState("NFL");
-  const [stake, setStake] = useState("");
-  const [legs, setLegs] = useState<LegInput[]>([{ ...EMPTY_LEG }]);
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("Sports");
+  const [stakeUnits, setStakeUnits] = useState(1);
+  const [creatorPick, setCreatorPick] = useState("");
 
-  function updateLeg(index: number, field: keyof LegInput, value: string) {
-    setLegs((prev) => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
-  }
-
-  function addLeg() {
-    setLegs((prev) => [...prev, { ...EMPTY_LEG }]);
-  }
-
-  function removeLeg(index: number) {
-    if (legs.length <= 1) return;
-    setLegs((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  const hasValidLeg = legs.some((l) => l.selection.trim().length > 0);
+  const canSubmit = title.trim().length >= 2 && creatorPick.trim().length > 0;
 
   const mutation = useMutation({
-    mutationFn: () => createSwayger(title, sport, user!.id, stake, legs),
+    mutationFn: () =>
+      createSwayger(title, category, stakeUnits, creatorPick, user!.id, description),
     onSuccess: (result) => {
       if (result.error) {
         showError(result.error);
@@ -80,27 +44,26 @@ export default function CreateSwaygerScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       setTitle("");
-      setSport("NFL");
-      setStake("");
-      setLegs([{ ...EMPTY_LEG }]);
+      setDescription("");
+      setCategory("Sports");
+      setStakeUnits(1);
+      setCreatorPick("");
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}`);
       } else {
         router.push("/(tabs)");
       }
     },
-    onError: () => {
-      showError("Something went wrong. Try again.");
-    },
+    onError: () => showError("Something went wrong. Try again."),
   });
 
   function handleCreate() {
     if (!title.trim()) {
-      showError("Please enter a title for your Swayger.");
+      showError("Please enter a title.");
       return;
     }
-    if (!hasValidLeg) {
-      showError("Add at least one pick/leg with a selection.");
+    if (!creatorPick.trim()) {
+      showError("Please enter your pick/prediction.");
       return;
     }
     mutation.mutate();
@@ -118,9 +81,7 @@ export default function CreateSwaygerScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Create Swayger</Text>
-          <Text style={styles.subtitle}>
-            Set up a new wager for your crew
-          </Text>
+          <Text style={styles.subtitle}>Set up a 1v1 wager</Text>
         </View>
 
         <View style={styles.form}>
@@ -128,43 +89,58 @@ export default function CreateSwaygerScreen() {
             <Text style={styles.label}>Title</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g. Sunday NFL Picks"
+              placeholder="e.g. Bills vs Chiefs Winner"
               placeholderTextColor={Colors.dark.tabIconDefault}
               value={title}
               onChangeText={setTitle}
               editable={!mutation.isPending}
-              maxLength={50}
+              maxLength={60}
             />
           </View>
 
           <View>
-            <Text style={styles.label}>Sport</Text>
-            <View style={styles.sportGrid}>
-              {SPORT_OPTIONS.map((opt) => (
+            <Text style={styles.label}>Description (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              placeholder="Add context or rules..."
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={description}
+              onChangeText={setDescription}
+              editable={!mutation.isPending}
+              maxLength={280}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          <View>
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.categoryGrid}>
+              {CATEGORIES.map((cat) => (
                 <Pressable
-                  key={opt.value}
+                  key={cat.value}
                   style={[
-                    styles.sportOption,
-                    sport === opt.value && styles.sportOptionActive,
+                    styles.categoryOption,
+                    category === cat.value && styles.categoryOptionActive,
                   ]}
-                  onPress={() => setSport(opt.value)}
+                  onPress={() => setCategory(cat.value)}
                 >
                   <Ionicons
-                    name={opt.icon}
+                    name={cat.icon}
                     size={18}
                     color={
-                      sport === opt.value
+                      category === cat.value
                         ? Colors.dark.tint
                         : Colors.dark.textSecondary
                     }
                   />
                   <Text
                     style={[
-                      styles.sportLabel,
-                      sport === opt.value && styles.sportLabelActive,
+                      styles.categoryLabel,
+                      category === cat.value && styles.categoryLabelActive,
                     ]}
                   >
-                    {opt.label}
+                    {cat.value}
                   </Text>
                 </Pressable>
               ))}
@@ -172,110 +148,48 @@ export default function CreateSwaygerScreen() {
           </View>
 
           <View>
-            <Text style={styles.label}>Stake (optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Loser buys dinner"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={stake}
-              onChangeText={setStake}
-              editable={!mutation.isPending}
-              maxLength={100}
-            />
+            <Text style={styles.label}>Stake (units)</Text>
+            <View style={styles.stakeRow}>
+              <Pressable
+                style={styles.stakeButton}
+                onPress={() => setStakeUnits((v) => Math.max(1, v - 1))}
+              >
+                <Ionicons name="remove" size={20} color={Colors.dark.text} />
+              </Pressable>
+              <Text style={styles.stakeValue}>{stakeUnits}</Text>
+              <Pressable
+                style={styles.stakeButton}
+                onPress={() => setStakeUnits((v) => Math.min(100, v + 1))}
+              >
+                <Ionicons name="add" size={20} color={Colors.dark.text} />
+              </Pressable>
+            </View>
           </View>
 
           <View>
-            <Text style={styles.label}>Picks / Legs</Text>
-            {legs.map((leg, index) => (
-              <View key={index} style={styles.legCard}>
-                <View style={styles.legHeader}>
-                  <Text style={styles.legNumber}>Leg {index + 1}</Text>
-                  {legs.length > 1 && (
-                    <Pressable onPress={() => removeLeg(index)}>
-                      <Ionicons name="close-circle" size={22} color="#EF4444" />
-                    </Pressable>
-                  )}
-                </View>
-
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.marketTypeScroll}
-                >
-                  {MARKET_TYPES.map((mt) => (
-                    <Pressable
-                      key={mt.value}
-                      style={[
-                        styles.marketChip,
-                        leg.market_type === mt.value && styles.marketChipActive,
-                      ]}
-                      onPress={() => updateLeg(index, "market_type", mt.value)}
-                    >
-                      <Text
-                        style={[
-                          styles.marketChipText,
-                          leg.market_type === mt.value && styles.marketChipTextActive,
-                        ]}
-                      >
-                        {mt.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Josh Allen OVER 1.5 Pass TDs"
-                  placeholderTextColor={Colors.dark.tabIconDefault}
-                  value={leg.selection}
-                  onChangeText={(v) => updateLeg(index, "selection", v)}
-                  editable={!mutation.isPending}
-                  maxLength={200}
-                />
-
-                <View style={styles.legRow}>
-                  <View style={styles.legRowField}>
-                    <Text style={styles.miniLabel}>Line</Text>
-                    <TextInput
-                      style={[styles.input, styles.miniInput]}
-                      placeholder="-3.5"
-                      placeholderTextColor={Colors.dark.tabIconDefault}
-                      value={leg.line}
-                      onChangeText={(v) => updateLeg(index, "line", v)}
-                      editable={!mutation.isPending}
-                      maxLength={20}
-                    />
-                  </View>
-                  <View style={styles.legRowField}>
-                    <Text style={styles.miniLabel}>Odds</Text>
-                    <TextInput
-                      style={[styles.input, styles.miniInput]}
-                      placeholder="-110"
-                      placeholderTextColor={Colors.dark.tabIconDefault}
-                      value={leg.odds}
-                      onChangeText={(v) => updateLeg(index, "odds", v)}
-                      editable={!mutation.isPending}
-                      maxLength={20}
-                    />
-                  </View>
-                </View>
-              </View>
-            ))}
-
-            <Pressable style={styles.addLegButton} onPress={addLeg}>
-              <Ionicons name="add-circle-outline" size={20} color={Colors.dark.tint} />
-              <Text style={styles.addLegText}>Add another leg</Text>
-            </Pressable>
+            <Text style={styles.label}>Your Pick</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Bills win by 7+"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={creatorPick}
+              onChangeText={setCreatorPick}
+              editable={!mutation.isPending}
+              maxLength={200}
+            />
+            <Text style={styles.hint}>
+              Your opponent will set their pick when they accept.
+            </Text>
           </View>
 
           <Pressable
             style={({ pressed }) => [
               styles.button,
               pressed && styles.buttonPressed,
-              (mutation.isPending || !title.trim() || !hasValidLeg) && styles.buttonDisabled,
+              (mutation.isPending || !canSubmit) && styles.buttonDisabled,
             ]}
             onPress={handleCreate}
-            disabled={mutation.isPending || !title.trim() || !hasValidLeg}
+            disabled={mutation.isPending || !canSubmit}
           >
             {mutation.isPending ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -327,10 +241,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
-  miniLabel: {
+  hint: {
     fontSize: 12,
     color: Colors.dark.tabIconDefault,
-    marginBottom: 4,
+    marginTop: 6,
   },
   input: {
     backgroundColor: Colors.dark.surface,
@@ -342,16 +256,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.dark.text,
   },
-  miniInput: {
-    paddingVertical: 10,
-    fontSize: 14,
+  inputMultiline: {
+    minHeight: 80,
+    textAlignVertical: "top",
   },
-  sportGrid: {
+  categoryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
   },
-  sportOption: {
+  categoryOption: {
     flexBasis: "30%",
     flexGrow: 1,
     backgroundColor: Colors.dark.surface,
@@ -364,82 +278,40 @@ const styles = StyleSheet.create({
     gap: 4,
     flexDirection: "row",
   },
-  sportOptionActive: {
+  categoryOptionActive: {
     borderColor: Colors.dark.tint,
     backgroundColor: "rgba(29, 161, 242, 0.08)",
   },
-  sportLabel: {
+  categoryLabel: {
     fontSize: 13,
     color: Colors.dark.textSecondary,
     fontWeight: "500" as const,
   },
-  sportLabelActive: {
+  categoryLabelActive: {
     color: Colors.dark.tint,
   },
-  legCard: {
+  stakeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    alignSelf: "flex-start",
+  },
+  stakeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.dark.surface,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    padding: 14,
-    gap: 10,
-    marginBottom: 10,
-  },
-  legHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  legNumber: {
-    fontSize: 14,
-    fontWeight: "600" as const,
-    color: Colors.dark.tint,
-  },
-  marketTypeScroll: {
-    marginHorizontal: -4,
-  },
-  marketChip: {
-    backgroundColor: Colors.dark.surfaceLight,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginHorizontal: 3,
-  },
-  marketChipActive: {
-    backgroundColor: "rgba(29, 161, 242, 0.15)",
-    borderWidth: 1,
-    borderColor: Colors.dark.tint,
-  },
-  marketChipText: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-    fontWeight: "500" as const,
-  },
-  marketChipTextActive: {
-    color: Colors.dark.tint,
-  },
-  legRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  legRowField: {
-    flex: 1,
-  },
-  addLegButton: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderStyle: "dashed",
   },
-  addLegText: {
-    fontSize: 14,
+  stakeValue: {
+    fontSize: 28,
+    fontWeight: "bold" as const,
     color: Colors.dark.tint,
-    fontWeight: "500" as const,
+    minWidth: 40,
+    textAlign: "center",
   },
   button: {
     backgroundColor: Colors.dark.accent,

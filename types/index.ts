@@ -7,35 +7,50 @@ export interface Profile {
   updated_at: string;
 }
 
+export type SwaygerStatus =
+  | "pending_invite"
+  | "active"
+  | "settlement_proposed"
+  | "settled"
+  | "declined"
+  | "canceled"
+  | "expired"
+  | "expired_active";
+
 export interface SwaygerData {
   id: string;
   owner_id: string;
+  opponent_id: string | null;
   name: string;
-  scoring_type: string;
+  description: string | null;
+  category: string;
+  stake_units: number;
+  creator_pick: string | null;
+  opponent_pick: string | null;
+  status: SwaygerStatus;
   invite_code: string;
-  status: string;
-  stake_text: string | null;
+  expires_at: string | null;
+  source_swayger_id: string | null;
+  rematch_type: string | null;
+  settled_outcome: string | null;
+  scoring_type: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
-export interface SwaygerLeg {
-  id: string;
-  swayger_id: string;
-  created_by: string;
-  market_type: string;
-  selection: string;
-  odds: string | null;
-  line: string | null;
-  notes: string | null;
-  created_at: string;
+export interface SwaygerWithRole extends SwaygerData {
+  role: "owner" | "editor" | "viewer";
 }
 
-export interface SwaygerResponse {
+export interface SettlementProposal {
   id: string;
   swayger_id: string;
-  user_id: string;
-  response: "accepted" | "declined";
+  proposed_by: string;
+  outcome: "creator" | "opponent" | "draw" | "no_contest";
+  creator_confirmed: boolean;
+  opponent_confirmed: boolean;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface SwaygerParticipant {
@@ -52,15 +67,4 @@ export interface SwaygerParticipantWithProfile extends SwaygerParticipant {
     display_name: string | null;
     avatar_url: string | null;
   } | null;
-}
-
-export interface SwaygerWithRole extends SwaygerData {
-  role: "owner" | "editor" | "viewer";
-}
-
-export interface LegInput {
-  market_type: string;
-  selection: string;
-  odds: string;
-  line: string;
 }

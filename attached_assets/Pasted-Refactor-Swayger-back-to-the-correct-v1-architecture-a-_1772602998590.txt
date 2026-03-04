@@ -1,0 +1,62 @@
+Refactor Swayger back to the correct v1 architecture: a simple 1v1 “for-fun units” social wager contract.
+
+Current issue:
+The app drifted into a sportsbook/parlay model (“legs” and “betting lines”). That is NOT v1.
+
+V1 MUST be general-purpose (can wager on anything) and must NOT contain odds, lines, payouts, or legs.
+
+GOAL MODEL (single Swayger contract):
+A swayger has:
+- id
+- creator_id
+- opponent_id (nullable until accepted)
+- title (required)
+- description (optional)
+- category_id (required or default “Other”)
+- stake_units (positive integer)
+- creator_pick (required)
+- opponent_pick (required at accept time)
+- status: pending_invite | active | settlement_proposed | settled | declined | canceled | expired | expired_active
+- expires_at = created_at + 7 days
+- source_swayger_id (nullable, for rematches)
+- rematch_type: run_it_back | double_or_nothing (nullable)
+- created_at, updated_at
+
+Invites:
+- Invite codes link a swayger to a shareable invite_code and URL/QR.
+- No open challenges. Invite is intended for a specific opponent.
+- Accept flow: opponent signs in, sets opponent_pick, becomes opponent_id, swayger status -> active.
+
+Settlement (trust engine):
+- Either party can propose an outcome: creator | opponent | draw | no_contest
+- The swayger is settled ONLY when BOTH participants confirm the SAME outcome.
+- If disputed, keep it unresolved and allow new proposal.
+- Store proposals in settlement_proposals with creator_confirmed/opponent_confirmed.
+
+Leaderboards:
+- Only settled swaygers count.
+- Show overall wins/losses and wins/losses by category.
+
+Rematches:
+- On settled swayger:
+  - Run it back: clone into new swayger (same stake)
+  - Double or nothing: clone into new swayger (stake * 2)
+- Requires opponent acceptance again, with new 7-day expiry.
+
+Tasks for you (Replit):
+1) Remove any “legs”, “lines”, “odds”, “parlay” structures from the DB schema and code.
+2) Update migrations accordingly:
+   - Provide a new SQL migration that safely drops/ignores legs/lines tables if they exist,
+     and ensures the correct tables/columns exist for the contract model above.
+3) Update the UI:
+   - Create Swayger screen collects: title, description(optional), category, stake_units, creator_pick.
+   - Accept Invite screen collects: opponent_pick and Accept/Decline.
+   - Detail screen shows both picks, stake, expiry, status, settlement actions.
+4) Update API/data access:
+   - All Supabase queries should use the swaygers table as the single source of truth.
+5) Add a “Schema Health” dev panel (hidden behind a dev flag) that runs a simple select on the key tables and prints any missing columns/policies.
+6) Keep everything Expo Go compatible and do not introduce real-money or sportsbook integrations.
+
+Deliverable:
+After this refactor, the app should support the full v1 loop:
+Create -> Invite (QR/link/text) -> Accept (opponent_pick) -> Active -> Propose settlement -> Mutual confirm -> Settled -> Leaderboards -> Rematch.

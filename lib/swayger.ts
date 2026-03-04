@@ -1,11 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import {
   SwaygerData,
-  SwaygerLeg,
-  SwaygerResponse,
-  SwaygerParticipantWithProfile,
   SwaygerWithRole,
-  LegInput,
+  SwaygerParticipantWithProfile,
+  SettlementProposal,
 } from "@/types";
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -26,7 +24,6 @@ async function generateUniqueInviteCode(): Promise<string> {
       .select("id")
       .eq("invite_code", code)
       .maybeSingle();
-
     if (!data) return code;
   }
   return generateInviteCode(8);
@@ -34,16 +31,17 @@ async function generateUniqueInviteCode(): Promise<string> {
 
 export async function createSwayger(
   title: string,
-  sport: string,
+  category: string,
+  stakeUnits: number,
+  creatorPick: string,
   userId: string,
-  stakeText?: string,
-  legs?: LegInput[]
+  description?: string
 ): Promise<{ swayger: SwaygerData | null; error: string | null }> {
   const inviteCode = await generateUniqueInviteCode();
 
   const { data, error } = await supabase.rpc("create_workspace", {
     p_name: title.trim(),
-    p_scoring_type: sport || "NFL",
+    p_scoring_type: category || "Other",
     p_invite_code: inviteCode,
   });
 
@@ -55,40 +53,23 @@ export async function createSwayger(
   const swaygerId = data as string;
   console.log("[swayger] Created swayger:", swaygerId);
 
-  if (stakeText?.trim()) {
-    const { error: stakeErr } = await supabase
-      .from("workspaces")
-      .update({ stake_text: stakeText.trim() })
-      .eq("id", swaygerId);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    if (stakeErr) {
-      console.error("[swayger] Failed to set stake_text:", stakeErr.message, stakeErr.code, stakeErr.details);
-    }
-  }
+  const { error: updateErr } = await supabase
+    .from("workspaces")
+    .update({
+      category: category || "Other",
+      stake_units: Math.max(1, stakeUnits),
+      creator_pick: creatorPick.trim(),
+      description: description?.trim() || null,
+      status: "pending_invite",
+      expires_at: expiresAt,
+    })
+    .eq("id", swaygerId);
 
-  if (legs && legs.length > 0) {
-    const legRows = legs
-      .filter((l) => l.selection.trim())
-      .map((l) => ({
-        swayger_id: swaygerId,
-        created_by: userId,
-        market_type: l.market_type || "custom",
-        selection: l.selection.trim(),
-        odds: l.odds.trim() || null,
-        line: l.line.trim() || null,
-      }));
-
-    if (legRows.length > 0) {
-      const { error: legError } = await supabase
-        .from("swayger_legs")
-        .insert(legRows);
-
-      if (legError) {
-        console.error("[swayger] Failed to insert legs:", legError.message, legError.code, legError.details);
-        return { swayger: null, error: `Created swayger but failed to add legs: ${legError.message}` };
-      }
-      console.log("[swayger] Inserted", legRows.length, "leg(s) for swayger:", swaygerId);
-    }
+  if (updateErr) {
+    console.error("[swayger] Failed to update swayger fields:", updateErr.message, updateErr.code);
+    return { swayger: null, error: `Created but failed to set details: ${updateErr.message}` };
   }
 
   const { data: swayger, error: fetchError } = await supabase
@@ -98,23 +79,21 @@ export async function createSwayger(
     .single();
 
   if (fetchError) {
-    console.error("[swayger] Failed to fetch created swayger:", fetchError.message, fetchError.code);
+    console.error("[swayger] Failed to fetch created swayger:", fetchError.message);
     return { swayger: null, error: fetchError.message };
   }
 
   return { swayger: swayger as SwaygerData, error: null };
 }
 
-export async function fetchMySwaygers(
-  userId: string
-): Promise<SwaygerWithRole[]> {
+export async function fetchMySwaygers(userId: string): Promise<SwaygerWithRole[]> {
   const { data: memberships, error: memError } = await supabase
     .from("workspace_members")
     .select("workspace_id, role")
     .eq("user_id", userId);
 
   if (memError) {
-    console.error("[swayger] fetchMySwaygers memberships error:", memError.message, memError.code);
+    console.error("[swayger] fetchMySwaygers memberships error:", memError.message);
     return [];
   }
   if (!memberships || memberships.length === 0) return [];
@@ -128,7 +107,7 @@ export async function fetchMySwaygers(
     .order("created_at", { ascending: false });
 
   if (wsError) {
-    console.error("[swayger] fetchMySwaygers workspaces error:", wsError.message, wsError.code);
+    console.error("[swayger] fetchMySwaygers workspaces error:", wsError.message);
     return [];
   }
   if (!swaygers) return [];
@@ -141,9 +120,7 @@ export async function fetchMySwaygers(
   }));
 }
 
-export async function fetchSwayger(
-  swaygerId: string
-): Promise<SwaygerData | null> {
+export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | null> {
   const { data, error } = await supabase
     .from("workspaces")
     .select("*")
@@ -151,48 +128,13 @@ export async function fetchSwayger(
     .single();
 
   if (error) {
-    console.error("[swayger] fetchSwayger error:", error.message, error.code, "id:", swaygerId);
+    console.error("[swayger] fetchSwayger error:", error.message, "id:", swaygerId);
     return null;
   }
   return data as SwaygerData;
 }
 
-export async function fetchSwaygerLegs(
-  swaygerId: string
-): Promise<SwaygerLeg[]> {
-  const { data, error } = await supabase
-    .from("swayger_legs")
-    .select("*")
-    .eq("swayger_id", swaygerId)
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("[swayger] fetchSwaygerLegs error:", error.message, error.code, "swayger:", swaygerId);
-    return [];
-  }
-  if (!data) return [];
-  return data as SwaygerLeg[];
-}
-
-export async function fetchSwaygerResponses(
-  swaygerId: string
-): Promise<SwaygerResponse[]> {
-  const { data, error } = await supabase
-    .from("swayger_responses")
-    .select("*")
-    .eq("swayger_id", swaygerId);
-
-  if (error) {
-    console.error("[swayger] fetchSwaygerResponses error:", error.message, error.code, "swayger:", swaygerId);
-    return [];
-  }
-  if (!data) return [];
-  return data as SwaygerResponse[];
-}
-
-export async function fetchSwaygerParticipants(
-  swaygerId: string
-): Promise<SwaygerParticipantWithProfile[]> {
+export async function fetchSwaygerParticipants(swaygerId: string): Promise<SwaygerParticipantWithProfile[]> {
   const { data, error } = await supabase
     .from("workspace_members")
     .select("*, profiles(username, display_name, avatar_url)")
@@ -200,98 +142,168 @@ export async function fetchSwaygerParticipants(
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("[swayger] fetchSwaygerParticipants error:", error.message, error.code, "swayger:", swaygerId);
+    console.error("[swayger] fetchSwaygerParticipants error:", error.message);
     return [];
   }
   if (!data) return [];
   return data as SwaygerParticipantWithProfile[];
 }
 
-export async function acceptSwayger(
-  swaygerId: string
-): Promise<{ error: string | null }> {
-  console.log("[swayger] Calling accept_swayger RPC for:", swaygerId);
+export async function fetchSettlementProposals(swaygerId: string): Promise<SettlementProposal[]> {
+  const { data, error } = await supabase
+    .from("settlement_proposals")
+    .select("*")
+    .eq("swayger_id", swaygerId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[swayger] fetchSettlementProposals error:", error.message);
+    return [];
+  }
+  if (!data) return [];
+  return data as SettlementProposal[];
+}
+
+export async function acceptSwayger(swaygerId: string, opponentPick: string): Promise<{ error: string | null }> {
+  console.log("[swayger] Accepting swayger:", swaygerId);
   const { data, error } = await supabase.rpc("accept_swayger", {
     p_swayger_id: swaygerId,
+    p_opponent_pick: opponentPick.trim(),
   });
 
   if (error) {
-    console.error("[swayger] accept_swayger RPC error:", error.message, error.code, error.details);
+    console.error("[swayger] accept_swayger RPC error:", error.message, error.code);
     return { error: error.message };
   }
   const result = data as { error: string | null };
-  if (result.error) {
-    console.error("[swayger] accept_swayger business error:", result.error);
-  } else {
-    console.log("[swayger] Swayger accepted successfully:", swaygerId);
-  }
+  if (result.error) console.error("[swayger] accept_swayger business error:", result.error);
+  else console.log("[swayger] Swayger accepted:", swaygerId);
   return { error: result.error };
 }
 
-export async function declineSwayger(
-  swaygerId: string
-): Promise<{ error: string | null }> {
-  console.log("[swayger] Calling decline_swayger RPC for:", swaygerId);
+export async function declineSwayger(swaygerId: string): Promise<{ error: string | null }> {
+  console.log("[swayger] Declining swayger:", swaygerId);
   const { data, error } = await supabase.rpc("decline_swayger", {
     p_swayger_id: swaygerId,
   });
 
   if (error) {
-    console.error("[swayger] decline_swayger RPC error:", error.message, error.code, error.details);
+    console.error("[swayger] decline_swayger RPC error:", error.message, error.code);
     return { error: error.message };
   }
   const result = data as { error: string | null };
-  if (result.error) {
-    console.error("[swayger] decline_swayger business error:", result.error);
-  } else {
-    console.log("[swayger] Swayger declined successfully:", swaygerId);
-  }
+  if (result.error) console.error("[swayger] decline_swayger business error:", result.error);
   return { error: result.error };
 }
 
-export async function cancelSwayger(
-  swaygerId: string
-): Promise<{ error: string | null }> {
-  console.log("[swayger] Calling cancel_swayger RPC for:", swaygerId);
+export async function cancelSwayger(swaygerId: string): Promise<{ error: string | null }> {
+  console.log("[swayger] Canceling swayger:", swaygerId);
   const { data, error } = await supabase.rpc("cancel_swayger", {
     p_swayger_id: swaygerId,
   });
 
   if (error) {
-    console.error("[swayger] cancel_swayger RPC error:", error.message, error.code, error.details);
+    console.error("[swayger] cancel_swayger RPC error:", error.message, error.code);
     return { error: error.message };
   }
   const result = data as { error: string | null };
-  if (result.error) {
-    console.error("[swayger] cancel_swayger business error:", result.error);
-  } else {
-    console.log("[swayger] Swayger canceled successfully:", swaygerId);
-  }
+  if (result.error) console.error("[swayger] cancel_swayger business error:", result.error);
   return { error: result.error };
+}
+
+export async function proposeSettlement(
+  swaygerId: string,
+  outcome: string
+): Promise<{ error: string | null; proposalId: string | null }> {
+  console.log("[swayger] Proposing settlement:", swaygerId, outcome);
+  const { data, error } = await supabase.rpc("propose_settlement", {
+    p_swayger_id: swaygerId,
+    p_outcome: outcome,
+  });
+
+  if (error) {
+    console.error("[swayger] propose_settlement RPC error:", error.message, error.code);
+    return { error: error.message, proposalId: null };
+  }
+  const result = data as { error: string | null; proposal_id: string | null };
+  if (result.error) console.error("[swayger] propose_settlement business error:", result.error);
+  return { error: result.error, proposalId: result.proposal_id ?? null };
+}
+
+export async function confirmSettlement(
+  swaygerId: string,
+  proposalId: string
+): Promise<{ error: string | null; settled: boolean }> {
+  console.log("[swayger] Confirming settlement:", swaygerId, proposalId);
+  const { data, error } = await supabase.rpc("confirm_settlement", {
+    p_swayger_id: swaygerId,
+    p_proposal_id: proposalId,
+  });
+
+  if (error) {
+    console.error("[swayger] confirm_settlement RPC error:", error.message, error.code);
+    return { error: error.message, settled: false };
+  }
+  const result = data as { error: string | null; settled: boolean };
+  if (result.error) console.error("[swayger] confirm_settlement business error:", result.error);
+  if (result.settled) console.log("[swayger] Swayger settled:", swaygerId);
+  return { error: result.error, settled: result.settled ?? false };
+}
+
+export async function createRematch(
+  swaygerId: string,
+  rematchType: "run_it_back" | "double_or_nothing",
+  userId: string
+): Promise<{ swayger: SwaygerData | null; error: string | null }> {
+  const original = await fetchSwayger(swaygerId);
+  if (!original) return { swayger: null, error: "Original swayger not found." };
+
+  if (original.status !== "settled") return { swayger: null, error: "Can only rematch a settled Swayger." };
+
+  const newStake = rematchType === "double_or_nothing" ? original.stake_units * 2 : original.stake_units;
+
+  const result = await createSwayger(
+    original.name,
+    original.category,
+    newStake,
+    original.creator_pick || "",
+    userId,
+    original.description || undefined
+  );
+
+  if (result.error || !result.swayger) return result;
+
+  const { error: linkErr } = await supabase
+    .from("workspaces")
+    .update({
+      source_swayger_id: swaygerId,
+      rematch_type: rematchType,
+    })
+    .eq("id", result.swayger.id);
+
+  if (linkErr) {
+    console.error("[swayger] Failed to link rematch:", linkErr.message);
+  }
+
+  return result;
 }
 
 export async function joinSwaygerByCode(
   inviteCode: string,
   _userId: string
 ): Promise<{ swaygerId: string | null; error: string | null; alreadyMember: boolean }> {
-  console.log("[swayger] Calling join_workspace_by_code RPC with code:", inviteCode.trim().toUpperCase());
+  console.log("[swayger] Joining by code:", inviteCode.trim().toUpperCase());
   const { data, error } = await supabase.rpc("join_workspace_by_code", {
     p_invite_code: inviteCode.trim().toUpperCase(),
   });
 
   if (error) {
-    console.error("[swayger] join_workspace_by_code RPC error:", error.message, error.code, error.details);
+    console.error("[swayger] join_workspace_by_code error:", error.message, error.code);
     return { swaygerId: null, error: error.message, alreadyMember: false };
   }
 
   const result = data as { error: string | null; workspace_id: string | null; already_member: boolean };
-
-  if (result.error) {
-    console.error("[swayger] join_workspace_by_code business error:", result.error);
-  } else {
-    console.log("[swayger] Joined swayger:", result.workspace_id, "already_member:", result.already_member);
-  }
-
+  if (result.error) console.error("[swayger] join business error:", result.error);
   return {
     swaygerId: result.workspace_id,
     error: result.error,
@@ -301,32 +313,43 @@ export async function joinSwaygerByCode(
 
 export function displayRole(dbRole: string): string {
   if (dbRole === "owner") return "Creator";
-  return "Participant";
+  return "Opponent";
 }
 
 export function displayStatus(status: string): { label: string; color: string } {
   switch (status) {
-    case "open":
-      return { label: "Open", color: "#22C55E" };
-    case "accepted":
-      return { label: "Accepted", color: "#3B82F6" };
-    case "declined":
-      return { label: "Declined", color: "#EF4444" };
-    case "canceled":
-      return { label: "Canceled", color: "#6B7280" };
-    default:
-      return { label: status, color: "#8B95A5" };
+    case "pending_invite": return { label: "Pending", color: "#F5A623" };
+    case "active": return { label: "Active", color: "#22C55E" };
+    case "settlement_proposed": return { label: "Settlement Proposed", color: "#3B82F6" };
+    case "settled": return { label: "Settled", color: "#8B5CF6" };
+    case "declined": return { label: "Declined", color: "#EF4444" };
+    case "canceled": return { label: "Canceled", color: "#6B7280" };
+    case "expired": return { label: "Expired", color: "#6B7280" };
+    case "expired_active": return { label: "Expired (Active)", color: "#F97316" };
+    default: return { label: status, color: "#8B95A5" };
   }
 }
 
-export function displayMarketType(mt: string): string {
-  switch (mt) {
-    case "player_prop": return "Player Prop";
-    case "spread": return "Spread";
-    case "moneyline": return "Moneyline";
-    case "team_total": return "Team Total";
-    case "over_under": return "Over/Under";
-    case "custom": return "Custom";
-    default: return mt;
+export function displayOutcome(outcome: string): string {
+  switch (outcome) {
+    case "creator": return "Creator Wins";
+    case "opponent": return "Opponent Wins";
+    case "draw": return "Draw";
+    case "no_contest": return "No Contest";
+    default: return outcome;
   }
+}
+
+export const CATEGORIES = [
+  { value: "Sports", icon: "american-football-outline" as const },
+  { value: "Entertainment", icon: "film-outline" as const },
+  { value: "Gaming", icon: "game-controller-outline" as const },
+  { value: "Lifestyle", icon: "heart-outline" as const },
+  { value: "Politics", icon: "megaphone-outline" as const },
+  { value: "Other", icon: "trophy-outline" as const },
+];
+
+export function categoryIcon(category: string): string {
+  const found = CATEGORIES.find((c) => c.value === category);
+  return found?.icon || "trophy-outline";
 }
