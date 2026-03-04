@@ -47,15 +47,23 @@ export async function createSwayger(
     p_invite_code: inviteCode,
   });
 
-  if (error) return { swayger: null, error: error.message };
+  if (error) {
+    console.error("[swayger] createSwayger RPC error:", error.message, error.code, error.details);
+    return { swayger: null, error: error.message };
+  }
 
   const swaygerId = data as string;
+  console.log("[swayger] Created swayger:", swaygerId);
 
   if (stakeText?.trim()) {
-    await supabase
+    const { error: stakeErr } = await supabase
       .from("workspaces")
       .update({ stake_text: stakeText.trim() })
       .eq("id", swaygerId);
+
+    if (stakeErr) {
+      console.error("[swayger] Failed to set stake_text:", stakeErr.message, stakeErr.code, stakeErr.details);
+    }
   }
 
   if (legs && legs.length > 0) {
@@ -76,8 +84,10 @@ export async function createSwayger(
         .insert(legRows);
 
       if (legError) {
+        console.error("[swayger] Failed to insert legs:", legError.message, legError.code, legError.details);
         return { swayger: null, error: `Created swayger but failed to add legs: ${legError.message}` };
       }
+      console.log("[swayger] Inserted", legRows.length, "leg(s) for swayger:", swaygerId);
     }
   }
 
@@ -87,7 +97,10 @@ export async function createSwayger(
     .eq("id", swaygerId)
     .single();
 
-  if (fetchError) return { swayger: null, error: fetchError.message };
+  if (fetchError) {
+    console.error("[swayger] Failed to fetch created swayger:", fetchError.message, fetchError.code);
+    return { swayger: null, error: fetchError.message };
+  }
 
   return { swayger: swayger as SwaygerData, error: null };
 }
@@ -100,7 +113,11 @@ export async function fetchMySwaygers(
     .select("workspace_id, role")
     .eq("user_id", userId);
 
-  if (memError || !memberships || memberships.length === 0) return [];
+  if (memError) {
+    console.error("[swayger] fetchMySwaygers memberships error:", memError.message, memError.code);
+    return [];
+  }
+  if (!memberships || memberships.length === 0) return [];
 
   const ids = memberships.map((m) => m.workspace_id);
 
@@ -110,7 +127,11 @@ export async function fetchMySwaygers(
     .in("id", ids)
     .order("created_at", { ascending: false });
 
-  if (wsError || !swaygers) return [];
+  if (wsError) {
+    console.error("[swayger] fetchMySwaygers workspaces error:", wsError.message, wsError.code);
+    return [];
+  }
+  if (!swaygers) return [];
 
   const roleMap = new Map(memberships.map((m) => [m.workspace_id, m.role]));
 
@@ -129,7 +150,10 @@ export async function fetchSwayger(
     .eq("id", swaygerId)
     .single();
 
-  if (error) return null;
+  if (error) {
+    console.error("[swayger] fetchSwayger error:", error.message, error.code, "id:", swaygerId);
+    return null;
+  }
   return data as SwaygerData;
 }
 
@@ -142,7 +166,11 @@ export async function fetchSwaygerLegs(
     .eq("swayger_id", swaygerId)
     .order("created_at", { ascending: true });
 
-  if (error || !data) return [];
+  if (error) {
+    console.error("[swayger] fetchSwaygerLegs error:", error.message, error.code, "swayger:", swaygerId);
+    return [];
+  }
+  if (!data) return [];
   return data as SwaygerLeg[];
 }
 
@@ -154,7 +182,11 @@ export async function fetchSwaygerResponses(
     .select("*")
     .eq("swayger_id", swaygerId);
 
-  if (error || !data) return [];
+  if (error) {
+    console.error("[swayger] fetchSwaygerResponses error:", error.message, error.code, "swayger:", swaygerId);
+    return [];
+  }
+  if (!data) return [];
   return data as SwaygerResponse[];
 }
 
@@ -167,43 +199,74 @@ export async function fetchSwaygerParticipants(
     .eq("workspace_id", swaygerId)
     .order("created_at", { ascending: true });
 
-  if (error || !data) return [];
+  if (error) {
+    console.error("[swayger] fetchSwaygerParticipants error:", error.message, error.code, "swayger:", swaygerId);
+    return [];
+  }
+  if (!data) return [];
   return data as SwaygerParticipantWithProfile[];
 }
 
 export async function acceptSwayger(
   swaygerId: string
 ): Promise<{ error: string | null }> {
+  console.log("[swayger] Calling accept_swayger RPC for:", swaygerId);
   const { data, error } = await supabase.rpc("accept_swayger", {
     p_swayger_id: swaygerId,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[swayger] accept_swayger RPC error:", error.message, error.code, error.details);
+    return { error: error.message };
+  }
   const result = data as { error: string | null };
+  if (result.error) {
+    console.error("[swayger] accept_swayger business error:", result.error);
+  } else {
+    console.log("[swayger] Swayger accepted successfully:", swaygerId);
+  }
   return { error: result.error };
 }
 
 export async function declineSwayger(
   swaygerId: string
 ): Promise<{ error: string | null }> {
+  console.log("[swayger] Calling decline_swayger RPC for:", swaygerId);
   const { data, error } = await supabase.rpc("decline_swayger", {
     p_swayger_id: swaygerId,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[swayger] decline_swayger RPC error:", error.message, error.code, error.details);
+    return { error: error.message };
+  }
   const result = data as { error: string | null };
+  if (result.error) {
+    console.error("[swayger] decline_swayger business error:", result.error);
+  } else {
+    console.log("[swayger] Swayger declined successfully:", swaygerId);
+  }
   return { error: result.error };
 }
 
 export async function cancelSwayger(
   swaygerId: string
 ): Promise<{ error: string | null }> {
+  console.log("[swayger] Calling cancel_swayger RPC for:", swaygerId);
   const { data, error } = await supabase.rpc("cancel_swayger", {
     p_swayger_id: swaygerId,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[swayger] cancel_swayger RPC error:", error.message, error.code, error.details);
+    return { error: error.message };
+  }
   const result = data as { error: string | null };
+  if (result.error) {
+    console.error("[swayger] cancel_swayger business error:", result.error);
+  } else {
+    console.log("[swayger] Swayger canceled successfully:", swaygerId);
+  }
   return { error: result.error };
 }
 
@@ -211,13 +274,23 @@ export async function joinSwaygerByCode(
   inviteCode: string,
   _userId: string
 ): Promise<{ swaygerId: string | null; error: string | null; alreadyMember: boolean }> {
+  console.log("[swayger] Calling join_workspace_by_code RPC with code:", inviteCode.trim().toUpperCase());
   const { data, error } = await supabase.rpc("join_workspace_by_code", {
     p_invite_code: inviteCode.trim().toUpperCase(),
   });
 
-  if (error) return { swaygerId: null, error: error.message, alreadyMember: false };
+  if (error) {
+    console.error("[swayger] join_workspace_by_code RPC error:", error.message, error.code, error.details);
+    return { swaygerId: null, error: error.message, alreadyMember: false };
+  }
 
   const result = data as { error: string | null; workspace_id: string | null; already_member: boolean };
+
+  if (result.error) {
+    console.error("[swayger] join_workspace_by_code business error:", result.error);
+  } else {
+    console.log("[swayger] Joined swayger:", result.workspace_id, "already_member:", result.already_member);
+  }
 
   return {
     swaygerId: result.workspace_id,

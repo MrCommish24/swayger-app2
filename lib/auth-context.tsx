@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { runSchemaVerification } from "@/lib/verify-schema";
 import { Profile } from "@/types";
 
 interface AuthContextType {
@@ -98,6 +99,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(data as Profile);
         setNeedsUsername(false);
         setProfileError(null);
+        if (__DEV__) {
+          runSchemaVerification().catch(() => {});
+        }
       }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load profile";

@@ -41,15 +41,17 @@ constants/
 lib/
   supabase.ts          # Supabase client initialization (AsyncStorage adapter)
   auth-context.tsx     # Auth context provider (session, profile, routing)
-  swayger.ts           # Swayger CRUD + gameplay functions (create, join, fetch, accept, decline, cancel)
+  swayger.ts           # Swayger CRUD + gameplay functions (create, join, fetch, accept, decline, cancel) — all ops log errors to console
+  verify-schema.ts     # Schema verification utility — probes tables/RPCs on login (dev only), logs [schema-verify] results
   helpers.ts           # Error handling, date formatting, username validation
   query-client.ts      # React Query client configuration
 types/
   index.ts             # TypeScript types: Profile, SwaygerData, SwaygerLeg, SwaygerResponse, LegInput, etc.
 supabase-migrations/
-  001_workspaces.sql   # SQL for workspaces, workspace_members, profiles + RLS
+  001_workspaces.sql       # SQL for workspaces, workspace_members, profiles + RLS
   002_fix_rls_recursion.sql # Fix RLS recursion with SECURITY DEFINER helper
   003_swayger_gameplay.sql  # Adds status/stake to workspaces, creates swayger_legs + swayger_responses + RPCs
+  003_verify_and_fix.sql    # Self-contained idempotent script: creates all tables/columns/policies/RPCs + runs verification
 server/
   index.ts             # Express entry point
   routes.ts            # API routes (placeholder)
