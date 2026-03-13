@@ -10,6 +10,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useMemo } from "react";
 import { formatDate } from "@/lib/helpers";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -20,6 +21,62 @@ import {
 } from "@/lib/swayger";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
+
+function StatsStrip({
+  swaygers,
+  userId,
+}: {
+  swaygers: SwaygerData[];
+  userId: string;
+}) {
+  const stats = useMemo(() => {
+    const total = swaygers.length;
+    const active = swaygers.filter(
+      (s) => s.status === "active" || s.status === "settlement_proposed"
+    ).length;
+
+    const settled = swaygers.filter((s) => s.status === "settled");
+    const decided = settled.filter(
+      (s) => s.settled_outcome === "creator" || s.settled_outcome === "opponent"
+    );
+    const wins = decided.filter((s) => {
+      const isCreator = s.creator_id === userId;
+      const isOpponent = s.opponent_id === userId;
+      return (
+        (isCreator && s.settled_outcome === "creator") ||
+        (isOpponent && s.settled_outcome === "opponent")
+      );
+    }).length;
+
+    const winPct =
+      decided.length > 0
+        ? Math.round((wins / decided.length) * 100) + "%"
+        : "—";
+
+    return { total, active, winPct };
+  }, [swaygers, userId]);
+
+  return (
+    <View style={styles.statsStrip}>
+      <View style={styles.statTile}>
+        <Text style={styles.statValue}>{stats.total}</Text>
+        <Text style={styles.statLabel}>Total</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statTile}>
+        <Text style={[styles.statValue, stats.active > 0 && styles.statValueActive]}>
+          {stats.active}
+        </Text>
+        <Text style={styles.statLabel}>Active</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statTile}>
+        <Text style={styles.statValue}>{stats.winPct}</Text>
+        <Text style={styles.statLabel}>Win %</Text>
+      </View>
+    </View>
+  );
+}
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -99,6 +156,10 @@ export default function DashboardScreen() {
         <Text style={styles.title}>My Swaygers</Text>
       </View>
 
+      {!isLoading && !error && user && (
+        <StatsStrip swaygers={swaygers} userId={user.id} />
+      )}
+
       <View style={styles.actions}>
         <Pressable
           style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
@@ -144,7 +205,6 @@ export default function DashboardScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
-
     </View>
   );
 }
@@ -153,6 +213,43 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   header: { paddingHorizontal: 24, paddingVertical: 16 },
   title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
+
+  statsStrip: {
+    flexDirection: "row" as const,
+    marginHorizontal: 24,
+    marginBottom: 16,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: 14,
+  },
+  statTile: {
+    flex: 1,
+    alignItems: "center" as const,
+    gap: 3,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  statValueActive: {
+    color: "#22C55E",
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: "500" as const,
+    color: Colors.dark.tabIconDefault,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: 4,
+  },
+
   actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 16 },
   actionButton: {
     flex: 1, backgroundColor: Colors.dark.accent, flexDirection: "row",
