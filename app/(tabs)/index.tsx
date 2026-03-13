@@ -6,6 +6,7 @@ import {
   Platform,
   FlatList,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -211,7 +212,14 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
       ) : swaygers.length === 0 ? (
-        <View style={styles.emptyStateContainer}>
+        <ScrollView
+          style={styles.emptyStateScroll}
+          contentContainerStyle={[
+            styles.emptyStateContainer,
+            { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.emptyStateLabel}>HOW IT WORKS</Text>
 
           {/* Step 1 — Active */}
@@ -284,7 +292,7 @@ export default function DashboardScreen() {
             <Ionicons name="flash" size={16} color="#FFFFFF" />
             <Text style={styles.emptyCreateButtonText}>Create Your First Swayger</Text>
           </Pressable>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={swaygers}
@@ -357,11 +365,13 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: Colors.dark.textSecondary, textAlign: "center" },
   emptySubtext: { fontSize: 14, color: Colors.dark.tabIconDefault, textAlign: "center" },
 
-  emptyStateContainer: {
+  emptyStateScroll: {
     flex: 1,
+  },
+  emptyStateContainer: {
     alignItems: "center",
-    justifyContent: "center",
     paddingHorizontal: 24,
+    paddingTop: 24,
     gap: 16,
   },
   emptyStateLabel: {

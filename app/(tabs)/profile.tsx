@@ -15,6 +15,13 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+import { verifyGameplaySchema } from "@/lib/verify-schema";
+
+interface SchemaCheck {
+  name: string;
+  status: "ok" | "missing" | "error";
+  detail: string;
+}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -25,6 +32,25 @@ export default function ProfileScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [passwordSet, setPasswordSet] = useState(false);
+  const [showDevPanel, setShowDevPanel] = useState(false);
+  const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
+  const [devLoading, setDevLoading] = useState(false);
+
+  async function runSchemaCheck() {
+    setDevLoading(true);
+    try {
+      const results = await verifyGameplaySchema();
+      setDevChecks(results);
+    } finally {
+      setDevLoading(false);
+    }
+  }
+
+  function handleVersionLongPress() {
+    if (!__DEV__) return;
+    setShowDevPanel((v) => !v);
+    if (!showDevPanel) runSchemaCheck();
+  }
 
   async function handleSetPassword() {
     if (newPassword.length < 6) {
@@ -153,6 +179,49 @@ export default function ProfileScreen() {
         </View>
 
         <View style={[styles.bottomArea, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}>
+          {__DEV__ && showDevPanel && (
+            <View style={styles.devPanel}>
+              <View style={styles.devPanelHeader}>
+                <Ionicons name="construct-outline" size={14} color={Colors.dark.tint} />
+                <Text style={styles.devPanelTitle}>Schema Health</Text>
+                <Pressable onPress={runSchemaCheck} disabled={devLoading}>
+                  <Ionicons
+                    name="refresh-outline"
+                    size={16}
+                    color={devLoading ? Colors.dark.tabIconDefault : Colors.dark.tint}
+                  />
+                </Pressable>
+              </View>
+              {devLoading ? (
+                <ActivityIndicator size="small" color={Colors.dark.tint} style={{ marginVertical: 8 }} />
+              ) : (
+                devChecks.map((check) => (
+                  <View key={check.name} style={styles.devRow}>
+                    <Ionicons
+                      name={check.status === "ok" ? "checkmark-circle" : "close-circle"}
+                      size={14}
+                      color={check.status === "ok" ? "#22C55E" : "#EF4444"}
+                    />
+                    <Text style={styles.devCheckName} numberOfLines={1}>{check.name}</Text>
+                    <Text
+                      style={[styles.devBadge, check.status === "ok" ? styles.devBadgeOk : styles.devBadgeMissing]}
+                    >
+                      {check.status.toUpperCase()}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          <Pressable
+            style={styles.versionRow}
+            onLongPress={handleVersionLongPress}
+            delayLongPress={800}
+          >
+            <Text style={styles.versionText}>Swayger v1.1</Text>
+          </Pressable>
+
           <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
             onPress={signOut}
@@ -202,10 +271,59 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" as const },
   buttonPressed: { opacity: 0.7 },
   buttonDisabled: { opacity: 0.6 },
-  bottomArea: { paddingHorizontal: 24, marginTop: "auto", paddingTop: 24 },
+  bottomArea: { paddingHorizontal: 24, marginTop: "auto", paddingTop: 24, gap: 12 },
+  versionRow: { alignItems: "center", paddingVertical: 4 },
+  versionText: { fontSize: 12, color: Colors.dark.tabIconDefault },
   signOutButton: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: "#EF4444",
   },
   signOutText: { color: "#EF4444", fontSize: 16, fontWeight: "600" as const },
+  devPanel: {
+    backgroundColor: "rgba(29,161,242,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(29,161,242,0.2)",
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+  },
+  devPanelHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    marginBottom: 4,
+  },
+  devPanelTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: Colors.dark.tint,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+  },
+  devRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  devCheckName: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+  },
+  devBadge: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  devBadgeOk: {
+    backgroundColor: "rgba(34,197,94,0.15)",
+    color: "#22C55E",
+  },
+  devBadgeMissing: {
+    backgroundColor: "rgba(239,68,68,0.15)",
+    color: "#EF4444",
+  },
 });
