@@ -11,6 +11,7 @@ import {
   Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -51,20 +52,22 @@ function StatusChip({ status }: { status: string }) {
 }
 
 function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
-  const [codeCopied, setCodeCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
-  async function handleCopyCode() {
-    await Clipboard.setStringAsync(inviteCode);
-    setCodeCopied(true);
-    setTimeout(() => setCodeCopied(false), 2000);
+  const inviteLink = Linking.createURL(`/invite/${inviteCode}`);
+
+  async function handleCopyLink() {
+    await Clipboard.setStringAsync(inviteLink);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   }
 
   async function handleShare() {
-    const message = `Join my Swayger "${swaygerName}". Code: ${inviteCode}`;
+    const message = `Join my Swayger "${swaygerName}"!\n\nTap to join: ${inviteLink}\n\nOr enter code manually: ${inviteCode}`;
     try {
-      await Share.share({ message });
+      await Share.share({ message, url: inviteLink });
     } catch {
-      await Clipboard.setStringAsync(message);
+      await Clipboard.setStringAsync(inviteLink);
     }
   }
 
@@ -77,27 +80,27 @@ function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swayge
         <View style={styles.qrContainer}>
           <View style={styles.qrWrapper}>
             <QRCode
-              value={`SWAYGER:${inviteCode}`}
+              value={inviteLink}
               size={160}
               backgroundColor="#FFFFFF"
               color="#0B1120"
             />
           </View>
-          <Text style={styles.qrHint}>Opponent can scan this to join</Text>
+          <Text style={styles.qrHint}>Scan to open directly in Swayger</Text>
         </View>
 
         <View style={styles.inviteButtons}>
           <Pressable
             style={({ pressed }) => [styles.inviteActionBtn, pressed && styles.btnPressed]}
-            onPress={handleCopyCode}
+            onPress={handleCopyLink}
           >
             <Ionicons
-              name={codeCopied ? "checkmark" : "copy-outline"}
+              name={linkCopied ? "checkmark" : "link-outline"}
               size={18}
-              color={codeCopied ? "#22C55E" : Colors.dark.tint}
+              color={linkCopied ? "#22C55E" : Colors.dark.tint}
             />
-            <Text style={[styles.inviteActionText, codeCopied && { color: "#22C55E" }]}>
-              {codeCopied ? "Copied!" : "Copy Code"}
+            <Text style={[styles.inviteActionText, linkCopied && { color: "#22C55E" }]}>
+              {linkCopied ? "Copied!" : "Copy Link"}
             </Text>
           </Pressable>
           <Pressable
