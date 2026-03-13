@@ -19,7 +19,7 @@ import Colors from "@/constants/colors";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
-type AuthStep = "enter-email" | "enter-code" | "password-login";
+type AuthStep = "enter-email" | "enter-code" | "password-login" | "forgot-password" | "forgot-password-sent";
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
@@ -128,6 +128,30 @@ export default function AuthScreen() {
   async function handleResend() {
     if (cooldown > 0) return;
     await handleSendCode();
+  }
+
+  async function handleForgotPassword() {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) {
+      showError("Please enter your email address.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const redirectTo = getRedirectUrl();
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo,
+      });
+      if (error) {
+        showError(error.message);
+      } else {
+        setStep("forgot-password-sent");
+      }
+    } catch {
+      showError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -298,9 +322,86 @@ export default function AuthScreen() {
               </Pressable>
               <Pressable
                 style={styles.linkButton}
+                onPress={() => setStep("forgot-password")}
+              >
+                <Text style={styles.linkText}>Forgot password?</Text>
+              </Pressable>
+              <Pressable
+                style={styles.linkButton}
                 onPress={() => setStep("enter-email")}
               >
                 <Text style={styles.linkText}>Use email code instead</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {step === "forgot-password" && (
+            <View style={styles.form}>
+              <View style={styles.sentContainer}>
+                <Ionicons
+                  name="lock-open-outline"
+                  size={32}
+                  color={Colors.dark.tint}
+                />
+                <Text style={styles.sentTitle}>Reset Password</Text>
+                <Text style={styles.sentTo}>
+                  Enter your email and we'll send you a reset link.
+                </Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Email address"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+                editable={!loading}
+                autoFocus
+              />
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed,
+                  loading && styles.buttonDisabled,
+                ]}
+                onPress={handleForgotPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Send Reset Link</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => setStep("password-login")}
+              >
+                <Text style={styles.linkText}>Back to sign in</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {step === "forgot-password-sent" && (
+            <View style={styles.form}>
+              <View style={styles.sentContainer}>
+                <Ionicons
+                  name="mail-outline"
+                  size={32}
+                  color={Colors.dark.tint}
+                />
+                <Text style={styles.sentTitle}>Check your email</Text>
+                <Text style={styles.sentTo}>
+                  We sent a password reset link to {email}. Click it to set a new password.
+                </Text>
+              </View>
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => setStep("enter-email")}
+              >
+                <Text style={styles.linkText}>Back to sign in</Text>
               </Pressable>
             </View>
           )}
