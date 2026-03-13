@@ -14,14 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
-import { verifyGameplaySchema } from "@/lib/verify-schema";
 import Colors from "@/constants/colors";
-
-interface SchemaCheck {
-  name: string;
-  status: "ok" | "missing" | "error";
-  detail: string;
-}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -32,10 +25,6 @@ export default function ProfileScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [passwordSet, setPasswordSet] = useState(false);
-
-  const [showDevPanel, setShowDevPanel] = useState(false);
-  const [schemaChecks, setSchemaChecks] = useState<SchemaCheck[]>([]);
-  const [schemaLoading, setSchemaLoading] = useState(false);
 
   async function handleSetPassword() {
     if (newPassword.length < 6) {
@@ -61,18 +50,6 @@ export default function ProfileScreen() {
       showError("Something went wrong. Try again.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function runSchemaCheck() {
-    setSchemaLoading(true);
-    try {
-      const checks = await verifyGameplaySchema();
-      setSchemaChecks(checks);
-    } catch {
-      setSchemaChecks([{ name: "verify", status: "error", detail: "Failed to run checks" }]);
-    } finally {
-      setSchemaLoading(false);
     }
   }
 
@@ -175,70 +152,6 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {__DEV__ && (
-          <View style={styles.section}>
-            <Pressable
-              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-              onPress={() => {
-                setShowDevPanel(!showDevPanel);
-                if (!showDevPanel && schemaChecks.length === 0) runSchemaCheck();
-              }}
-            >
-              <Ionicons name="build-outline" size={20} color={Colors.dark.tint} />
-              <Text style={styles.menuItemText}>Dev: Schema Health</Text>
-              <Ionicons
-                name={showDevPanel ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={Colors.dark.tabIconDefault}
-              />
-            </Pressable>
-
-            {showDevPanel && (
-              <View style={styles.devPanel}>
-                {schemaLoading ? (
-                  <ActivityIndicator color={Colors.dark.tint} style={{ marginVertical: 12 }} />
-                ) : schemaChecks.length === 0 ? (
-                  <Text style={styles.devText}>No checks run yet.</Text>
-                ) : (
-                  schemaChecks.map((check, i) => (
-                    <View key={i} style={styles.devRow}>
-                      <Ionicons
-                        name={
-                          check.status === "ok"
-                            ? "checkmark-circle"
-                            : check.status === "missing"
-                            ? "alert-circle"
-                            : "close-circle"
-                        }
-                        size={16}
-                        color={
-                          check.status === "ok"
-                            ? "#22C55E"
-                            : check.status === "missing"
-                            ? "#F5A623"
-                            : "#EF4444"
-                        }
-                      />
-                      <View style={styles.devRowInfo}>
-                        <Text style={styles.devCheckName}>{check.name}</Text>
-                        <Text style={styles.devCheckDetail}>{check.detail}</Text>
-                      </View>
-                    </View>
-                  ))
-                )}
-                <Pressable
-                  style={({ pressed }) => [styles.devRefreshBtn, pressed && styles.buttonPressed]}
-                  onPress={runSchemaCheck}
-                  disabled={schemaLoading}
-                >
-                  <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
-                  <Text style={styles.devRefreshText}>Re-check</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
-
         <View style={[styles.bottomArea, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}>
           <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
@@ -289,20 +202,6 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" as const },
   buttonPressed: { opacity: 0.7 },
   buttonDisabled: { opacity: 0.6 },
-  devPanel: {
-    backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: Colors.dark.border, gap: 8,
-  },
-  devText: { fontSize: 13, color: Colors.dark.tabIconDefault },
-  devRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  devRowInfo: { flex: 1, gap: 2 },
-  devCheckName: { fontSize: 13, fontWeight: "600" as const, color: Colors.dark.text },
-  devCheckDetail: { fontSize: 11, color: Colors.dark.tabIconDefault },
-  devRefreshBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 8, marginTop: 4,
-  },
-  devRefreshText: { fontSize: 13, color: Colors.dark.tint, fontWeight: "500" as const },
   bottomArea: { paddingHorizontal: 24, marginTop: "auto", paddingTop: 24 },
   signOutButton: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
