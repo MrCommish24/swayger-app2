@@ -8,7 +8,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -18,10 +18,22 @@ export default function JoinScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
+  const params = useLocalSearchParams<{ code?: string }>();
 
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(params.code ? params.code.toUpperCase() : "");
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if (params.code && params.code.trim().length >= 4) {
+      const trimmed = params.code.trim().toUpperCase();
+      setCode(trimmed);
+      const timer = setTimeout(() => {
+        router.push(`/invite/${trimmed}`);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [params.code]);
 
   function handleSubmitCode() {
     const trimmed = code.trim().toUpperCase();

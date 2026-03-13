@@ -53,7 +53,7 @@ function StatusChip({ status }: { status: string }) {
 
 function buildInviteLink(inviteCode: string): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}/invite/${inviteCode}`;
+    return `${window.location.origin}/join?code=${inviteCode}`;
   }
   return Linking.createURL(`/invite/${inviteCode}`);
 }
