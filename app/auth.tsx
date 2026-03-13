@@ -166,7 +166,8 @@ export default function AuthScreen() {
         <View style={styles.content}>
           <Ionicons name="flash" size={48} color={Colors.dark.tint} />
           <Text style={styles.title}>Swayger</Text>
-          <Text style={styles.subtitle}>Sign in to get started</Text>
+          <Text style={styles.headline}>Think you're right? Swayger on it.</Text>
+          <Text style={styles.tagline}>Friendly wagers. No real money. Just bragging rights.</Text>
 
           {step === "enter-email" && (
             <View style={styles.form}>
@@ -432,10 +433,17 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
     marginTop: 12,
   },
-  subtitle: {
-    fontSize: 16,
+  headline: {
+    fontSize: 18,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+    textAlign: "center" as const,
+  },
+  tagline: {
+    fontSize: 14,
     color: Colors.dark.textSecondary,
-    marginBottom: 24,
+    textAlign: "center" as const,
+    marginBottom: 16,
   },
   form: {
     width: "100%",
