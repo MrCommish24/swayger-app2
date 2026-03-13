@@ -6,7 +6,6 @@ import {
   useRootNavigationState,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
@@ -26,6 +25,8 @@ SplashScreen.preventAutoHideAsync();
 const inExpoGo = Constants.appOwnership === "expo";
 
 if (Platform.OS !== "web" && !inExpoGo) {
+  // Lazy require keeps the module from initializing in Expo Go (where it throws on import)
+  const Notifications = require("expo-notifications");
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,

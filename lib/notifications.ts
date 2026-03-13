@@ -1,4 +1,3 @@
-import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
@@ -19,6 +18,9 @@ export async function registerPushToken(): Promise<void> {
   }
 
   try {
+    // Lazy require so the module never initializes in Expo Go
+    const Notifications = require("expo-notifications");
+
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
 
