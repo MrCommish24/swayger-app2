@@ -159,9 +159,33 @@ export default function CreateSwaygerScreen() {
               <Text style={styles.stakeValue}>{stakeUnits}</Text>
               <Pressable
                 style={styles.stakeButton}
-                onPress={() => setStakeUnits((v) => Math.min(100, v + 1))}
+                onPress={() => setStakeUnits((v) => Math.min(10000, v + 1))}
               >
                 <Ionicons name="add" size={20} color={Colors.dark.text} />
+              </Pressable>
+            </View>
+            <View style={styles.quickPickRow}>
+              {[10, 25, 50, 100].map((amount) => (
+                <Pressable
+                  key={amount}
+                  style={({ pressed }) => [
+                    styles.quickPickChip,
+                    pressed && styles.quickPickChipPressed,
+                  ]}
+                  onPress={() => setStakeUnits((v) => Math.min(10000, v + amount))}
+                >
+                  <Text style={styles.quickPickText}>+{amount}</Text>
+                </Pressable>
+              ))}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.quickPickChip,
+                  styles.quickPickClear,
+                  pressed && styles.quickPickChipPressed,
+                ]}
+                onPress={() => setStakeUnits(1)}
+              >
+                <Text style={[styles.quickPickText, styles.quickPickClearText]}>Reset</Text>
               </Pressable>
             </View>
           </View>
@@ -295,6 +319,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
     alignSelf: "flex-start",
+  },
+  quickPickRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+    flexWrap: "wrap",
+  },
+  quickPickChip: {
+    backgroundColor: "rgba(29, 161, 242, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(29, 161, 242, 0.3)",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  quickPickChipPressed: {
+    opacity: 0.65,
+  },
+  quickPickText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.dark.tint,
+  },
+  quickPickClear: {
+    backgroundColor: "transparent",
+    borderColor: Colors.dark.border,
+  },
+  quickPickClearText: {
+    color: Colors.dark.tabIconDefault,
   },
   stakeButton: {
     width: 44,
