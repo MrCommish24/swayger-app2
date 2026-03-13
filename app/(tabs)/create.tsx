@@ -86,7 +86,7 @@ export default function CreateSwaygerScreen() {
 
         <View style={styles.form}>
           <View>
-            <Text style={styles.label}>Title</Text>
+            <Text style={styles.label}>What's the Swayger?</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Bills vs Chiefs Winner"
