@@ -7,6 +7,7 @@ import {
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -22,7 +23,9 @@ import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
-if (Platform.OS !== "web") {
+const inExpoGo = Constants.appOwnership === "expo";
+
+if (Platform.OS !== "web" && !inExpoGo) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,

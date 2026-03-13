@@ -1,9 +1,22 @@
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
 
+function isExpoGo(): boolean {
+  return Constants.appOwnership === "expo";
+}
+
 export async function registerPushToken(): Promise<void> {
   if (Platform.OS === "web") return;
+
+  if (isExpoGo()) {
+    console.log(
+      "[notifications] Skipping push token registration — not supported in Expo Go on SDK 53+. " +
+        "Use a development or production build to enable push notifications."
+    );
+    return;
+  }
 
   try {
     const { status: existing } = await Notifications.getPermissionsAsync();
@@ -19,7 +32,19 @@ export async function registerPushToken(): Promise<void> {
       return;
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
+
+    if (!projectId) {
+      console.log(
+        "[notifications] No EAS projectId configured — push tokens require an EAS project. " +
+          "Run `eas init` to set up."
+      );
+      return;
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     const token = tokenData.data;
 
     const { error } = await supabase.from("push_tokens").upsert(
@@ -45,6 +70,7 @@ export async function sendPushNotification(
   data?: Record<string, string>
 ): Promise<void> {
   if (Platform.OS === "web") return;
+  if (isExpoGo()) return;
 
   try {
     const { data: token, error } = await supabase.rpc("get_push_token", {
