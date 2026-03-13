@@ -1,8 +1,9 @@
 import { Alert, Platform } from "react-native";
+import { emitToast } from "@/lib/toast-emitter";
 
 export function showError(message: string) {
   if (Platform.OS === "web") {
-    window.alert(message);
+    emitToast("Error", message, "error");
   } else {
     Alert.alert("Error", message);
   }
@@ -10,7 +11,7 @@ export function showError(message: string) {
 
 export function showMessage(title: string, message: string) {
   if (Platform.OS === "web") {
-    window.alert(`${title}\n\n${message}`);
+    emitToast(title, message, title.toLowerCase().includes("error") ? "error" : "success");
   } else {
     Alert.alert(title, message);
   }

@@ -9,7 +9,9 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 
@@ -57,31 +59,25 @@ function RootLayoutNav() {
   }, [isLoading]);
 
   return (
-    <Stack
-      screenOptions={{
-        headerBackTitle: "Back",
-        headerStyle: { backgroundColor: Colors.dark.background },
-        headerTintColor: Colors.dark.text,
-        contentStyle: { backgroundColor: Colors.dark.background },
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="auth" options={{ headerShown: false }} />
-      <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
-      <Stack.Screen name="username-setup" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="swayger/[id]"
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="invite/[code]"
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="join"
-        options={{ headerShown: false }}
-      />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerBackTitle: "Back",
+          headerStyle: { backgroundColor: Colors.dark.background },
+          headerTintColor: Colors.dark.text,
+          contentStyle: { backgroundColor: Colors.dark.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
+        <Stack.Screen name="username-setup" options={{ headerShown: false }} />
+        <Stack.Screen name="swayger/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="invite/[code]" options={{ headerShown: false }} />
+        <Stack.Screen name="join" options={{ headerShown: false }} />
+      </Stack>
+      <ToastContainer />
+    </>
   );
 }
 
@@ -89,13 +85,15 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView>
-          <KeyboardProvider>
-            <AuthProvider>
-              <RootLayoutNav />
-            </AuthProvider>
-          </KeyboardProvider>
-        </GestureHandlerRootView>
+        <SafeAreaProvider>
+          <GestureHandlerRootView>
+            <KeyboardProvider>
+              <AuthProvider>
+                <RootLayoutNav />
+              </AuthProvider>
+            </KeyboardProvider>
+          </GestureHandlerRootView>
+        </SafeAreaProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
