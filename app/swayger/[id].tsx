@@ -657,9 +657,25 @@ export default function SwaygerDetailScreen() {
         </View>
       )}
 
-      {status === "pending_invite" && isCreator && invite?.invite_code && (
+      {status === "pending_invite" && isCreator && swayger.source_swayger_id && swayger.opponent_id ? (
+        <View style={styles.section}>
+          <View style={styles.rematchWaitingCard}>
+            <Ionicons name="time-outline" size={28} color={Colors.dark.tint} />
+            <Text style={styles.rematchWaitingTitle}>Rematch Sent</Text>
+            <Text style={styles.rematchWaitingText}>
+              Waiting for{" "}
+              <Text style={{ color: Colors.dark.text, fontWeight: "600" }}>
+                {profiles?.opponent?.display_name || profiles?.opponent?.username
+                  ? `@${profiles?.opponent?.username}`
+                  : "your opponent"}
+              </Text>{" "}
+              to accept and enter their pick.
+            </Text>
+          </View>
+        </View>
+      ) : status === "pending_invite" && isCreator && invite?.invite_code ? (
         <InviteSection inviteCode={invite.invite_code} swaygerName={swayger.title} />
-      )}
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Participants</Text>
@@ -743,6 +759,12 @@ const styles = StyleSheet.create({
     borderRadius: 8, alignSelf: "flex-start",
   },
   rematchText: { fontSize: 13, color: Colors.dark.tint, fontWeight: "500" as const },
+  rematchWaitingCard: {
+    alignItems: "center", gap: 8, backgroundColor: "rgba(29, 161, 242, 0.06)",
+    borderRadius: 14, padding: 20, borderWidth: 1, borderColor: "rgba(29, 161, 242, 0.15)",
+  },
+  rematchWaitingTitle: { fontSize: 17, fontWeight: "700" as const, color: Colors.dark.text },
+  rematchWaitingText: { fontSize: 14, color: Colors.dark.textSecondary, textAlign: "center" as const, lineHeight: 20 },
   resultCard: {
     flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "rgba(245, 166, 35, 0.1)",
     borderRadius: 12, padding: 16, borderWidth: 1, borderColor: "rgba(245, 166, 35, 0.2)",

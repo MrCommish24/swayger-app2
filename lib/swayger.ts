@@ -251,30 +251,49 @@ export async function createRematch(
 
   const newStake = rematchType === "double_or_nothing" ? original.stake_units * 2 : original.stake_units;
 
+  const isOriginalCreator = userId === original.creator_id;
+  const newCreatorPick = isOriginalCreator
+    ? (original.creator_pick || "")
+    : (original.opponent_pick || "");
+  const newOpponentId = isOriginalCreator ? original.opponent_id : original.creator_id;
+
   const result = await createSwayger(
     original.title,
     original.category,
     newStake,
-    original.creator_pick || "",
+    newCreatorPick,
     userId,
     original.description || undefined
   );
 
   if (result.error || !result.swayger) return result;
 
+  const updates: Record<string, unknown> = {
+    source_swayger_id: swaygerId,
+    rematch_type: rematchType,
+  };
+
+  if (newOpponentId) {
+    updates.opponent_id = newOpponentId;
+  }
+
   const { error: linkErr } = await supabase
     .from("swaygers")
-    .update({
-      source_swayger_id: swaygerId,
-      rematch_type: rematchType,
-    })
+    .update(updates)
     .eq("id", result.swayger.id);
 
   if (linkErr) {
     console.error("[swayger] Failed to link rematch:", linkErr.message);
   }
 
-  return result;
+  if (!result.swayger) return result;
+  const { data: updated } = await supabase
+    .from("swaygers")
+    .select("*")
+    .eq("id", result.swayger.id)
+    .single();
+
+  return { swayger: (updated as SwaygerData) || result.swayger, error: null };
 }
 
 export async function joinSwaygerByCode(
