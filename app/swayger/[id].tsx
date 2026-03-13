@@ -51,10 +51,17 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+function buildInviteLink(inviteCode: string): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/invite/${inviteCode}`;
+  }
+  return Linking.createURL(`/invite/${inviteCode}`);
+}
+
 function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
   const [linkCopied, setLinkCopied] = useState(false);
 
-  const inviteLink = Linking.createURL(`/invite/${inviteCode}`);
+  const inviteLink = buildInviteLink(inviteCode);
 
   async function handleCopyLink() {
     await Clipboard.setStringAsync(inviteLink);
