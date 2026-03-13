@@ -441,6 +441,14 @@ export default function SwaygerDetailScreen() {
         </Pressable>
         <View style={styles.headerContent}>
           <Text style={styles.swaygerTitle}>{swayger.title}</Text>
+          {swayger.rematch_type && (
+            <View style={styles.rematchSubtitle}>
+              <Ionicons name="refresh" size={12} color={Colors.dark.tint} />
+              <Text style={styles.rematchSubtitleText}>
+                {swayger.rematch_type === "double_or_nothing" ? "Double or Nothing" : "Rematch · Run it Back"}
+              </Text>
+            </View>
+          )}
           <View style={styles.headerMeta}>
             <View style={styles.metaChip}>
               <Ionicons
@@ -492,14 +500,6 @@ export default function SwaygerDetailScreen() {
           <View style={styles.expiryRow}>
             <Ionicons name="time-outline" size={14} color={Colors.dark.tabIconDefault} />
             <Text style={styles.expiryText}>Expires {formatDateTime(swayger.expires_at)}</Text>
-          </View>
-        )}
-        {swayger.rematch_type && (
-          <View style={styles.rematchBadge}>
-            <Ionicons name="refresh" size={14} color={Colors.dark.tint} />
-            <Text style={styles.rematchText}>
-              {swayger.rematch_type === "double_or_nothing" ? "Double or Nothing" : "Run it Back"}
-            </Text>
           </View>
         )}
       </View>
@@ -753,12 +753,10 @@ const styles = StyleSheet.create({
   stakeText: { fontSize: 15, color: Colors.dark.accentGold, fontWeight: "600" as const },
   expiryRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
   expiryText: { fontSize: 13, color: Colors.dark.tabIconDefault },
-  rematchBadge: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8,
-    backgroundColor: "rgba(29, 161, 242, 0.08)", paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 8, alignSelf: "flex-start",
+  rematchSubtitle: {
+    flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2, marginBottom: 2,
   },
-  rematchText: { fontSize: 13, color: Colors.dark.tint, fontWeight: "500" as const },
+  rematchSubtitleText: { fontSize: 13, color: Colors.dark.tint, fontWeight: "500" as const },
   rematchWaitingCard: {
     alignItems: "center", gap: 8, backgroundColor: "rgba(29, 161, 242, 0.06)",
     borderRadius: 14, padding: 20, borderWidth: 1, borderColor: "rgba(29, 161, 242, 0.15)",

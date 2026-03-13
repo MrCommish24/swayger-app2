@@ -47,9 +47,19 @@ export default function DashboardScreen() {
         onPress={() => router.push(`/swayger/${item.id}`)}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.title}
-          </Text>
+          <View style={styles.cardTitleGroup}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {item.rematch_type && (
+              <View style={styles.rematchPill}>
+                <Ionicons name="refresh" size={10} color={Colors.dark.tint} />
+                <Text style={styles.rematchPillText}>
+                  {item.rematch_type === "double_or_nothing" ? "Double or Nothing" : "Rematch"}
+                </Text>
+              </View>
+            )}
+          </View>
           <View style={[styles.roleBadge, isCreator && styles.roleBadgeCreator]}>
             <Text style={[styles.roleBadgeText, isCreator && styles.roleBadgeTextCreator]}>
               {isCreator ? "Creator" : "Opponent"}
@@ -162,8 +172,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border,
   },
   cardPressed: { opacity: 0.8 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  cardTitle: { fontSize: 17, fontWeight: "600" as const, color: Colors.dark.text, flex: 1, marginRight: 8 },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
+  cardTitleGroup: { flex: 1, marginRight: 8, gap: 3 },
+  cardTitle: { fontSize: 17, fontWeight: "600" as const, color: Colors.dark.text },
+  rematchPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    alignSelf: "flex-start",
+  },
+  rematchPillText: { fontSize: 11, color: Colors.dark.tint, fontWeight: "600" as const },
   roleBadge: { backgroundColor: Colors.dark.surfaceLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   roleBadgeCreator: { backgroundColor: "rgba(245, 166, 35, 0.15)" },
   roleBadgeText: { fontSize: 12, color: Colors.dark.tint, fontWeight: "600" as const },
