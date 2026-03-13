@@ -212,8 +212,9 @@ export default function DashboardScreen() {
         </View>
       ) : swaygers.length === 0 ? (
         <View style={styles.emptyStateContainer}>
-          <Text style={styles.emptyStateLabel}>THIS IS A SWAYGER</Text>
+          <Text style={styles.emptyStateLabel}>HOW IT WORKS</Text>
 
+          {/* Step 1 — Active */}
           <View style={styles.sampleCard}>
             <View style={styles.sampleCardHeader}>
               <Text style={styles.sampleCardTitle}>Celtics win Game 7</Text>
@@ -239,7 +240,38 @@ export default function DashboardScreen() {
 
             <View style={styles.sampleFooter}>
               <Ionicons name="flame-outline" size={13} color={Colors.dark.accentGold} />
-              <Text style={styles.sampleFooterText}>5 units at stake · Whoever's right wins bragging rights</Text>
+              <Text style={styles.sampleFooterText}>5 units at stake</Text>
+            </View>
+          </View>
+
+          {/* Connector */}
+          <View style={styles.sampleConnector}>
+            <View style={styles.sampleConnectorLine} />
+            <View style={styles.sampleConnectorBadge}>
+              <Ionicons name="checkmark-done" size={12} color={Colors.dark.tint} />
+              <Text style={styles.sampleConnectorText}>Both agreed</Text>
+            </View>
+            <View style={styles.sampleConnectorLine} />
+          </View>
+
+          {/* Step 2 — Settled */}
+          <View style={[styles.sampleCard, styles.sampleCardSettled]}>
+            <View style={styles.sampleCardHeader}>
+              <Text style={styles.sampleCardTitle}>Celtics win Game 7</Text>
+              <View style={styles.sampleSettledPill}>
+                <Ionicons name="trophy" size={9} color={Colors.dark.accentGold} />
+                <Text style={styles.sampleSettledPillText}>Settled</Text>
+              </View>
+            </View>
+
+            <View style={styles.sampleResultRow}>
+              <Ionicons name="trophy" size={20} color={Colors.dark.accentGold} />
+              <Text style={styles.sampleResultText}>Darius wins · +5 units</Text>
+            </View>
+
+            <View style={styles.sampleFooter}>
+              <Ionicons name="person-outline" size={13} color={Colors.dark.tabIconDefault} />
+              <Text style={styles.sampleFooterText}>Mike owes Darius 5 units of bragging rights</Text>
             </View>
           </View>
 
@@ -424,6 +456,62 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.dark.tabIconDefault,
     flex: 1,
+  },
+  sampleConnector: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+  },
+  sampleConnectorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.dark.border,
+  },
+  sampleConnectorBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(29, 161, 242, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(29, 161, 242, 0.2)",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  sampleConnectorText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    color: Colors.dark.tint,
+  },
+  sampleCardSettled: {
+    borderColor: "rgba(245, 166, 35, 0.25)",
+    backgroundColor: "rgba(245, 166, 35, 0.04)",
+  },
+  sampleSettledPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(245, 166, 35, 0.12)",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  sampleSettledPillText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    color: Colors.dark.accentGold,
+  },
+  sampleResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 4,
+  },
+  sampleResultText: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: Colors.dark.accentGold,
   },
   emptyCreateButton: {
     flexDirection: "row",
