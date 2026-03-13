@@ -10,6 +10,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { formatDate } from "@/lib/helpers";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -82,6 +83,10 @@ export default function DashboardScreen() {
           <View style={styles.detailRow}>
             <Ionicons name="radio-button-on" size={10} color={st.color} />
             <Text style={[styles.detailText, { color: st.color }]}>{st.label}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="calendar-outline" size={14} color={Colors.dark.textSecondary} />
+            <Text style={styles.detailText}>{formatDate(item.created_at)}</Text>
           </View>
         </View>
       </Pressable>

@@ -33,7 +33,7 @@ import {
   categoryIcon,
 } from "@/lib/swayger";
 import { useAuth } from "@/lib/auth-context";
-import { showError, showMessage, formatDateTime } from "@/lib/helpers";
+import { showError, showMessage, formatDate, formatDateTime } from "@/lib/helpers";
 import {
   SwaygerData,
   SwaygerInvite,
@@ -495,6 +495,10 @@ export default function SwaygerDetailScreen() {
           <Text style={styles.stakeText}>
             {swayger.stake_units || 1} unit{(swayger.stake_units || 1) !== 1 ? "s" : ""} at stake
           </Text>
+        </View>
+        <View style={styles.expiryRow}>
+          <Ionicons name="calendar-outline" size={14} color={Colors.dark.tabIconDefault} />
+          <Text style={styles.expiryText}>Created {formatDate(swayger.created_at)}</Text>
         </View>
         {swayger.expires_at && (
           <View style={styles.expiryRow}>
