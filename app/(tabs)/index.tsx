@@ -211,10 +211,47 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
       ) : swaygers.length === 0 ? (
-        <View style={styles.centered}>
-          <Ionicons name="flash-outline" size={48} color={Colors.dark.tint} />
-          <Text style={styles.emptyText}>No Swaygers yet.</Text>
-          <Text style={styles.emptySubtext}>Create one or join with a code.</Text>
+        <View style={styles.emptyStateContainer}>
+          <Text style={styles.emptyStateLabel}>THIS IS A SWAYGER</Text>
+
+          <View style={styles.sampleCard}>
+            <View style={styles.sampleCardHeader}>
+              <Text style={styles.sampleCardTitle}>Celtics win Game 7</Text>
+              <View style={styles.sampleActivePill}>
+                <Ionicons name="radio-button-on" size={9} color="#22C55E" />
+                <Text style={styles.sampleActivePillText}>Active</Text>
+              </View>
+            </View>
+
+            <View style={styles.samplePicksRow}>
+              <View style={styles.samplePickCard}>
+                <Text style={styles.samplePickName}>Darius</Text>
+                <Text style={styles.samplePickValue}>Celtics 🍀</Text>
+              </View>
+              <View style={styles.sampleVsDivider}>
+                <Text style={styles.sampleVsText}>VS</Text>
+              </View>
+              <View style={[styles.samplePickCard, styles.samplePickCardRight]}>
+                <Text style={styles.samplePickName}>Mike</Text>
+                <Text style={styles.samplePickValue}>Mavericks 🤠</Text>
+              </View>
+            </View>
+
+            <View style={styles.sampleFooter}>
+              <Ionicons name="flame-outline" size={13} color={Colors.dark.accentGold} />
+              <Text style={styles.sampleFooterText}>5 units at stake · Whoever's right wins bragging rights</Text>
+            </View>
+          </View>
+
+          <Text style={styles.emptySubtext}>Pick a side. Challenge a friend. Settle it.</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.emptyCreateButton, pressed && styles.actionButtonPressed]}
+            onPress={() => router.push("/(tabs)/create")}
+          >
+            <Ionicons name="flash" size={16} color="#FFFFFF" />
+            <Text style={styles.emptyCreateButtonText}>Create Your First Swayger</Text>
+          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -287,6 +324,122 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 },
   emptyText: { fontSize: 16, color: Colors.dark.textSecondary, textAlign: "center" },
   emptySubtext: { fontSize: 14, color: Colors.dark.tabIconDefault, textAlign: "center" },
+
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  emptyStateLabel: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    color: Colors.dark.tint,
+    letterSpacing: 1.5,
+  },
+  sampleCard: {
+    width: "100%",
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: 18,
+    gap: 14,
+  },
+  sampleCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  sampleCardTitle: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+    flex: 1,
+    marginRight: 10,
+  },
+  sampleActivePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  sampleActivePillText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    color: "#22C55E",
+  },
+  samplePicksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  samplePickCard: {
+    flex: 1,
+    backgroundColor: "rgba(29, 161, 242, 0.07)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(29, 161, 242, 0.2)",
+    padding: 12,
+    gap: 4,
+    alignItems: "center",
+  },
+  samplePickCardRight: {
+    backgroundColor: "rgba(245, 166, 35, 0.07)",
+    borderColor: "rgba(245, 166, 35, 0.2)",
+  },
+  samplePickName: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: Colors.dark.tabIconDefault,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+  },
+  samplePickValue: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  sampleVsDivider: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sampleVsText: {
+    fontSize: 12,
+    fontWeight: "800" as const,
+    color: Colors.dark.tabIconDefault,
+    letterSpacing: 1,
+  },
+  sampleFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 2,
+  },
+  sampleFooterText: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+    flex: 1,
+  },
+  emptyCreateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.dark.accent,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  emptyCreateButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600" as const,
+  },
   retryButton: { paddingVertical: 8, paddingHorizontal: 20 },
   retryText: { color: Colors.dark.tint, fontSize: 14, fontWeight: "600" as const },
   listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 100 },
