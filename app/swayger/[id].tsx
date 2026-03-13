@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -33,6 +33,7 @@ import {
   categoryIcon,
 } from "@/lib/swayger";
 import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/lib/supabase";
 import { showError, showMessage, formatDate, formatDateTime } from "@/lib/helpers";
 import { sendPushNotification } from "@/lib/notifications";
 import {
@@ -335,6 +336,34 @@ export default function SwaygerDetailScreen() {
     queryFn: () => fetchSettlementProposals(id!),
     enabled: !!id && (swayger?.status === "active" || swayger?.status === "settlement_proposed" || swayger?.status === "settled"),
   });
+
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`swayger-detail-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "swaygers", filter: `id=eq.${id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["swayger", id] });
+          queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "settlement_proposals", filter: `swayger_id=eq.${id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["settlement-proposals", id] });
+          queryClient.invalidateQueries({ queryKey: ["swayger", id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id]);
 
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;

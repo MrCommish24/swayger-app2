@@ -10,10 +10,11 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { formatDate } from "@/lib/helpers";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/lib/supabase";
 import {
   fetchMySwaygers,
   displayStatus,
@@ -83,6 +84,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const {
     data: swaygers = [],
@@ -94,6 +96,25 @@ export default function DashboardScreen() {
     queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`swayger-list-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "swaygers" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["swaygers", "mine", user.id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   function renderSwaygerCard({ item }: { item: SwaygerData }) {
     const st = displayStatus(item.status || "pending_invite");
