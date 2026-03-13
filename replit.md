@@ -141,21 +141,45 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 - Accent Gold: #F5A623
 - Teal: #0D7377
 
+## Push Notifications
+
+Uses `expo-notifications` (v0.32.x). Tokens are stored in the `push_tokens` Supabase table. Notifications are sent peer-to-peer: the actor's device calls the Expo Push API directly with the recipient's token (fetched via `get_push_token` SECURITY DEFINER RPC).
+
+### Notification Triggers
+
+| Event | Notified party | Message |
+|---|---|---|
+| Opponent joins via code | Creator | "Someone joined your Swayger! 👋" |
+| Opponent accepts | Creator | "Challenge accepted! ⚡" |
+| Opponent declines | Creator | "Invite declined" |
+| Either proposes settlement | Other party | "Settlement proposed 🤝" |
+| Either confirms (fully settled) | Other party | "Swayger settled! 🏆" |
+| Creator cancels | Opponent | "Swayger canceled" |
+
+Notifications are fire-and-forget; they never block the UI. On web, all notification code is a no-op (guarded by `Platform.OS !== "web"`).
+
+### Key Files
+
+- `lib/notifications.ts` — `registerPushToken()` + `sendPushNotification(toUserId, title, body, data?)`
+- `app/_layout.tsx` — registers token on session start, sets notification handler
+
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
 - `swaygers` — 1v1 wager contracts (title, category, creator_id, opponent_id, status, etc.)
 - `swayger_invites` — invite codes (swayger_id, invite_code)
 - `settlement_proposals` — settlement proposals (swayger_id, proposed_by, outcome, confirmations)
+- `push_tokens` — Expo push tokens per user (one row per user, upserted on login)
 
 ### Migration Order
 
 Run in Supabase SQL Editor in order:
 1. `001_workspaces.sql` — base tables (profiles, workspaces legacy)
 2. `002_fix_rls_recursion.sql` — RLS fix
-3. `005_fix_schema_to_swaygers.sql` — creates `swaygers`, `swayger_invites`, `settlement_proposals` tables, all gameplay RPCs, migrates data from workspaces
+3. `005_fix_schema_to_swaygers.sql` — creates `swaygers`, `swayger_invites`, `settlement_proposals` tables, all gameplay RPCs
+4. `012_push_tokens.sql` — creates `push_tokens` table + `get_push_token` RPC
 
-Note: Migrations 003 and 004 are superseded by 005. If starting fresh, only 001 + 002 + 005 are needed.
+Note: Migrations 003 and 004 are superseded by 005. If starting fresh: 001 + 002 + 005 + 012.
 
 ## Smoke Test Checklist
 

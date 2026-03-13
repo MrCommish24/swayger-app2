@@ -34,6 +34,7 @@ import {
 } from "@/lib/swayger";
 import { useAuth } from "@/lib/auth-context";
 import { showError, showMessage, formatDate, formatDateTime } from "@/lib/helpers";
+import { sendPushNotification } from "@/lib/notifications";
 import {
   SwaygerData,
   SwaygerInvite,
@@ -358,6 +359,14 @@ export default function SwaygerDetailScreen() {
       setOpponentPick("");
       invalidateAll();
       showMessage("Accepted!", "The Swayger is now active. Good luck!");
+      if (swayger) {
+        sendPushNotification(
+          swayger.creator_id,
+          "Challenge accepted! ⚡",
+          `Your Swayger "${swayger.title}" is now active. Game on!`,
+          { swayger_id: swayger.id }
+        );
+      }
     },
     onError: () => showError("Failed to accept. Try again."),
   });
@@ -367,6 +376,14 @@ export default function SwaygerDetailScreen() {
     onSuccess: (result) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();
+      if (swayger) {
+        sendPushNotification(
+          swayger.creator_id,
+          "Invite declined",
+          `Your Swayger "${swayger.title}" was declined.`,
+          { swayger_id: swayger.id }
+        );
+      }
     },
     onError: () => showError("Failed to decline. Try again."),
   });
@@ -376,6 +393,14 @@ export default function SwaygerDetailScreen() {
     onSuccess: (result) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();
+      if (swayger?.opponent_id) {
+        sendPushNotification(
+          swayger.opponent_id,
+          "Swayger canceled",
+          `"${swayger.title}" was canceled by the creator.`,
+          { swayger_id: swayger.id }
+        );
+      }
     },
     onError: () => showError("Failed to cancel. Try again."),
   });
@@ -385,6 +410,17 @@ export default function SwaygerDetailScreen() {
     onSuccess: (result) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();
+      if (swayger) {
+        const notifyId = isCreator ? swayger.opponent_id : swayger.creator_id;
+        if (notifyId) {
+          sendPushNotification(
+            notifyId,
+            "Settlement proposed 🤝",
+            `Your opponent proposed a result for "${swayger.title}". Confirm or counter.`,
+            { swayger_id: swayger.id }
+          );
+        }
+      }
     },
     onError: () => showError("Failed to propose. Try again."),
   });
@@ -396,6 +432,27 @@ export default function SwaygerDetailScreen() {
       invalidateAll();
       if (result.settled) {
         showMessage("Settled!", "This Swayger has been settled.");
+        if (swayger) {
+          const notifyId = isCreator ? swayger.opponent_id : swayger.creator_id;
+          if (notifyId) {
+            sendPushNotification(
+              notifyId,
+              "Swayger settled! 🏆",
+              `"${swayger.title}" has been settled. Check the result!`,
+              { swayger_id: swayger.id }
+            );
+          }
+        }
+      } else if (swayger) {
+        const notifyId = isCreator ? swayger.opponent_id : swayger.creator_id;
+        if (notifyId) {
+          sendPushNotification(
+            notifyId,
+            "Settlement confirmed ✅",
+            `Your opponent confirmed the result for "${swayger.title}".`,
+            { swayger_id: swayger.id }
+          );
+        }
       }
     },
     onError: () => showError("Failed to confirm. Try again."),

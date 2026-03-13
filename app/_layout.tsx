@@ -6,7 +6,9 @@ import {
   useRootNavigationState,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import * as Notifications from "expo-notifications";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -14,10 +16,21 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { registerPushToken } from "@/lib/notifications";
 
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
+
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 function useProtectedRoute() {
   const { session, isLoading, needsUsername, profileError } = useAuth();
@@ -48,7 +61,7 @@ function useProtectedRoute() {
 }
 
 function RootLayoutNav() {
-  const { isLoading } = useAuth();
+  const { isLoading, session } = useAuth();
 
   useProtectedRoute();
 
@@ -57,6 +70,12 @@ function RootLayoutNav() {
       SplashScreen.hideAsync();
     }
   }, [isLoading]);
+
+  useEffect(() => {
+    if (session) {
+      registerPushToken();
+    }
+  }, [session?.user?.id]);
 
   return (
     <>

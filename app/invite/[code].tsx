@@ -24,6 +24,7 @@ import {
   categoryIcon,
 } from "@/lib/swayger";
 import { showError, showMessage, formatDateTime } from "@/lib/helpers";
+import { sendPushNotification } from "@/lib/notifications";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
 
@@ -43,7 +44,7 @@ export default function InviteScreen() {
       if (!code || !user) throw new Error("Missing code or user");
       return joinSwaygerByCode(code, user.id);
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.error) {
         showError(result.error);
         return;
@@ -51,6 +52,15 @@ export default function InviteScreen() {
       if (result.swaygerId) {
         setJoinedId(result.swaygerId);
         queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+        const joined = await fetchSwayger(result.swaygerId);
+        if (joined && joined.creator_id !== user?.id) {
+          sendPushNotification(
+            joined.creator_id,
+            "Someone joined your Swayger! 👋",
+            `Your Swayger "${joined.title}" has a challenger. Review and accept!`,
+            { swayger_id: result.swaygerId }
+          );
+        }
       }
     },
     onError: () => showError("Failed to join. Try again."),
@@ -81,6 +91,14 @@ export default function InviteScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       showMessage("Accepted!", "The Swayger is now active. Good luck!");
+      if (swayger) {
+        sendPushNotification(
+          swayger.creator_id,
+          "Challenge accepted! ⚡",
+          `Your Swayger "${swayger.title}" is now active. Game on!`,
+          { swayger_id: swayger.id }
+        );
+      }
       router.replace(`/swayger/${joinedId}`);
     },
     onError: () => showError("Failed to accept. Try again."),
@@ -94,6 +112,14 @@ export default function InviteScreen() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+      if (swayger) {
+        sendPushNotification(
+          swayger.creator_id,
+          "Invite declined",
+          `Your Swayger "${swayger.title}" was declined.`,
+          { swayger_id: swayger.id }
+        );
+      }
       router.back();
     },
     onError: () => showError("Failed to decline. Try again."),
