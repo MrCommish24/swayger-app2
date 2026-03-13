@@ -106,7 +106,7 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary onError={(err, stack) => console.error("[ErrorBoundary]", err.message, stack)}>
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <GestureHandlerRootView>

@@ -1,0 +1,169 @@
+The Viral Mechanic: Receipts
+
+A Receipt is a simple, shareable visual proof of a settled Swayger.
+
+Think of it like a scorecard or bet slip, but social.
+
+Example:
+
+SWAYGER RECEIPT
+
+Darius vs Mike
+
+Who wins Game 7?
+Darius: Celtics
+Mike: Mavericks
+
+Result: Darius Wins
++5 Units
+
+Record vs Mike: 3–1
+
+Then a Share button exports it as an image.
+
+Users post it to:
+
+Instagram
+
+Twitter/X
+
+group chats
+
+Discord
+
+text threads
+
+Every share naturally includes:
+
+“Settle it with friends on Swayger.”
+
+That’s organic growth.
+
+Why this works
+
+Social wagers are about being right, not money.
+
+People want to say:
+
+“I told you so.”
+
+But right now your app keeps that inside the app.
+
+Receipts let users broadcast wins outside the app.
+
+What the receipt should include
+
+Minimal version:
+
+Title
+Swayger Result
+
+Participants
+User vs Opponent
+
+Wager
+Title of Swayger
+
+Picks
+Creator pick
+Opponent pick
+
+Outcome
+Winner
+
+Units
++5 units
+
+Optional
+Head-to-head record
+
+Why this drives growth
+
+Imagine someone posts:
+
+I told you Luka would drop 35.
+
+Receipt attached.
+
+Friends reply:
+
+what app is that?
+
+That’s how social products grow.
+
+When to build this
+
+Not immediately.
+
+Build after:
+
+Deep link invites
+
+Push notifications
+
+Then receipts become powerful.
+
+MVP version (very easy technically)
+
+You don't need image generation servers.
+
+React Native can render a receipt card component and export it as an image.
+
+Libraries:
+
+react-native-view-shot
+expo-sharing
+
+Flow:
+
+Settlement confirmed
+↓
+Show “Share Receipt”
+↓
+Generate image
+↓
+Open native share sheet
+Replit prompt for when you're ready
+Add a "Swayger Receipt" share feature for settled wagers.
+
+When a Swayger reaches status = settled:
+
+1. Show a "Share Receipt" button on the Swayger detail screen.
+
+2. Create a receipt card component that displays:
+   - Swayger title
+   - creator username
+   - opponent username
+   - creator pick
+   - opponent pick
+   - outcome
+   - units won
+   - settled date
+
+3. Render the receipt as a visually styled card.
+
+4. Use react-native-view-shot to capture the card as an image.
+
+5. Use expo-sharing to open the native share sheet so users can share to social apps.
+
+6. Include small footer branding:
+   "Settled on Swayger"
+
+Do not add backend logic. This should be purely a UI share layer.
+Why I like Swayger's potential
+
+Most wager apps focus on odds, money, and gambling mechanics.
+
+You are building something different:
+
+Prediction + reputation + social proof.
+
+That’s closer to:
+
+fantasy sports
+
+Wordle sharing
+
+BeReal social moments
+
+Those spread much faster.
