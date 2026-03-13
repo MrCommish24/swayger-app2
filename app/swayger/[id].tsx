@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   ScrollView,
   TextInput,
-  Alert,
   Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -581,7 +580,7 @@ export default function SwaygerDetailScreen() {
         />
       )}
 
-      {status === "settled" && isCreator && (
+      {status === "settled" && (isCreator || isOpponent) && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Rematch</Text>
           <View style={styles.rematchRow}>
