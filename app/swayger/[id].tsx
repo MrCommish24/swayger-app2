@@ -1002,7 +1002,6 @@ export default function SwaygerDetailScreen() {
                   opponentPick={swayger.opponent_pick}
                   outcome={swayger.settled_outcome}
                   stakeUnits={swayger.stake_units || 1}
-                  viewerIsCreator={isCreator ? true : isOpponent ? false : null}
                 />
               </View>
             )}

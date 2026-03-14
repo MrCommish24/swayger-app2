@@ -19,28 +19,18 @@ export interface ReceiptCardProps {
   opponentPick: string;
   outcome: string;
   stakeUnits: number;
-  viewerIsCreator?: boolean | null;
 }
 
 function resolveWinner(
   outcome: string,
   creatorUsername: string,
-  opponentUsername: string,
-  viewerIsCreator?: boolean | null
+  opponentUsername: string
 ): { line: string; emoji: string; isGold: boolean } {
   switch (outcome) {
     case "creator":
-      return {
-        line: viewerIsCreator === true ? "You Win" : `@${creatorUsername} wins`,
-        emoji: "🏆",
-        isGold: true,
-      };
+      return { line: `@${creatorUsername} wins`, emoji: "🏆", isGold: true };
     case "opponent":
-      return {
-        line: viewerIsCreator === false ? "You Win" : `@${opponentUsername} wins`,
-        emoji: "🏆",
-        isGold: true,
-      };
+      return { line: `@${opponentUsername} wins`, emoji: "🏆", isGold: true };
     case "draw":
       return { line: "Draw", emoji: "🤝", isGold: false };
     case "no_contest":
@@ -59,9 +49,8 @@ export default function ReceiptCard({
   opponentPick,
   outcome,
   stakeUnits,
-  viewerIsCreator,
 }: ReceiptCardProps) {
-  const winner = resolveWinner(outcome, creatorUsername, opponentUsername, viewerIsCreator);
+  const winner = resolveWinner(outcome, creatorUsername, opponentUsername);
 
   return (
     <View style={styles.card} collapsable={false}>
