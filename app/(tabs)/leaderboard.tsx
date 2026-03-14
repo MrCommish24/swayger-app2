@@ -210,7 +210,8 @@ function CategoryPills({
   );
 }
 
-function RecentSection({ rows, profileMap }: { rows: SettledRow[]; profileMap: Map<string, ProfileInfo> }) {
+interface RecentSectionProps { rows: SettledRow[]; profileMap: Map<string, ProfileInfo> }
+function RecentSection({ rows, profileMap }: RecentSectionProps) {
   const items = rows.slice(0, 5);
   if (items.length === 0) return null;
 

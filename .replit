@@ -6,7 +6,7 @@ channel = "stable-24_05"
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["sh", "-c", "npm run expo:static:build && npm run server:build"]
+build = ["sh", "-c", '''npm run expo:static:build && EXPO_PUBLIC_DOMAIN=$(node -e "const d=process.env.REPLIT_INTERNAL_APP_DOMAIN||process.env.REPLIT_DEV_DOMAIN||'';console.log(d.replace(/^https?:\/\//,''))") npx expo export --platform web --output-dir dist && npm run server:build''']
 run = ["npm", "run", "server:prod"]
 
 [[ports]]

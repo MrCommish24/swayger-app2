@@ -187,6 +187,10 @@ function configureExpoAndLanding(app: express.Application) {
     }
 
     if (req.path === "/") {
+      const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
+      if (fs.existsSync(webIndexPath)) {
+        return res.sendFile(webIndexPath);
+      }
       return serveLandingPage({
         req,
         res,
@@ -199,7 +203,20 @@ function configureExpoAndLanding(app: express.Application) {
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
+  app.use(express.static(path.resolve(process.cwd(), "dist")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  // SPA fallback — deep links like /invite/ABC123 all return index.html
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
+      return next();
+    }
+    const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
+    if (fs.existsSync(webIndexPath)) {
+      return res.sendFile(webIndexPath);
+    }
+    next();
+  });
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
