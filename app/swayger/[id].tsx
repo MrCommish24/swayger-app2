@@ -350,6 +350,9 @@ function SettlementSection({
   );
 }
 
+// Tracks which swayger IDs have shown the fight card this session (survives navigation)
+const shownFightCardIds = new Set<string>();
+
 export default function SwaygerDetailScreen() {
   const { id, justAccepted } = useLocalSearchParams<{ id: string; justAccepted?: string }>();
   const router = useRouter();
@@ -365,7 +368,6 @@ export default function SwaygerDetailScreen() {
   const [celebrationStreak, setCelebrationStreak] = useState(0);
   const [showFightCard, setShowFightCard] = useState(false);
   const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
-  const fightCardShownRef = useRef(false);
   const receiptRef = useRef<View>(null);
   const modalReceiptRef = useRef<View>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
@@ -431,8 +433,8 @@ export default function SwaygerDetailScreen() {
       setTimeout(() => setShowReceiptModal(true), 400);
     }
     // Fight card: swayger just became active (someone accepted the invite)
-    if (prev !== undefined && prev !== "active" && curr === "active" && !fightCardShownRef.current) {
-      fightCardShownRef.current = true;
+    if (prev !== undefined && prev !== "active" && curr === "active" && id && !shownFightCardIds.has(id)) {
+      shownFightCardIds.add(id);
       setTimeout(() => {
         setFightCardType("game_on");
         setShowFightCard(true);
@@ -442,9 +444,9 @@ export default function SwaygerDetailScreen() {
 
   // Fight card: first open of a rematch swayger (once profiles are loaded)
   useEffect(() => {
-    if (!swayger?.rematch_type || !profiles || fightCardShownRef.current) return;
+    if (!swayger?.rematch_type || !profiles || !id || shownFightCardIds.has(id)) return;
     if (!profiles.creator || !profiles.opponent) return;
-    fightCardShownRef.current = true;
+    shownFightCardIds.add(id);
     setTimeout(() => {
       setFightCardType(swayger.rematch_type as FightCardType);
       setShowFightCard(true);
@@ -453,10 +455,10 @@ export default function SwaygerDetailScreen() {
 
   // Fight card: opponent arrives after accepting (swayger already active on arrival)
   useEffect(() => {
-    if (justAccepted !== "1" || !profiles || fightCardShownRef.current) return;
+    if (justAccepted !== "1" || !profiles || !id || shownFightCardIds.has(id)) return;
     if (!profiles.creator || !profiles.opponent) return;
     if (swayger?.status !== "active") return;
-    fightCardShownRef.current = true;
+    shownFightCardIds.add(id);
     setTimeout(() => {
       setFightCardType("game_on");
       setShowFightCard(true);

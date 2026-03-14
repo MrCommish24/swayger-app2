@@ -56,14 +56,7 @@ export default function FightCardModal({
   const titleOpacity     = useSharedValue(0);
   const stakeOpacity     = useSharedValue(0);
 
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function clearTimer() {
-    if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; }
-  }
-
   function handleDismiss() {
-    clearTimer();
     backdropOpacity.value = withTiming(0, { duration: 200 }, (done) => {
       if (done) runOnJS(onDismiss)();
     });
@@ -109,11 +102,6 @@ export default function FightCardModal({
 
     // Stakes fade in last
     stakeOpacity.value = withDelay(620, withTiming(1, { duration: 300 }));
-
-    // Auto-dismiss after 3.2s
-    dismissTimer.current = setTimeout(handleDismiss, 3200);
-
-    return () => clearTimer();
   }, [visible]);
 
   const backdropStyle    = useAnimatedStyle(() => ({ opacity: backdropOpacity.value }));
