@@ -44,7 +44,7 @@ export default function ProfileScreen() {
 
   const avatarSeed = profile?.username || user?.email || "?";
   const avatarColor = getAvatarColor(avatarSeed);
-  const avatarInitial = (profile?.display_name || profile?.username || user?.email || "?")
+  const avatarInitial = (profile?.username || user?.email || "?")
     .charAt(0)
     .toUpperCase();
 
@@ -75,7 +75,7 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    if (!user || !profile) return;
+    if (!user) return;
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
       showError("Display name must be 50 characters or less.");
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
       if (error) {
         showError(error.message);
       } else {
-        setProfile({ ...profile, display_name: trimmed || null });
+        if (profile) setProfile({ ...profile, display_name: trimmed || null });
         setShowEditName(false);
         setDisplayNameDraft("");
         showMessage("Saved", "Display name updated.");
@@ -142,10 +142,12 @@ export default function ProfileScreen() {
           <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
             <Text style={styles.avatarInitial}>{avatarInitial}</Text>
           </View>
-          <Text style={styles.username}>
-            {profile?.display_name || profile?.username || user?.email?.split("@")[0] || "—"}
-          </Text>
-          <Text style={styles.usernameHandle}>@{profile?.username ?? "…"}</Text>
+          <Text style={styles.username}>@{profile?.username ?? user?.email?.split("@")[0] ?? "…"}</Text>
+          {profile?.display_name ? (
+            <Text style={styles.displayNameText}>{profile.display_name}</Text>
+          ) : (
+            <Text style={styles.displayNameMuted}>No display name set</Text>
+          )}
           {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
         </View>
 
@@ -364,7 +366,8 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { fontSize: 32, fontWeight: "700" as const, color: "#FFFFFF" },
   username: { fontSize: 20, fontWeight: "700" as const, color: Colors.dark.text },
-  usernameHandle: { fontSize: 14, color: Colors.dark.tabIconDefault },
+  displayNameText: { fontSize: 16, color: Colors.dark.textSecondary },
+  displayNameMuted: { fontSize: 15, color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
   email: { fontSize: 13, color: Colors.dark.tabIconDefault, marginTop: 2 },
 
   section: { paddingHorizontal: 24, paddingTop: 8, gap: 12 },
