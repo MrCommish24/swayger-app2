@@ -26,7 +26,7 @@ interface SchemaCheck {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user, profile, setProfile, signOut } = useAuth();
+  const { user, profile, setProfile, retryProfileFetch, signOut } = useAuth();
 
   const [showEditName, setShowEditName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
       if (error) {
         showError(error.message);
       } else {
-        if (profile) setProfile({ ...profile, display_name: trimmed || null });
+        retryProfileFetch();
         setShowEditName(false);
         setDisplayNameDraft("");
         showMessage("Saved", "Display name updated.");
