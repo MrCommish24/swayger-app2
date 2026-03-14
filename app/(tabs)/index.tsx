@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
   roleBadgeCreator: { backgroundColor: "rgba(245, 166, 35, 0.15)" },
   roleBadgeText: { fontSize: 12, color: Colors.dark.tint, fontWeight: "600" as const },
   roleBadgeTextCreator: { color: Colors.dark.accentGold },
-  cardDetails: { flexDirection: "row", gap: 16 },
+  cardDetails: { flexDirection: "row", gap: 12, flexWrap: "wrap", rowGap: 4 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailText: { fontSize: 13, color: Colors.dark.textSecondary },
 });

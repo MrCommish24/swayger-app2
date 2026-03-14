@@ -341,7 +341,7 @@ export function displayStatus(status: string): { label: string; color: string } 
   switch (status) {
     case "pending_invite": return { label: "Pending", color: "#F5A623" };
     case "active": return { label: "Active", color: "#22C55E" };
-    case "settlement_proposed": return { label: "Settlement Proposed", color: "#3B82F6" };
+    case "settlement_proposed": return { label: "Settling", color: "#3B82F6" };
     case "settled": return { label: "Settled", color: "#8B5CF6" };
     case "declined": return { label: "Declined", color: "#EF4444" };
     case "canceled": return { label: "Canceled", color: "#6B7280" };
