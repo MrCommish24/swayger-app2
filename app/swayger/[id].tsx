@@ -995,12 +995,6 @@ export default function SwaygerDetailScreen() {
     </ScrollView>
     </KeyboardAvoidingView>
 
-      <StreakCelebrationModal
-        visible={showStreakCelebration}
-        streak={celebrationStreak}
-        onDismiss={() => setShowStreakCelebration(false)}
-      />
-
       <Modal
         visible={showReceiptModal}
         transparent
@@ -1063,6 +1057,12 @@ export default function SwaygerDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <StreakCelebrationModal
+        visible={showStreakCelebration}
+        streak={celebrationStreak}
+        onDismiss={() => setShowStreakCelebration(false)}
+      />
     </>
   );
 }
