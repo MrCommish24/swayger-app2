@@ -99,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(data as Profile);
         setNeedsUsername(false);
         setProfileError(null);
+        supabase.rpc("update_last_seen").catch(() => {});
         if (__DEV__) {
           runSchemaVerification().catch(() => {});
         }
