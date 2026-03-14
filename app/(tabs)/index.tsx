@@ -249,34 +249,34 @@ export default function DashboardScreen() {
       </View>
 
       {!isLoading && !error && swaygers.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-          style={styles.filterBar}
-        >
-          {(["all", "active", "pending", "settled", "other"] as FilterKey[]).map((key) => {
-            const isActive = activeFilter === key;
-            const label = key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1);
-            const count = counts[key];
-            return (
-              <Pressable
-                key={key}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
-                onPress={() => setActiveFilter(key)}
-              >
-                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
-                  {label}
-                </Text>
-                <View style={[styles.filterBadge, isActive && styles.filterBadgeActive]}>
-                  <Text style={[styles.filterBadgeText, isActive && styles.filterBadgeTextActive]}>
-                    {count}
+        <View style={styles.filterBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+            bounces={false}
+          >
+            {(["all", "active", "pending", "settled", "other"] as FilterKey[]).map((key) => {
+              const isActive = activeFilter === key;
+              const label = key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1);
+              const count = counts[key];
+              return (
+                <Pressable
+                  key={key}
+                  style={[styles.filterChip, isActive && styles.filterChipActive]}
+                  onPress={() => setActiveFilter(key)}
+                >
+                  <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                    {label}
+                    <Text style={[styles.filterChipCount, isActive && styles.filterChipCountActive]}>
+                      {" "}{count}
+                    </Text>
                   </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
       )}
 
       {isLoading ? (
@@ -470,36 +470,25 @@ const styles = StyleSheet.create({
   },
 
   actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 12 },
-  filterBar: { marginBottom: 10, height: 38 },
-  filterRow: { paddingLeft: 16, paddingRight: 20, gap: 6, alignItems: "center" },
+  filterBar: { marginBottom: 10, height: 42 },
+  filterRow: { paddingLeft: 16, paddingRight: 20, gap: 8, alignItems: "center", height: 42 },
   filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 18,
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
+    justifyContent: "center",
   },
   filterChipActive: {
     backgroundColor: Colors.dark.tint,
     borderColor: Colors.dark.tint,
   },
-  filterChipText: { fontSize: 12, fontWeight: "600" as const, color: Colors.dark.textSecondary },
+  filterChipText: { fontSize: 13, fontWeight: "600" as const, color: Colors.dark.textSecondary },
   filterChipTextActive: { color: "#FFFFFF" },
-  filterBadge: {
-    backgroundColor: Colors.dark.border,
-    borderRadius: 8,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    minWidth: 18,
-    alignItems: "center",
-  },
-  filterBadgeActive: { backgroundColor: "rgba(255,255,255,0.25)" },
-  filterBadgeText: { fontSize: 10, fontWeight: "700" as const, color: Colors.dark.textSecondary },
-  filterBadgeTextActive: { color: "#FFFFFF" },
+  filterChipCount: { fontSize: 11, fontWeight: "500" as const, color: Colors.dark.textSecondary, opacity: 0.7 },
+  filterChipCountActive: { color: "rgba(255,255,255,0.75)" },
   actionButton: {
     flex: 1, backgroundColor: Colors.dark.accent, flexDirection: "row",
     alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 10,
