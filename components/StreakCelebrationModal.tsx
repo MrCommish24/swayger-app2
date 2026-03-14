@@ -85,11 +85,6 @@ export default function StreakCelebrationModal({ visible, streak, onDismiss }: P
 
       // Count up the streak number
       startCountUp(streak);
-
-      // Auto-dismiss after 2.8s
-      dismissTimerRef.current = setTimeout(() => {
-        handleDismiss();
-      }, 2800);
     } else {
       clearTimers();
       setDisplayedStreak(0);
