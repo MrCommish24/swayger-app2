@@ -10,6 +10,7 @@ import {
   TextInput,
   Share,
   Modal,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
@@ -359,6 +360,7 @@ export default function SwaygerDetailScreen() {
   const receiptRef = useRef<View>(null);
   const modalReceiptRef = useRef<View>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
+  const scrollRef = useRef<ScrollView>(null);
 
   const { data: swayger, isLoading: swaygerLoading } = useQuery<SwaygerData | null>({
     queryKey: ["swayger", id],
@@ -657,10 +659,16 @@ export default function SwaygerDetailScreen() {
 
   return (
     <>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
     <ScrollView
+      ref={scrollRef}
       style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.headerSection}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
@@ -770,6 +778,11 @@ export default function SwaygerDetailScreen() {
             onChangeText={setOpponentPick}
             editable={!anyPending}
             maxLength={200}
+            onFocus={() => {
+              setTimeout(() => {
+                scrollRef.current?.scrollToEnd({ animated: true });
+              }, 200);
+            }}
           />
           <View style={styles.actionRow}>
             <Pressable
@@ -949,6 +962,7 @@ export default function SwaygerDetailScreen() {
         )}
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
 
       <Modal
         visible={showReceiptModal}
@@ -1018,7 +1032,7 @@ export default function SwaygerDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
-  scrollContent: { paddingBottom: 100 },
+  scrollContent: { paddingBottom: 160 },
   centered: { alignItems: "center", justifyContent: "center", gap: 12 },
   errorText: { fontSize: 16, color: Colors.dark.textSecondary },
   linkText: { color: Colors.dark.tint, fontSize: 14 },
