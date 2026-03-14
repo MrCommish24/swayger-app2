@@ -1,6 +1,4 @@
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,27 +6,45 @@ import React from "react";
 
 import Colors from "@/constants/colors";
 
+// Safely check for liquid glass — expo-glass-effect requires a custom native build
+// and is not available in Expo Go, so we lazy-require to avoid a top-level crash.
+function checkLiquidGlass(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("expo-glass-effect");
+    return mod.isLiquidGlassAvailable?.() ?? false;
+  } catch {
+    return false;
+  }
+}
+
 function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "flame", selected: "flame.fill" }} />
-        <Label>Swaygers</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="create">
-        <Icon sf={{ default: "plus.circle", selected: "plus.circle.fill" }} />
-        <Label>Create</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="leaderboard">
-        <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
-        <Label>Leaderboard</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="profile">
-        <Icon sf={{ default: "person", selected: "person.fill" }} />
-        <Label>Profile</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { NativeTabs, Icon, Label } = require("expo-router/unstable-native-tabs");
+    return (
+      <NativeTabs>
+        <NativeTabs.Trigger name="index">
+          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
+          <Label>Swaygers</Label>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="create">
+          <Icon sf={{ default: "plus.circle", selected: "plus.circle.fill" }} />
+          <Label>Create</Label>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="leaderboard">
+          <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
+          <Label>Leaderboard</Label>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="profile">
+          <Icon sf={{ default: "person", selected: "person.fill" }} />
+          <Label>Profile</Label>
+        </NativeTabs.Trigger>
+      </NativeTabs>
+    );
+  } catch {
+    return <ClassicTabLayout />;
+  }
 }
 
 function ClassicTabLayout() {
@@ -98,13 +114,7 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  let nativeGlass = false;
-  try {
-    nativeGlass = isLiquidGlassAvailable();
-  } catch {
-    nativeGlass = false;
-  }
-  if (nativeGlass) {
+  if (checkLiquidGlass()) {
     return <NativeTabLayout />;
   }
   return <ClassicTabLayout />;
