@@ -26,11 +26,11 @@ interface SchemaCheck {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user, profile, setProfile } = useAuth();
+  const { user, profile, setProfile, signOut } = useAuth();
 
-  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [showEditName, setShowEditName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
-  const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [savingName, setSavingName] = useState(false);
 
   const [showSetPassword, setShowSetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -64,9 +64,14 @@ export default function ProfileScreen() {
     if (!showDevPanel) runSchemaCheck();
   }
 
-  function startEditDisplayName() {
+  function openEditName() {
     setDisplayNameDraft(profile?.display_name ?? "");
-    setEditingDisplayName(true);
+    setShowEditName(true);
+  }
+
+  function cancelEditName() {
+    setShowEditName(false);
+    setDisplayNameDraft("");
   }
 
   async function saveDisplayName() {
@@ -76,7 +81,7 @@ export default function ProfileScreen() {
       showError("Display name must be 50 characters or less.");
       return;
     }
-    setSavingDisplayName(true);
+    setSavingName(true);
     try {
       const { error } = await supabase
         .from("profiles")
@@ -86,13 +91,14 @@ export default function ProfileScreen() {
         showError(error.message);
       } else {
         setProfile({ ...profile, display_name: trimmed || null });
-        setEditingDisplayName(false);
+        setShowEditName(false);
+        setDisplayNameDraft("");
         showMessage("Saved", "Display name updated.");
       }
     } catch {
       showError("Something went wrong. Try again.");
     } finally {
-      setSavingDisplayName(false);
+      setSavingName(false);
     }
   }
 
@@ -123,8 +129,6 @@ export default function ProfileScreen() {
     }
   }
 
-  const { signOut } = useAuth();
-
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
@@ -132,78 +136,83 @@ export default function ProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.content}>
+
+        {/* Identity block */}
+        <View style={styles.identityBlock}>
           <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
             <Text style={styles.avatarInitial}>{avatarInitial}</Text>
           </View>
-
-          {profile && (
-            <View style={styles.info}>
-              <Text style={styles.username}>@{profile.username}</Text>
-
-              {editingDisplayName ? (
-                <View style={styles.displayNameEdit}>
-                  <TextInput
-                    style={styles.displayNameInput}
-                    value={displayNameDraft}
-                    onChangeText={setDisplayNameDraft}
-                    placeholder="Your display name"
-                    placeholderTextColor={Colors.dark.tabIconDefault}
-                    autoFocus
-                    maxLength={50}
-                    editable={!savingDisplayName}
-                    returnKeyType="done"
-                    onSubmitEditing={saveDisplayName}
-                  />
-                  <View style={styles.displayNameButtons}>
-                    <Pressable
-                      style={({ pressed }) => [styles.dnCancelBtn, pressed && styles.buttonPressed]}
-                      onPress={() => setEditingDisplayName(false)}
-                      disabled={savingDisplayName}
-                    >
-                      <Text style={styles.dnCancelText}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.dnSaveBtn,
-                        pressed && styles.buttonPressed,
-                        savingDisplayName && styles.buttonDisabled,
-                      ]}
-                      onPress={saveDisplayName}
-                      disabled={savingDisplayName}
-                    >
-                      {savingDisplayName ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <Text style={styles.dnSaveText}>Save</Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-              ) : (
-                <Pressable
-                  style={({ pressed }) => [styles.displayNameRow, pressed && styles.buttonPressed]}
-                  onPress={startEditDisplayName}
-                >
-                  <Text style={styles.displayName}>
-                    {profile.display_name || "Add display name"}
-                  </Text>
-                  <Ionicons
-                    name="pencil-outline"
-                    size={14}
-                    color={Colors.dark.tabIconDefault}
-                  />
-                </Pressable>
-              )}
-            </View>
-          )}
-
-          {user && <Text style={styles.email}>{user.email}</Text>}
+          <Text style={styles.username}>
+            {profile?.display_name || profile?.username || user?.email?.split("@")[0] || "—"}
+          </Text>
+          <Text style={styles.usernameHandle}>@{profile?.username ?? "…"}</Text>
+          {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
         </View>
 
+        {/* Account section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
 
+          {/* Display name row */}
+          {!showEditName ? (
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+              onPress={openEditName}
+            >
+              <Ionicons name="person-outline" size={20} color={Colors.dark.text} />
+              <View style={styles.menuItemBody}>
+                <Text style={styles.menuItemText}>Display Name</Text>
+                {profile?.display_name ? (
+                  <Text style={styles.menuItemSub}>{profile.display_name}</Text>
+                ) : (
+                  <Text style={[styles.menuItemSub, styles.menuItemSubMuted]}>Not set</Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
+            </Pressable>
+          ) : (
+            <View style={styles.inlineForm}>
+              <Text style={styles.inlineFormLabel}>Display Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. Big Boss"
+                placeholderTextColor={Colors.dark.tabIconDefault}
+                value={displayNameDraft}
+                onChangeText={setDisplayNameDraft}
+                autoFocus
+                maxLength={50}
+                editable={!savingName}
+                returnKeyType="done"
+                onSubmitEditing={saveDisplayName}
+              />
+              <View style={styles.inlineFormButtons}>
+                <Pressable
+                  style={({ pressed }) => [styles.cancelBtn, pressed && styles.buttonPressed]}
+                  onPress={cancelEditName}
+                  disabled={savingName}
+                >
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.saveButton,
+                    pressed && styles.buttonPressed,
+                    savingName && styles.buttonDisabled,
+                  ]}
+                  onPress={saveDisplayName}
+                  disabled={savingName}
+                >
+                  {savingName ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* Password row */}
           {passwordSet && (
             <View style={styles.successBanner}>
               <Ionicons name="checkmark-circle" size={18} color="#22C55E" />
@@ -219,13 +228,14 @@ export default function ProfileScreen() {
               onPress={() => setShowSetPassword(true)}
             >
               <Ionicons name="key-outline" size={20} color={Colors.dark.text} />
-              <Text style={styles.menuItemText}>
+              <Text style={[styles.menuItemText, { flex: 1 }]}>
                 {passwordSet ? "Change Password" : "Set Password"}
               </Text>
               <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
             </Pressable>
           ) : (
-            <View style={styles.passwordForm}>
+            <View style={styles.inlineForm}>
+              <Text style={styles.inlineFormLabel}>Set Password</Text>
               <TextInput
                 style={styles.input}
                 placeholder="New password (min 6 chars)"
@@ -246,7 +256,7 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 editable={!saving}
               />
-              <View style={styles.passwordButtons}>
+              <View style={styles.inlineFormButtons}>
                 <Pressable
                   style={({ pressed }) => [styles.cancelBtn, pressed && styles.buttonPressed]}
                   onPress={() => {
@@ -278,6 +288,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Bottom area */}
         <View style={[styles.bottomArea, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}>
           {__DEV__ && showDevPanel && (
             <View style={styles.devPanel}>
@@ -340,69 +351,74 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingVertical: 16 },
   title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
   scrollContent: { flexGrow: 1 },
-  content: { alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40, paddingVertical: 24 },
+
+  identityBlock: {
+    alignItems: "center",
+    paddingHorizontal: 40,
+    paddingVertical: 24,
+    gap: 6,
+  },
   avatar: {
     width: 80, height: 80, borderRadius: 40,
     alignItems: "center", justifyContent: "center", marginBottom: 8,
   },
   avatarInitial: { fontSize: 32, fontWeight: "700" as const, color: "#FFFFFF" },
-  info: { alignItems: "center", gap: 6 },
-  username: { fontSize: 20, fontWeight: "bold" as const, color: Colors.dark.text },
-  displayNameRow: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+  username: { fontSize: 20, fontWeight: "700" as const, color: Colors.dark.text },
+  usernameHandle: { fontSize: 14, color: Colors.dark.tabIconDefault },
+  email: { fontSize: 13, color: Colors.dark.tabIconDefault, marginTop: 2 },
+
+  section: { paddingHorizontal: 24, paddingTop: 8, gap: 12 },
+  sectionTitle: {
+    fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tabIconDefault,
+    textTransform: "uppercase" as const, letterSpacing: 1,
   },
-  displayName: { fontSize: 16, color: Colors.dark.textSecondary },
-  displayNameEdit: { gap: 8, alignItems: "stretch", width: "100%" as const },
-  displayNameInput: {
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.accent,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: Colors.dark.text,
-    textAlign: "center" as const,
-  },
-  displayNameButtons: { flexDirection: "row" as const, gap: 10 },
-  dnCancelBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center",
+  menuItem: {
+    flexDirection: "row" as const, alignItems: "center", gap: 12,
+    backgroundColor: Colors.dark.surface, borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
     borderWidth: 1, borderColor: Colors.dark.border,
   },
-  dnCancelText: { color: Colors.dark.textSecondary, fontSize: 14, fontWeight: "600" as const },
-  dnSaveBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center",
-    backgroundColor: Colors.dark.accent,
-  },
-  dnSaveText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" as const },
-  email: { fontSize: 14, color: Colors.dark.tabIconDefault },
-  section: { paddingHorizontal: 24, paddingTop: 16, gap: 12 },
-  sectionTitle: { fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tabIconDefault, textTransform: "uppercase" as const, letterSpacing: 1 },
-  successBanner: { flexDirection: "row" as const, alignItems: "center", gap: 8, backgroundColor: "rgba(34, 197, 94, 0.1)", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  successText: { color: "#22C55E", fontSize: 14, flex: 1 },
-  menuItem: {
-    flexDirection: "row" as const, alignItems: "center", gap: 12, backgroundColor: Colors.dark.surface,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1, borderColor: Colors.dark.border,
-  },
   menuItemPressed: { opacity: 0.7 },
-  menuItemText: { flex: 1, fontSize: 16, color: Colors.dark.text },
-  passwordForm: { gap: 12 },
-  input: {
-    backgroundColor: Colors.dark.surface, borderWidth: 1, borderColor: Colors.dark.border,
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: Colors.dark.text,
+  menuItemBody: { flex: 1, gap: 2 },
+  menuItemText: { fontSize: 16, color: Colors.dark.text },
+  menuItemSub: { fontSize: 13, color: Colors.dark.textSecondary },
+  menuItemSubMuted: { color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
+
+  inlineForm: {
+    backgroundColor: Colors.dark.surface, borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.dark.accent,
+    padding: 16, gap: 12,
   },
-  passwordButtons: { flexDirection: "row" as const, gap: 12 },
-  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: Colors.dark.border },
+  inlineFormLabel: {
+    fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tint,
+    textTransform: "uppercase" as const, letterSpacing: 0.8,
+  },
+  inlineFormButtons: { flexDirection: "row" as const, gap: 12 },
+  input: {
+    backgroundColor: Colors.dark.background, borderWidth: 1, borderColor: Colors.dark.border,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 16, color: Colors.dark.text,
+  },
+  cancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
   cancelBtnText: { color: Colors.dark.textSecondary, fontSize: 15, fontWeight: "600" as const },
-  saveButton: { flex: 1, backgroundColor: Colors.dark.accent, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  saveButton: {
+    flex: 1, backgroundColor: Colors.dark.accent, paddingVertical: 12,
+    borderRadius: 10, alignItems: "center",
+  },
   saveButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" as const },
   buttonPressed: { opacity: 0.7 },
   buttonDisabled: { opacity: 0.6 },
+
+  successBanner: {
+    flexDirection: "row" as const, alignItems: "center", gap: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.1)", borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  successText: { color: "#22C55E", fontSize: 14, flex: 1 },
+
   bottomArea: { paddingHorizontal: 24, marginTop: "auto", paddingTop: 24, gap: 12 },
   versionRow: { alignItems: "center", paddingVertical: 4 },
   versionText: { fontSize: 12, color: Colors.dark.tabIconDefault },
@@ -411,51 +427,19 @@ const styles = StyleSheet.create({
     paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: "#EF4444",
   },
   signOutText: { color: "#EF4444", fontSize: 16, fontWeight: "600" as const },
+
   devPanel: {
-    backgroundColor: "rgba(29,161,242,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(29,161,242,0.2)",
-    borderRadius: 12,
-    padding: 14,
-    gap: 8,
+    backgroundColor: "rgba(29,161,242,0.06)", borderWidth: 1,
+    borderColor: "rgba(29,161,242,0.2)", borderRadius: 12, padding: 14, gap: 8,
   },
-  devPanelHeader: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 8,
-    marginBottom: 4,
-  },
+  devPanelHeader: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, marginBottom: 4 },
   devPanelTitle: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "700" as const,
-    color: Colors.dark.tint,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.8,
+    flex: 1, fontSize: 13, fontWeight: "700" as const, color: Colors.dark.tint,
+    textTransform: "uppercase" as const, letterSpacing: 0.8,
   },
-  devRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 8,
-  },
-  devCheckName: {
-    flex: 1,
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-  },
-  devBadge: {
-    fontSize: 10,
-    fontWeight: "700" as const,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  devBadgeOk: {
-    backgroundColor: "rgba(34,197,94,0.15)",
-    color: "#22C55E",
-  },
-  devBadgeMissing: {
-    backgroundColor: "rgba(239,68,68,0.15)",
-    color: "#EF4444",
-  },
+  devRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
+  devCheckName: { flex: 1, fontSize: 12, color: Colors.dark.textSecondary },
+  devBadge: { fontSize: 10, fontWeight: "700" as const, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  devBadgeOk: { backgroundColor: "rgba(34,197,94,0.15)", color: "#22C55E" },
+  devBadgeMissing: { backgroundColor: "rgba(239,68,68,0.15)", color: "#EF4444" },
 });
