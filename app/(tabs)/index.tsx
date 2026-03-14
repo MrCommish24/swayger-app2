@@ -11,7 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { formatDate } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -97,6 +97,40 @@ export default function DashboardScreen() {
     queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
+
+  type FilterKey = "all" | "active" | "pending" | "settled" | "other";
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
+  const counts = useMemo(() => ({
+    all:     swaygers.length,
+    active:  swaygers.filter((s) => ["active", "settlement_proposed"].includes(s.status)).length,
+    pending: swaygers.filter((s) => s.status === "pending_invite").length,
+    settled: swaygers.filter((s) => s.status === "settled").length,
+    other:   swaygers.filter((s) => ["canceled", "declined"].includes(s.status)).length,
+  }), [swaygers]);
+
+  const filteredSwaygers = useMemo(() => {
+    const statusOrder = (s: SwaygerData): number => {
+      if (["active", "settlement_proposed"].includes(s.status)) return 0;
+      if (s.status === "pending_invite") return 1;
+      if (s.status === "settled") return 2;
+      return 3;
+    };
+    const filtered = activeFilter === "all"
+      ? [...swaygers]
+      : swaygers.filter((s) => {
+          if (activeFilter === "active")  return ["active", "settlement_proposed"].includes(s.status);
+          if (activeFilter === "pending") return s.status === "pending_invite";
+          if (activeFilter === "settled") return s.status === "settled";
+          if (activeFilter === "other")   return ["canceled", "declined"].includes(s.status);
+          return true;
+        });
+    return filtered.sort((a, b) => {
+      const orderDiff = statusOrder(a) - statusOrder(b);
+      if (orderDiff !== 0) return orderDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [swaygers, activeFilter]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -214,6 +248,37 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
+      {!isLoading && !error && swaygers.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+          style={styles.filterBar}
+        >
+          {(["all", "active", "pending", "settled", "other"] as FilterKey[]).map((key) => {
+            const isActive = activeFilter === key;
+            const label = key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1);
+            const count = counts[key];
+            return (
+              <Pressable
+                key={key}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setActiveFilter(key)}
+              >
+                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                  {label}
+                </Text>
+                <View style={[styles.filterBadge, isActive && styles.filterBadgeActive]}>
+                  <Text style={[styles.filterBadgeText, isActive && styles.filterBadgeTextActive]}>
+                    {count}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.tint} />
@@ -308,13 +373,18 @@ export default function DashboardScreen() {
             <Text style={styles.emptyCreateButtonText}>Create Your First Swayger</Text>
           </Pressable>
         </ScrollView>
+      ) : filteredSwaygers.length === 0 && swaygers.length > 0 ? (
+        <View style={styles.centered}>
+          <Ionicons name="filter-outline" size={40} color={Colors.dark.textSecondary} />
+          <Text style={styles.emptyText}>No {activeFilter === "all" ? "" : activeFilter + " "}swaygers yet.</Text>
+        </View>
       ) : (
         <FlatList
-          data={swaygers}
+          data={filteredSwaygers}
           keyExtractor={(item) => item.id}
           renderItem={renderSwaygerCard}
           contentContainerStyle={styles.listContent}
-          scrollEnabled={swaygers.length > 0}
+          scrollEnabled={filteredSwaygers.length > 0}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -399,7 +469,37 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 16 },
+  actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 12 },
+  filterBar: { flexGrow: 0, marginBottom: 12 },
+  filterRow: { paddingHorizontal: 20, gap: 8, alignItems: "center" },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.dark.tint,
+    borderColor: Colors.dark.tint,
+  },
+  filterChipText: { fontSize: 13, fontWeight: "600" as const, color: Colors.dark.textSecondary },
+  filterChipTextActive: { color: "#FFFFFF" },
+  filterBadge: {
+    backgroundColor: Colors.dark.border,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 20,
+    alignItems: "center",
+  },
+  filterBadgeActive: { backgroundColor: "rgba(255,255,255,0.25)" },
+  filterBadgeText: { fontSize: 11, fontWeight: "700" as const, color: Colors.dark.textSecondary },
+  filterBadgeTextActive: { color: "#FFFFFF" },
   actionButton: {
     flex: 1, backgroundColor: Colors.dark.accent, flexDirection: "row",
     alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderRadius: 10,
