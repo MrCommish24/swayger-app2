@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
 import { categoryIcon } from "@/lib/swayger";
 import Colors from "@/constants/colors";
@@ -228,6 +229,7 @@ function RecentSection({ rows, profileMap }: { rows: SettledRow[]; profileMap: M
 export default function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState("All");
 
   const { data, isLoading } = useQuery<AllSettledData>({
@@ -255,27 +257,39 @@ export default function LeaderboardScreen() {
     const netUnits = item.totalUnitsWon - item.totalUnitsLost;
     const netColor = netUnits > 0 ? "#22C55E" : netUnits < 0 ? "#EF4444" : Colors.dark.tabIconDefault;
     const decided = item.wins + item.losses;
+    const isMe = item.userId === user?.id;
 
     return (
-      <View style={[styles.entryRow, index === 0 && styles.entryRowFirst]}>
+      <View style={[
+        styles.entryRow,
+        index === 0 && styles.entryRowFirst,
+        isMe && styles.entryRowMe,
+      ]}>
         <View style={styles.rankCol}>
           <MedalIcon rank={index} />
         </View>
         <View style={styles.userCol}>
-          <View style={styles.entryAvatar}>
+          <View style={[styles.entryAvatar, isMe && styles.entryAvatarMe]}>
             <Text style={styles.entryInitial}>
               {(item.displayName || item.username).charAt(0).toUpperCase()}
             </Text>
           </View>
           <View style={styles.entryInfo}>
-            <Text style={styles.entryName} numberOfLines={1}>
-              {item.displayName || `@${item.username}`}
-            </Text>
+            <View style={styles.entryNameRow}>
+              <Text style={[styles.entryName, isMe && styles.entryNameMe]} numberOfLines={1}>
+                {item.displayName || `@${item.username}`}
+              </Text>
+              {isMe && (
+                <View style={styles.youBadge}>
+                  <Text style={styles.youBadgeText}>You</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.entryUsername}>@{item.username}</Text>
           </View>
         </View>
         <View style={styles.statsCol}>
-          <Text style={styles.record}>
+          <Text style={[styles.record, isMe && styles.recordMe]}>
             {item.wins}–{item.losses}{item.draws > 0 ? `–${item.draws}` : ""}
           </Text>
           <View style={styles.statsRow}>
@@ -384,6 +398,7 @@ const styles = StyleSheet.create({
     borderRadius: 12, padding: 14, borderWidth: 1, borderColor: Colors.dark.border,
   },
   entryRowFirst: { borderColor: Colors.dark.accentGold, backgroundColor: "rgba(245, 166, 35, 0.05)" },
+  entryRowMe: { borderColor: Colors.dark.tint, backgroundColor: "rgba(99, 102, 241, 0.08)" },
   rankCol: { width: 36, alignItems: "center" as const },
   medal: { fontSize: 20 },
   rankNum: { fontSize: 16, fontWeight: "bold" as const, color: Colors.dark.tabIconDefault },
@@ -392,12 +407,23 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.surfaceLight,
     alignItems: "center" as const, justifyContent: "center" as const,
   },
+  entryAvatarMe: { backgroundColor: Colors.dark.accent },
   entryInitial: { fontSize: 16, fontWeight: "600" as const, color: Colors.dark.tint },
   entryInfo: { flex: 1, gap: 2 },
+  entryNameRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6 },
   entryName: { fontSize: 15, fontWeight: "600" as const, color: Colors.dark.text },
+  entryNameMe: { color: Colors.dark.tint },
+  youBadge: {
+    backgroundColor: "rgba(99, 102, 241, 0.2)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  youBadgeText: { fontSize: 10, fontWeight: "700" as const, color: Colors.dark.tint },
   entryUsername: { fontSize: 11, color: Colors.dark.tabIconDefault },
   statsCol: { alignItems: "flex-end" as const, gap: 3 },
   record: { fontSize: 15, fontWeight: "bold" as const, color: Colors.dark.text },
+  recordMe: { color: Colors.dark.tint },
   statsRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
   netUnits: { fontSize: 12, fontWeight: "600" as const },
   winPct: { fontSize: 12, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },

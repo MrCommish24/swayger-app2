@@ -84,7 +84,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
 
   const {
@@ -176,6 +176,21 @@ export default function DashboardScreen() {
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
         <Text style={styles.title}>My Swaygers</Text>
+        {profile && (
+          <Pressable
+            style={styles.avatarPill}
+            onPress={() => router.push("/(tabs)/profile")}
+          >
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarInitial}>
+                {(profile.display_name || profile.username || "?").charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.avatarUsername} numberOfLines={1}>
+              @{profile.username}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {!isLoading && !error && user && (
@@ -309,8 +324,44 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
-  header: { paddingHorizontal: 24, paddingVertical: 16 },
+  header: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
+  avatarPill: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  avatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.dark.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  avatarUsername: {
+    fontSize: 13,
+    fontWeight: "500" as const,
+    color: Colors.dark.text,
+    maxWidth: 100,
+  },
 
   statsStrip: {
     flexDirection: "row" as const,
