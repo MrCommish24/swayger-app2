@@ -210,19 +210,25 @@ export default function DashboardScreen() {
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
         <Text style={styles.title}>My Swaygers</Text>
-        {profile && (
+        {user && (
           <Pressable
             style={styles.avatarPill}
             onPress={() => router.push("/(tabs)/profile")}
           >
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarInitial}>
-                {(profile.display_name || profile.username || "?").charAt(0).toUpperCase()}
+                {(profile?.display_name || profile?.username || user.email || "?").charAt(0).toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.avatarUsername} numberOfLines={1}>
-              @{profile.username}
-            </Text>
+            {profile?.username ? (
+              <Text style={styles.avatarUsername} numberOfLines={1}>
+                @{profile.username}
+              </Text>
+            ) : (
+              <Text style={[styles.avatarUsername, { opacity: 0.5 }]} numberOfLines={1}>
+                {user.email?.split("@")[0] ?? "…"}
+              </Text>
+            )}
           </Pressable>
         )}
       </View>
