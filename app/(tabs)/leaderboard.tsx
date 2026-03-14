@@ -179,11 +179,11 @@ function CategoryPills({
   onSelect: (cat: string) => void;
 }) {
   return (
+    <View style={styles.pillsScroll}>
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.pillsContent}
-      style={styles.pillsScroll}
     >
       {["All", ...categories].map((cat) => {
         const isSelected = cat === selected;
@@ -206,6 +206,7 @@ function CategoryPills({
         );
       })}
     </ScrollView>
+    </View>
   );
 }
 
@@ -411,8 +412,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: Colors.dark.textSecondary, textAlign: "center" as const },
   emptySubtext: { fontSize: 14, color: Colors.dark.tabIconDefault, textAlign: "center" as const },
 
-  pillsScroll: { flexGrow: 0, marginBottom: 8 },
-  pillsContent: { paddingHorizontal: 16, gap: 8, flexDirection: "row" as const },
+  pillsScroll: { height: 40, marginBottom: 8 },
+  pillsContent: { paddingHorizontal: 16, gap: 8, flexDirection: "row" as const, alignItems: "center" as const, height: 40 },
   pill: {
     flexDirection: "row" as const, alignItems: "center" as const, gap: 5,
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
