@@ -28,6 +28,7 @@ import {
   fetchSwayger,
   fetchSwaygerInvite,
   fetchParticipantProfiles,
+  fetchHeadToHead,
   fetchSettlementProposals,
   acceptSwayger,
   declineSwayger,
@@ -402,6 +403,18 @@ export default function SwaygerDetailScreen() {
     queryKey: ["swayger-profiles", swayger?.creator_id, swayger?.opponent_id],
     queryFn: () => fetchParticipantProfiles(swayger!.creator_id, swayger!.opponent_id),
     enabled: !!swayger,
+  });
+
+  const h2hOpponentId = swayger
+    ? swayger.creator_id === user?.id
+      ? swayger.opponent_id
+      : swayger.creator_id
+    : null;
+
+  const { data: h2h } = useQuery({
+    queryKey: ["h2h", user?.id, h2hOpponentId],
+    queryFn: () => fetchHeadToHead(user!.id, h2hOpponentId!),
+    enabled: !!user?.id && !!h2hOpponentId,
   });
 
   const { data: proposals = [] } = useQuery<SettlementProposal[]>({
@@ -1039,6 +1052,35 @@ export default function SwaygerDetailScreen() {
           </View>
         )}
       </View>
+
+      {swayger.opponent_id && h2h && (
+        <View style={styles.h2hSection}>
+          <View style={styles.h2hHeader}>
+            <Ionicons name="swap-horizontal" size={13} color={Colors.dark.textSecondary} />
+            <Text style={styles.h2hTitle}>Head to Head</Text>
+          </View>
+          {h2h.myWins === 0 && h2h.theirWins === 0 && h2h.draws === 0 ? (
+            <Text style={styles.h2hFirst}>First matchup — establish dominance ⚡</Text>
+          ) : (
+            <View style={styles.h2hScoreboard}>
+              <View style={styles.h2hSide}>
+                <Text style={[styles.h2hScore, h2h.myWins > h2h.theirWins && styles.h2hScoreWinner]}>{h2h.myWins}</Text>
+                <Text style={styles.h2hName}>You</Text>
+              </View>
+              <Text style={styles.h2hDash}>—</Text>
+              <View style={styles.h2hSide}>
+                <Text style={[styles.h2hScore, h2h.theirWins > h2h.myWins && styles.h2hScoreWinner]}>{h2h.theirWins}</Text>
+                <Text style={styles.h2hName} numberOfLines={1}>
+                  @{(isCreator ? profiles?.opponent : profiles?.creator)?.username || "Opponent"}
+                </Text>
+              </View>
+              {h2h.draws > 0 && (
+                <Text style={styles.h2hDraws}>{h2h.draws} draw{h2h.draws !== 1 ? "s" : ""}</Text>
+              )}
+            </View>
+          )}
+        </View>
+      )}
     </ScrollView>
     </KeyboardAvoidingView>
 
@@ -1302,6 +1344,25 @@ const styles = StyleSheet.create({
   memberRoleText: { fontSize: 11, fontWeight: "600" as const, color: Colors.dark.tint },
   memberRoleTextCreator: { color: Colors.dark.accentGold },
   participantsList: { gap: 4 },
+  h2hSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: 14,
+  },
+  h2hHeader: { flexDirection: "row" as const, alignItems: "center" as const, gap: 5, marginBottom: 10 },
+  h2hTitle: { fontSize: 11, fontWeight: "700" as const, color: Colors.dark.textSecondary, letterSpacing: 0.8, textTransform: "uppercase" as const },
+  h2hFirst: { fontSize: 13, color: Colors.dark.textSecondary, fontStyle: "italic" as const },
+  h2hScoreboard: { flexDirection: "row" as const, alignItems: "center" as const, gap: 12 },
+  h2hSide: { flex: 1, alignItems: "center" as const },
+  h2hScore: { fontSize: 36, fontWeight: "800" as const, color: Colors.dark.textSecondary, lineHeight: 40 },
+  h2hScoreWinner: { color: Colors.dark.tint },
+  h2hName: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2 },
+  h2hDash: { fontSize: 20, fontWeight: "300" as const, color: Colors.dark.border },
+  h2hDraws: { fontSize: 11, color: Colors.dark.tabIconDefault, position: "absolute" as const, bottom: -18, alignSelf: "center" as const },
   shareReceiptBtn: {
     flexDirection: "row" as const,
     alignItems: "center" as const,

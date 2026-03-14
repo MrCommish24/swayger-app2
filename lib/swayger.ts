@@ -394,3 +394,35 @@ export function categoryIcon(category: string): string {
   const found = CATEGORIES.find((c) => c.value === category);
   return found?.icon || "trophy-outline";
 }
+
+export async function fetchHeadToHead(
+  userId: string,
+  opponentId: string,
+): Promise<{ myWins: number; theirWins: number; draws: number }> {
+  const { data, error } = await supabase
+    .from("swaygers")
+    .select("creator_id, opponent_id, settled_outcome")
+    .eq("status", "settled")
+    .or(
+      `and(creator_id.eq.${userId},opponent_id.eq.${opponentId}),and(creator_id.eq.${opponentId},opponent_id.eq.${userId})`,
+    );
+
+  if (error || !data) return { myWins: 0, theirWins: 0, draws: 0 };
+
+  let myWins = 0,
+    theirWins = 0,
+    draws = 0;
+  for (const s of data) {
+    if (s.settled_outcome === "draw" || s.settled_outcome === "no_contest") {
+      draws++;
+    } else if (
+      (s.creator_id === userId && s.settled_outcome === "creator") ||
+      (s.opponent_id === userId && s.settled_outcome === "opponent")
+    ) {
+      myWins++;
+    } else {
+      theirWins++;
+    }
+  }
+  return { myWins, theirWins, draws };
+}
