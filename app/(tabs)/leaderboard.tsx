@@ -26,6 +26,7 @@ interface SettledRow {
 interface ProfileInfo {
   username: string;
   display_name: string | null;
+  current_win_streak: number;
 }
 
 interface AllSettledData {
@@ -43,6 +44,7 @@ interface LeaderboardEntry {
   totalUnitsWon: number;
   totalUnitsLost: number;
   winPct: number;
+  currentStreak: number;
 }
 
 async function fetchAllSettled(): Promise<AllSettledData> {
@@ -67,12 +69,16 @@ async function fetchAllSettled(): Promise<AllSettledData> {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, username, display_name")
+    .select("id, username, display_name, current_win_streak")
     .in("id", Array.from(userIds));
 
   const profileMap = new Map<string, ProfileInfo>();
   (profiles || []).forEach((p) =>
-    profileMap.set(p.id, { username: p.username, display_name: p.display_name })
+    profileMap.set(p.id, {
+      username: p.username,
+      display_name: p.display_name,
+      current_win_streak: p.current_win_streak ?? 0,
+    })
   );
 
   return { rows: settled as SettledRow[], profileMap };
@@ -91,6 +97,7 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
         wins: 0, losses: 0, draws: 0,
         totalUnitsWon: 0, totalUnitsLost: 0,
         winPct: 0,
+        currentStreak: p?.current_win_streak ?? 0,
       });
     }
     return statsMap.get(userId)!;
@@ -123,9 +130,12 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
       return { ...e, winPct: decided > 0 ? Math.round((e.wins / decided) * 100) : 0 };
     })
     .sort((a, b) => {
+      const aUnits = a.totalUnitsWon - a.totalUnitsLost;
+      const bUnits = b.totalUnitsWon - b.totalUnitsLost;
+      if (bUnits !== aUnits) return bUnits - aUnits;
+      if (b.currentStreak !== a.currentStreak) return b.currentStreak - a.currentStreak;
       if (b.wins !== a.wins) return b.wins - a.wins;
-      if (b.winPct !== a.winPct) return b.winPct - a.winPct;
-      return a.losses - b.losses;
+      return b.winPct - a.winPct;
     });
 }
 
@@ -289,9 +299,16 @@ export default function LeaderboardScreen() {
           </View>
         </View>
         <View style={styles.statsCol}>
-          <Text style={[styles.record, isMe && styles.recordMe]}>
-            {item.wins}–{item.losses}{item.draws > 0 ? `–${item.draws}` : ""}
-          </Text>
+          <View style={styles.statsTopRow}>
+            <Text style={[styles.record, isMe && styles.recordMe]}>
+              {item.wins}–{item.losses}{item.draws > 0 ? `–${item.draws}` : ""}
+            </Text>
+            {item.currentStreak >= 2 && (
+              <View style={styles.streakBadge}>
+                <Text style={styles.streakText}>🔥 {item.currentStreak}W</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.statsRow}>
             <Text style={[styles.netUnits, { color: netColor }]}>
               {netUnits > 0 ? "+" : ""}{netUnits}u
@@ -424,6 +441,14 @@ const styles = StyleSheet.create({
   statsCol: { alignItems: "flex-end" as const, gap: 3 },
   record: { fontSize: 15, fontWeight: "bold" as const, color: Colors.dark.text },
   recordMe: { color: Colors.dark.tint },
+  statsTopRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, marginBottom: 2 },
+  streakBadge: {
+    backgroundColor: "rgba(251, 146, 60, 0.15)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  streakText: { fontSize: 11, fontWeight: "700" as const, color: "#FB923C" },
   statsRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
   netUnits: { fontSize: 12, fontWeight: "600" as const },
   winPct: { fontSize: 12, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },
