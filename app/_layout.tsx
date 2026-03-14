@@ -12,7 +12,8 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import * as Font from "expo-font";
+import { useFonts } from "expo-font";
+import { Ionicons } from "@expo/vector-icons";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
@@ -106,19 +107,13 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = Font.useFonts({
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    Ionicons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"),
-  });
+  // New Architecture (newArchEnabled: true) does not auto-register vector icon
+  // fonts on native. Load Ionicons explicitly before any icons render.
+  // On web, icons use CSS so we skip this (empty map resolves instantly).
+  const [fontsLoaded, fontError] = useFonts(
+    Platform.OS === "web" ? {} : Ionicons.font
+  );
 
-  useEffect(() => {
-    // If font loading errored, still allow the app to render
-    if (fontError) {
-      console.warn("[fonts] Ionicons font failed to load:", fontError);
-    }
-  }, [fontError]);
-
-  // Block rendering until icon font is ready (avoids the □ boxes)
   if (!fontsLoaded && !fontError) return null;
 
   return (
