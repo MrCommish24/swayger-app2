@@ -23,6 +23,7 @@ import { captureRef } from "react-native-view-shot";
 import QRCode from "react-native-qrcode-svg";
 import ReceiptCard from "@/components/ReceiptCard";
 import StreakCelebrationModal from "@/components/StreakCelebrationModal";
+import FightCardModal, { FightCardType } from "@/components/FightCardModal";
 import {
   fetchSwayger,
   fetchSwaygerInvite,
@@ -362,6 +363,9 @@ export default function SwaygerDetailScreen() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState(0);
+  const [showFightCard, setShowFightCard] = useState(false);
+  const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
+  const fightCardShownRef = useRef(false);
   const receiptRef = useRef<View>(null);
   const modalReceiptRef = useRef<View>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
@@ -426,7 +430,26 @@ export default function SwaygerDetailScreen() {
     if (prev !== undefined && prev !== "settled" && curr === "settled") {
       setTimeout(() => setShowReceiptModal(true), 400);
     }
+    // Fight card: swayger just became active (someone accepted the invite)
+    if (prev !== undefined && prev !== "active" && curr === "active" && !fightCardShownRef.current) {
+      fightCardShownRef.current = true;
+      setTimeout(() => {
+        setFightCardType("game_on");
+        setShowFightCard(true);
+      }, 350);
+    }
   }, [swayger?.status]);
+
+  // Fight card: first open of a rematch swayger (once profiles are loaded)
+  useEffect(() => {
+    if (!swayger?.rematch_type || !profiles || fightCardShownRef.current) return;
+    if (!profiles.creator || !profiles.opponent) return;
+    fightCardShownRef.current = true;
+    setTimeout(() => {
+      setFightCardType(swayger.rematch_type as FightCardType);
+      setShowFightCard(true);
+    }, 500);
+  }, [swayger?.rematch_type, profiles]);
 
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;
@@ -1062,6 +1085,17 @@ export default function SwaygerDetailScreen() {
         visible={showStreakCelebration}
         streak={celebrationStreak}
         onDismiss={() => setShowStreakCelebration(false)}
+      />
+
+      <FightCardModal
+        visible={showFightCard}
+        type={fightCardType}
+        creatorInitial={(profiles?.creator?.display_name || profiles?.creator?.username || "?").charAt(0)}
+        opponentInitial={(profiles?.opponent?.display_name || profiles?.opponent?.username || "?").charAt(0)}
+        creatorUsername={profiles?.creator?.username || "creator"}
+        opponentUsername={profiles?.opponent?.username || "opponent"}
+        stakeUnits={swayger?.stake_units || 1}
+        onDismiss={() => setShowFightCard(false)}
       />
     </>
   );
