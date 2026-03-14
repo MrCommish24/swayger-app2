@@ -700,6 +700,12 @@ export default function SwaygerDetailScreen() {
                 <Text style={[styles.metaText, { color: Colors.dark.accentGold }]}>Creator</Text>
               </View>
             )}
+            {isOpponent && (
+              <View style={[styles.metaChip, styles.opponentChip]}>
+                <Ionicons name="shield-half-outline" size={14} color={Colors.dark.tint} />
+                <Text style={[styles.metaText, { color: Colors.dark.tint }]}>Opponent</Text>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -1049,6 +1055,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.surface, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
   creatorChip: { backgroundColor: "rgba(245, 166, 35, 0.1)" },
+  opponentChip: { backgroundColor: "rgba(99, 102, 241, 0.1)" },
   metaText: { fontSize: 13, color: Colors.dark.textSecondary },
   section: { paddingHorizontal: 24, marginBottom: 24 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
