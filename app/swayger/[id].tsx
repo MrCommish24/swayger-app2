@@ -305,7 +305,7 @@ function SettlementSection({
 
           {iProposed && (
             <View style={styles.waitingRow}>
-              <ActivityIndicator size="small" color={Colors.dark.tabIconDefault} style={{ opacity: 0.6 }} />
+              <Ionicons name="time-outline" size={15} color={Colors.dark.tabIconDefault} />
               <Text style={styles.waitingText}>Waiting for opponent…</Text>
               <Pressable
                 style={({ pressed }) => [styles.withdrawLink, pressed && { opacity: 0.5 }, withdrawing && styles.btnDisabled]}
