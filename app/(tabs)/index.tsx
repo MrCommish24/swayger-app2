@@ -12,7 +12,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useEffect, useState } from "react";
-import { formatDate } from "@/lib/helpers";
+import { formatDate, getAvatarColor } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -215,7 +215,7 @@ export default function DashboardScreen() {
             style={styles.avatarPill}
             onPress={() => router.push("/(tabs)/profile")}
           >
-            <View style={styles.avatarCircle}>
+            <View style={[styles.avatarCircle, { backgroundColor: getAvatarColor(profile?.username || user.email || "?") }]}>
               <Text style={styles.avatarInitial}>
                 {(profile?.display_name || profile?.username || user.email || "?").charAt(0).toUpperCase()}
               </Text>
