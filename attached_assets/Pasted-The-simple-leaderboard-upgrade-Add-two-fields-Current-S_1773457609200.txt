@@ -1,0 +1,142 @@
+The simple leaderboard upgrade
+
+Add two fields:
+
+Current Streak
+Example:
+🔥 3 Win Streak
+
+Best Streak
+Example:
+🏆 Best: 7
+
+So leaderboard rows become something like:
+
+1. Darius   5–1   +23u   🔥 4W
+2. Mike     4–2   +12u   🔥 2W
+3. Alex     3–3   +3u
+Why this works for Swayger
+
+Swayger is fundamentally about being right.
+
+A streak says:
+
+“I’m on a heater.”
+
+That is way more emotionally engaging than:
+
+“I’m 4–2.”
+
+People love defending streaks.
+
+It also encourages rematches.
+
+Example:
+
+Friend sees:
+
+Mike 🔥 5W
+
+Response:
+
+“Run it back. Your streak ends tonight.”
+
+Now the app generates another wager.
+
+It also makes receipts more powerful
+
+When someone wins a Swayger and shares it:
+
+Darius beats Mike again
+🔥 4-win streak
+
+That tells a story.
+
+What you need technically
+
+You do not need a complicated analytics engine.
+
+You already have everything you need.
+
+Your swaygers table has:
+
+creator_id
+
+opponent_id
+
+settled_outcome
+
+created_at
+
+From that you can compute streaks.
+
+Algorithm (simple version):
+
+Pull a user’s settled swaygers ordered by date
+
+Walk backward until the result changes
+
+Count wins
+
+That’s the current streak.
+
+Best streak is similar but across full history.
+
+MVP shortcut (recommended)
+
+Don’t compute this dynamically every time.
+
+Instead:
+
+Add two columns to profiles:
+
+current_win_streak
+best_win_streak
+
+Update them when settlement is confirmed.
+
+This keeps the leaderboard fast.
+
+How the leaderboard should feel
+
+Instead of just stats:
+
+Rank  User     Record  Units   Streak
+--------------------------------------
+1     Darius   6–1     +28     🔥 5W
+2     Mike     5–2     +17     🔥 2W
+3     Alex     4–3     +4
+
+Instantly more competitive.
+
+Replit prompt to implement
+
+Paste this when ready:
+
+Enhance the leaderboard with win streaks.
+
+Requirements:
+
+1. Add two fields to profiles:
+   current_win_streak INT DEFAULT 0
+   best_win_streak INT DEFAULT 0
+
+2. When confirm_settlement RPC finalizes a swayger:
+   - determine winner (creator or opponent)
+   - increment winner current_win_streak
+   - update best_win_streak if needed
+   - reset loser current_win_streak to 0
+
+3. Update leaderboard query to return:
+   - wins
+   - losses
+   - units
+   - current_win_streak
+
+4. Display streaks visually:
+   - if current_win_streak >= 2 show 🔥 icon
+   - format example: 🔥 3W
+
+5. Keep leaderboard sorted primarily by units won, then by streak.
+
+Do not change existing settlement logic.
