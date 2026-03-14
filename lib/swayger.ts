@@ -239,6 +239,25 @@ export async function confirmSettlement(
   return { error: result.error, settled: result.settled ?? false };
 }
 
+export async function withdrawProposal(
+  swaygerId: string,
+  proposalId: string
+): Promise<{ error: string | null }> {
+  console.log("[swayger] Withdrawing proposal:", proposalId, "from swayger:", swaygerId);
+  const { data, error } = await supabase.rpc("withdraw_settlement_proposal", {
+    p_swayger_id: swaygerId,
+    p_proposal_id: proposalId,
+  });
+
+  if (error) {
+    console.error("[swayger] withdraw_settlement_proposal RPC error:", error.message);
+    return { error: error.message };
+  }
+  const result = data as { error: string | null };
+  if (result.error) console.error("[swayger] withdraw_settlement_proposal business error:", result.error);
+  return { error: result.error };
+}
+
 export async function createRematch(
   swaygerId: string,
   rematchType: "run_it_back" | "double_or_nothing",

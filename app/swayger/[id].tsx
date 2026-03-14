@@ -31,6 +31,7 @@ import {
   cancelSwayger,
   proposeSettlement,
   confirmSettlement,
+  withdrawProposal,
   createRematch,
   displayStatus,
   displayOutcome,
@@ -196,8 +197,10 @@ function SettlementSection({
   userId,
   onPropose,
   onConfirm,
+  onWithdraw,
   proposing,
   confirming,
+  withdrawing,
 }: {
   swayger: SwaygerData;
   proposals: SettlementProposal[];
@@ -205,8 +208,10 @@ function SettlementSection({
   userId: string;
   onPropose: (outcome: string) => void;
   onConfirm: (proposalId: string) => void;
+  onWithdraw: (proposalId: string) => void;
   proposing: boolean;
   confirming: boolean;
+  withdrawing: boolean;
 }) {
   const outcomes = [
     { value: "creator", label: "Creator Wins", icon: "trophy" as const },
@@ -258,28 +263,61 @@ function SettlementSection({
           </View>
 
           {needsMyConfirmation && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.confirmButton,
-                pressed && styles.btnPressed,
-                confirming && styles.btnDisabled,
-              ]}
-              onPress={() => onConfirm(latestProposal.id)}
-              disabled={confirming}
-            >
-              {confirming ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                  <Text style={styles.confirmButtonText}>Confirm Settlement</Text>
-                </>
-              )}
-            </Pressable>
+            <>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  pressed && styles.btnPressed,
+                  (confirming || withdrawing) && styles.btnDisabled,
+                ]}
+                onPress={() => onConfirm(latestProposal.id)}
+                disabled={confirming || withdrawing}
+              >
+                {confirming ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                    <Text style={styles.confirmButtonText}>Confirm Settlement</Text>
+                  </>
+                )}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.counterButton,
+                  pressed && styles.btnPressed,
+                  (confirming || withdrawing) && styles.btnDisabled,
+                ]}
+                onPress={() => onWithdraw(latestProposal.id)}
+                disabled={confirming || withdrawing}
+              >
+                {withdrawing ? (
+                  <ActivityIndicator color={Colors.dark.tint} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="swap-horizontal" size={18} color={Colors.dark.tint} />
+                    <Text style={styles.counterButtonText}>Counter-propose</Text>
+                  </>
+                )}
+              </Pressable>
+            </>
           )}
 
           {iProposed && (
-            <Text style={styles.waitingText}>Waiting for opponent to confirm...</Text>
+            <View style={styles.waitingRow}>
+              <ActivityIndicator size="small" color={Colors.dark.tabIconDefault} style={{ opacity: 0.6 }} />
+              <Text style={styles.waitingText}>Waiting for opponent…</Text>
+              <Pressable
+                style={({ pressed }) => [styles.withdrawLink, pressed && { opacity: 0.5 }, withdrawing && styles.btnDisabled]}
+                onPress={() => onWithdraw(latestProposal.id)}
+                disabled={withdrawing}
+              >
+                {withdrawing
+                  ? <ActivityIndicator size="small" color={Colors.dark.tint} />
+                  : <Text style={styles.withdrawLinkText}>Withdraw</Text>
+                }
+              </Pressable>
+            </View>
           )}
         </View>
       )}
@@ -560,6 +598,26 @@ export default function SwaygerDetailScreen() {
     onError: () => showError("Failed to confirm. Try again."),
   });
 
+  const withdrawMutation = useMutation({
+    mutationFn: (proposalId: string) => withdrawProposal(id!, proposalId),
+    onSuccess: (result) => {
+      if (result.error) { showError(result.error); return; }
+      invalidateAll();
+      if (swayger) {
+        const notifyId = isCreator ? swayger.opponent_id : swayger.creator_id;
+        if (notifyId) {
+          sendPushNotification(
+            notifyId,
+            "Settlement withdrawn 🔄",
+            `Your opponent withdrew their settlement proposal for "${swayger.title}". Propose a new result.`,
+            { swayger_id: swayger.id }
+          );
+        }
+      }
+    },
+    onError: () => showError("Failed to withdraw proposal. Try again."),
+  });
+
   const rematchMutation = useMutation({
     mutationFn: (type: "run_it_back" | "double_or_nothing") => createRematch(id!, type, user!.id),
     onSuccess: (result) => {
@@ -575,7 +633,7 @@ export default function SwaygerDetailScreen() {
   const anyPending =
     acceptMutation.isPending || declineMutation.isPending ||
     cancelMutation.isPending || proposeMutation.isPending || confirmMutation.isPending ||
-    rematchMutation.isPending;
+    withdrawMutation.isPending || rematchMutation.isPending;
 
   if (swaygerLoading) {
     return (
@@ -759,8 +817,10 @@ export default function SwaygerDetailScreen() {
           userId={user!.id}
           onPropose={(outcome) => proposeMutation.mutate(outcome)}
           onConfirm={(proposalId) => confirmMutation.mutate(proposalId)}
+          onWithdraw={(proposalId) => withdrawMutation.mutate(proposalId)}
           proposing={proposeMutation.isPending}
           confirming={confirmMutation.isPending}
+          withdrawing={withdrawMutation.isPending}
         />
       )}
 
@@ -1079,7 +1139,19 @@ const styles = StyleSheet.create({
     justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 10, marginTop: 4,
   },
   confirmButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" as const },
-  waitingText: { fontSize: 13, color: Colors.dark.tabIconDefault, textAlign: "center", fontStyle: "italic" },
+  counterButton: {
+    backgroundColor: "transparent", flexDirection: "row" as const, alignItems: "center" as const,
+    justifyContent: "center" as const, gap: 8, paddingVertical: 12, borderRadius: 10, marginTop: 4,
+    borderWidth: 1, borderColor: Colors.dark.tint,
+  },
+  counterButtonText: { color: Colors.dark.tint, fontSize: 15, fontWeight: "600" as const },
+  waitingRow: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 8, marginTop: 6,
+  },
+  waitingText: { fontSize: 13, color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
+  withdrawLink: { paddingVertical: 4, paddingHorizontal: 8 },
+  withdrawLinkText: { fontSize: 13, color: Colors.dark.tint, textDecorationLine: "underline" as const },
   outcomeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   outcomeButton: {
     flexBasis: "47%", flexGrow: 1, backgroundColor: Colors.dark.surface, borderWidth: 1,
