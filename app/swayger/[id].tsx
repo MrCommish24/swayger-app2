@@ -36,6 +36,7 @@ import {
   createRematch,
   displayStatus,
   displayOutcome,
+  displayOutcomeForViewer,
   categoryIcon,
 } from "@/lib/swayger";
 import { useAuth } from "@/lib/auth-context";
@@ -214,9 +215,10 @@ function SettlementSection({
   confirming: boolean;
   withdrawing: boolean;
 }) {
+  const isOpponent = !isCreator && userId === swayger.opponent_id;
   const outcomes = [
-    { value: "creator", label: "Creator Wins", icon: "trophy" as const },
-    { value: "opponent", label: "Opponent Wins", icon: "trophy-outline" as const },
+    { value: "creator", label: isCreator ? "You Win" : "Creator Wins", icon: "trophy" as const },
+    { value: "opponent", label: isOpponent ? "You Win" : "Opponent Wins", icon: "trophy-outline" as const },
     { value: "draw", label: "Draw", icon: "swap-horizontal" as const },
     { value: "no_contest", label: "No Contest", icon: "close-circle-outline" as const },
   ];
@@ -242,7 +244,7 @@ function SettlementSection({
             </Text>
           </View>
           <Text style={styles.proposalOutcome}>
-            {displayOutcome(latestProposal.outcome)}
+            {displayOutcomeForViewer(latestProposal.outcome, isCreator, isOpponent)}
           </Text>
           <View style={styles.confirmationRow}>
             <View style={styles.confirmChip}>
@@ -754,7 +756,7 @@ export default function SwaygerDetailScreen() {
           <Text style={styles.sectionTitle}>Result</Text>
           <View style={styles.resultCard}>
             <Ionicons name="trophy" size={24} color={Colors.dark.accentGold} />
-            <Text style={styles.resultText}>{displayOutcome(swayger.settled_outcome)}</Text>
+            <Text style={styles.resultText}>{displayOutcomeForViewer(swayger.settled_outcome, isCreator, isOpponent)}</Text>
           </View>
           {(isCreator || isOpponent) && (
             <Pressable
@@ -1000,6 +1002,7 @@ export default function SwaygerDetailScreen() {
                   opponentPick={swayger.opponent_pick}
                   outcome={swayger.settled_outcome}
                   stakeUnits={swayger.stake_units || 1}
+                  viewerIsCreator={isCreator ? true : isOpponent ? false : null}
                 />
               </View>
             )}

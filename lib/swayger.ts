@@ -361,6 +361,26 @@ export function displayOutcome(outcome: string): string {
   }
 }
 
+export function displayOutcomeForViewer(
+  outcome: string,
+  isCreator: boolean,
+  isOpponent: boolean
+): string {
+  switch (outcome) {
+    case "creator":
+      if (isCreator) return "You Win";
+      if (isOpponent) return "Opponent Wins";
+      return "Creator Wins";
+    case "opponent":
+      if (isOpponent) return "You Win";
+      if (isCreator) return "Opponent Wins";
+      return "Opponent Wins";
+    case "draw": return "Draw";
+    case "no_contest": return "No Contest";
+    default: return outcome;
+  }
+}
+
 export const CATEGORIES = [
   { value: "Sports", icon: "american-football-outline" as const },
   { value: "Entertainment", icon: "film-outline" as const },
