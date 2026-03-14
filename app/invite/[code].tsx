@@ -101,7 +101,7 @@ export default function InviteScreen() {
           { swayger_id: swayger.id }
         );
       }
-      router.replace(`/swayger/${joinedId}`);
+      router.replace(`/swayger/${joinedId}?justAccepted=1`);
     },
     onError: () => showError("Failed to accept. Try again."),
   });

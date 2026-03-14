@@ -351,7 +351,7 @@ function SettlementSection({
 }
 
 export default function SwaygerDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, justAccepted } = useLocalSearchParams<{ id: string; justAccepted?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
@@ -450,6 +450,18 @@ export default function SwaygerDetailScreen() {
       setShowFightCard(true);
     }, 500);
   }, [swayger?.rematch_type, profiles]);
+
+  // Fight card: opponent arrives after accepting (swayger already active on arrival)
+  useEffect(() => {
+    if (justAccepted !== "1" || !profiles || fightCardShownRef.current) return;
+    if (!profiles.creator || !profiles.opponent) return;
+    if (swayger?.status !== "active") return;
+    fightCardShownRef.current = true;
+    setTimeout(() => {
+      setFightCardType("game_on");
+      setShowFightCard(true);
+    }, 500);
+  }, [justAccepted, swayger?.status, profiles]);
 
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;
