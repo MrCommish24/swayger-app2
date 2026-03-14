@@ -43,6 +43,12 @@ if (supabaseUrl && !supabaseUrl.startsWith("http") && supabaseAnonKey.startsWith
   supabaseAnonKey = temp;
 }
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    "Missing Supabase credentials. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your EAS environment variables before building."
+  );
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: StorageAdapter,
