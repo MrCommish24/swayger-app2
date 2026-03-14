@@ -9,6 +9,7 @@ import {
   ScrollView,
   TextInput,
   Share,
+  Modal,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
@@ -316,7 +317,10 @@ export default function SwaygerDetailScreen() {
 
   const [opponentPick, setOpponentPick] = useState("");
   const [isSharing, setIsSharing] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const receiptRef = useRef<View>(null);
+  const modalReceiptRef = useRef<View>(null);
+  const prevStatusRef = useRef<string | undefined>(undefined);
 
   const { data: swayger, isLoading: swaygerLoading } = useQuery<SwaygerData | null>({
     queryKey: ["swayger", id],
@@ -370,6 +374,15 @@ export default function SwaygerDetailScreen() {
     };
   }, [id]);
 
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const curr = swayger?.status;
+    prevStatusRef.current = curr;
+    if (prev !== undefined && prev !== "settled" && curr === "settled") {
+      setTimeout(() => setShowReceiptModal(true), 400);
+    }
+  }, [swayger?.status]);
+
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;
   const status = swayger?.status || "pending_invite";
@@ -409,12 +422,13 @@ export default function SwaygerDetailScreen() {
         return;
       }
 
-      if (!receiptRef.current) {
+      const captureTarget = modalReceiptRef.current || receiptRef.current;
+      if (!captureTarget) {
         showError("Receipt not ready yet. Try again.");
         return;
       }
 
-      const uri = await captureRef(receiptRef, {
+      const uri = await captureRef(captureTarget, {
         format: "png",
         quality: 1,
         result: "tmpfile",
@@ -584,6 +598,7 @@ export default function SwaygerDetailScreen() {
   }
 
   return (
+    <>
     <ScrollView
       style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       contentContainerStyle={styles.scrollContent}
@@ -674,43 +689,17 @@ export default function SwaygerDetailScreen() {
               style={({ pressed }) => [
                 styles.shareReceiptBtn,
                 pressed && styles.btnPressed,
-                isSharing && styles.btnDisabled,
               ]}
-              onPress={shareReceipt}
-              disabled={isSharing}
+              onPress={() => setShowReceiptModal(true)}
               testID="share-receipt-btn"
             >
-              {isSharing ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="share-outline" size={18} color="#000000" />
-                  <Text style={styles.shareReceiptText}>Share Receipt</Text>
-                </>
-              )}
+              <Ionicons name="share-outline" size={18} color="#000000" />
+              <Text style={styles.shareReceiptText}>Share Receipt</Text>
             </Pressable>
           )}
         </View>
       )}
 
-      {status === "settled" && swayger.settled_outcome && swayger.creator_pick && swayger.opponent_pick && (
-        <View
-          ref={receiptRef}
-          style={styles.offScreenReceipt}
-          collapsable={false}
-        >
-          <ReceiptCard
-            title={swayger.title}
-            category={swayger.category || "Other"}
-            creatorUsername={profiles?.creator?.username || "Creator"}
-            opponentUsername={profiles?.opponent?.username || "Opponent"}
-            creatorPick={swayger.creator_pick}
-            opponentPick={swayger.opponent_pick}
-            outcome={swayger.settled_outcome}
-            stakeUnits={swayger.stake_units || 1}
-          />
-        </View>
-      )}
 
       {canAccept && (
         <View style={styles.section}>
@@ -900,6 +889,70 @@ export default function SwaygerDetailScreen() {
         )}
       </View>
     </ScrollView>
+
+      <Modal
+        visible={showReceiptModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReceiptModal(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>⚡ Swayger Settled!</Text>
+              <Pressable
+                style={styles.modalCloseBtn}
+                onPress={() => setShowReceiptModal(false)}
+              >
+                <Ionicons name="close" size={22} color={Colors.dark.textSecondary} />
+              </Pressable>
+            </View>
+
+            {swayger && swayger.settled_outcome && swayger.creator_pick && swayger.opponent_pick && (
+              <View ref={modalReceiptRef} collapsable={false}>
+                <ReceiptCard
+                  title={swayger.title}
+                  category={swayger.category || "Other"}
+                  creatorUsername={profiles?.creator?.username || "Creator"}
+                  opponentUsername={profiles?.opponent?.username || "Opponent"}
+                  creatorPick={swayger.creator_pick}
+                  opponentPick={swayger.opponent_pick}
+                  outcome={swayger.settled_outcome}
+                  stakeUnits={swayger.stake_units || 1}
+                />
+              </View>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalShareBtn,
+                pressed && styles.btnPressed,
+                isSharing && styles.btnDisabled,
+              ]}
+              onPress={shareReceipt}
+              disabled={isSharing}
+            >
+              {isSharing ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Ionicons name="share-outline" size={20} color="#000000" />
+                  <Text style={styles.modalShareText}>Share Receipt</Text>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.modalDismissBtn}
+              onPress={() => setShowReceiptModal(false)}
+            >
+              <Text style={styles.modalDismissText}>Maybe later</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -1086,5 +1139,66 @@ const styles = StyleSheet.create({
     position: "absolute" as const,
     left: 10000,
     top: 0,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: Colors.dark.background,
+    borderRadius: 20,
+    overflow: "hidden",
+    gap: 0,
+  },
+  modalHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.dark.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalShareBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.dark.accentGold,
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  modalShareText: {
+    fontSize: 16,
+    fontWeight: "700" as const,
+    color: "#000000",
+  },
+  modalDismissBtn: {
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingBottom: 20,
+  },
+  modalDismissText: {
+    fontSize: 14,
+    color: Colors.dark.tabIconDefault,
   },
 });
