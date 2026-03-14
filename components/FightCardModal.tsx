@@ -65,7 +65,7 @@ export default function FightCardModal({
   }
 
   useEffect(() => {
-    if (!visible) { clearTimer(); return; }
+    if (!visible) return;
 
     // Reset
     backdropOpacity.value = 0;
