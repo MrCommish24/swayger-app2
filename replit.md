@@ -36,7 +36,9 @@ app/
   invite/
     [code].tsx         # Invite join flow — preview swayger, accept/decline with opponent pick
   join.tsx             # Join Swayger screen — enter code or scan QR
-components/            # Reusable components (ErrorBoundary, etc.)
+components/
+  ErrorBoundary.tsx    # Error boundary + fallback with dev error details modal
+  ReceiptCard.tsx      # Shareable receipt card for settled Swaygers (captured via react-native-view-shot)
 constants/
   colors.ts            # Dark theme color palette (brand colors)
 lib/

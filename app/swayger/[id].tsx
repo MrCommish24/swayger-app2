@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -16,7 +16,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
+import * as Sharing from "expo-sharing";
+import { captureRef } from "react-native-view-shot";
 import QRCode from "react-native-qrcode-svg";
+import ReceiptCard from "@/components/ReceiptCard";
 import {
   fetchSwayger,
   fetchSwaygerInvite,
@@ -312,6 +315,8 @@ export default function SwaygerDetailScreen() {
   const queryClient = useQueryClient();
 
   const [opponentPick, setOpponentPick] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const receiptRef = useRef<View>(null);
 
   const { data: swayger, isLoading: swaygerLoading } = useQuery<SwaygerData | null>({
     queryKey: ["swayger", id],
@@ -379,6 +384,60 @@ export default function SwaygerDetailScreen() {
     queryClient.invalidateQueries({ queryKey: ["swayger-profiles"] });
     queryClient.invalidateQueries({ queryKey: ["settlement-proposals", id] });
     queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+  }
+
+  async function shareReceipt() {
+    if (!swayger?.settled_outcome) return;
+    setIsSharing(true);
+    try {
+      const creatorName = profiles?.creator?.username || "Creator";
+      const opponentName = profiles?.opponent?.username || "Opponent";
+
+      if (Platform.OS === "web") {
+        const winnerLabel =
+          swayger.settled_outcome === "creator" ? `@${creatorName} wins`
+          : swayger.settled_outcome === "opponent" ? `@${opponentName} wins`
+          : swayger.settled_outcome === "draw" ? "Draw"
+          : "No Contest";
+        const textReceipt =
+          `⚡ SWAYGER RECEIPT\n\n${swayger.title}\n\n` +
+          `@${creatorName}: "${swayger.creator_pick}"\n` +
+          `@${opponentName}: "${swayger.opponent_pick}"\n\n` +
+          `🏆 ${winnerLabel}\n+${swayger.stake_units || 1} units\n\n` +
+          `Settled on Swayger`;
+        await Share.share({ message: textReceipt });
+        return;
+      }
+
+      if (!receiptRef.current) {
+        showError("Receipt not ready yet. Try again.");
+        return;
+      }
+
+      const uri = await captureRef(receiptRef, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: "image/png",
+          dialogTitle: "Share your Swayger Receipt",
+          UTI: "public.png",
+        });
+      } else {
+        await Share.share({ message: `I won a Swayger! "${swayger.title}" — Settle it on Swayger!` });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) {
+        showError("Could not share. Try again.");
+      }
+    } finally {
+      setIsSharing(false);
+    }
   }
 
   const acceptMutation = useMutation({
@@ -610,6 +669,46 @@ export default function SwaygerDetailScreen() {
             <Ionicons name="trophy" size={24} color={Colors.dark.accentGold} />
             <Text style={styles.resultText}>{displayOutcome(swayger.settled_outcome)}</Text>
           </View>
+          {(isCreator || isOpponent) && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.shareReceiptBtn,
+                pressed && styles.btnPressed,
+                isSharing && styles.btnDisabled,
+              ]}
+              onPress={shareReceipt}
+              disabled={isSharing}
+              testID="share-receipt-btn"
+            >
+              {isSharing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="share-outline" size={18} color="#000000" />
+                  <Text style={styles.shareReceiptText}>Share Receipt</Text>
+                </>
+              )}
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {status === "settled" && swayger.settled_outcome && swayger.creator_pick && swayger.opponent_pick && (
+        <View
+          ref={receiptRef}
+          style={styles.offScreenReceipt}
+          collapsable={false}
+        >
+          <ReceiptCard
+            title={swayger.title}
+            category={swayger.category || "Other"}
+            creatorUsername={profiles?.creator?.username || "Creator"}
+            opponentUsername={profiles?.opponent?.username || "Opponent"}
+            creatorPick={swayger.creator_pick}
+            opponentPick={swayger.opponent_pick}
+            outcome={swayger.settled_outcome}
+            stakeUnits={swayger.stake_units || 1}
+          />
         </View>
       )}
 
@@ -968,4 +1067,24 @@ const styles = StyleSheet.create({
   memberRoleText: { fontSize: 11, fontWeight: "600" as const, color: Colors.dark.tint },
   memberRoleTextCreator: { color: Colors.dark.accentGold },
   participantsList: { gap: 4 },
+  shareReceiptBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+    backgroundColor: Colors.dark.accentGold,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 12,
+  },
+  shareReceiptText: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#000000",
+  },
+  offScreenReceipt: {
+    position: "absolute" as const,
+    left: 10000,
+    top: 0,
+  },
 });
