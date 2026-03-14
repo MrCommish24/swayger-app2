@@ -8,6 +8,7 @@ import Animated, {
   withSequence,
   withDelay,
   runOnJS,
+  type SharedValue,
 } from "react-native-reanimated";
 
 export type FightCardType = "game_on" | "run_it_back" | "double_or_nothing";
@@ -29,7 +30,7 @@ const CONFIG: Record<FightCardType, { label: string; emoji: string; color: strin
   double_or_nothing: { label: "DOUBLE OR NOTHING", emoji: "🔥", color: "#F5A623", bgColor: "rgba(245,166,35,0.12)"  },
 };
 
-function Avatar({ initial, translateX, color }: { initial: string; translateX: Animated.SharedValue<number>; color: string }) {
+function Avatar({ initial, translateX, color }: { initial: string; translateX: SharedValue<number>; color: string }) {
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
