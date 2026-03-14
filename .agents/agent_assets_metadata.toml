@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "NhsE_TFTmDPnY5fM-mYHS"
+uri = "file://SWAYGER_STATUS_BRIEF.md"
+type = "text"
+title = "Swayger — Full Product Status Brief"
