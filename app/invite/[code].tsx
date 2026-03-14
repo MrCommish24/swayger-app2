@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,8 +7,9 @@ import {
   Platform,
   ActivityIndicator,
   TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
 } from "react-native";
-import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -38,6 +39,7 @@ export default function InviteScreen() {
 
   const [opponentPick, setOpponentPick] = useState("");
   const [joinedId, setJoinedId] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const joinMutation = useMutation({
     mutationFn: () => {
@@ -189,11 +191,15 @@ export default function InviteScreen() {
   const creatorName = profiles?.creator?.display_name || profiles?.creator?.username || "Unknown";
 
   return (
-    <KeyboardAwareScrollViewCompat
+    <KeyboardAvoidingView
+      style={styles.kavWrapper}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+    <ScrollView
+      ref={scrollRef}
       style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
-      bottomOffset={24}
     >
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
@@ -259,6 +265,11 @@ export default function InviteScreen() {
             onChangeText={setOpponentPick}
             editable={!anyPending}
             maxLength={200}
+            onFocus={() => {
+              setTimeout(() => {
+                scrollRef.current?.scrollToEnd({ animated: true });
+              }, 200);
+            }}
           />
           <View style={styles.actionRow}>
             <Pressable
@@ -321,13 +332,15 @@ export default function InviteScreen() {
           </Pressable>
         </View>
       )}
-    </KeyboardAwareScrollViewCompat>
+    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  kavWrapper: { flex: 1, backgroundColor: Colors.dark.background },
   container: { flex: 1, backgroundColor: Colors.dark.background },
-  scrollContent: { paddingBottom: 100 },
+  scrollContent: { paddingBottom: 140 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 40 },
   header: { flexDirection: "row", alignItems: "center", gap: 12, padding: 24 },
   backButton: {
