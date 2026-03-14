@@ -1062,17 +1062,19 @@ export default function SwaygerDetailScreen() {
           {h2h.myWins === 0 && h2h.theirWins === 0 && h2h.draws === 0 ? (
             <Text style={styles.h2hFirst}>First matchup — establish dominance ⚡</Text>
           ) : (
-            <View style={styles.h2hScoreboard}>
-              <View style={styles.h2hSide}>
-                <Text style={[styles.h2hScore, h2h.myWins > h2h.theirWins && styles.h2hScoreWinner]}>{h2h.myWins}</Text>
-                <Text style={styles.h2hName}>You</Text>
-              </View>
-              <Text style={styles.h2hDash}>—</Text>
-              <View style={styles.h2hSide}>
-                <Text style={[styles.h2hScore, h2h.theirWins > h2h.myWins && styles.h2hScoreWinner]}>{h2h.theirWins}</Text>
-                <Text style={styles.h2hName} numberOfLines={1}>
-                  @{(isCreator ? profiles?.opponent : profiles?.creator)?.username || "Opponent"}
-                </Text>
+            <View>
+              <View style={styles.h2hScoreboard}>
+                <View style={styles.h2hSide}>
+                  <Text style={[styles.h2hScore, h2h.myWins > h2h.theirWins && styles.h2hScoreWinner]}>{h2h.myWins}</Text>
+                  <Text style={styles.h2hName}>You</Text>
+                </View>
+                <Text style={styles.h2hDash}>—</Text>
+                <View style={styles.h2hSide}>
+                  <Text style={[styles.h2hScore, h2h.theirWins > h2h.myWins && styles.h2hScoreWinner]}>{h2h.theirWins}</Text>
+                  <Text style={styles.h2hName} numberOfLines={1}>
+                    @{(isCreator ? profiles?.opponent : profiles?.creator)?.username || "Opponent"}
+                  </Text>
+                </View>
               </View>
               {h2h.draws > 0 && (
                 <Text style={styles.h2hDraws}>{h2h.draws} draw{h2h.draws !== 1 ? "s" : ""}</Text>
@@ -1362,7 +1364,7 @@ const styles = StyleSheet.create({
   h2hScoreWinner: { color: Colors.dark.tint },
   h2hName: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2 },
   h2hDash: { fontSize: 20, fontWeight: "300" as const, color: Colors.dark.border },
-  h2hDraws: { fontSize: 11, color: Colors.dark.tabIconDefault, position: "absolute" as const, bottom: -18, alignSelf: "center" as const },
+  h2hDraws: { fontSize: 11, color: Colors.dark.tabIconDefault, marginTop: 8, textAlign: "center" as const },
   shareReceiptBtn: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
