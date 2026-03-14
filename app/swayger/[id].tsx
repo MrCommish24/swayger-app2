@@ -368,6 +368,19 @@ export default function SwaygerDetailScreen() {
   const [celebrationStreak, setCelebrationStreak] = useState(0);
   const [showFightCard, setShowFightCard] = useState(false);
   const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
+  const pendingStreakRef = useRef(0);
+
+  function closeReceiptModal() {
+    setShowReceiptModal(false);
+    const pending = pendingStreakRef.current;
+    if (pending >= 2) {
+      pendingStreakRef.current = 0;
+      setTimeout(() => {
+        setCelebrationStreak(pending);
+        setShowStreakCelebration(true);
+      }, 350);
+    }
+  }
   const receiptRef = useRef<View>(null);
   const modalReceiptRef = useRef<View>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
@@ -630,10 +643,7 @@ export default function SwaygerDetailScreen() {
             .single();
           const streak = profileData?.current_win_streak ?? 0;
           if (streak >= 2) {
-            setTimeout(() => {
-              setCelebrationStreak(streak);
-              setShowStreakCelebration(true);
-            }, 600);
+            pendingStreakRef.current = streak;
           }
         }
         if (swayger) {
@@ -1036,7 +1046,7 @@ export default function SwaygerDetailScreen() {
         visible={showReceiptModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowReceiptModal(false)}
+        onRequestClose={closeReceiptModal}
         statusBarTranslucent
       >
         <View style={styles.modalOverlay}>
@@ -1045,7 +1055,7 @@ export default function SwaygerDetailScreen() {
               <Text style={styles.modalTitle}>⚡ Swayger Settled!</Text>
               <Pressable
                 style={styles.modalCloseBtn}
-                onPress={() => setShowReceiptModal(false)}
+                onPress={closeReceiptModal}
               >
                 <Ionicons name="close" size={22} color={Colors.dark.textSecondary} />
               </Pressable>
@@ -1087,7 +1097,7 @@ export default function SwaygerDetailScreen() {
 
             <Pressable
               style={styles.modalDismissBtn}
-              onPress={() => setShowReceiptModal(false)}
+              onPress={closeReceiptModal}
             >
               <Text style={styles.modalDismissText}>Maybe later</Text>
             </Pressable>
