@@ -83,10 +83,9 @@ export default function ProfileScreen() {
     }
     setSavingName(true);
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ display_name: trimmed || null })
-        .eq("id", user.id);
+      const { error } = await supabase.rpc("update_display_name", {
+        p_display_name: trimmed || "",
+      });
       if (error) {
         showError(error.message);
       } else {
