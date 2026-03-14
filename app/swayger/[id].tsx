@@ -22,6 +22,7 @@ import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
 import QRCode from "react-native-qrcode-svg";
 import ReceiptCard from "@/components/ReceiptCard";
+import StreakCelebrationModal from "@/components/StreakCelebrationModal";
 import {
   fetchSwayger,
   fetchSwaygerInvite,
@@ -359,6 +360,8 @@ export default function SwaygerDetailScreen() {
   const [opponentPick, setOpponentPick] = useState("");
   const [isSharing, setIsSharing] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showStreakCelebration, setShowStreakCelebration] = useState(false);
+  const [celebrationStreak, setCelebrationStreak] = useState(0);
   const receiptRef = useRef<View>(null);
   const modalReceiptRef = useRef<View>(null);
   const prevStatusRef = useRef<string | undefined>(undefined);
@@ -571,11 +574,31 @@ export default function SwaygerDetailScreen() {
 
   const confirmMutation = useMutation({
     mutationFn: (proposalId: string) => confirmSettlement(id!, proposalId),
-    onSuccess: (result) => {
+    onSuccess: async (result, proposalId) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();
       if (result.settled) {
         showMessage("Settled!", "This Swayger has been settled.");
+        // Check if the current user won and has a streak worth celebrating
+        const proposal = proposals.find((p) => p.id === proposalId);
+        const userWon = proposal && (
+          (proposal.outcome === "creator" && isCreator) ||
+          (proposal.outcome === "opponent" && isOpponent)
+        );
+        if (userWon && user) {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("current_win_streak")
+            .eq("id", user.id)
+            .single();
+          const streak = profileData?.current_win_streak ?? 0;
+          if (streak >= 2) {
+            setTimeout(() => {
+              setCelebrationStreak(streak);
+              setShowStreakCelebration(true);
+            }, 600);
+          }
+        }
         if (swayger) {
           const notifyId = isCreator ? swayger.opponent_id : swayger.creator_id;
           if (notifyId) {
@@ -971,6 +994,12 @@ export default function SwaygerDetailScreen() {
       </View>
     </ScrollView>
     </KeyboardAvoidingView>
+
+      <StreakCelebrationModal
+        visible={showStreakCelebration}
+        streak={celebrationStreak}
+        onDismiss={() => setShowStreakCelebration(false)}
+      />
 
       <Modal
         visible={showReceiptModal}
