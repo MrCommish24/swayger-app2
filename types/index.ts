@@ -32,6 +32,8 @@ export interface SwaygerData {
   source_swayger_id: string | null;
   rematch_type: string | null;
   settled_outcome: string | null;
+  accepted_at: string | null;
+  settled_at: string | null;
   created_at: string;
   updated_at: string;
 }

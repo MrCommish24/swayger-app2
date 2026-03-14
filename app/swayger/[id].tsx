@@ -826,10 +826,16 @@ export default function SwaygerDetailScreen() {
           <Ionicons name="calendar-outline" size={14} color={Colors.dark.tabIconDefault} />
           <Text style={styles.expiryText}>Created {formatDate(swayger.created_at)}</Text>
         </View>
-        {swayger.expires_at && (
+        {status === "pending_invite" && swayger.expires_at && (
           <View style={styles.expiryRow}>
             <Ionicons name="time-outline" size={14} color={Colors.dark.tabIconDefault} />
             <Text style={styles.expiryText}>Expires {formatDateTime(swayger.expires_at)}</Text>
+          </View>
+        )}
+        {(["active", "settlement_proposed", "settled"] as string[]).includes(status) && swayger.accepted_at && (
+          <View style={styles.expiryRow}>
+            <Ionicons name="flash-outline" size={14} color={Colors.dark.tabIconDefault} />
+            <Text style={styles.expiryText}>Active since {formatDate(swayger.accepted_at)}</Text>
           </View>
         )}
       </View>
@@ -841,6 +847,12 @@ export default function SwaygerDetailScreen() {
             <Ionicons name="trophy" size={24} color={Colors.dark.accentGold} />
             <Text style={styles.resultText}>{displayOutcomeForViewer(swayger.settled_outcome, isCreator, isOpponent)}</Text>
           </View>
+          {swayger.settled_at && (
+            <View style={styles.expiryRow}>
+              <Ionicons name="checkmark-circle-outline" size={14} color={Colors.dark.tabIconDefault} />
+              <Text style={styles.expiryText}>Settled {formatDate(swayger.settled_at)}</Text>
+            </View>
+          )}
           {(isCreator || isOpponent) && (
             <Pressable
               style={({ pressed }) => [
