@@ -7,8 +7,8 @@ import {
   Platform,
   ActivityIndicator,
   TextInput,
-  ScrollView,
 } from "react-native";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -189,9 +189,11 @@ export default function InviteScreen() {
   const creatorName = profiles?.creator?.display_name || profiles?.creator?.username || "Unknown";
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollViewCompat
       style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      bottomOffset={24}
     >
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
@@ -319,7 +321,7 @@ export default function InviteScreen() {
           </Pressable>
         </View>
       )}
-    </ScrollView>
+    </KeyboardAwareScrollViewCompat>
   );
 }
 
