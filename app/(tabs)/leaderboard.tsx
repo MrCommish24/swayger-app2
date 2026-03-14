@@ -26,7 +26,6 @@ interface SettledRow {
 interface ProfileInfo {
   username: string;
   display_name: string | null;
-  current_win_streak: number;
 }
 
 interface AllSettledData {
@@ -69,19 +68,38 @@ async function fetchAllSettled(): Promise<AllSettledData> {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, username, display_name, current_win_streak")
+    .select("id, username, display_name")
     .in("id", Array.from(userIds));
 
   const profileMap = new Map<string, ProfileInfo>();
   (profiles || []).forEach((p) =>
-    profileMap.set(p.id, {
-      username: p.username,
-      display_name: p.display_name,
-      current_win_streak: p.current_win_streak ?? 0,
-    })
+    profileMap.set(p.id, { username: p.username, display_name: p.display_name })
   );
 
   return { rows: settled as SettledRow[], profileMap };
+}
+
+function computeCurrentStreak(userId: string, rows: SettledRow[]): number {
+  // Sort this user's decided games newest-first, then walk until the streak breaks
+  const userRows = rows
+    .filter((s) => {
+      if (s.settled_outcome !== "creator" && s.settled_outcome !== "opponent") return false;
+      return s.creator_id === userId || s.opponent_id === userId;
+    })
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+  let streak = 0;
+  for (const s of userRows) {
+    const won =
+      (s.settled_outcome === "creator" && s.creator_id === userId) ||
+      (s.settled_outcome === "opponent" && s.opponent_id === userId);
+    if (won) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
 }
 
 function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileInfo>): LeaderboardEntry[] {
@@ -97,7 +115,7 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
         wins: 0, losses: 0, draws: 0,
         totalUnitsWon: 0, totalUnitsLost: 0,
         winPct: 0,
-        currentStreak: p?.current_win_streak ?? 0,
+        currentStreak: 0,
       });
     }
     return statsMap.get(userId)!;
@@ -122,6 +140,11 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
         if (opponent) opponent.draws++;
         break;
     }
+  });
+
+  // Compute streaks from raw rows so they're always accurate regardless of profile columns
+  statsMap.forEach((entry, userId) => {
+    entry.currentStreak = computeCurrentStreak(userId, rows);
   });
 
   return Array.from(statsMap.values())
