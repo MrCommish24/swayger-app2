@@ -12,6 +12,8 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useFonts } from "expo-font";
+import { Ionicons } from "@expo/vector-icons";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
@@ -105,6 +107,20 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    ...Ionicons.font,
+  });
+
+  useEffect(() => {
+    // If font loading errored, still allow the app to render
+    if (fontError) {
+      console.warn("[fonts] Ionicons font failed to load:", fontError);
+    }
+  }, [fontError]);
+
+  // Block rendering until icon font is ready (avoids the □ boxes)
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <ErrorBoundary onError={(err, stack) => console.error("[ErrorBoundary]", err.message, stack)}>
       <QueryClientProvider client={queryClient}>
