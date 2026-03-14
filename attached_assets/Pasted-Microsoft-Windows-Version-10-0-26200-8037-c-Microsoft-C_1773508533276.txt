@@ -1,0 +1,54 @@
+Microsoft Windows [Version 10.0.26200.8037]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\dariu>npm install -g eas-cli
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated rimraf@2.4.5: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated lodash.get@4.4.2: This package is deprecated. Use the optional chaining (?.) operator instead.
+npm warn deprecated glob@6.0.4: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated @xmldom/xmldom@0.7.13: this version is no longer supported, please update to at least 0.8.*
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated tar@7.5.7: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+added 464 packages in 45s
+
+59 packages are looking for funding
+  run `npm fund` for details
+npm notice
+npm notice New minor version of npm available! 11.8.0 -> 11.11.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.11.1
+npm notice To update run: npm install -g npm@11.11.1
+npm notice
+
+C:\Users\dariu>eas login
+(node:20052) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Log in to EAS with email or username (exit and run eas login --help to see other login options)
+√ Email or username ... darius@leagueswype.com
+√ Password ... *************
+Logged in
+
+C:\Users\dariu>eas build --platform android --profile production
+(node:50984) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Run this command inside a project directory.
+    Error: build command failed.
+               cd "C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\Replit Zip\swayger-app"
+C:\Users\dariu>
+C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\Replit Zip\swayger-app>
+C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\Replit Zip\swayger-app>eas build --platform android --profile production
+(node:49200) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Run this command inside a project directory.
+    Error: build command failed.
+
+C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\Replit Zip\swayger-app> cd swayger-app
+
+C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\Replit Zip\swayger-app\swayger-app> npx eas-cli build --platform android --profile production
+(node:53356) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+⚠️ Detected that your app uses Expo Go for development, this is not recommended when building production apps.
+Learn more: https://expo.fyi/why-not-build-expo-go-for-production
+To suppress this warning, set EAS_BUILD_NO_EXPO_GO_WARNING=true.
+
