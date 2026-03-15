@@ -1,0 +1,505 @@
+Build a self-contained seasonal March Madness feature inside the existing Swayger app.
+
+This is an add-on module, not a rewrite of the app.
+
+Critical constraint:
+DO NOT refactor, break, interrupt, or materially change the core existing Swayger flow or functionality.
+This feature should be isolated, modular, and easy to remove after the season if needed.
+
+Primary goal:
+Create a Swayger-branded March Madness private bracket pool experience that helps drive engagement and sharing inside the app.
+
+Product framing:
+- seasonal March Madness module
+- private pools only
+- bragging rights only
+- no real money
+- no gambling
+- easy to share
+- easy to navigate
+- polished leaderboard
+- image-based receipts/share cards
+
+Brand language to use prominently:
+- Swayger
+- Think you're right? Swayger on it.
+- Friendly wagers. No real money. Just bragging rights.
+
+==================================================
+FIRST TASK: DO NOT START CODING IMMEDIATELY
+==================================================
+
+First, inspect the existing codebase and return a concise implementation plan that includes:
+
+1. what existing auth/session/user flows already exist and how this feature will reuse them
+2. what existing receipt/image sharing functionality already exists and how this feature will reuse it
+3. what existing routes, components, and database tables can be reused
+4. what new routes, components, services, and tables must be added
+5. exactly which files you plan to create or modify
+6. confirmation that the core Swayger flow will remain untouched
+7. any risks or assumptions
+
+Only after showing that plan should you begin implementation.
+
+==================================================
+ARCHITECTURE REQUIREMENTS
+==================================================
+
+Build this as a contained module inside the existing app.
+
+Preferred approach:
+- reuse existing Supabase auth
+- reuse existing styling/components where practical
+- reuse existing image receipt/share approach if already implemented
+- keep March Madness-specific logic in a dedicated module/feature area
+
+Do not create a separate app unless absolutely necessary.
+Do not introduce a second unrelated auth system.
+Do not create a parallel product flow that confuses the existing Swayger app.
+
+==================================================
+FEATURE ENTRY POINT
+==================================================
+
+Add a temporary March Madness entry point within the existing Swayger app.
+
+Entry points:
+- a temporary banner on the My Swaygers screen and/or
+- a March Madness category/module entry
+
+The entry point should lead to a March Madness hub page.
+
+Hub page should include:
+- Create Pool
+- Join Pool
+- View My Pools / My Entries
+
+This should feel like a seasonal feature layer within Swayger, not a standalone unrelated product.
+
+==================================================
+FIXED PRODUCT DECISIONS
+==================================================
+
+These are fixed:
+
+- private pools only
+- multiple entries per user allowed
+- bragging rights only
+- standard scoring only
+- display names / aliases shown on leaderboard and receipts
+- email is the only notification channel
+- auth should use the real existing Supabase magic link flow already used by Swayger
+- use PostgreSQL via Supabase
+- admin access should be based on authenticated email allowlist
+- share cards / receipts are must-have
+- this feature must not disrupt core Swayger functionality
+
+==================================================
+PRIMARY DATA SOURCE
+==================================================
+
+Use BallDontLie March Madness API as the primary source for:
+- bracket data if available
+- game schedule
+- seeds
+- rounds
+- bracket positions / locations
+- statuses
+- scores
+- winners
+
+Expected endpoint shape may include fields like:
+- game_id
+- season
+- round
+- bracket_location
+- date
+- location
+- status
+- period_detail
+- broadcasts
+- home_team
+- away_team
+- seed
+- score
+- winner
+
+Build a clean sync adapter for BallDontLie.
+
+==================================================
+FALLBACK REQUIREMENT
+==================================================
+
+If BallDontLie does NOT provide the full bracket structure once released, support a manual bracket ingest fallback.
+
+Fallback source may be structured data derived from Yahoo, ESPN, NCAA, or another bracket source provided later.
+
+Support importing bracket structure from:
+- JSON preferred
+- CSV acceptable
+
+This manual fallback must populate the internal bracket structure so the feature still works without major refactoring.
+
+==================================================
+VERY IMPORTANT: DATA-DRIVEN BRACKET
+==================================================
+
+The bracket UI must be fully data-driven.
+
+Do NOT hardcode the bracket layout or hardcode matchups directly in the UI.
+
+Instead, build an internal bracket model that supports:
+- round
+- region
+- bracket_location or slot_position
+- home_team_id
+- away_team_id
+- winner_team_id
+- next_game_id
+
+The UI should render rounds dynamically from the internal bracket data.
+
+User picks should be stored against bracket_game_id (or equivalent internal game/node id), not against a fragile hardcoded UI structure.
+
+Store bracket relationships using next_game_id so winners can automatically populate the correct matchup in the next round.
+
+The system must work whether the structure comes from:
+1. BallDontLie bracket data
+2. manual imported bracket data
+
+==================================================
+MVP FEATURES TO BUILD
+==================================================
+
+1. March Madness hub page
+
+2. Create private pool
+Fields:
+- pool name
+- optional description
+- creator
+- invite code / invite link
+
+3. Join pool by invite link
+
+4. Multiple bracket entries per user
+Each entry includes:
+- entry name
+- tiebreaker prediction: championship total points
+- full set of picks
+
+5. Bracket builder UI
+Requirements:
+- responsive
+- easy to understand
+- works on desktop and mobile
+- click/select winners
+- winners advance visually
+- round labels clearly visible
+- seeds clearly visible
+- teams clearly labeled
+- future rounds should populate from earlier picks
+
+6. Pool page
+Should include:
+- pool name
+- invite link
+- members
+- leaderboard
+- create entry
+- view entries
+
+7. Leaderboard
+Should show:
+- rank
+- display name
+- entry name
+- total points
+- optional correct picks count
+- tiebreaker if needed
+
+Leaderboard should:
+- update automatically as games finalize
+- highlight top 3
+- feel polished and social
+
+8. Entry detail page
+Show:
+- full bracket
+- picks
+- results/progress
+- current score if appropriate
+
+9. Share receipts / share cards
+Must generate image-based cards using the existing Swayger receipt/share pattern if available.
+If not reusable directly, use html2canvas or dom-to-image.
+
+Must support generating image cards for:
+- leaderboard rank
+- top 3
+- bracket still alive
+- upset call
+- pool standings
+
+These should be styled with Swayger branding and exportable as image files for sharing by text or email.
+
+10. Lightweight Swayger Takes / Receipts layer
+Derive shareable receipt moments from existing bracket/leaderboard data, such as:
+- current leaderboard rank
+- successful upset pick
+- champion still alive
+- number of surviving teams/picks
+
+Do not build a social feed.
+Just build lightweight, data-driven bragging-rights moments from the user’s bracket and pool status.
+
+11. Admin page
+Must include:
+- manual bracket import
+- BallDontLie sync trigger
+- game refresh trigger
+- manual game winner override
+- manual score override
+- mark game final
+- re-run scoring
+- rebuild leaderboard
+- view sync status/logs if practical
+
+==================================================
+SCORING RULES
+==================================================
+
+Use standard scoring:
+
+- Round of 64 = 1
+- Round of 32 = 2
+- Sweet 16 = 4
+- Elite 8 = 8
+- Final Four = 16
+- Championship = 32
+
+Tiebreaker:
+- predicted championship game total points
+
+Scoring engine requirements:
+- score when games become final
+- idempotent rescoring
+- able to rescore one game, one pool, one entry, or all entries
+- no double counting
+- always recomputable from current game results
+
+==================================================
+LOCKING RULES
+==================================================
+
+Bracket entries lock at tournament start.
+Default:
+- lock all entries at the start of the first tournament game
+
+After lock:
+- users cannot edit picks
+- users cannot edit entry names if that impacts integrity
+- admin can still correct feed/data issues
+
+==================================================
+AUTH / ADMIN RULES
+==================================================
+
+Use existing real Supabase magic link auth.
+Do not create fake OTP or simplified auth if not needed.
+
+Capture or use display name / alias for:
+- leaderboard
+- receipts
+- pool participation
+
+Admin access:
+- based on authenticated email allowlist
+- use env/config like ADMIN_EMAILS
+- only allow listed emails to access admin tools
+
+==================================================
+DATABASE / BACKEND
+==================================================
+
+Use PostgreSQL via Supabase.
+
+Create or extend a schema that supports at minimum:
+
+- users / profiles if needed
+- pools
+- pool_members
+- bracket_entries
+- bracket_games or bracket_nodes
+- teams
+- entry_picks
+- entry_scores
+- sync_logs
+- admin_action_logs if useful
+
+BracketGames / BracketNodes should support fields like:
+- id
+- external_game_id nullable
+- season
+- round
+- region nullable
+- bracket_location nullable
+- next_game_id nullable
+- slot_position nullable
+- scheduled_at
+- status
+- source_type
+- home_team_id nullable
+- away_team_id nullable
+- winner_team_id nullable
+- home_score nullable
+- away_score nullable
+- updated_at
+
+Teams should support:
+- external_team_id nullable
+- name
+- full_name
+- abbreviation
+- college
+- seed nullable
+- conference_id nullable
+
+EntryScores should support per-round totals plus overall total.
+
+==================================================
+SYNC / BACKGROUND LOGIC
+==================================================
+
+Build a BallDontLie sync service that:
+- fetches all pages if paginated
+- normalizes and stores bracket/game data
+- updates teams/games/statuses/scores/winners
+- detects transitions from non-final to final
+- triggers rescoring
+- logs sync timestamps and errors
+
+Prefer configurable polling intervals:
+- slower when no games active
+- faster during active windows
+
+Important:
+If the hosting/runtime sleeps, the app must still be able to catch up by syncing current state and recomputing scores.
+
+Add a manual refresh button for admin.
+
+==================================================
+UI / DESIGN
+==================================================
+
+The design should feel:
+- polished
+- sports-forward
+- clean
+- mobile-friendly
+- native enough to Swayger
+
+Use existing Swayger design patterns where possible.
+
+Visual emphasis:
+- clear round structure
+- strong leaderboard
+- branded share cards
+- easy invitation flow
+
+Do not build a clunky dev-only interface.
+
+==================================================
+SHARE CARDS
+==================================================
+
+This is must-have.
+
+If an existing Swayger receipt/share component system already exists, reuse or adapt it.
+If not, build share cards as reusable components and export them as images.
+
+Cards should include combinations of:
+- user alias
+- pool name
+- rank / claim
+- Swayger branding
+- Think you're right? Swayger on it.
+- Friendly wagers. No real money. Just bragging rights.
+
+==================================================
+PROTECTION OF EXISTING SWAYGER APP
+==================================================
+
+This is critical.
+
+Do not break:
+- existing Swayger creation flow
+- existing 1v1 swayger flow
+- existing settlement flow
+- existing share flow outside this module
+- existing auth/session behavior
+- existing email/status update logic
+
+If a reusable mechanism already exists, integrate carefully.
+If integration would be risky, isolate the March Madness feature instead of changing core logic.
+
+Think of this as a seasonal extension, not a platform rewrite.
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Work in this order:
+
+STEP 1:
+Audit the current codebase and summarize:
+- reusable systems
+- required new systems
+- proposed file changes
+- proposed schema changes
+- risks
+- confirmation of isolation approach
+
+STEP 2:
+Show the exact implementation plan.
+
+STEP 3:
+Then begin implementation.
+
+As you implement:
+- keep changes scoped
+- explain important file additions/changes
+- do not modify unrelated files unless necessary
+- prefer creating isolated feature folders/modules
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+This feature is successful if:
+- users can enter through a temporary March Madness entry point
+- create and join private pools
+- make multiple bracket entries
+- see dynamic bracket UI
+- get scored automatically from BallDontLie results
+- view a polished leaderboard
+- generate branded receipt/share images
+- admins can fix issues manually
+- core Swayger functionality remains stable and unaffected
+
+==================================================
+NON-GOALS
+==================================================
+
+Do not build:
+- public pools
+- payments
+- gambling
+- advanced matchup editorial content
+- injury/news feeds
+- push notifications
+- DFS tools
+- broad app refactors
+- unnecessary framework migrations
+
+Keep scope tight and launch-oriented.
