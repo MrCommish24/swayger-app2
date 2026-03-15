@@ -627,7 +627,7 @@ export default function SwaygerDetailScreen() {
   }
 
   const acceptMutation = useMutation({
-    mutationFn: () => acceptSwayger(id!, opponentPick),
+    mutationFn: () => acceptSwayger(id!, opponentPick, user?.id),
     onSuccess: (result) => {
       if (result.error) { showError(result.error); return; }
       setOpponentPick("");
@@ -680,7 +680,7 @@ export default function SwaygerDetailScreen() {
   });
 
   const proposeMutation = useMutation({
-    mutationFn: (outcome: string) => proposeSettlement(id!, outcome),
+    mutationFn: (outcome: string) => proposeSettlement(id!, outcome, user?.id),
     onSuccess: (result) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();
@@ -700,7 +700,7 @@ export default function SwaygerDetailScreen() {
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (proposalId: string) => confirmSettlement(id!, proposalId),
+    mutationFn: (proposalId: string) => confirmSettlement(id!, proposalId, user?.id),
     onSuccess: async (result, proposalId) => {
       if (result.error) { showError(result.error); return; }
       invalidateAll();

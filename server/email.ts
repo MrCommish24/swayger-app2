@@ -1,0 +1,191 @@
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM =
+  process.env.RESEND_FROM_EMAIL || "Swayger <onboarding@resend.dev>";
+const APP_URL =
+  process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
+
+export type EmailEvent =
+  | "invite_created"
+  | "swayger_accepted"
+  | "settlement_proposed"
+  | "swayger_settled";
+
+export interface NotifyPayload {
+  event: EmailEvent;
+  swayger: {
+    id: string;
+    title: string;
+    category: string;
+    stakeUnits: number;
+  };
+  sender: { name: string };
+  recipients: { email: string; name: string }[];
+  outcome?: string;
+}
+
+function outcomeLabel(outcome: string): string {
+  switch (outcome) {
+    case "creator":
+      return "Creator Wins";
+    case "opponent":
+      return "Opponent Wins";
+    case "draw":
+      return "Draw";
+    case "no_contest":
+      return "No Contest";
+    default:
+      return outcome;
+  }
+}
+
+function detailRow(label: string, value: string): string {
+  return `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+      <span style="font-size:13px;color:#8B95A5;">${label}</span>
+      <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${value}</span>
+    </td>
+  </tr>`;
+}
+
+function swaygerDetailsHtml(p: NotifyPayload): string {
+  const stake = `${p.swayger.stakeUnits} unit${p.swayger.stakeUnits !== 1 ? "s" : ""}`;
+  return `<table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:8px;">
+    ${detailRow("Wager", p.swayger.title)}
+    ${detailRow("Category", p.swayger.category)}
+    ${detailRow("Stake", stake)}
+  </table>`;
+}
+
+function buildEmailHtml(
+  pageTitle: string,
+  headline: string,
+  bodyHtml: string,
+  ctaLabel: string,
+  ctaUrl: string
+): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${pageTitle}</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">${headline}</p>
+            ${bodyHtml}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${ctaUrl}"
+                     style="display:inline-block;background:#6C63FF;color:#FFFFFF;font-size:15px;font-weight:700;padding:13px 32px;border-radius:12px;text-decoration:none;">
+                    ${ctaLabel}
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendNotificationEmail(
+  payload: NotifyPayload
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+
+  const swaygerUrl = `${APP_URL}/swayger/${payload.swayger.id}`;
+  const sender = payload.sender.name;
+  const title = payload.swayger.title;
+  const details = swaygerDetailsHtml(payload);
+
+  let subject: string;
+  let headline: string;
+  let body: string;
+  let ctaLabel: string;
+
+  switch (payload.event) {
+    case "invite_created":
+      subject = `🎯 ${sender} challenged you to a Swayger`;
+      headline = `${sender} just sent you a challenge.`;
+      body = details;
+      ctaLabel = "View Challenge";
+      break;
+
+    case "swayger_accepted":
+      subject = `✅ ${sender} accepted your Swayger`;
+      headline = `${sender} is in. The game is on.`;
+      body = details;
+      ctaLabel = "View Swayger";
+      break;
+
+    case "settlement_proposed": {
+      subject = `⚖️ ${sender} proposed a settlement`;
+      headline = `${sender} wants to settle "${title}"`;
+      const proposed = payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Proposed outcome: <strong style="color:#FFFFFF;">${proposed}</strong></p>`;
+      ctaLabel = "Review & Confirm";
+      break;
+    }
+
+    case "swayger_settled": {
+      subject = `🏆 "${title}" has been settled`;
+      headline = `The results are in.`;
+      const final = payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Final outcome: <strong style="color:#FFFFFF;">${final}</strong></p>`;
+      ctaLabel = "See Results";
+      break;
+    }
+  }
+
+  const results = await Promise.allSettled(
+    payload.recipients.map((r) =>
+      resend.emails.send({
+        from: FROM,
+        to: r.email,
+        subject,
+        html: buildEmailHtml(subject, headline, body, ctaLabel, swaygerUrl),
+      })
+    )
+  );
+
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(
+        `[email] Failed to send to ${payload.recipients[i]?.email}:`,
+        r.reason
+      );
+    } else {
+      console.log(
+        `[email] Sent ${payload.event} to ${payload.recipients[i]?.email}`
+      );
+    }
+  });
+}

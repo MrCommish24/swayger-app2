@@ -86,7 +86,7 @@ export default function InviteScreen() {
   const canAccept = swayger && !isCreator && isOpponent && swayger.status === "pending_invite";
 
   const acceptMutation = useMutation({
-    mutationFn: () => acceptSwayger(joinedId!, opponentPick),
+    mutationFn: () => acceptSwayger(joinedId!, opponentPick, user?.id),
     onSuccess: (result) => {
       if (result.error) {
         showError(result.error);

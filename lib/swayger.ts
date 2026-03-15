@@ -4,6 +4,76 @@ import {
   SwaygerInvite,
   SettlementProposal,
 } from "@/types";
+import { getApiUrl } from "@/lib/query-client";
+
+type NotifyEvent =
+  | "invite_created"
+  | "swayger_accepted"
+  | "settlement_proposed"
+  | "swayger_settled";
+
+async function notifyEvent(
+  event: NotifyEvent,
+  swayger: SwaygerData,
+  callerId: string,
+  outcome?: string
+): Promise<void> {
+  try {
+    const ids = [swayger.creator_id, ...(swayger.opponent_id ? [swayger.opponent_id] : [])];
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, display_name, username, email")
+      .in("id", ids);
+
+    if (!profiles || profiles.length === 0) return;
+
+    const pm = new Map(profiles.map((p) => [p.id, p]));
+    const name = (id: string) =>
+      pm.get(id)?.display_name || pm.get(id)?.username || "Someone";
+    const email = (id: string): string | null =>
+      (pm.get(id) as { email?: string | null } | undefined)?.email ?? null;
+
+    let recipientIds: string[] = [];
+    if (event === "invite_created" && swayger.opponent_id) {
+      recipientIds = [swayger.opponent_id];
+    } else if (event === "swayger_accepted") {
+      recipientIds = [swayger.creator_id];
+    } else if (event === "settlement_proposed") {
+      const other =
+        callerId === swayger.creator_id
+          ? swayger.opponent_id
+          : swayger.creator_id;
+      if (other) recipientIds = [other];
+    } else if (event === "swayger_settled") {
+      recipientIds = ids;
+    }
+
+    const recipients = recipientIds
+      .map((id) => ({ email: email(id), name: name(id) }))
+      .filter((r): r is { email: string; name: string } => !!r.email);
+
+    if (recipients.length === 0) return;
+
+    await fetch(`${getApiUrl()}api/notify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event,
+        swayger: {
+          id: swayger.id,
+          title: swayger.title,
+          category: swayger.category,
+          stakeUnits: swayger.stake_units,
+        },
+        sender: { name: name(callerId) },
+        recipients,
+        outcome,
+      }),
+    });
+  } catch (err) {
+    console.error("[notify] notifyEvent failed:", err);
+  }
+}
 
 const INVITE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -153,7 +223,7 @@ export async function fetchSettlementProposals(swaygerId: string): Promise<Settl
   return data as SettlementProposal[];
 }
 
-export async function acceptSwayger(swaygerId: string, opponentPick: string): Promise<{ error: string | null }> {
+export async function acceptSwayger(swaygerId: string, opponentPick: string, callerId?: string): Promise<{ error: string | null }> {
   console.log("[swayger] Accepting swayger:", swaygerId);
   const { data, error } = await supabase.rpc("accept_swayger", {
     p_swayger_id: swaygerId,
@@ -165,8 +235,15 @@ export async function acceptSwayger(swaygerId: string, opponentPick: string): Pr
     return { error: error.message };
   }
   const result = data as { error: string | null };
-  if (result.error) console.error("[swayger] accept_swayger business error:", result.error);
-  else console.log("[swayger] Swayger accepted:", swaygerId);
+  if (result.error) {
+    console.error("[swayger] accept_swayger business error:", result.error);
+  } else {
+    console.log("[swayger] Swayger accepted:", swaygerId);
+    if (callerId) {
+      const swayger = await fetchSwayger(swaygerId);
+      if (swayger) notifyEvent("swayger_accepted", swayger, callerId);
+    }
+  }
   return { error: result.error };
 }
 
@@ -202,7 +279,8 @@ export async function cancelSwayger(swaygerId: string): Promise<{ error: string 
 
 export async function proposeSettlement(
   swaygerId: string,
-  outcome: string
+  outcome: string,
+  callerId?: string
 ): Promise<{ error: string | null; proposalId: string | null }> {
   console.log("[swayger] Proposing settlement:", swaygerId, outcome);
   const { data, error } = await supabase.rpc("propose_settlement", {
@@ -215,13 +293,19 @@ export async function proposeSettlement(
     return { error: error.message, proposalId: null };
   }
   const result = data as { error: string | null; proposal_id: string | null };
-  if (result.error) console.error("[swayger] propose_settlement business error:", result.error);
+  if (result.error) {
+    console.error("[swayger] propose_settlement business error:", result.error);
+  } else if (callerId) {
+    const swayger = await fetchSwayger(swaygerId);
+    if (swayger) notifyEvent("settlement_proposed", swayger, callerId, outcome);
+  }
   return { error: result.error, proposalId: result.proposal_id ?? null };
 }
 
 export async function confirmSettlement(
   swaygerId: string,
-  proposalId: string
+  proposalId: string,
+  callerId?: string
 ): Promise<{ error: string | null; settled: boolean }> {
   console.log("[swayger] Confirming settlement:", swaygerId, proposalId);
   const { data, error } = await supabase.rpc("confirm_settlement", {
@@ -233,9 +317,16 @@ export async function confirmSettlement(
     console.error("[swayger] confirm_settlement RPC error:", error.message, error.code);
     return { error: error.message, settled: false };
   }
-  const result = data as { error: string | null; settled: boolean };
-  if (result.error) console.error("[swayger] confirm_settlement business error:", result.error);
-  if (result.settled) console.log("[swayger] Swayger settled:", swaygerId);
+  const result = data as { error: string | null; settled: boolean; outcome?: string };
+  if (result.error) {
+    console.error("[swayger] confirm_settlement business error:", result.error);
+  } else if (result.settled) {
+    console.log("[swayger] Swayger settled:", swaygerId);
+    if (callerId) {
+      const swayger = await fetchSwayger(swaygerId);
+      if (swayger) notifyEvent("swayger_settled", swayger, callerId, swayger.settled_outcome ?? undefined);
+    }
+  }
   return { error: result.error, settled: result.settled ?? false };
 }
 
@@ -312,7 +403,11 @@ export async function createRematch(
     .eq("id", result.swayger.id)
     .single();
 
-  return { swayger: (updated as SwaygerData) || result.swayger, error: null };
+  const finalSwayger = (updated as SwaygerData) || result.swayger;
+  if (finalSwayger.opponent_id) {
+    notifyEvent("invite_created", finalSwayger, userId);
+  }
+  return { swayger: finalSwayger, error: null };
 }
 
 export async function joinSwaygerByCode(

@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
+import { sendNotificationEmail, type NotifyPayload } from "./email";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/config", (_req: Request, res: Response) => {
@@ -11,7 +12,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ appUrl: primaryDomain ? `https://${primaryDomain}` : "" });
   });
 
-  const httpServer = createServer(app);
+  app.post("/api/notify", async (req: Request, res: Response) => {
+    try {
+      const payload = req.body as NotifyPayload;
+      if (!payload.event || !payload.swayger || !payload.recipients) {
+        res.status(400).json({ ok: false, error: "Invalid payload" });
+        return;
+      }
+      await sendNotificationEmail(payload);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[notify] error:", err);
+      res.status(500).json({ ok: false, error: "Failed to send notification" });
+    }
+  });
 
+  const httpServer = createServer(app);
   return httpServer;
 }
