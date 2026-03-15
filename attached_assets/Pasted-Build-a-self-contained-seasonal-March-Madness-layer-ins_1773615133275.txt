@@ -1,0 +1,271 @@
+Build a self-contained seasonal “March Madness” layer inside the existing Swayger app.
+
+This is NOT a new standalone product and NOT a rewrite of Swayger.
+
+Critical constraints:
+- Do NOT break, refactor, or interrupt core Swayger functionality
+- Do NOT change the existing 1v1 Swayger flow in a risky way
+- Reuse existing Swayger auth, styling, receipt sharing, and data patterns wherever practical
+- Keep all new code modular and easy to remove after the season
+
+Goal:
+Create a lightweight March Madness engagement layer that helps bring people into the app and encourages creation/sharing of tournament-related Swaygers.
+
+==================================================
+FIRST TASK — DO NOT START CODING IMMEDIATELY
+==================================================
+
+First, inspect the current codebase and return a concise implementation plan that includes:
+
+1. what existing Swayger flows already support this feature
+2. how existing auth/session/profile flows work and how this feature will reuse them
+3. what existing receipt/share-image functionality already exists and how this feature will reuse it
+4. what existing leaderboard functionality exists and whether it can be filtered by category/tag
+5. what routes, components, services, and tables can be reused
+6. what new files/routes/components/tables must be added
+7. exactly which files you plan to modify
+8. confirmation that the core Swayger flow will remain untouched
+9. any risks, assumptions, or questions
+
+Only after showing that plan should you start implementation.
+
+==================================================
+PRODUCT OVERVIEW
+==================================================
+
+Build a March Madness layer with these features:
+
+1. March Madness Hub
+2. Featured Matchups / Featured Picks
+3. Quick-create Swaygers from tournament games
+4. March Madness filtered leaderboard
+5. March Madness receipts/share cards
+
+This should feel like a temporary seasonal experience inside Swayger, not a separate app.
+
+==================================================
+BRAND / LANGUAGE
+==================================================
+
+Use Swayger branding prominently:
+- Swayger
+- Think you're right? Swayger on it.
+- Friendly wagers. No real money. Just bragging rights.
+
+Tone:
+- fun
+- social
+- sports-forward
+- shareable
+
+==================================================
+ENTRY POINTS
+==================================================
+
+Add a temporary March Madness entry point inside the existing app.
+
+Possible placements:
+- banner on My Swaygers screen
+- March Madness category tile
+- seasonal promo card on dashboard/home
+
+This entry point should lead to a March Madness Hub.
+
+==================================================
+FEATURE 1 — MARCH MADNESS HUB
+==================================================
+
+Create a March Madness hub page that includes:
+
+- hero/banner
+- featured tournament matchups
+- featured pick ideas
+- CTA buttons to quickly create a Swayger
+- link to March Madness leaderboard
+- link to March Madness receipts / share moments if appropriate
+
+This page should reuse existing design patterns and fit naturally into Swayger.
+
+==================================================
+FEATURE 2 — FEATURED MATCHUPS / FEATURED PICKS
+==================================================
+
+Show a curated list of tournament games or pick ideas.
+
+Examples:
+- Duke vs Kentucky
+- UConn vs Houston
+- Upset watch: 12 vs 5
+- Who makes the Final Four?
+- Who wins it all?
+
+If live tournament matchup data is available through BallDontLie or another existing source, use it.
+If not, build the system so featured matchups can be configured statically/admin-managed for MVP.
+
+Each featured card should have a clear CTA like:
+- Create this Swayger
+- Challenge a friend
+- Make this pick
+
+==================================================
+FEATURE 3 — QUICK-CREATE SWAYGERS FROM TOURNAMENT GAMES
+==================================================
+
+This is the core of the feature.
+
+Build a quick-create path that drops users into the existing Swayger creation flow with March Madness information prefilled.
+
+Examples:
+- category = March Madness
+- title prefilled from matchup
+- selectable team options prefilled
+- game date/time prefilled if applicable
+- suggested terms/wording prefilled if the current system supports it
+
+Important:
+Reuse the existing Swayger creation flow whenever possible.
+Do NOT build a separate parallel wager-creation system unless absolutely necessary.
+
+This should feel like:
+“Tap a matchup → get a nearly-complete Swayger draft → send it”
+
+==================================================
+FEATURE 4 — MARCH MADNESS FILTERED LEADERBOARD
+==================================================
+
+Build a filtered leaderboard view for March Madness activity.
+
+This should be based on existing data if possible.
+
+The leaderboard can show:
+- total March Madness Swaygers created
+- wins
+- settled wins
+- active tournament Swaygers
+- streak or record if already supported
+- friends/rank if already supported
+
+If there is already a leaderboard system, add a filter/tag/category view for March Madness.
+If not, create a lightweight leaderboard specifically for this seasonal module.
+
+==================================================
+FEATURE 5 — MARCH MADNESS RECEIPTS / SHARE CARDS
+==================================================
+
+Must-have.
+
+Reuse the existing Swayger receipt/share-image pattern if available.
+
+Build March Madness-specific share cards such as:
+- I’ve got X active March Madness Swaygers
+- I’m up X wins in March Madness
+- I called this matchup
+- My March Madness record
+- My tournament takes
+
+Implement as visual card components exportable as image files.
+If there is no existing export utility reusable, use html2canvas or similar.
+
+Focus on image generation, not building a whole new social sharing system.
+
+==================================================
+DATA / CATEGORY REQUIREMENTS
+==================================================
+
+Introduce or reuse a March Madness category/tag so tournament-related Swaygers can be grouped, filtered, and displayed.
+
+Requirements:
+- March Madness category should be selectable or prefilled in the quick-create flow
+- tournament-related Swaygers should be easy to find/filter
+- leaderboard and receipts should be able to query/filter by this category
+
+==================================================
+OPTIONAL DATA SOURCE
+==================================================
+
+If practical, use BallDontLie or an existing sports data source to surface real tournament games.
+
+But do NOT block the build on live API integration if that slows shipping.
+
+Preferred priority:
+1. Get the March Madness hub and quick-create flow working
+2. Then plug in live tournament game data if simple
+3. If not simple, support static/admin-configured featured matchups for MVP
+
+==================================================
+AUTH / INFRASTRUCTURE
+==================================================
+
+Use existing Supabase auth and existing Swayger login/session flow.
+Do not introduce a new auth system.
+
+Use existing PostgreSQL / Supabase setup.
+Do not build a separate database unless absolutely necessary.
+
+==================================================
+ADMIN / CONFIG
+==================================================
+
+Build a minimal admin/config mechanism for the seasonal hub.
+
+Admin should be able to:
+- set featured matchups manually if needed
+- control featured pick copy/cards
+- optionally toggle the March Madness banner on/off
+- optionally update featured dates/CTAs
+
+Use simple email-based admin access if needed, aligned with existing auth.
+
+==================================================
+UI / DESIGN
+==================================================
+
+Design should feel:
+- polished
+- easy to scan
+- sports-themed
+- native to Swayger
+
+Do not overcomplicate the UI.
+Keep it fast, clean, and launch-oriented.
+
+==================================================
+NON-GOALS
+==================================================
+
+Do NOT build:
+- full bracket builder
+- bracket scoring engine
+- pool management
+- public pools
+- gambling features
+- heavy background jobs unless they are easy and low-risk
+- broad app refactors
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Work in this order:
+
+STEP 1:
+Audit the codebase and return a concise implementation plan, including:
+- reusable systems
+- new systems needed
+- exact files to modify/create
+- risk points
+- how core Swayger flow will remain protected
+
+STEP 2:
+After plan approval, implement the feature in scoped, modular steps.
+
+STEP 3:
+Explain important changes as you go.
+
+Success criteria:
+- users can enter through a March Madness seasonal entry point
+- see a hub with tournament prompts
+- quickly create March Madness Swaygers
+- view a March Madness-specific leaderboard
+- generate March Madness receipts/share cards
+- core Swayger functionality remains stable
