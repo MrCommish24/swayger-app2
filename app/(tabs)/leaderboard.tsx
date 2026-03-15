@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
@@ -267,7 +267,8 @@ export default function LeaderboardScreen() {
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
   const router = useRouter();
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const params = useLocalSearchParams<{ category?: string }>();
+  const [selectedCategory, setSelectedCategory] = useState(params.category || "All");
 
   const { data, isLoading } = useQuery<AllSettledData>({
     queryKey: ["leaderboard-all"],

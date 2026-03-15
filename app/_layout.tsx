@@ -102,6 +102,7 @@ function RootLayoutNav() {
         <Stack.Screen name="join" options={{ headerShown: false }} />
         <Stack.Screen name="h2h/index" options={{ headerShown: false }} />
         <Stack.Screen name="h2h/[opponentId]" options={{ headerShown: false }} />
+        <Stack.Screen name="march-madness/index" options={{ headerShown: false }} />
       </Stack>
       <ToastContainer />
     </>

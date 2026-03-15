@@ -38,6 +38,8 @@ app/
   h2h/
     index.tsx          # H2H opponents list — all opponents + aggregate records
     [opponentId].tsx   # Detailed H2H receipt (scoreboard, category breakdown, game log, share)
+  march-madness/
+    index.tsx          # March Madness hub (hero, round progress, featured matchups, MM stats, share card, leaderboard link)
   join.tsx             # Join Swayger screen — enter code or scan QR
 components/
   ErrorBoundary.tsx    # Error boundary + fallback with dev error details modal

@@ -21,8 +21,35 @@ import {
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
+import { MARCH_MADNESS_ACTIVE, getCurrentRound } from "@/lib/march-madness";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
+
+const MM_ORANGE = "#E8590A";
+
+function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
+  if (!MARCH_MADNESS_ACTIVE) return null;
+  const round = getCurrentRound();
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.mmBanner, pressed && { opacity: 0.85 }]}
+      onPress={onPress}
+    >
+      <View style={styles.mmBannerLeft}>
+        <Text style={styles.mmBannerEmoji}>🏀</Text>
+        <View style={styles.mmBannerText}>
+          <Text style={styles.mmBannerTitle}>March Madness is ON</Text>
+          <Text style={styles.mmBannerSub}>
+            {round.label} · Swayger on the games
+          </Text>
+        </View>
+      </View>
+      <View style={styles.mmBannerArrow}>
+        <Ionicons name="chevron-forward" size={16} color={MM_ORANGE} />
+      </View>
+    </Pressable>
+  );
+}
 
 function StatsStrip({
   swaygers,
@@ -236,6 +263,8 @@ export default function DashboardScreen() {
       {!isLoading && !error && user && (
         <StatsStrip swaygers={swaygers} userId={user.id} />
       )}
+
+      <MarchMadnessBanner onPress={() => router.push("/march-madness")} />
 
       <View style={styles.actions}>
         <Pressable
@@ -473,6 +502,51 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: Colors.dark.border,
     marginVertical: 4,
+  },
+
+  mmBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 24,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "rgba(232,89,10,0.10)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.35)",
+  },
+  mmBannerLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  mmBannerEmoji: {
+    fontSize: 24,
+  },
+  mmBannerText: {
+    gap: 1,
+    flex: 1,
+  },
+  mmBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  mmBannerSub: {
+    fontSize: 12,
+    color: "rgba(232,89,10,0.85)",
+    fontWeight: "500" as const,
+  },
+  mmBannerArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(232,89,10,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 12 },
