@@ -85,7 +85,7 @@ export default function ProfileScreen() {
           setTimeout(() => reject(new Error("timeout")), 8000)
         );
         const result = await Promise.race([
-          supabase.from("profiles").select("*").eq("id", user.id).single(),
+          supabase.from("profiles").select("id, username, display_name, avatar_url, email, created_at, updated_at").eq("id", user.id).single(),
           inlineTimeout,
         ]);
         const { data } = result as { data: typeof profile; error: unknown };
@@ -113,20 +113,38 @@ export default function ProfileScreen() {
     setDisplayNameDraft("");
     setSavingName(true);
     try {
+      let saveError: string | null = null;
+
       const { error: rpcErr } = await supabase.rpc("update_display_name", {
         p_display_name: trimmed,
       });
+
       if (rpcErr) {
         const { error: directErr } = await supabase
           .from("profiles")
           .update({ display_name: newDisplayName })
           .eq("id", user.id);
         if (directErr) {
-          setProfile(previousProfile);
-          showError(directErr.message || "Could not save display name.");
-          return;
+          saveError = directErr.message || "Could not save display name.";
         }
       }
+
+      if (saveError) {
+        setProfile(previousProfile);
+        showError(saveError);
+        return;
+      }
+
+      const { data: refreshed } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, email, created_at, updated_at")
+        .eq("id", user.id)
+        .single();
+
+      if (refreshed) {
+        setProfile(refreshed as Profile);
+      }
+
       showMessage("Saved", "Display name updated.");
     } catch {
       setProfile(previousProfile);
