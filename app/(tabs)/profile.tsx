@@ -83,7 +83,11 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    if (!user || !profile) { retryProfileFetch(); return; }
+    if (!user || !profile) {
+      setDebugMsg(`blocked: user=${!!user} profile=${!!profile}`);
+      retryProfileFetch();
+      return;
+    }
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
       showError("Display name must be 50 characters or less.");
@@ -221,7 +225,8 @@ export default function ProfileScreen() {
               <View style={styles.inlineFormButtons}>
                 <Pressable
                   style={({ pressed }) => [styles.cancelBtn, pressed && styles.buttonPressed]}
-                  onPress={cancelEditName}
+                  onPress={isWeb ? undefined : cancelEditName}
+                  onPressIn={isWeb ? cancelEditName : undefined}
                   disabled={savingName}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -232,7 +237,8 @@ export default function ProfileScreen() {
                     pressed && styles.buttonPressed,
                     savingName && styles.buttonDisabled,
                   ]}
-                  onPress={saveDisplayName}
+                  onPress={isWeb ? undefined : saveDisplayName}
+                  onPressIn={isWeb ? saveDisplayName : undefined}
                   disabled={savingName}
                 >
                   {savingName ? (
@@ -292,11 +298,8 @@ export default function ProfileScreen() {
               <View style={styles.inlineFormButtons}>
                 <Pressable
                   style={({ pressed }) => [styles.cancelBtn, pressed && styles.buttonPressed]}
-                  onPress={() => {
-                    setShowSetPassword(false);
-                    setNewPassword("");
-                    setConfirmPassword("");
-                  }}
+                  onPress={isWeb ? undefined : () => { setShowSetPassword(false); setNewPassword(""); setConfirmPassword(""); }}
+                  onPressIn={isWeb ? () => { setShowSetPassword(false); setNewPassword(""); setConfirmPassword(""); } : undefined}
                   disabled={saving}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -307,7 +310,8 @@ export default function ProfileScreen() {
                     pressed && styles.buttonPressed,
                     saving && styles.buttonDisabled,
                   ]}
-                  onPress={handleSetPassword}
+                  onPress={isWeb ? undefined : handleSetPassword}
+                  onPressIn={isWeb ? handleSetPassword : undefined}
                   disabled={saving}
                 >
                   {saving ? (
