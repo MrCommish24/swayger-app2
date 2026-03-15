@@ -70,6 +70,33 @@ function buildInviteLink(inviteCode: string): string {
   return Linking.createURL(`/invite/${inviteCode}`);
 }
 
+function buildSwaygerLink(swaygerIdParam: string): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/swayger/${swaygerIdParam}`;
+  }
+  const domain = process.env.EXPO_PUBLIC_DOMAIN || "";
+  return domain ? `https://${domain}/swayger/${swaygerIdParam}` : Linking.createURL(`/swayger/${swaygerIdParam}`);
+}
+
+function buildShareMessage(
+  swaygerData: SwaygerData,
+  challengerName: string,
+  link: string
+): string {
+  const stake = swaygerData.stake_units;
+  const stakeStr = `${stake} unit${stake !== 1 ? "s" : ""}`;
+  const title = swaygerData.title;
+  const category = swaygerData.category;
+
+  if (swaygerData.rematch_type === "double_or_nothing") {
+    return `${challengerName} isn't satisfied — they're coming for double. 🔥\n\nDouble or Nothing on "${title}"\n${category} · ${stakeStr} on the line\n\nYou accepting? ${link}`;
+  }
+  if (swaygerData.rematch_type === "run_it_back") {
+    return `${challengerName} wants to run it back. 🔄\n\nRematch: "${title}"\n${category} · ${stakeStr}\n\nSame terms. You in? ${link}`;
+  }
+  return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
+}
+
 function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -359,7 +386,7 @@ export default function SwaygerDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
 
   const [opponentPick, setOpponentPick] = useState("");
@@ -371,7 +398,22 @@ export default function SwaygerDetailScreen() {
   const [showFightCard, setShowFightCard] = useState(false);
   const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
   const [rematchSheetType, setRematchSheetType] = useState<"run_it_back" | "double_or_nothing" | null>(null);
+  const [linkShared, setLinkShared] = useState(false);
   const pendingStreakRef = useRef(0);
+
+  async function handleShareSwayger() {
+    if (!swayger || !id) return;
+    const link = buildSwaygerLink(id);
+    const myName = profile?.display_name || profile?.username || "Someone";
+    const message = buildShareMessage(swayger, myName, link);
+    try {
+      await Share.share({ message, url: link });
+    } catch {
+      await Clipboard.setStringAsync(link);
+      setLinkShared(true);
+      setTimeout(() => setLinkShared(false), 2000);
+    }
+  }
 
   function closeReceiptModal() {
     setShowReceiptModal(false);
@@ -823,6 +865,16 @@ export default function SwaygerDetailScreen() {
             )}
           </View>
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.shareHeaderBtn, pressed && { opacity: 0.6 }]}
+          onPress={handleShareSwayger}
+        >
+          <Ionicons
+            name={linkShared ? "checkmark" : "share-outline"}
+            size={20}
+            color={linkShared ? "#22C55E" : Colors.dark.tint}
+          />
+        </Pressable>
       </View>
 
       {swayger.description && (
@@ -1350,6 +1402,11 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.dark.surface,
     alignItems: "center", justifyContent: "center", marginTop: 2,
+  },
+  shareHeaderBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.dark.surface,
+    alignItems: "center", justifyContent: "center", marginTop: 2,
+    borderWidth: 1, borderColor: Colors.dark.border,
   },
   headerContent: { flex: 1, gap: 8 },
   swaygerTitle: { fontSize: 26, fontWeight: "bold" as const, color: Colors.dark.text },
