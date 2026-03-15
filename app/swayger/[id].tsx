@@ -1096,6 +1096,11 @@ export default function SwaygerDetailScreen() {
               </Text>
             </Pressable>
           </View>
+        </View>
+      )}
+
+      {(isCreator || isOpponent) && (
+        <View style={styles.section}>
           <Pressable
             style={({ pressed }) => [styles.challengeElseBtn, pressed && styles.btnPressed]}
             onPress={() =>
@@ -1115,7 +1120,7 @@ export default function SwaygerDetailScreen() {
             }
           >
             <Ionicons name="person-add-outline" size={16} color={Colors.dark.textSecondary} />
-            <Text style={styles.challengeElseText}>Challenge Someone Else to This</Text>
+            <Text style={styles.challengeElseText}>Same Swayger, New Opponent</Text>
           </Pressable>
         </View>
       )}

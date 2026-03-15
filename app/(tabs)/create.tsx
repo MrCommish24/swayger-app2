@@ -119,13 +119,13 @@ export default function CreateSwaygerScreen() {
           <Text style={styles.title}>
             {isRematch
               ? (params.rematchTypeForEdit === "double_or_nothing" ? "Double or Nothing" : "Run it Back")
-              : isOpenChallenge ? "Challenge Someone Else"
+              : isOpenChallenge ? "Same Swayger, New Opponent"
               : isCounter ? "Counter Offer" : "Create Swayger"}
           </Text>
           <Text style={styles.subtitle}>
             {isRematch
               ? `vs @${params.lockedOpponentUsername || "opponent"}`
-              : isOpenChallenge ? "Same terms, new opponent"
+              : isOpenChallenge ? "Adjust any terms, then send it"
               : isCounter && params.counterOpponentUsername
               ? `Countering @${params.counterOpponentUsername}'s invite`
               : "Set up a 1v1 wager"}
@@ -145,7 +145,7 @@ export default function CreateSwaygerScreen() {
           <View style={styles.counterBanner}>
             <Ionicons name="person-add-outline" size={16} color={Colors.dark.tint} />
             <Text style={styles.counterBannerText}>
-              Terms copied from a previous Swayger. Adjust anything, then pick a new opponent.
+              Same terms, new opponent. Adjust anything before you send it.
             </Text>
           </View>
         )}
