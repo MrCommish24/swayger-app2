@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfileError(null);
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Profile fetch timed out")), 12000)
+        setTimeout(() => reject(new Error("Profile fetch timed out")), 30000)
       );
       const queryPromise = supabase
         .from("profiles")
@@ -118,7 +118,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load profile";
       setProfileError(message);
-      setProfile(null);
+      // On a timeout, preserve whatever profile is already in state —
+      // wiping it would erase optimistic updates and cause name reversion.
+      // Only clear profile on definitive auth/permission errors.
+      if (message !== "Profile fetch timed out") {
+        setProfile(null);
+      }
       profileFetchedRef.current = null;
     } finally {
       setIsLoading(false);
