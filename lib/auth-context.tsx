@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }));
         setNeedsUsername(false);
         setProfileError(null);
-        supabase.rpc("update_last_seen").catch(() => {});
+        void supabase.rpc("update_last_seen").then(() => {}, () => {});
         if (__DEV__) {
           runSchemaVerification().catch(() => {});
         }
