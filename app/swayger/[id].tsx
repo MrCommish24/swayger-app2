@@ -370,6 +370,7 @@ export default function SwaygerDetailScreen() {
   const [celebrationStreak, setCelebrationStreak] = useState(0);
   const [showFightCard, setShowFightCard] = useState(false);
   const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
+  const [rematchSheetType, setRematchSheetType] = useState<"run_it_back" | "double_or_nothing" | null>(null);
   const pendingStreakRef = useRef(0);
 
   function closeReceiptModal() {
@@ -997,7 +998,7 @@ export default function SwaygerDetailScreen() {
                 pressed && styles.btnPressed,
                 anyPending && styles.btnDisabled,
               ]}
-              onPress={() => rematchMutation.mutate("run_it_back")}
+              onPress={() => setRematchSheetType("run_it_back")}
               disabled={anyPending}
             >
               <Ionicons name="refresh" size={18} color={Colors.dark.tint} />
@@ -1011,7 +1012,7 @@ export default function SwaygerDetailScreen() {
                 pressed && styles.btnPressed,
                 anyPending && styles.btnDisabled,
               ]}
-              onPress={() => rematchMutation.mutate("double_or_nothing")}
+              onPress={() => setRematchSheetType("double_or_nothing")}
               disabled={anyPending}
             >
               <Ionicons name="flame" size={18} color={Colors.dark.accentGold} />
@@ -1237,6 +1238,104 @@ export default function SwaygerDetailScreen() {
         stakeUnits={swayger?.stake_units || 1}
         onDismiss={() => setShowFightCard(false)}
       />
+
+      <Modal
+        visible={rematchSheetType !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setRematchSheetType(null)}
+        statusBarTranslucent
+      >
+        {rematchSheetType !== null && swayger && (() => {
+          const isDouble = rematchSheetType === "double_or_nothing";
+          const sheetStake = isDouble ? (swayger.stake_units || 1) * 2 : swayger.stake_units;
+          const myPick = isCreator ? swayger.creator_pick : swayger.opponent_pick;
+          const opponentProfile = isCreator ? profiles?.opponent : profiles?.creator;
+          const opponentId = isCreator ? swayger.opponent_id : swayger.creator_id;
+          const opponentUsername = opponentProfile?.username || "opponent";
+          const accentColor = isDouble ? Colors.dark.accentGold : Colors.dark.tint;
+
+          return (
+            <Pressable style={styles.sheetOverlay} onPress={() => setRematchSheetType(null)}>
+              <Pressable style={styles.sheetContainer} onPress={(e) => e.stopPropagation()}>
+                <View style={styles.sheetHandle} />
+
+                <View style={styles.sheetHeader}>
+                  <Ionicons
+                    name={isDouble ? "flame" : "refresh"}
+                    size={22}
+                    color={accentColor}
+                  />
+                  <Text style={[styles.sheetTitle, { color: accentColor }]}>
+                    {isDouble ? "Double or Nothing" : "Run it Back"}
+                  </Text>
+                </View>
+
+                <View style={styles.sheetTerms}>
+                  <Text style={styles.sheetSwaygerTitle} numberOfLines={2}>{swayger.title}</Text>
+
+                  <View style={styles.sheetRow}>
+                    <View style={styles.sheetChip}>
+                      <Text style={styles.sheetChipLabel}>Category</Text>
+                      <Text style={styles.sheetChipValue}>{swayger.category}</Text>
+                    </View>
+                    <View style={[styles.sheetChip, { borderColor: accentColor }]}>
+                      <Text style={styles.sheetChipLabel}>Stake</Text>
+                      <Text style={[styles.sheetChipValue, { color: accentColor }]}>{sheetStake} units</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.sheetRow}>
+                    <View style={styles.sheetChip}>
+                      <Text style={styles.sheetChipLabel}>Your pick</Text>
+                      <Text style={styles.sheetChipValue} numberOfLines={1}>{myPick || "—"}</Text>
+                    </View>
+                    <View style={styles.sheetChip}>
+                      <Text style={styles.sheetChipLabel}>vs</Text>
+                      <Text style={styles.sheetChipValue}>@{opponentUsername}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [styles.sheetSendBtn, { backgroundColor: accentColor }, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    setRematchSheetType(null);
+                    rematchMutation.mutate(rematchSheetType);
+                  }}
+                >
+                  <Text style={[styles.sheetSendText, { color: isDouble ? "#000" : "#fff" }]}>Send it</Text>
+                  <Ionicons name="arrow-forward" size={18} color={isDouble ? "#000" : "#fff"} />
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [styles.sheetEditBtn, pressed && { opacity: 0.7 }]}
+                  onPress={() => {
+                    setRematchSheetType(null);
+                    router.push({
+                      pathname: "/(tabs)/create" as never,
+                      params: {
+                        counterTitle: swayger.title,
+                        counterCategory: swayger.category,
+                        counterDescription: swayger.description || "",
+                        counterStake: String(sheetStake),
+                        lockedOpponentId: opponentId || "",
+                        lockedOpponentUsername: opponentUsername,
+                        sourceSwaygerIdForEdit: swayger.id,
+                        rematchTypeForEdit: rematchSheetType,
+                        creatorPickPrefill: myPick || "",
+                      },
+                    });
+                  }}
+                >
+                  <Ionicons name="create-outline" size={16} color={Colors.dark.tint} />
+                  <Text style={styles.sheetEditText}>Edit terms</Text>
+                </Pressable>
+              </Pressable>
+            </Pressable>
+          );
+        })()}
+      </Modal>
     </>
   );
 }
@@ -1523,5 +1622,59 @@ const styles = StyleSheet.create({
   modalDismissText: {
     fontSize: 14,
     color: Colors.dark.tabIconDefault,
+  },
+  sheetOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end",
+  },
+  sheetContainer: {
+    backgroundColor: Colors.dark.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingBottom: 36, paddingTop: 8,
+  },
+  sheetHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border,
+    alignSelf: "center", marginBottom: 20,
+  },
+  sheetHeader: {
+    flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20,
+  },
+  sheetTitle: {
+    fontSize: 20, fontWeight: "700" as const,
+  },
+  sheetTerms: {
+    backgroundColor: Colors.dark.background, borderRadius: 14,
+    padding: 14, gap: 10, marginBottom: 20,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  sheetSwaygerTitle: {
+    fontSize: 16, fontWeight: "600" as const, color: Colors.dark.text, marginBottom: 4,
+  },
+  sheetRow: {
+    flexDirection: "row" as const, gap: 10,
+  },
+  sheetChip: {
+    flex: 1, backgroundColor: Colors.dark.surface, borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: Colors.dark.border, gap: 2,
+  },
+  sheetChipLabel: {
+    fontSize: 10, fontWeight: "600" as const, color: Colors.dark.tabIconDefault,
+    textTransform: "uppercase" as const, letterSpacing: 0.6,
+  },
+  sheetChipValue: {
+    fontSize: 14, fontWeight: "600" as const, color: Colors.dark.text,
+  },
+  sheetSendBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 16, borderRadius: 14, marginBottom: 12,
+  },
+  sheetSendText: {
+    fontSize: 16, fontWeight: "700" as const, color: "#fff",
+  },
+  sheetEditBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 12, borderRadius: 14,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  sheetEditText: {
+    fontSize: 15, fontWeight: "600" as const, color: Colors.dark.tint,
   },
 });

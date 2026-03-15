@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { createSwayger, CATEGORIES } from "@/lib/swayger";
+import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 
@@ -31,15 +32,21 @@ export default function CreateSwaygerScreen() {
     counterDescription?: string;
     counterStake?: string;
     counterOpponentUsername?: string;
+    lockedOpponentId?: string;
+    lockedOpponentUsername?: string;
+    sourceSwaygerIdForEdit?: string;
+    rematchTypeForEdit?: string;
+    creatorPickPrefill?: string;
   }>();
 
-  const isCounter = !!params.counterTitle;
+  const isCounter = !!params.counterTitle && !params.lockedOpponentId;
+  const isRematch = !!params.lockedOpponentId;
 
   const [title, setTitle] = useState(params.counterTitle || "");
   const [description, setDescription] = useState(params.counterDescription || "");
   const [category, setCategory] = useState(params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(params.counterStake ? parseInt(params.counterStake, 10) : 0);
-  const [creatorPick, setCreatorPick] = useState("");
+  const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
 
   useEffect(() => {
     if (params.counterTitle) {
@@ -47,7 +54,7 @@ export default function CreateSwaygerScreen() {
       setDescription(params.counterDescription || "");
       setCategory(params.counterCategory || "Sports");
       setStakeUnits(params.counterStake ? parseInt(params.counterStake, 10) : 0);
-      setCreatorPick("");
+      setCreatorPick(params.creatorPickPrefill || "");
     }
   }, [params.counterTitle]);
 
@@ -56,10 +63,18 @@ export default function CreateSwaygerScreen() {
   const mutation = useMutation({
     mutationFn: () =>
       createSwayger(title, category, stakeUnits, creatorPick, user!.id, description),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.error) {
         showError(result.error);
         return;
+      }
+      if (result.swayger && params.lockedOpponentId) {
+        const updates: Record<string, unknown> = { opponent_id: params.lockedOpponentId };
+        if (params.sourceSwaygerIdForEdit) {
+          updates.source_swayger_id = params.sourceSwaygerIdForEdit;
+          updates.rematch_type = params.rematchTypeForEdit;
+        }
+        await supabase.from("swaygers").update(updates).eq("id", result.swayger.id);
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       setTitle("");
@@ -99,9 +114,15 @@ export default function CreateSwaygerScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>{isCounter ? "Counter Offer" : "Create Swayger"}</Text>
+          <Text style={styles.title}>
+            {isRematch
+              ? (params.rematchTypeForEdit === "double_or_nothing" ? "Double or Nothing" : "Run it Back")
+              : isCounter ? "Counter Offer" : "Create Swayger"}
+          </Text>
           <Text style={styles.subtitle}>
-            {isCounter && params.counterOpponentUsername
+            {isRematch
+              ? `vs @${params.lockedOpponentUsername || "opponent"}`
+              : isCounter && params.counterOpponentUsername
               ? `Countering @${params.counterOpponentUsername}'s invite`
               : "Set up a 1v1 wager"}
           </Text>
@@ -113,6 +134,23 @@ export default function CreateSwaygerScreen() {
             <Text style={styles.counterBannerText}>
               Terms pre-filled from the original invite. Adjust anything you want, then share your counter.
             </Text>
+          </View>
+        )}
+
+        {isRematch && (
+          <View style={styles.lockedOpponentBanner}>
+            <View style={styles.lockedOpponentLeft}>
+              <Ionicons
+                name={params.rematchTypeForEdit === "double_or_nothing" ? "flame" : "refresh"}
+                size={16}
+                color={params.rematchTypeForEdit === "double_or_nothing" ? Colors.dark.accentGold : Colors.dark.tint}
+              />
+              <Text style={styles.lockedOpponentText}>
+                Rematch vs{" "}
+                <Text style={styles.lockedOpponentName}>@{params.lockedOpponentUsername}</Text>
+                {" "}— edit any terms before sending.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -304,6 +342,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.tint,
     lineHeight: 18,
+  },
+  lockedOpponentBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 24,
+    marginBottom: 4,
+  },
+  lockedOpponentLeft: {
+    flex: 1,
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 8,
+  },
+  lockedOpponentText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
+  },
+  lockedOpponentName: {
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
   },
   form: {
     paddingHorizontal: 24,
