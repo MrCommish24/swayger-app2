@@ -1119,7 +1119,7 @@ export default function SwaygerDetailScreen() {
               })
             }
           >
-            <Ionicons name="person-add-outline" size={16} color={Colors.dark.textSecondary} />
+            <Ionicons name="person-add-outline" size={16} color={Colors.dark.tint} />
             <Text style={styles.challengeElseText}>Same Swayger, New Opponent</Text>
           </Pressable>
         </View>
@@ -1603,10 +1603,11 @@ const styles = StyleSheet.create({
   rematchStake: { fontSize: 13, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },
   challengeElseBtn: {
     flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
-    gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.dark.border,
+    gap: 8, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1.5, borderColor: Colors.dark.tint,
+    backgroundColor: "rgba(29, 161, 242, 0.07)",
   },
-  challengeElseText: { fontSize: 14, color: Colors.dark.textSecondary, fontWeight: "500" as const },
+  challengeElseText: { fontSize: 15, color: Colors.dark.tint, fontWeight: "600" as const },
   statusBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: Colors.dark.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
