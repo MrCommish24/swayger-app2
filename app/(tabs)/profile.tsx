@@ -89,17 +89,18 @@ export default function ProfileScreen() {
     setDisplayNameDraft("");
     setSavingName(true);
     try {
+      console.log("[profile] saveDisplayName: attempting rpc for user", user.id);
       const { error: rpcErr } = await supabase.rpc("update_display_name", {
         p_display_name: trimmed,
       });
+      console.log("[profile] rpc result:", rpcErr ? rpcErr.message : "ok");
       if (rpcErr) {
-        console.error("[profile] update_display_name rpc error:", rpcErr);
         const { error: directErr } = await supabase
           .from("profiles")
           .update({ display_name: newDisplayName })
           .eq("id", user.id);
+        console.log("[profile] direct update result:", directErr ? directErr.message : "ok");
         if (directErr) {
-          console.error("[profile] direct update error:", directErr);
           setProfile(previousProfile);
           showError(directErr.message || "Could not save display name.");
           return;
