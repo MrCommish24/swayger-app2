@@ -363,6 +363,7 @@ export default function SwaygerDetailScreen() {
   const queryClient = useQueryClient();
 
   const [opponentPick, setOpponentPick] = useState("");
+  const [countering, setCountering] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showStreakCelebration, setShowStreakCelebration] = useState(false);
@@ -717,8 +718,36 @@ export default function SwaygerDetailScreen() {
     onError: () => showError("Failed to create rematch. Try again."),
   });
 
+  async function handleCounter() {
+    if (!swayger || !id) return;
+    setCountering(true);
+    try {
+      await declineSwayger(id);
+      sendPushNotification(
+        swayger.creator_id,
+        "Counter offer incoming! 🔄",
+        `Your "${swayger.title}" invite was declined — a counter is on the way.`,
+        { swayger_id: swayger.id }
+      );
+      router.replace({
+        pathname: "/(tabs)/create" as never,
+        params: {
+          counterTitle: swayger.title,
+          counterCategory: swayger.category,
+          counterDescription: swayger.description || "",
+          counterStake: String(swayger.stake_units),
+          counterOpponentId: swayger.creator_id,
+          counterOpponentUsername: profiles?.creator?.username || "",
+        },
+      });
+    } catch {
+      showError("Failed to send counter. Try again.");
+      setCountering(false);
+    }
+  }
+
   const anyPending =
-    acceptMutation.isPending || declineMutation.isPending ||
+    acceptMutation.isPending || declineMutation.isPending || countering ||
     cancelMutation.isPending || proposeMutation.isPending || confirmMutation.isPending ||
     withdrawMutation.isPending || rematchMutation.isPending;
 
@@ -922,6 +951,24 @@ export default function SwaygerDetailScreen() {
               )}
             </Pressable>
           </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.counterOfferButton,
+              pressed && styles.btnPressed,
+              anyPending && styles.btnDisabled,
+            ]}
+            onPress={handleCounter}
+            disabled={anyPending}
+          >
+            {countering ? (
+              <ActivityIndicator color={Colors.dark.tint} size="small" />
+            ) : (
+              <>
+                <Ionicons name="swap-horizontal" size={16} color={Colors.dark.tint} />
+                <Text style={styles.counterOfferText}>Counter Offer</Text>
+              </>
+            )}
+          </Pressable>
         </View>
       )}
 
@@ -983,7 +1030,11 @@ export default function SwaygerDetailScreen() {
         <View style={styles.section}>
           <View style={styles.statusBanner}>
             <Ionicons name="close-circle" size={18} color="#EF4444" />
-            <Text style={styles.statusBannerText}>This Swayger was declined.</Text>
+            <Text style={styles.statusBannerText}>
+              {profiles?.opponent?.username
+                ? `Declined by @${profiles.opponent.username}`
+                : "This Swayger was declined."}
+            </Text>
           </View>
         </View>
       )}
@@ -992,7 +1043,16 @@ export default function SwaygerDetailScreen() {
         <View style={styles.section}>
           <View style={styles.statusBanner}>
             <Ionicons name="ban-outline" size={18} color={Colors.dark.tabIconDefault} />
-            <Text style={styles.statusBannerText}>This Swayger was canceled.</Text>
+            <Text style={styles.statusBannerText}>
+              {(() => {
+                if (!swayger.cancelled_by) return "This Swayger was canceled.";
+                if (swayger.cancelled_by === swayger.creator_id && profiles?.creator?.username)
+                  return `Canceled by @${profiles.creator.username}`;
+                if (swayger.cancelled_by === swayger.opponent_id && profiles?.opponent?.username)
+                  return `Canceled by @${profiles.opponent.username}`;
+                return "This Swayger was canceled.";
+              })()}
+            </Text>
           </View>
         </View>
       )}
@@ -1261,6 +1321,12 @@ const styles = StyleSheet.create({
     justifyContent: "center", paddingVertical: 16, borderRadius: 12,
   },
   declineButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "600" as const },
+  counterOfferButton: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1,
+    borderColor: Colors.dark.tint, marginTop: 8,
+  },
+  counterOfferText: { color: Colors.dark.tint, fontSize: 14, fontWeight: "600" as const },
   cancelButton: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: "#EF4444",

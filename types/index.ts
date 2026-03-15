@@ -34,6 +34,7 @@ export interface SwaygerData {
   settled_outcome: string | null;
   accepted_at: string | null;
   settled_at: string | null;
+  cancelled_by: string | null;
   created_at: string;
   updated_at: string;
 }

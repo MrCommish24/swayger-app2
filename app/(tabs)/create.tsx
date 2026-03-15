@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,12 +25,31 @@ export default function CreateSwaygerScreen() {
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const params = useLocalSearchParams<{
+    counterTitle?: string;
+    counterCategory?: string;
+    counterDescription?: string;
+    counterStake?: string;
+    counterOpponentUsername?: string;
+  }>();
 
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("Sports");
-  const [stakeUnits, setStakeUnits] = useState(1);
+  const isCounter = !!params.counterTitle;
+
+  const [title, setTitle] = useState(params.counterTitle || "");
+  const [description, setDescription] = useState(params.counterDescription || "");
+  const [category, setCategory] = useState(params.counterCategory || "Sports");
+  const [stakeUnits, setStakeUnits] = useState(params.counterStake ? parseInt(params.counterStake, 10) : 1);
   const [creatorPick, setCreatorPick] = useState("");
+
+  useEffect(() => {
+    if (params.counterTitle) {
+      setTitle(params.counterTitle);
+      setDescription(params.counterDescription || "");
+      setCategory(params.counterCategory || "Sports");
+      setStakeUnits(params.counterStake ? parseInt(params.counterStake, 10) : 1);
+      setCreatorPick("");
+    }
+  }, [params.counterTitle]);
 
   const canSubmit = title.trim().length >= 2 && creatorPick.trim().length > 0;
 
@@ -80,9 +99,22 @@ export default function CreateSwaygerScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Create Swayger</Text>
-          <Text style={styles.subtitle}>Set up a 1v1 wager</Text>
+          <Text style={styles.title}>{isCounter ? "Counter Offer" : "Create Swayger"}</Text>
+          <Text style={styles.subtitle}>
+            {isCounter && params.counterOpponentUsername
+              ? `Countering @${params.counterOpponentUsername}'s invite`
+              : "Set up a 1v1 wager"}
+          </Text>
         </View>
+
+        {isCounter && (
+          <View style={styles.counterBanner}>
+            <Ionicons name="swap-horizontal" size={16} color={Colors.dark.tint} />
+            <Text style={styles.counterBannerText}>
+              Terms pre-filled from the original invite. Adjust anything you want, then share your counter.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.form}>
           <View>
@@ -251,6 +283,24 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 15,
     color: Colors.dark.textSecondary,
+  },
+  counterBanner: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 8,
+    backgroundColor: `${Colors.dark.tint}15`,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.tint}40`,
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 24,
+    marginBottom: 4,
+  },
+  counterBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.dark.tint,
+    lineHeight: 18,
   },
   form: {
     paddingHorizontal: 24,
