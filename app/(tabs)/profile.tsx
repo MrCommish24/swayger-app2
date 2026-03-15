@@ -76,7 +76,9 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    if (!user || !profile) return;
+    console.log("[profile] saveDisplayName called, user:", !!user, "profile:", !!profile);
+    if (!user) { showError("Not signed in"); return; }
+    if (!profile) { showError("Profile not loaded — try reloading"); return; }
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
       showError("Display name must be 50 characters or less.");
