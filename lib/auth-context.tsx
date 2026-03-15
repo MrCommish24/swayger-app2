@@ -96,7 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setNeedsUsername(false);
         }
       } else if (data) {
-        setProfile(data as Profile);
+        const fetched = data as Profile;
+        setProfile((prev) => ({
+          ...fetched,
+          display_name: fetched.display_name ?? prev?.display_name ?? null,
+        }));
         setNeedsUsername(false);
         setProfileError(null);
         supabase.rpc("update_last_seen").catch(() => {});

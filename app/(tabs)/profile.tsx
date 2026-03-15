@@ -76,31 +76,31 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    if (!user) return;
+    if (!user || !profile) return;
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
       showError("Display name must be 50 characters or less.");
       return;
     }
+    const newDisplayName = trimmed || null;
+    const previousProfile = profile;
+    setProfile({ ...profile, display_name: newDisplayName });
+    setShowEditName(false);
+    setDisplayNameDraft("");
     setSavingName(true);
     try {
-      const { error: rpcError } = await supabase.rpc("update_display_name", {
-        p_display_name: trimmed || "",
-      });
-      if (rpcError) {
-        showError(rpcError.message);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ display_name: newDisplayName, updated_at: new Date().toISOString() })
+        .eq("id", user.id);
+      if (error) {
+        setProfile(previousProfile);
+        showError(error.message);
         return;
       }
-      const { data: fresh } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      if (fresh) setProfile(fresh as Profile);
-      setShowEditName(false);
-      setDisplayNameDraft("");
       showMessage("Saved", "Display name updated.");
     } catch {
+      setProfile(previousProfile);
       showError("Something went wrong. Try again.");
     } finally {
       setSavingName(false);
