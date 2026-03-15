@@ -307,7 +307,7 @@ export default function LeaderboardScreen() {
         </View>
         <View style={styles.userCol}>
           <View style={[styles.entryAvatar, isMe && styles.entryAvatarMe]}>
-            <Text style={styles.entryInitial}>
+            <Text style={[styles.entryInitial, isMe && styles.entryInitialMe]}>
               {(item.displayName || item.username).charAt(0).toUpperCase()}
             </Text>
           </View>
@@ -453,6 +453,7 @@ const styles = StyleSheet.create({
   },
   entryAvatarMe: { backgroundColor: Colors.dark.accent },
   entryInitial: { fontSize: 16, fontWeight: "600" as const, color: Colors.dark.tint },
+  entryInitialMe: { color: "#ffffff" },
   entryInfo: { flex: 1, gap: 2 },
   entryNameRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6 },
   entryName: { fontSize: 15, fontWeight: "600" as const, color: Colors.dark.text },
