@@ -85,6 +85,9 @@ async function fetchAppBaseUrl(): Promise<string> {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return window.location.origin;
   }
+  if (process.env.EXPO_PUBLIC_APP_URL) {
+    return process.env.EXPO_PUBLIC_APP_URL;
+  }
   try {
     const { getApiUrl } = await import("@/lib/query-client");
     const res = await fetch(`${getApiUrl()}api/config`);
