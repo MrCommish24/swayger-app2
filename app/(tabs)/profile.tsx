@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError, showMessage, getAvatarColor } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+import type { Profile } from "@/types";
 import { verifyGameplaySchema } from "@/lib/verify-schema";
 
 interface SchemaCheck {
@@ -83,18 +84,31 @@ export default function ProfileScreen() {
     }
     setSavingName(true);
     try {
-      const { error } = await supabase.rpc("update_display_name", {
+      // Verify session before calling RPC
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log("[profile] session check:", sessionData?.session?.user?.id ?? "NO SESSION");
+      // Step 1: call the RPC
+      const { error: rpcError } = await supabase.rpc("update_display_name", {
         p_display_name: trimmed || "",
       });
-      if (error) {
-        showError(error.message);
-      } else {
-        retryProfileFetch();
-        setShowEditName(false);
-        setDisplayNameDraft("");
-        showMessage("Saved", "Display name updated.");
+      console.log("[profile] rpc error:", rpcError, "| userId:", user.id, "| trimmed:", trimmed);
+      if (rpcError) {
+        showError(rpcError.message);
+        return;
       }
-    } catch {
+      // Step 2: re-fetch the profile directly
+      const { data: fresh, error: fetchError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      console.log("[profile] fresh profile:", fresh, "| fetchError:", fetchError);
+      if (fresh) setProfile(fresh as Profile);
+      setShowEditName(false);
+      setDisplayNameDraft("");
+      showMessage("Saved", "Display name updated.");
+    } catch (e) {
+      console.error("[profile] saveDisplayName exception:", e);
       showError("Something went wrong. Try again.");
     } finally {
       setSavingName(false);
