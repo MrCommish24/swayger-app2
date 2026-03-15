@@ -90,10 +90,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === "PGRST116") {
           setNeedsUsername(true);
           setProfile(null);
+          // PGRST116 = no row found = needs username setup, keep ref set
         } else {
           setProfileError(error.message);
           setProfile(null);
           setNeedsUsername(false);
+          // Clear ref so next auth event can retry the fetch
+          profileFetchedRef.current = null;
         }
       } else if (data) {
         const fetched = data as Profile;
@@ -112,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const message = e instanceof Error ? e.message : "Failed to load profile";
       setProfileError(message);
       setProfile(null);
+      profileFetchedRef.current = null;
     } finally {
       setIsLoading(false);
     }

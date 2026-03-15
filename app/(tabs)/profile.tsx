@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -27,7 +27,7 @@ interface SchemaCheck {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user, profile, setProfile, signOut } = useAuth();
+  const { user, profile, setProfile, retryProfileFetch, isLoading, profileError, signOut } = useAuth();
 
   const [showEditName, setShowEditName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
@@ -42,6 +42,12 @@ export default function ProfileScreen() {
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && !profile && !profileError && user) {
+      retryProfileFetch();
+    }
+  }, [isLoading, profile, profileError, user]);
 
   const avatarSeed = profile?.username || user?.email || "?";
   const avatarColor = getAvatarColor(avatarSeed);
@@ -76,9 +82,7 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    console.log("[profile] saveDisplayName called, user:", !!user, "profile:", !!profile);
-    if (!user) { showError("Not signed in"); return; }
-    if (!profile) { showError("Profile not loaded — try reloading"); return; }
+    if (!user || !profile) { retryProfileFetch(); return; }
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
       showError("Display name must be 50 characters or less.");
@@ -91,17 +95,14 @@ export default function ProfileScreen() {
     setDisplayNameDraft("");
     setSavingName(true);
     try {
-      console.log("[profile] saveDisplayName: attempting rpc for user", user.id);
       const { error: rpcErr } = await supabase.rpc("update_display_name", {
         p_display_name: trimmed,
       });
-      console.log("[profile] rpc result:", rpcErr ? rpcErr.message : "ok");
       if (rpcErr) {
         const { error: directErr } = await supabase
           .from("profiles")
           .update({ display_name: newDisplayName })
           .eq("id", user.id);
-        console.log("[profile] direct update result:", directErr ? directErr.message : "ok");
         if (directErr) {
           setProfile(previousProfile);
           showError(directErr.message || "Could not save display name.");
@@ -109,8 +110,7 @@ export default function ProfileScreen() {
         }
       }
       showMessage("Saved", "Display name updated.");
-    } catch (e) {
-      console.error("[profile] saveDisplayName exception:", e);
+    } catch {
       setProfile(previousProfile);
       showError("Something went wrong. Try again.");
     } finally {
