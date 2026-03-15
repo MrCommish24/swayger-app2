@@ -70,12 +70,30 @@ function buildInviteLink(inviteCode: string): string {
   return Linking.createURL(`/invite/${inviteCode}`);
 }
 
-function buildSwaygerLink(swaygerIdParam: string): string {
+function buildSwaygerLink(swaygerIdParam: string, baseUrl?: string): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return `${window.location.origin}/swayger/${swaygerIdParam}`;
   }
-  const domain = process.env.EXPO_PUBLIC_DOMAIN || "";
+  if (baseUrl) {
+    return `${baseUrl}/swayger/${swaygerIdParam}`;
+  }
+  const domain = (process.env.EXPO_PUBLIC_DOMAIN || "").replace(/:\d+$/, "");
   return domain ? `https://${domain}/swayger/${swaygerIdParam}` : Linking.createURL(`/swayger/${swaygerIdParam}`);
+}
+
+async function fetchAppBaseUrl(): Promise<string> {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  try {
+    const { getApiUrl } = await import("@/lib/query-client");
+    const res = await fetch(`${getApiUrl()}api/config`);
+    const data = await res.json();
+    if (data.appUrl) return data.appUrl;
+  } catch {
+  }
+  const domain = (process.env.EXPO_PUBLIC_DOMAIN || "").replace(/:\d+$/, "");
+  return domain ? `https://${domain}` : "";
 }
 
 function buildShareMessage(
@@ -403,7 +421,8 @@ export default function SwaygerDetailScreen() {
 
   async function handleShareSwayger() {
     if (!swayger || !id) return;
-    const link = buildSwaygerLink(id);
+    const baseUrl = await fetchAppBaseUrl();
+    const link = buildSwaygerLink(id, baseUrl);
     const myName = profile?.display_name || profile?.username || "Someone";
     const message = buildShareMessage(swayger, myName, link);
     try {
