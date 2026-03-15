@@ -38,7 +38,7 @@ export default function CreateSwaygerScreen() {
   const [title, setTitle] = useState(params.counterTitle || "");
   const [description, setDescription] = useState(params.counterDescription || "");
   const [category, setCategory] = useState(params.counterCategory || "Sports");
-  const [stakeUnits, setStakeUnits] = useState(params.counterStake ? parseInt(params.counterStake, 10) : 1);
+  const [stakeUnits, setStakeUnits] = useState(params.counterStake ? parseInt(params.counterStake, 10) : 0);
   const [creatorPick, setCreatorPick] = useState("");
 
   useEffect(() => {
@@ -46,12 +46,12 @@ export default function CreateSwaygerScreen() {
       setTitle(params.counterTitle);
       setDescription(params.counterDescription || "");
       setCategory(params.counterCategory || "Sports");
-      setStakeUnits(params.counterStake ? parseInt(params.counterStake, 10) : 1);
+      setStakeUnits(params.counterStake ? parseInt(params.counterStake, 10) : 0);
       setCreatorPick("");
     }
   }, [params.counterTitle]);
 
-  const canSubmit = title.trim().length >= 2 && creatorPick.trim().length > 0;
+  const canSubmit = title.trim().length >= 2 && creatorPick.trim().length > 0 && stakeUnits >= 1;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -65,7 +65,7 @@ export default function CreateSwaygerScreen() {
       setTitle("");
       setDescription("");
       setCategory("Sports");
-      setStakeUnits(1);
+      setStakeUnits(0);
       setCreatorPick("");
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}`);
@@ -183,12 +183,15 @@ export default function CreateSwaygerScreen() {
             <Text style={styles.label}>Stake (units)</Text>
             <View style={styles.stakeRow}>
               <Pressable
-                style={styles.stakeButton}
-                onPress={() => setStakeUnits((v) => Math.max(1, v - 1))}
+                style={[styles.stakeButton, stakeUnits === 0 && styles.stakeButtonDisabled]}
+                onPress={() => setStakeUnits((v) => Math.max(0, v - 1))}
+                disabled={stakeUnits === 0}
               >
-                <Ionicons name="remove" size={20} color={Colors.dark.text} />
+                <Ionicons name="remove" size={20} color={stakeUnits === 0 ? Colors.dark.tabIconDefault : Colors.dark.text} />
               </Pressable>
-              <Text style={styles.stakeValue}>{stakeUnits}</Text>
+              <Text style={[styles.stakeValue, stakeUnits === 0 && styles.stakeValueZero]}>
+                {stakeUnits === 0 ? "—" : stakeUnits}
+              </Text>
               <Pressable
                 style={styles.stakeButton}
                 onPress={() => setStakeUnits((v) => Math.min(10000, v + 1))}
@@ -197,7 +200,7 @@ export default function CreateSwaygerScreen() {
               </Pressable>
             </View>
             <View style={styles.quickPickRow}>
-              {[10, 25, 50, 100].map((amount) => (
+              {[5, 10, 25, 50].map((amount) => (
                 <Pressable
                   key={amount}
                   style={({ pressed }) => [
@@ -215,7 +218,7 @@ export default function CreateSwaygerScreen() {
                   styles.quickPickClear,
                   pressed && styles.quickPickChipPressed,
                 ]}
-                onPress={() => setStakeUnits(1)}
+                onPress={() => setStakeUnits(0)}
               >
                 <Text style={[styles.quickPickText, styles.quickPickClearText]}>Reset</Text>
               </Pressable>
@@ -415,6 +418,13 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
     minWidth: 40,
     textAlign: "center",
+  },
+  stakeValueZero: {
+    color: Colors.dark.tabIconDefault,
+    fontSize: 24,
+  },
+  stakeButtonDisabled: {
+    opacity: 0.35,
   },
   button: {
     backgroundColor: Colors.dark.accent,
