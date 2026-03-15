@@ -70,23 +70,16 @@ function buildInviteLink(inviteCode: string): string {
   return Linking.createURL(`/invite/${inviteCode}`);
 }
 
-function buildSwaygerLink(swaygerIdParam: string, baseUrl?: string): string {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}/swayger/${swaygerIdParam}`;
-  }
-  if (baseUrl) {
-    return `${baseUrl}/swayger/${swaygerIdParam}`;
-  }
-  const domain = (process.env.EXPO_PUBLIC_DOMAIN || "").replace(/:\d+$/, "");
-  return domain ? `https://${domain}/swayger/${swaygerIdParam}` : Linking.createURL(`/swayger/${swaygerIdParam}`);
+function buildSwaygerLink(swaygerIdParam: string, baseUrl: string): string {
+  return `${baseUrl}/swayger/${swaygerIdParam}`;
 }
 
 async function fetchAppBaseUrl(): Promise<string> {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    return window.location.origin;
-  }
   if (process.env.EXPO_PUBLIC_APP_URL) {
     return process.env.EXPO_PUBLIC_APP_URL;
+  }
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return window.location.origin;
   }
   try {
     const { getApiUrl } = await import("@/lib/query-client");
@@ -123,11 +116,9 @@ function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swayge
   const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
   useEffect(() => {
-    if (Platform.OS !== "web") {
-      fetchAppBaseUrl().then((baseUrl) => {
-        if (baseUrl) setInviteLink(`${baseUrl}/join?code=${inviteCode}`);
-      });
-    }
+    fetchAppBaseUrl().then((baseUrl) => {
+      if (baseUrl) setInviteLink(`${baseUrl}/join?code=${inviteCode}`);
+    });
   }, [inviteCode]);
 
   async function handleCopyLink() {
