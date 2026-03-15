@@ -117,8 +117,15 @@ function buildShareMessage(
 
 function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
   const [linkCopied, setLinkCopied] = useState(false);
+  const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
-  const inviteLink = buildInviteLink(inviteCode);
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      fetchAppBaseUrl().then((baseUrl) => {
+        if (baseUrl) setInviteLink(`${baseUrl}/join?code=${inviteCode}`);
+      });
+    }
+  }, [inviteCode]);
 
   async function handleCopyLink() {
     await Clipboard.setStringAsync(inviteLink);
