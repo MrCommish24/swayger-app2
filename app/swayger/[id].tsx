@@ -106,7 +106,7 @@ function buildShareMessage(
     return `${challengerName} isn't satisfied — they're coming for double. 🔥\n\nDouble or Nothing on "${title}"\n${category} · ${stakeStr} on the line\n\nYou accepting? ${link}`;
   }
   if (swaygerData.rematch_type === "run_it_back") {
-    return `${challengerName} wants to run it back. 🔄\n\nRematch: "${title}"\n${category} · ${stakeStr}\n\nSame terms. You in? ${link}`;
+    return `${challengerName} wants to run it back. 🔄\n\nRematch: "${title}"\n${category} · ${stakeStr}\n\nYou in? ${link}`;
   }
   return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
 }
