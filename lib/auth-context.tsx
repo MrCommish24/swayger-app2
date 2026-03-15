@@ -79,12 +79,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function fetchProfile(userId: string) {
     profileFetchedRef.current = userId;
     setProfileError(null);
+    console.log("[auth-context] fetchProfile start, userId:", userId);
     try {
-      const { data, error } = await supabase
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Profile fetch timed out")), 12000)
+      );
+      const queryPromise = supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .single();
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>;
 
       if (error) {
         if (error.code === "PGRST116") {
@@ -92,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(null);
           // PGRST116 = no row found = needs username setup, keep ref set
         } else {
+          console.error("[auth-context] fetchProfile error:", error.code, error.message, error.details, error.hint);
           setProfileError(error.message);
           setProfile(null);
           setNeedsUsername(false);

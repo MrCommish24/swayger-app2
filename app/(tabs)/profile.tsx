@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -44,12 +44,6 @@ export default function ProfileScreen() {
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
 
-  useEffect(() => {
-    if (!isLoading && !profile && !profileError && user) {
-      retryProfileFetch();
-    }
-  }, [isLoading, profile, profileError, user]);
-
   const avatarSeed = profile?.username || user?.email || "?";
   const avatarColor = getAvatarColor(avatarSeed);
   const avatarInitial = (profile?.username || user?.email || "?")
@@ -83,10 +77,35 @@ export default function ProfileScreen() {
   }
 
   async function saveDisplayName() {
-    if (!user || !profile) {
-      setDebugMsg(`blocked: user=${!!user} profile=${!!profile}`);
-      retryProfileFetch();
-      return;
+    if (!user) { showError("Not signed in"); return; }
+    let currentProfile = profile;
+    if (!currentProfile) {
+      // Profile hasn't loaded yet — try a direct fetch inline
+      setDebugMsg("profile null, fetching inline...");
+      try {
+        const inlineTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 8000)
+        );
+        const result = await Promise.race([
+          supabase.from("profiles").select("*").eq("id", user.id).single(),
+          inlineTimeout,
+        ]);
+        const { data } = result as { data: typeof profile; error: unknown };
+        if (data) {
+          currentProfile = data as typeof profile;
+          setProfile(currentProfile);
+          setDebugMsg("inline fetch ok");
+        } else {
+          setDebugMsg("inline fetch: no row — profile doesn't exist yet");
+          showError("Profile not found. Please reload.");
+          return;
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "network error";
+        setDebugMsg(`inline fetch failed: ${msg}`);
+        showError("Network error — check your connection and try again.");
+        return;
+      }
     }
     const trimmed = displayNameDraft.trim();
     if (trimmed.length > 50) {
@@ -94,8 +113,8 @@ export default function ProfileScreen() {
       return;
     }
     const newDisplayName = trimmed || null;
-    const previousProfile = profile;
-    setProfile({ ...profile, display_name: newDisplayName });
+    const previousProfile = currentProfile!;
+    setProfile({ ...currentProfile!, display_name: newDisplayName });
     setShowEditName(false);
     setDisplayNameDraft("");
     setSavingName(true);
@@ -162,6 +181,27 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Profile</Text>
       </View>
+
+      {/* Profile loading indicator */}
+      {isLoading && !profile && user && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, margin: 12, opacity: 0.6 }}>
+          <ActivityIndicator size="small" color={Colors.dark.tabIconDefault} />
+          <Text style={{ color: Colors.dark.tabIconDefault, fontSize: 13, fontFamily: "Inter_400Regular" }}>Loading profile…</Text>
+        </View>
+      )}
+
+      {/* Profile load failure banner */}
+      {!isLoading && !profile && user && (
+        <View style={{ backgroundColor: "#7f1d1d", margin: 12, borderRadius: 10, padding: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Ionicons name="warning-outline" size={18} color="#fca5a5" />
+          <Text style={{ color: "#fca5a5", flex: 1, fontSize: 13, fontFamily: "Inter_400Regular" }}>
+            {profileError ? `Profile error: ${profileError}` : "Profile not loaded — tap to retry"}
+          </Text>
+          <Pressable onPress={retryProfileFetch} style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 6 }}>
+            <Text style={{ color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" }}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
