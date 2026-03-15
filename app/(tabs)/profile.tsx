@@ -89,17 +89,25 @@ export default function ProfileScreen() {
     setDisplayNameDraft("");
     setSavingName(true);
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ display_name: newDisplayName, updated_at: new Date().toISOString() })
-        .eq("id", user.id);
-      if (error) {
-        setProfile(previousProfile);
-        showError(error.message);
-        return;
+      const { error: rpcErr } = await supabase.rpc("update_display_name", {
+        p_display_name: trimmed,
+      });
+      if (rpcErr) {
+        console.error("[profile] update_display_name rpc error:", rpcErr);
+        const { error: directErr } = await supabase
+          .from("profiles")
+          .update({ display_name: newDisplayName })
+          .eq("id", user.id);
+        if (directErr) {
+          console.error("[profile] direct update error:", directErr);
+          setProfile(previousProfile);
+          showError(directErr.message || "Could not save display name.");
+          return;
+        }
       }
       showMessage("Saved", "Display name updated.");
-    } catch {
+    } catch (e) {
+      console.error("[profile] saveDisplayName exception:", e);
       setProfile(previousProfile);
       showError("Something went wrong. Try again.");
     } finally {
