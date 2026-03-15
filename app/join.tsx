@@ -43,10 +43,28 @@ export default function JoinScreen() {
 
   function handleBarCodeScanned({ data }: { data: string }) {
     setScanning(false);
-    let scannedCode = data.trim().toUpperCase();
-    if (scannedCode.startsWith("SWAYGER:")) {
-      scannedCode = scannedCode.replace("SWAYGER:", "");
-    }
+    let scannedCode = data.trim();
+
+    // Full URL formats:
+    // exp://host/--/invite/CODE  (Expo Go deep link)
+    // https://host/invite/CODE   (web link)
+    // https://host/join?code=CODE (web join link)
+    // swayger:///invite/CODE     (custom scheme)
+    try {
+      const inviteMatch = scannedCode.match(/\/invite\/([A-Za-z0-9]+)/i);
+      if (inviteMatch) {
+        scannedCode = inviteMatch[1];
+      } else {
+        const codeParam = scannedCode.match(/[?&]code=([A-Za-z0-9]+)/i);
+        if (codeParam) {
+          scannedCode = codeParam[1];
+        } else if (scannedCode.toUpperCase().startsWith("SWAYGER:")) {
+          scannedCode = scannedCode.slice("SWAYGER:".length);
+        }
+      }
+    } catch {}
+
+    scannedCode = scannedCode.toUpperCase().trim();
     if (scannedCode.length >= 4) {
       router.push(`/invite/${scannedCode}`);
     }
