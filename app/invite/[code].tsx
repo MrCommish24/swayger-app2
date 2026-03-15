@@ -39,6 +39,7 @@ export default function InviteScreen() {
 
   const [opponentPick, setOpponentPick] = useState("");
   const [joinedId, setJoinedId] = useState<string | null>(null);
+  const [countering, setCountering] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const joinMutation = useMutation({
@@ -127,7 +128,39 @@ export default function InviteScreen() {
     onError: () => showError("Failed to decline. Try again."),
   });
 
-  const anyPending = joinMutation.isPending || acceptMutation.isPending || declineMutation.isPending;
+  const anyPending = joinMutation.isPending || acceptMutation.isPending || declineMutation.isPending || countering;
+
+  const handleCounter = async () => {
+    if (!swayger || !joinedId) return;
+    setCountering(true);
+    try {
+      const result = await declineSwayger(joinedId);
+      if (result.error) { showError(result.error); setCountering(false); return; }
+      queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+      const creatorName = profiles?.creator?.username || "";
+      if (swayger.creator_id) {
+        sendPushNotification(
+          swayger.creator_id,
+          "Counter offer incoming! 🔄",
+          `Your opponent countered "${swayger.title}". Check the new proposal!`,
+          { swayger_id: swayger.id }
+        );
+      }
+      router.replace({
+        pathname: "/(tabs)/create" as never,
+        params: {
+          counterTitle: swayger.title,
+          counterCategory: swayger.category,
+          counterDescription: swayger.description || "",
+          counterStake: String(swayger.stake_units),
+          counterOpponentUsername: creatorName,
+        },
+      } as never);
+    } catch {
+      showError("Failed to counter. Try again.");
+      setCountering(false);
+    }
+  };
 
   if (!code || !user) {
     return (
@@ -306,6 +339,24 @@ export default function InviteScreen() {
               )}
             </Pressable>
           </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.counterOfferButton,
+              pressed && styles.btnPressed,
+              anyPending && styles.btnDisabled,
+            ]}
+            onPress={handleCounter}
+            disabled={anyPending}
+          >
+            {countering ? (
+              <ActivityIndicator color={Colors.dark.tint} size="small" />
+            ) : (
+              <>
+                <Ionicons name="swap-horizontal" size={16} color={Colors.dark.tint} />
+                <Text style={styles.counterOfferText}>Counter Offer</Text>
+              </>
+            )}
+          </Pressable>
         </View>
       )}
 
@@ -397,4 +448,10 @@ const styles = StyleSheet.create({
   declineButtonText: { color: "#EF4444", fontSize: 15, fontWeight: "600" as const },
   btnPressed: { opacity: 0.8 },
   btnDisabled: { opacity: 0.5 },
+  counterOfferButton: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 6, paddingVertical: 12, borderRadius: 12, borderWidth: 1,
+    borderColor: Colors.dark.tint, backgroundColor: "transparent",
+  },
+  counterOfferText: { color: Colors.dark.tint, fontSize: 14, fontWeight: "600" as const },
 });
