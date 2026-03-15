@@ -270,6 +270,8 @@ export default function LeaderboardScreen() {
   const { data, isLoading } = useQuery<AllSettledData>({
     queryKey: ["leaderboard-all"],
     queryFn: fetchAllSettled,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const allRows = data?.rows ?? [];
