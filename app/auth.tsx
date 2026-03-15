@@ -197,12 +197,6 @@ export default function AuthScreen() {
                   <Text style={styles.buttonText}>Send Sign-In Code</Text>
                 )}
               </Pressable>
-              <Pressable
-                style={styles.linkButton}
-                onPress={() => setStep("password-login")}
-              >
-                <Text style={styles.linkText}>Sign in with password</Text>
-              </Pressable>
             </View>
           )}
 

@@ -33,12 +33,6 @@ export default function ProfileScreen() {
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  const [showSetPassword, setShowSetPassword] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [passwordSet, setPasswordSet] = useState(false);
-
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
@@ -154,33 +148,6 @@ export default function ProfileScreen() {
     }
   }
 
-  async function handleSetPassword() {
-    if (newPassword.length < 6) {
-      showError("Password must be at least 6 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      showError("Passwords don't match.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        showError(error.message);
-      } else {
-        setPasswordSet(true);
-        setShowSetPassword(false);
-        setNewPassword("");
-        setConfirmPassword("");
-      }
-    } catch {
-      showError("Something went wrong. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
@@ -289,78 +256,6 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* Password row */}
-          {passwordSet && (
-            <View style={styles.successBanner}>
-              <Ionicons name="checkmark-circle" size={18} color="#22C55E" />
-              <Text style={styles.successText}>
-                Password set! You can now sign in with email + password.
-              </Text>
-            </View>
-          )}
-
-          {!showSetPassword ? (
-            <Pressable
-              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-              onPress={() => setShowSetPassword(true)}
-            >
-              <Ionicons name="key-outline" size={20} color={Colors.dark.text} />
-              <Text style={[styles.menuItemText, { flex: 1 }]}>
-                {passwordSet ? "Change Password" : "Set Password"}
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
-            </Pressable>
-          ) : (
-            <View style={styles.inlineForm}>
-              <Text style={styles.inlineFormLabel}>Set Password</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="New password (min 6 chars)"
-                placeholderTextColor={Colors.dark.tabIconDefault}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                editable={!saving}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm password"
-                placeholderTextColor={Colors.dark.tabIconDefault}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                editable={!saving}
-              />
-              <View style={styles.inlineFormButtons}>
-                <Pressable
-                  style={({ pressed }) => [styles.cancelBtn, pressed && styles.buttonPressed]}
-                  onPress={isWeb ? undefined : () => { setShowSetPassword(false); setNewPassword(""); setConfirmPassword(""); }}
-                  onPressIn={isWeb ? () => { setShowSetPassword(false); setNewPassword(""); setConfirmPassword(""); } : undefined}
-                  disabled={saving}
-                >
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.saveButton,
-                    pressed && styles.buttonPressed,
-                    saving && styles.buttonDisabled,
-                  ]}
-                  onPress={isWeb ? undefined : handleSetPassword}
-                  onPressIn={isWeb ? handleSetPassword : undefined}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save Password</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          )}
         </View>
 
         {/* Bottom area */}
