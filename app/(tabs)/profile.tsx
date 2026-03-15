@@ -32,7 +32,6 @@ export default function ProfileScreen() {
   const [showEditName, setShowEditName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
-  const [debugMsg, setDebugMsg] = useState("");
 
   const [showSetPassword, setShowSetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -81,7 +80,6 @@ export default function ProfileScreen() {
     let currentProfile = profile;
     if (!currentProfile) {
       // Profile hasn't loaded yet — try a direct fetch inline
-      setDebugMsg("profile null, fetching inline...");
       try {
         const inlineTimeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("timeout")), 8000)
@@ -94,15 +92,11 @@ export default function ProfileScreen() {
         if (data) {
           currentProfile = data as typeof profile;
           setProfile(currentProfile);
-          setDebugMsg("inline fetch ok");
         } else {
-          setDebugMsg("inline fetch: no row — profile doesn't exist yet");
           showError("Profile not found. Please reload.");
           return;
         }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "network error";
-        setDebugMsg(`inline fetch failed: ${msg}`);
+      } catch {
         showError("Network error — check your connection and try again.");
         return;
       }
@@ -123,25 +117,18 @@ export default function ProfileScreen() {
         p_display_name: trimmed,
       });
       if (rpcErr) {
-        setDebugMsg(`RPC failed: ${rpcErr.message} | trying direct...`);
         const { error: directErr } = await supabase
           .from("profiles")
           .update({ display_name: newDisplayName })
           .eq("id", user.id);
         if (directErr) {
-          setDebugMsg(`Both failed — RPC: ${rpcErr.message} | Direct: ${directErr.message}`);
           setProfile(previousProfile);
           showError(directErr.message || "Could not save display name.");
           return;
         }
-        setDebugMsg(`RPC failed but direct update ok. uid=${user.id}`);
-      } else {
-        setDebugMsg(`RPC ok. uid=${user.id} name=${trimmed}`);
       }
       showMessage("Saved", "Display name updated.");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setDebugMsg(`Exception: ${msg}`);
+    } catch {
       setProfile(previousProfile);
       showError("Something went wrong. Try again.");
     } finally {
@@ -204,13 +191,6 @@ export default function ProfileScreen() {
       )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-
-        {/* Debug banner - temporary */}
-        {isWeb && debugMsg !== "" && (
-          <View style={{ backgroundColor: "#1e3a5f", borderRadius: 8, margin: 12, padding: 10 }}>
-            <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_400Regular" }}>{debugMsg}</Text>
-          </View>
-        )}
 
         {/* Identity block */}
         <View style={styles.identityBlock}>
