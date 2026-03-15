@@ -1096,6 +1096,27 @@ export default function SwaygerDetailScreen() {
               </Text>
             </Pressable>
           </View>
+          <Pressable
+            style={({ pressed }) => [styles.challengeElseBtn, pressed && styles.btnPressed]}
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/create",
+                params: {
+                  counterTitle: swayger.title,
+                  counterCategory: swayger.category || "Sports",
+                  counterDescription: swayger.description || "",
+                  counterStake: String(swayger.stake_units),
+                  creatorPickPrefill: isCreator
+                    ? swayger.creator_pick
+                    : swayger.opponent_pick || "",
+                  openChallenge: "true",
+                },
+              })
+            }
+          >
+            <Ionicons name="person-add-outline" size={16} color={Colors.dark.textSecondary} />
+            <Text style={styles.challengeElseText}>Challenge Someone Else to This</Text>
+          </Pressable>
         </View>
       )}
 
@@ -1575,6 +1596,12 @@ const styles = StyleSheet.create({
   rematchButtonDouble: { borderColor: "rgba(245, 166, 35, 0.3)" },
   rematchButtonText: { flex: 1, fontSize: 15, fontWeight: "600" as const, color: Colors.dark.tint },
   rematchStake: { fontSize: 13, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },
+  challengeElseBtn: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 8, marginTop: 10, paddingVertical: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  challengeElseText: { fontSize: 14, color: Colors.dark.textSecondary, fontWeight: "500" as const },
   statusBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: Colors.dark.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,

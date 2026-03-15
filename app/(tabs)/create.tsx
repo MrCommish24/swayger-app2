@@ -37,9 +37,11 @@ export default function CreateSwaygerScreen() {
     sourceSwaygerIdForEdit?: string;
     rematchTypeForEdit?: string;
     creatorPickPrefill?: string;
+    openChallenge?: string;
   }>();
 
-  const isCounter = !!params.counterTitle && !params.lockedOpponentId;
+  const isOpenChallenge = params.openChallenge === "true";
+  const isCounter = !!params.counterTitle && !params.lockedOpponentId && !isOpenChallenge;
   const isRematch = !!params.lockedOpponentId;
 
   const [title, setTitle] = useState(params.counterTitle || "");
@@ -117,11 +119,13 @@ export default function CreateSwaygerScreen() {
           <Text style={styles.title}>
             {isRematch
               ? (params.rematchTypeForEdit === "double_or_nothing" ? "Double or Nothing" : "Run it Back")
+              : isOpenChallenge ? "Challenge Someone Else"
               : isCounter ? "Counter Offer" : "Create Swayger"}
           </Text>
           <Text style={styles.subtitle}>
             {isRematch
               ? `vs @${params.lockedOpponentUsername || "opponent"}`
+              : isOpenChallenge ? "Same terms, new opponent"
               : isCounter && params.counterOpponentUsername
               ? `Countering @${params.counterOpponentUsername}'s invite`
               : "Set up a 1v1 wager"}
@@ -133,6 +137,15 @@ export default function CreateSwaygerScreen() {
             <Ionicons name="swap-horizontal" size={16} color={Colors.dark.tint} />
             <Text style={styles.counterBannerText}>
               Terms pre-filled from the original invite. Adjust anything you want, then share your counter.
+            </Text>
+          </View>
+        )}
+
+        {isOpenChallenge && (
+          <View style={styles.counterBanner}>
+            <Ionicons name="person-add-outline" size={16} color={Colors.dark.tint} />
+            <Text style={styles.counterBannerText}>
+              Terms copied from a previous Swayger. Adjust anything, then pick a new opponent.
             </Text>
           </View>
         )}
