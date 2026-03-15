@@ -58,7 +58,6 @@ async function fetchAllSettled(): Promise<AllSettledData> {
     console.error("[leaderboard] fetch error:", error.message);
     return { rows: [], profileMap: new Map() };
   }
-  console.log("[leaderboard] settled rows:", settled?.length, settled?.map(s => s.settled_outcome));
   if (!settled || settled.length === 0) return { rows: [], profileMap: new Map() };
 
   const userIds = new Set<string>();
