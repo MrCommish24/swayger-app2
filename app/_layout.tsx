@@ -100,6 +100,8 @@ function RootLayoutNav() {
         <Stack.Screen name="swayger/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="invite/[code]" options={{ headerShown: false }} />
         <Stack.Screen name="join" options={{ headerShown: false }} />
+        <Stack.Screen name="h2h/index" options={{ headerShown: false }} />
+        <Stack.Screen name="h2h/[opponentId]" options={{ headerShown: false }} />
       </Stack>
       <ToastContainer />
     </>

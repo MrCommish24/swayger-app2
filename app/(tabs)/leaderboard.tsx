@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
+import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
@@ -265,6 +266,7 @@ export default function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("All");
 
   const { data, isLoading } = useQuery<AllSettledData>({
@@ -296,12 +298,25 @@ export default function LeaderboardScreen() {
     const decided = item.wins + item.losses;
     const isMe = item.userId === user?.id;
 
+    function handleRowPress() {
+      if (isMe) {
+        router.push("/h2h");
+      } else {
+        router.push(`/h2h/${item.userId}`);
+      }
+    }
+
     return (
-      <View style={[
-        styles.entryRow,
-        index === 0 && styles.entryRowFirst,
-        isMe && styles.entryRowMe,
-      ]}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.entryRow,
+          index === 0 && styles.entryRowFirst,
+          isMe && styles.entryRowMe,
+          pressed && styles.entryRowPressed,
+        ]}
+        onPress={handleRowPress}
+        testID={`leaderboard-row-${item.username}`}
+      >
         <View style={styles.rankCol}>
           <MedalIcon rank={index} />
         </View>
@@ -345,7 +360,7 @@ export default function LeaderboardScreen() {
             )}
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   }
 
@@ -443,6 +458,7 @@ const styles = StyleSheet.create({
   },
   entryRowFirst: { borderColor: Colors.dark.accentGold, backgroundColor: "rgba(245, 166, 35, 0.05)" },
   entryRowMe: { borderColor: Colors.dark.tint, backgroundColor: "rgba(99, 102, 241, 0.08)" },
+  entryRowPressed: { opacity: 0.7 },
   rankCol: { width: 36, alignItems: "center" as const },
   medal: { fontSize: 20 },
   rankNum: { fontSize: 16, fontWeight: "bold" as const, color: Colors.dark.tabIconDefault },

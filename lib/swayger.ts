@@ -490,6 +490,172 @@ export function categoryIcon(category: string): string {
   return found?.icon || "trophy-outline";
 }
 
+export interface H2HOpponent {
+  opponentId: string;
+  username: string;
+  displayName: string | null;
+  myWins: number;
+  theirWins: number;
+  draws: number;
+  total: number;
+  lastPlayed: string;
+}
+
+export async function fetchAllH2HOpponents(myId: string): Promise<H2HOpponent[]> {
+  const { data, error } = await supabase
+    .from("swaygers")
+    .select("creator_id, opponent_id, settled_outcome, updated_at")
+    .eq("status", "settled")
+    .or(`creator_id.eq.${myId},opponent_id.eq.${myId}`)
+    .not("settled_outcome", "is", null);
+
+  if (error || !data) return [];
+
+  const opponentMap = new Map<string, { myWins: number; theirWins: number; draws: number; lastPlayed: string }>();
+
+  for (const s of data) {
+    const otherId = s.creator_id === myId ? s.opponent_id : s.creator_id;
+    if (!otherId || otherId === myId) continue;
+    if (!opponentMap.has(otherId)) {
+      opponentMap.set(otherId, { myWins: 0, theirWins: 0, draws: 0, lastPlayed: s.updated_at });
+    }
+    const entry = opponentMap.get(otherId)!;
+    if (s.updated_at > entry.lastPlayed) entry.lastPlayed = s.updated_at;
+    if (s.settled_outcome === "draw" || s.settled_outcome === "no_contest") {
+      entry.draws++;
+    } else if (
+      (s.creator_id === myId && s.settled_outcome === "creator") ||
+      (s.opponent_id === myId && s.settled_outcome === "opponent")
+    ) {
+      entry.myWins++;
+    } else {
+      entry.theirWins++;
+    }
+  }
+
+  const opponentIds = Array.from(opponentMap.keys());
+  if (opponentIds.length === 0) return [];
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, username, display_name")
+    .in("id", opponentIds);
+
+  const profileMap = new Map<string, { username: string; display_name: string | null }>();
+  (profiles || []).forEach((p) => profileMap.set(p.id, { username: p.username, display_name: p.display_name }));
+
+  const results: H2HOpponent[] = [];
+  opponentMap.forEach((stats, opponentId) => {
+    const p = profileMap.get(opponentId);
+    if (!p) return;
+    results.push({
+      opponentId,
+      username: p.username,
+      displayName: p.display_name,
+      myWins: stats.myWins,
+      theirWins: stats.theirWins,
+      draws: stats.draws,
+      total: stats.myWins + stats.theirWins + stats.draws,
+      lastPlayed: stats.lastPlayed,
+    });
+  });
+
+  return results.sort((a, b) => new Date(b.lastPlayed).getTime() - new Date(a.lastPlayed).getTime());
+}
+
+export interface H2HSwaygerLog {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  myWon: boolean;
+  isDraw: boolean;
+  stake_units: number;
+}
+
+export interface CategoryH2HRecord {
+  category: string;
+  myWins: number;
+  theirWins: number;
+  draws: number;
+}
+
+export interface DetailedH2HResult {
+  overall: { myWins: number; theirWins: number; draws: number; total: number };
+  byCategory: CategoryH2HRecord[];
+  log: H2HSwaygerLog[];
+  opponentUsername: string;
+  opponentDisplayName: string | null;
+}
+
+export async function fetchDetailedH2H(myId: string, opponentId: string): Promise<DetailedH2HResult> {
+  const [swaygerResult, profileResult] = await Promise.all([
+    supabase
+      .from("swaygers")
+      .select("id, title, category, settled_outcome, creator_id, opponent_id, stake_units, updated_at")
+      .eq("status", "settled")
+      .not("settled_outcome", "is", null)
+      .or(
+        `and(creator_id.eq.${myId},opponent_id.eq.${opponentId}),and(creator_id.eq.${opponentId},opponent_id.eq.${myId})`,
+      )
+      .order("updated_at", { ascending: false }),
+    supabase.from("profiles").select("username, display_name").eq("id", opponentId).single(),
+  ]);
+
+  const data = swaygerResult.data || [];
+  const profile = profileResult.data;
+
+  let myWins = 0,
+    theirWins = 0,
+    draws = 0;
+  const categoryMap = new Map<string, { myWins: number; theirWins: number; draws: number }>();
+  const log: H2HSwaygerLog[] = [];
+
+  for (const s of data) {
+    const cat = s.category || "Other";
+    if (!categoryMap.has(cat)) categoryMap.set(cat, { myWins: 0, theirWins: 0, draws: 0 });
+    const catEntry = categoryMap.get(cat)!;
+    const isDraw = s.settled_outcome === "draw" || s.settled_outcome === "no_contest";
+    const myWon =
+      !isDraw &&
+      ((s.creator_id === myId && s.settled_outcome === "creator") ||
+        (s.opponent_id === myId && s.settled_outcome === "opponent"));
+
+    if (isDraw) {
+      draws++;
+      catEntry.draws++;
+    } else if (myWon) {
+      myWins++;
+      catEntry.myWins++;
+    } else {
+      theirWins++;
+      catEntry.theirWins++;
+    }
+
+    log.push({
+      id: s.id,
+      title: s.title,
+      category: cat,
+      date: s.updated_at,
+      myWon,
+      isDraw,
+      stake_units: s.stake_units || 1,
+    });
+  }
+
+  const byCategory: CategoryH2HRecord[] = Array.from(categoryMap.entries())
+    .map(([category, stats]) => ({ category, ...stats }))
+    .sort((a, b) => b.myWins + b.theirWins + b.draws - (a.myWins + a.theirWins + a.draws));
+
+  return {
+    overall: { myWins, theirWins, draws, total: myWins + theirWins + draws },
+    byCategory,
+    log,
+    opponentUsername: profile?.username || "unknown",
+    opponentDisplayName: profile?.display_name || null,
+  };
+}
+
 export async function fetchHeadToHead(
   userId: string,
   opponentId: string,

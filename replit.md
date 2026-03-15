@@ -35,10 +35,14 @@ app/
     [id].tsx           # Swayger detail (contract view, accept/decline, settlement, rematch)
   invite/
     [code].tsx         # Invite join flow — preview swayger, accept/decline with opponent pick
+  h2h/
+    index.tsx          # H2H opponents list — all opponents + aggregate records
+    [opponentId].tsx   # Detailed H2H receipt (scoreboard, category breakdown, game log, share)
   join.tsx             # Join Swayger screen — enter code or scan QR
 components/
   ErrorBoundary.tsx    # Error boundary + fallback with dev error details modal
   ReceiptCard.tsx      # Shareable receipt card for settled Swaygers (captured via react-native-view-shot)
+  H2HReceiptCard.tsx   # Shareable H2H record card (scoreboard + category breakdown, image export)
 constants/
   colors.ts            # Dark theme color palette (brand colors)
 lib/

@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError, showMessage, getAvatarColor } from "@/lib/helpers";
@@ -27,6 +28,7 @@ interface SchemaCheck {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
+  const router = useRouter();
   const { user, profile, setProfile, retryProfileFetch, isLoading, profileError, signOut } = useAuth();
 
   const [showEditName, setShowEditName] = useState(false);
@@ -256,6 +258,21 @@ export default function ProfileScreen() {
             </View>
           )}
 
+          <View style={styles.menuDivider} />
+
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+            onPress={() => router.push("/h2h")}
+            testID="profile-h2h-records"
+          >
+            <Ionicons name="people-outline" size={20} color={Colors.dark.text} />
+            <View style={styles.menuItemBody}>
+              <Text style={styles.menuItemText}>Head to Head</Text>
+              <Text style={styles.menuItemSub}>Your records vs. every opponent</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
+          </Pressable>
+
         </View>
 
         {/* Bottom area */}
@@ -350,6 +367,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border,
   },
   menuItemPressed: { opacity: 0.7 },
+  menuDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 6 },
   menuItemBody: { flex: 1, gap: 2 },
   menuItemText: { fontSize: 16, color: Colors.dark.text },
   menuItemSub: { fontSize: 13, color: Colors.dark.textSecondary },
