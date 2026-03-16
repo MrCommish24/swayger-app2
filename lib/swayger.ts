@@ -424,12 +424,27 @@ export async function joinSwaygerByCode(
   });
 
   if (error) {
-    console.error("[swayger] join_swayger_by_code error:", error.message, error.code);
+    console.error("[swayger] join_swayger_by_code rpc error:", error.message, error.code);
     return { swaygerId: null, error: error.message };
+  }
+
+  console.log("[swayger] join_swayger_by_code raw data:", JSON.stringify(data));
+
+  // RPC may return null (code not found / wrong state) or an object
+  if (!data) {
+    console.error("[swayger] join returned null — code may not exist or swayger unavailable");
+    return { swaygerId: null, error: "Invite code not found or no longer available." };
   }
 
   const result = data as { error: string | null; swayger_id: string | null };
   if (result.error) console.error("[swayger] join business error:", result.error);
+
+  // If swayger_id is absent but no error message, provide a fallback
+  if (!result.swayger_id && !result.error) {
+    console.error("[swayger] join returned no swayger_id and no error — full data:", JSON.stringify(data));
+    return { swaygerId: null, error: "Could not join this Swayger. It may already be taken, expired, or belong to you." };
+  }
+
   return {
     swaygerId: result.swayger_id,
     error: result.error,
