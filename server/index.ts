@@ -5,6 +5,7 @@ import { startMMScheduler } from "./mm-scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
+import { sendNotificationEmail } from "./email";
 
 const app = express();
 const log = console.log;
@@ -251,11 +252,70 @@ async function runSettlementExpiry() {
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Fetch swaygers that are about to be expired, with participant emails
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: expiring } = await supabase
+      .from("swaygers")
+      .select("id, title, category, stake_units, creator_id, opponent_id")
+      .eq("status", "settlement_proposed")
+      .lt("updated_at", cutoff);
+
+    // Run the expiry RPC
     const { data, error } = await supabase.rpc("expire_old_proposals");
     if (error) {
       console.error("[expiry] expire_old_proposals error:", error.message);
-    } else if ((data as number) > 0) {
-      log(`[expiry] Expired ${data} stale settlement proposal(s)`);
+      return;
+    }
+
+    const count = data as number;
+    if (count > 0) {
+      log(`[expiry] Expired ${count} stale settlement proposal(s)`);
+    }
+
+    // Send expiry emails to both parties for each expired swayger
+    if (expiring && expiring.length > 0) {
+      const allUserIds = [...new Set(expiring.flatMap((s: { creator_id: string; opponent_id: string | null }) =>
+        [s.creator_id, s.opponent_id].filter(Boolean) as string[]
+      ))];
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, notification_email")
+        .in("id", allUserIds);
+
+      const profileMap = new Map<string, { username: string; display_name: string | null; notification_email: string | null }>(
+        (profiles || []).map((p: { id: string; username: string; display_name: string | null; notification_email: string | null }) => [p.id, p])
+      );
+
+      for (const sw of expiring as { id: string; title: string; category: string; stake_units: number; creator_id: string; opponent_id: string | null }[]) {
+        const creatorProfile = profileMap.get(sw.creator_id);
+        const opponentProfile = sw.opponent_id ? profileMap.get(sw.opponent_id) : null;
+
+        const recipients: { email: string; name: string }[] = [];
+        if (creatorProfile?.notification_email) {
+          recipients.push({ email: creatorProfile.notification_email, name: creatorProfile.display_name || creatorProfile.username });
+        }
+        if (opponentProfile?.notification_email) {
+          recipients.push({ email: opponentProfile.notification_email, name: opponentProfile.display_name || opponentProfile.username });
+        }
+
+        if (recipients.length === 0) continue;
+
+        await sendNotificationEmail({
+          event: "swayger_expired",
+          swayger: {
+            id: sw.id,
+            title: sw.title,
+            category: sw.category || "Other",
+            stakeUnits: sw.stake_units || 1,
+          },
+          sender: { name: "Swayger" },
+          recipients,
+        }).catch((e: unknown) => {
+          console.error(`[expiry] Failed to send email for swayger ${sw.id}:`, e);
+        });
+      }
     }
   } catch (err) {
     console.error("[expiry] Unexpected error:", err);

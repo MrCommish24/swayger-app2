@@ -10,7 +10,8 @@ export type EmailEvent =
   | "invite_created"
   | "swayger_accepted"
   | "settlement_proposed"
-  | "swayger_settled";
+  | "swayger_settled"
+  | "swayger_expired";
 
 export interface NotifyPayload {
   event: EmailEvent;
@@ -161,6 +162,16 @@ export async function sendNotificationEmail(
         details +
         `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Final outcome: <strong style="color:#FFFFFF;">${final}</strong></p>`;
       ctaLabel = "See Results";
+      break;
+    }
+
+    case "swayger_expired": {
+      subject = `⏱️ "${title}" expired — stakes returned`;
+      headline = `"${title}" expired without a verdict.`;
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Neither party reached agreement within 7 days. Your staked Swayger Points have been returned.</p>`;
+      ctaLabel = "View Swayger";
       break;
     }
   }

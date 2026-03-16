@@ -484,7 +484,7 @@ export default function SwaygerDetailScreen() {
   const { data: proposals = [] } = useQuery<SettlementProposal[]>({
     queryKey: ["settlement-proposals", id],
     queryFn: () => fetchSettlementProposals(id!),
-    enabled: !!id && (swayger?.status === "active" || swayger?.status === "settlement_proposed" || swayger?.status === "settled"),
+    enabled: !!id && (swayger?.status === "active" || swayger?.status === "settlement_proposed" || swayger?.status === "settled" || swayger?.status === "expired"),
   });
 
   useEffect(() => {
@@ -559,7 +559,9 @@ export default function SwaygerDetailScreen() {
   const isOpponent = swayger?.opponent_id === user?.id;
   const status = swayger?.status || "pending_invite";
   const canAccept = !isCreator && isOpponent && status === "pending_invite";
-  const canCancel = isCreator && !["settled", "canceled", "declined"].includes(status);
+  const canCancel =
+    (isCreator && !["settled", "canceled", "declined", "expired"].includes(status)) ||
+    (isOpponent && ["active", "settlement_proposed"].includes(status));
   const canSettle = (status === "active" || status === "settlement_proposed") &&
     (isCreator || isOpponent);
 
@@ -1151,6 +1153,17 @@ export default function SwaygerDetailScreen() {
                   return `Canceled by @${profiles.opponent.username}`;
                 return "This Swayger was canceled.";
               })()}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {status === "expired" && (
+        <View style={styles.section}>
+          <View style={styles.statusBanner}>
+            <Ionicons name="time-outline" size={18} color={Colors.dark.accentGold} />
+            <Text style={styles.statusBannerText}>
+              No verdict reached — your Swayger Points were returned.
             </Text>
           </View>
         </View>

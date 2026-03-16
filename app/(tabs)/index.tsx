@@ -151,7 +151,7 @@ export default function DashboardScreen() {
     active:  swaygers.filter((s) => ["active", "settlement_proposed"].includes(s.status)).length,
     pending: swaygers.filter((s) => s.status === "pending_invite").length,
     settled: swaygers.filter((s) => s.status === "settled").length,
-    other:   swaygers.filter((s) => ["canceled", "declined"].includes(s.status)).length,
+    other:   swaygers.filter((s) => ["canceled", "declined", "expired"].includes(s.status)).length,
   }), [swaygers]);
 
   const filteredSwaygers = useMemo(() => {
@@ -167,7 +167,7 @@ export default function DashboardScreen() {
           if (activeFilter === "active")  return ["active", "settlement_proposed"].includes(s.status);
           if (activeFilter === "pending") return s.status === "pending_invite";
           if (activeFilter === "settled") return s.status === "settled";
-          if (activeFilter === "other")   return ["canceled", "declined"].includes(s.status);
+          if (activeFilter === "other")   return ["canceled", "declined", "expired"].includes(s.status);
           return true;
         });
     return filtered.sort((a, b) => {
