@@ -469,8 +469,7 @@ export default function MarchMadnessHub() {
               router.push({
                 pathname: "/(tabs)/create",
                 params: {
-                  counterCategory: "March Madness",
-                  openChallenge: "true",
+                  prefillCategory: "March Madness",
                 },
               })
             }
