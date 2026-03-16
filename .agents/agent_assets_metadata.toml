@@ -6,3 +6,9 @@ id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
 type = "text"
 title = "Swayger — Full Product Status Brief"
+
+[[outputs]]
+id = "uZZbkdAUCN7bMEc8ME3IP"
+uri = "file://SWAYGER_PRODUCT_STATUS.md"
+type = "text"
+title = "Swayger — Product Status Brief"
