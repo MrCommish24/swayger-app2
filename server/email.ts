@@ -191,7 +191,88 @@ export async function sendNotificationEmail(
 }
 
 
-// ─── March Madness reminder email ────────────────────────────────────────────
+// ─── March Madness emails ─────────────────────────────────────────────────────
+
+export async function sendMMScoreUpdateEmail({
+  to,
+  displayName,
+  totalPoints,
+  sweetSixteenPts,
+  eliteEightPts,
+  finalFourPts,
+  championPts,
+  upsetPts,
+  correctUpsets,
+  rank,
+  totalPlayers,
+}: {
+  to: string;
+  displayName: string;
+  totalPoints: number;
+  sweetSixteenPts: number;
+  eliteEightPts: number;
+  finalFourPts: number;
+  championPts: number;
+  upsetPts: number;
+  correctUpsets: number;
+  rank: number;
+  totalPlayers: number;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const subject = `🏀 March Madness score update — ${totalPoints} pts`;
+  const headline = `Here's where you stand`;
+  const rankLabel =
+    rank === 1
+      ? "🥇 You're in first place!"
+      : rank <= 3
+      ? `🔥 You're #${rank} out of ${totalPlayers}`
+      : `#${rank} out of ${totalPlayers} players`;
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 4px;font-size:13px;color:#8B95A5;letter-spacing:0.5px;text-transform:uppercase;">Leaderboard</p>
+    <p style="margin:0 0 20px;font-size:28px;font-weight:800;color:#F5A623;">${rankLabel}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:20px;">
+      <tr><td style="padding:12px 0 4px;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:15px;color:#8B95A5;">Total Points</span>
+        <span style="float:right;font-size:22px;font-weight:800;color:#F5A623;">${totalPoints}</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Sweet 16</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${sweetSixteenPts} pts</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Elite 8</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${eliteEightPts} pts</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Final Four</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${finalFourPts} pts</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Champion</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${championPts} pts</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;">
+        <span style="font-size:13px;color:#8B95A5;">Upset Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${upsetPts} pts (${correctUpsets} correct)</span>
+      </td></tr>
+    </table>
+  `;
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html: buildEmailHtml(
+      subject,
+      headline,
+      body,
+      "View Leaderboard",
+      `${APP_URL}/march-madness/picks-leaderboard`,
+    ),
+  });
+}
 
 export async function sendMMReminderEmail({
   to,

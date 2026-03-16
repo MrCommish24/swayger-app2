@@ -145,6 +145,60 @@ async function computeAndSaveScores(
   return { scored: upserts.length, error: null };
 }
 
+// ─── Score update email blast ─────────────────────────────────────────────────
+
+export async function sendScoreUpdateBlast(
+  supabase: ReturnType<typeof createClient>,
+): Promise<void> {
+  const { sendMMScoreUpdateEmail } = await import("./email");
+
+  // Get all scores ordered by total (to compute rank)
+  const { data: allScores } = await supabase
+    .from("mm_pick_scores")
+    .select("*")
+    .order("total_points", { ascending: false });
+
+  if (!allScores?.length) return;
+
+  const totalPlayers = allScores.length;
+  const userIds = allScores.map((s: { user_id: string }) => s.user_id);
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, notification_email")
+    .in("id", userIds);
+
+  const profileMap = new Map(
+    (profiles ?? []).map((p: { id: string; notification_email?: string | null; display_name?: string | null; username: string }) => [p.id, p]),
+  );
+
+  let sent = 0;
+  for (let i = 0; i < allScores.length; i++) {
+    const s = allScores[i];
+    const profile = profileMap.get(s.user_id);
+    if (!profile?.notification_email) continue;
+    try {
+      await sendMMScoreUpdateEmail({
+        to: profile.notification_email as string,
+        displayName: profile.display_name || `@${profile.username}`,
+        totalPoints: s.total_points ?? 0,
+        sweetSixteenPts: s.sweet_sixteen_pts ?? 0,
+        eliteEightPts: s.elite_eight_pts ?? 0,
+        finalFourPts: s.final_four_pts ?? 0,
+        championPts: s.champion_pts ?? 0,
+        upsetPts: s.upset_pts ?? 0,
+        correctUpsets: s.correct_upsets ?? 0,
+        rank: i + 1,
+        totalPlayers,
+      });
+      sent++;
+    } catch (e) {
+      console.error("[mm-admin] score email failed for", s.user_id, e);
+    }
+  }
+  console.log(`[mm-admin] Score update blast: sent to ${sent}/${totalPlayers}`);
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
 
 export function registerMMAdminRoutes(app: Express): void {
@@ -204,7 +258,7 @@ export function registerMMAdminRoutes(app: Express): void {
     }
   });
 
-  // Recompute all scores
+  // Recompute all scores + auto-send score update emails
   app.post("/admin/mm/api/score", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
     if (!isAdminToken(token)) {
@@ -218,7 +272,11 @@ export function registerMMAdminRoutes(app: Express): void {
         res.status(500).json({ ok: false, error });
         return;
       }
-      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s)` });
+      // Respond immediately, then blast score emails in background
+      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s) — sending score update emails` });
+      sendScoreUpdateBlast(supabase).catch((e) =>
+        console.error("[mm-admin] score blast error:", e),
+      );
     } catch (err) {
       console.error("[mm-admin] score error:", err);
       res.status(500).json({ ok: false, error: "Server error" });

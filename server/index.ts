@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { startMMScheduler } from "./mm-scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
@@ -284,6 +285,8 @@ async function runSettlementExpiry() {
       // Run expiry check every hour
       runSettlementExpiry();
       setInterval(runSettlementExpiry, 60 * 60 * 1000);
+      // Start MM pre-lock reminder scheduler
+      startMMScheduler();
     },
   );
 })();
