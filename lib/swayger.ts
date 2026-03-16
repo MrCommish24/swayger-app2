@@ -128,18 +128,18 @@ export async function createSwayger(
   const swaygerId = data as string;
   console.log("[swayger] Created swayger:", swaygerId);
 
-  const { data: swayger, error: fetchError } = await supabase
+  const { data: swaygerRows, error: fetchError } = await supabase
     .from("swaygers")
     .select("*")
     .eq("id", swaygerId)
-    .single();
+    .limit(1);
 
   if (fetchError) {
     console.error("[swayger] Failed to fetch created swayger:", fetchError.message);
     return { swayger: null, error: fetchError.message };
   }
 
-  return { swayger: swayger as SwaygerData, error: null };
+  return { swayger: (swaygerRows?.[0] ?? null) as SwaygerData | null, error: null };
 }
 
 export async function fetchMySwaygers(userId: string): Promise<SwaygerData[]> {
@@ -161,13 +161,13 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
     .from("swaygers")
     .select("*")
     .eq("id", swaygerId)
-    .single();
+    .limit(1);
 
   if (error) {
     console.error("[swayger] fetchSwayger error:", error.message, "id:", swaygerId);
     return null;
   }
-  return data as SwaygerData;
+  return (data?.[0] ?? null) as SwaygerData | null;
 }
 
 export async function fetchSwaygerInvite(swaygerId: string): Promise<SwaygerInvite | null> {
@@ -401,13 +401,13 @@ export async function createRematch(
   }
 
   if (!result.swayger) return result;
-  const { data: updated } = await supabase
+  const { data: updatedRows } = await supabase
     .from("swaygers")
     .select("*")
     .eq("id", result.swayger.id)
-    .single();
+    .limit(1);
 
-  const finalSwayger = (updated as SwaygerData) || result.swayger;
+  const finalSwayger = (updatedRows?.[0] as SwaygerData) || result.swayger;
   if (finalSwayger.opponent_id) {
     notifyEvent("invite_created", finalSwayger, userId);
   }
