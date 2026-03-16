@@ -2,6 +2,68 @@ import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
 import { FULL_BRACKET } from "../lib/march-madness";
 
+// ─── Seed lookup from bracket data ───────────────────────────────────────────
+
+// Known aliases: Odds API name fragment → bracket name fragment
+const TEAM_ALIASES: Record<string, string> = {
+  "liu": "long island",
+  "unc": "north carolina",
+  "uconn": "connecticut",
+  "nc state": "nc state",
+  "fau": "florida atlantic",
+  "vcu": "vcu",
+  "ucf": "ucf",
+  "usc": "usc",
+  "utsa": "utsa",
+  "utep": "utep",
+  "smu": "smu",
+  "tcu": "tcu",
+};
+
+// Build a flat map: normalized team name → seed
+const BRACKET_SEED_MAP = new Map<string, number>();
+(function buildSeedMap() {
+  const regions = ["east", "west", "south", "midwest"] as const;
+  for (const region of regions) {
+    const games = (FULL_BRACKET as any)[region] ?? [];
+    for (const g of games) {
+      if (g.team1) BRACKET_SEED_MAP.set(g.team1.toLowerCase().trim(), g.seed1);
+      if (g.team2) BRACKET_SEED_MAP.set(g.team2.toLowerCase().trim(), g.seed2);
+    }
+  }
+  // First Four teams
+  for (const g of FULL_BRACKET.firstFour ?? []) {
+    if ((g as any).teamA) BRACKET_SEED_MAP.set((g as any).teamA.toLowerCase().trim(), (g as any).slot);
+    if ((g as any).teamB) BRACKET_SEED_MAP.set((g as any).teamB.toLowerCase().trim(), (g as any).slot);
+  }
+})();
+
+function lookupSeed(apiTeamName: string): number {
+  const norm = apiTeamName.toLowerCase().trim();
+  // 1. Exact match
+  if (BRACKET_SEED_MAP.has(norm)) return BRACKET_SEED_MAP.get(norm)!;
+  // 2. Alias match
+  for (const [alias, bracketFrag] of Object.entries(TEAM_ALIASES)) {
+    if (norm.includes(alias)) {
+      for (const [bName, seed] of BRACKET_SEED_MAP) {
+        if (bName.includes(bracketFrag)) return seed;
+      }
+    }
+  }
+  // 3. Bracket name is substring of API name (e.g. "Arizona" in "Arizona Wildcats")
+  for (const [bName, seed] of BRACKET_SEED_MAP) {
+    if (norm.includes(bName) || bName.includes(norm)) return seed;
+  }
+  // 4. First significant word match
+  const firstWord = norm.split(" ")[0];
+  if (firstWord.length > 3) {
+    for (const [bName, seed] of BRACKET_SEED_MAP) {
+      if (bName.startsWith(firstWord)) return seed;
+    }
+  }
+  return 0;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface RankedMatchup {
@@ -230,8 +292,8 @@ async function buildOddsBasedMatchups(roundId: string): Promise<{
         matchupId,
         teamA: game.home_team,
         teamB: game.away_team,
-        seedA: 0,
-        seedB: 0,
+        seedA: lookupSeed(game.home_team),
+        seedB: lookupSeed(game.away_team),
         region: "—",
         rank: 0,
         favoriteTeam,

@@ -235,7 +235,8 @@ function MatchupCard({
     </View>
   );
 
-  const showSeeds = matchup.seedA > 0 && matchup.seedB > 0;
+  const showSeedA = matchup.seedA > 0;
+  const showSeedB = matchup.seedB > 0;
 
   return (
     <Pressable
@@ -252,7 +253,7 @@ function MatchupCard({
         {rankDot}
         <View style={styles.matchupTeams}>
           <View style={styles.matchupTeamRow}>
-            {showSeeds ? (
+            {showSeedA ? (
               <View style={[styles.seedPill, pickType === "upset" && styles.seedPillFav]}>
                 <Text style={styles.seedPillText}>{matchup.seedA}</Text>
               </View>
@@ -269,7 +270,7 @@ function MatchupCard({
           </View>
           <Text style={styles.vsLine}>vs</Text>
           <View style={styles.matchupTeamRow}>
-            {showSeeds ? (
+            {showSeedB ? (
               <View style={[styles.seedPill, pickType === "upset" && styles.seedPillUnder]}>
                 <Text style={[styles.seedPillText, pickType === "upset" && { color: ORANGE }]}>
                   {matchup.seedB}
