@@ -89,7 +89,8 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 - Each Swayger gets a unique invite code (6 chars, A-Z, 2-9) stored in `swayger_invites` table
 - Creator can share via: Copy Code, OS Share sheet, or QR code (encodes "SWAYGER:XXXXXX")
 - Opponents can join via: entering code on Join screen, or scanning QR code (expo-camera barcode scanner)
-- Joining sets the user as `opponent_id` on the swayger
+- `join_swayger_by_code` validates the code and returns the swayger ID (does NOT set `opponent_id`)
+- On the invite screen, opponent enters their pick and accepts — `accept_swayger` sets `opponent_id` and activates the wager
 - Accepting locks both picks and activates the Swayger
 - Either participant can propose a settlement outcome: Creator Wins, Opponent Wins, Draw, or No Contest
 - The other participant must confirm the same proposal for it to settle
@@ -109,7 +110,7 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 ### Key DB Columns on `swaygers`
 
 - `creator_id` — creator's user UUID
-- `opponent_id` — opponent's user UUID (set when they join via invite code)
+- `opponent_id` — opponent's user UUID (set by `accept_swayger` RPC, null until accepted)
 - `title` — swayger title
 - `description` — optional description
 - `category` — Sports, Entertainment, Gaming, Lifestyle, Politics, Other

@@ -172,9 +172,8 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
     return data[0] as SwaygerData;
   }
 
-  // RLS may be blocking the direct read (e.g. opponent just joined).
-  // Fall back to the SECURITY DEFINER RPC which checks creator/opponent/invite.
-  console.log("[swayger] fetchSwayger direct query returned 0 rows — trying RPC fallback for:", swaygerId);
+  // RLS may be blocking the direct read (e.g. opponent just joined and opponent_id is still null).
+  // Fall back to the SECURITY DEFINER RPC which checks creator/opponent/invite existence.
   const { data: rpcData, error: rpcError } = await supabase
     .rpc("get_swayger_by_id", { p_swayger_id: swaygerId });
 
@@ -184,13 +183,7 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
   }
 
   const rows = rpcData as SwaygerData[] | null;
-  if (rows && rows.length > 0) {
-    console.log("[swayger] fetchSwayger RPC fallback succeeded for:", swaygerId);
-    return rows[0];
-  }
-
-  console.warn("[swayger] fetchSwayger: swayger not found via direct query or RPC:", swaygerId);
-  return null;
+  return (rows && rows.length > 0) ? rows[0] : null;
 }
 
 export async function fetchSwaygerInvite(swaygerId: string): Promise<SwaygerInvite | null> {
@@ -451,20 +444,14 @@ export async function joinSwaygerByCode(
     return { swaygerId: null, error: error.message };
   }
 
-  console.log("[swayger] join_swayger_by_code raw data:", JSON.stringify(data));
-
-  // RPC may return null (code not found / wrong state) or an object
+  // RPC may return null if code not found or swayger is unavailable
   if (!data) {
-    console.error("[swayger] join returned null — code may not exist or swayger unavailable");
     return { swaygerId: null, error: "Invite code not found or no longer available." };
   }
 
   const result = data as { error: string | null; swayger_id: string | null };
-  if (result.error) console.error("[swayger] join business error:", result.error);
 
-  // If swayger_id is absent but no error message, provide a fallback
   if (!result.swayger_id && !result.error) {
-    console.error("[swayger] join returned no swayger_id and no error — full data:", JSON.stringify(data));
     return { swaygerId: null, error: "Could not join this Swayger. It may already be taken, expired, or belong to you." };
   }
 
