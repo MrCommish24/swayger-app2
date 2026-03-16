@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  LayoutAnimation,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,6 +59,56 @@ function LockBanner() {
           ? "Picks are locked — tournament in progress"
           : `Picks lock ${formatted}`}
       </Text>
+    </View>
+  );
+}
+
+const SCORING_ROWS = [
+  { emoji: "🏆", label: "Champion", pts: "10 pts", note: "1 pick" },
+  { emoji: "🔥", label: "Final Four", pts: "5 pts each", note: "4 picks" },
+  { emoji: "⚡", label: "Elite Eight", pts: "3 pts each", note: "8 picks" },
+  { emoji: "🌀", label: "Sweet Sixteen", pts: "2 pts each", note: "16 picks" },
+  { emoji: "💥", label: "Upset Picks", pts: "3 pts each", note: "3 max" },
+];
+
+function ScoringGuide() {
+  const [expanded, setExpanded] = useState(false);
+
+  function toggle() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((v) => !v);
+  }
+
+  return (
+    <View style={styles.scoringCard}>
+      <Pressable
+        style={styles.scoringHeader}
+        onPress={toggle}
+        hitSlop={8}
+      >
+        <View style={styles.scoringHeaderLeft}>
+          <Ionicons name="information-circle-outline" size={16} color={GOLD} />
+          <Text style={styles.scoringHeaderText}>How scoring works</Text>
+        </View>
+        <Ionicons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={14}
+          color={Colors.dark.textSecondary}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.scoringBody}>
+          {SCORING_ROWS.map((row) => (
+            <View key={row.label} style={styles.scoringRow}>
+              <Text style={styles.scoringEmoji}>{row.emoji}</Text>
+              <Text style={styles.scoringLabel}>{row.label}</Text>
+              <Text style={styles.scoringNote}>{row.note}</Text>
+              <Text style={styles.scoringPts}>{row.pts}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -327,6 +378,7 @@ export default function PicksHub() {
         ]}
       >
         <LockBanner />
+        <ScoringGuide />
 
         {isLoading ? (
           <ActivityIndicator
@@ -670,6 +722,66 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600" as const,
     color: "#22C55E",
+  },
+  scoringCard: {
+    backgroundColor: Colors.dark.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.15)",
+    overflow: "hidden",
+  },
+  scoringHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  scoringHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  scoringHeaderText: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: GOLD,
+  },
+  scoringBody: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(245,166,35,0.1)",
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    paddingTop: 8,
+    gap: 10,
+  },
+  scoringRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  scoringEmoji: {
+    fontSize: 15,
+    width: 22,
+    textAlign: "center" as const,
+  },
+  scoringLabel: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  scoringNote: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    marginRight: 4,
+  },
+  scoringPts: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: GOLD,
+    minWidth: 80,
+    textAlign: "right" as const,
   },
   leaderboardBtn: {
     flexDirection: "row",
