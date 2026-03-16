@@ -552,7 +552,6 @@ export async function claimBankruptcy(): Promise<{ error: string | null; newBala
 }
 
 export const CATEGORIES = [
-  { value: "March Madness", icon: "basketball-outline" as const },
   { value: "Sports", icon: "american-football-outline" as const },
   { value: "Entertainment", icon: "film-outline" as const },
   { value: "Gaming", icon: "game-controller-outline" as const },
