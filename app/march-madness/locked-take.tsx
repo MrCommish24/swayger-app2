@@ -152,13 +152,27 @@ export default function LockedTakePicker() {
     if (!shareCardRef.current) return;
     setSharing(true);
     try {
-      const uri = await captureRef(shareCardRef, { format: "png", quality: 1 });
       if (Platform.OS === "web") {
+        // react-native-view-shot's web impl passes the ref object (not .current) to
+        // html2canvas, which causes it to silently fail. Call html2canvas directly instead.
+        const { default: html2canvas } = await import("html2canvas");
+        const el = shareCardRef.current as unknown as HTMLElement;
+        const canvas = await html2canvas(el, {
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: "#111827",
+          scale: 2,
+          logging: false,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
         const link = document.createElement("a");
-        link.href = uri;
+        link.href = dataUrl;
         link.download = `swayger-${takeType}.png`;
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
       } else {
+        const uri = await captureRef(shareCardRef, { format: "png", quality: 1 });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, { mimeType: "image/png" });
@@ -168,6 +182,7 @@ export default function LockedTakePicker() {
       }
     } catch (e) {
       console.error("[take-share]", e);
+      Alert.alert("Couldn't capture image", "Try taking a screenshot instead.");
     } finally {
       setSharing(false);
     }

@@ -218,13 +218,27 @@ export default function MarchMadnessHub() {
     if (!shareCardRef.current) return;
     setSharingCard(true);
     try {
-      const uri = await captureRef(shareCardRef, { format: "png", quality: 1 });
       if (Platform.OS === "web") {
+        // react-native-view-shot's web impl passes the ref object (not .current) to
+        // html2canvas and ignores CORS options — call html2canvas directly instead.
+        const { default: html2canvas } = await import("html2canvas");
+        const el = shareCardRef.current as unknown as HTMLElement;
+        const canvas = await html2canvas(el, {
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: "#111827",
+          scale: 2,
+          logging: false,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
         const link = document.createElement("a");
-        link.href = uri;
+        link.href = dataUrl;
         link.download = "swayger-march-madness.png";
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
       } else {
+        const uri = await captureRef(shareCardRef, { format: "png", quality: 1 });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
           await Sharing.shareAsync(uri, { mimeType: "image/png" });
@@ -234,6 +248,9 @@ export default function MarchMadnessHub() {
       }
     } catch (e) {
       console.error("[mm-share]", e);
+      if (Platform.OS === "web") {
+        window.alert("Couldn't capture image. Try taking a screenshot instead.");
+      }
     } finally {
       setSharingCard(false);
     }
