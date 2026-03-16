@@ -409,7 +409,11 @@ function SpecialPicksSection({
           )}
           {matchups.map((m) => {
             const picked = pickedIds.has(m.matchupId);
-            const canPick = !roundLocked && (picked || (pickType === "upset" ? pickedCount < pickLimit : pickedCount === 0));
+            const canPick = !roundLocked && (
+              pickType === "upset"
+                ? (picked || pickedCount < pickLimit)
+                : true
+            );
             return (
               <MatchupCard
                 key={m.matchupId}
