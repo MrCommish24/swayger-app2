@@ -81,10 +81,11 @@ async function sendReminderBlast(label: string): Promise<void> {
   }
 }
 
-// ─── Schedule windows (all in UTC, tournament is EDT = UTC-4) ─────────────────
-// Mar 17 9:00am EDT = 2026-03-17T13:00Z
-// Mar 18 9:00am EDT = 2026-03-18T13:00Z
-// Mar 19 8:00am EDT = 2026-03-19T12:00Z (final warning, 4hrs before lock)
+// ─── Schedule windows — all use explicit CDT offset (-05:00) ──────────────────
+// Picks lock at 2026-03-19T12:00:00-05:00 (noon CDT)
+// Mar 17 9:00am CDT = 2026-03-17T09:00:00-05:00
+// Mar 18 9:00am CDT = 2026-03-18T09:00:00-05:00
+// Mar 19 8:00am CDT = 2026-03-19T08:00:00-05:00 (4hrs before lock)
 
 interface Window {
   key: keyof EmailState["pre_lock"];
@@ -96,17 +97,17 @@ const WINDOWS: Window[] = [
   {
     key: "mar17",
     label: "Mar 17 — 2 days to go",
-    targetMs: new Date("2026-03-17T13:00:00Z").getTime(),
+    targetMs: new Date("2026-03-17T09:00:00-05:00").getTime(),
   },
   {
     key: "mar18",
     label: "Mar 18 — 24 hours left",
-    targetMs: new Date("2026-03-18T13:00:00Z").getTime(),
+    targetMs: new Date("2026-03-18T09:00:00-05:00").getTime(),
   },
   {
     key: "mar19",
     label: "Mar 19 — final warning",
-    targetMs: new Date("2026-03-19T12:00:00Z").getTime(),
+    targetMs: new Date("2026-03-19T08:00:00-05:00").getTime(),
   },
 ];
 
