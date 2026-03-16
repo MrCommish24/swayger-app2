@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MM Admin — Swayger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0F1117; color: #E2E8F0; min-height: 100vh; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 800; color: #F5A623; margin-bottom: 4px; }
+    .badge { display: inline-block; background: #E8590A; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 3px 8px; border-radius: 5px; margin-left: 10px; vertical-align: middle; }
+    .subtitle { font-size: 13px; color: #6B7280; margin-bottom: 32px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 960px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: #1A1F2E; border: 1px solid #2D3748; border-radius: 14px; padding: 20px; }
+    .card h2 { font-size: 14px; font-weight: 700; color: #9CA3AF; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 16px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #9CA3AF; margin-bottom: 5px; }
+    input, select { width: 100%; background: #111827; border: 1px solid #374151; border-radius: 8px; color: #E2E8F0; font-size: 14px; padding: 9px 12px; margin-bottom: 12px; outline: none; }
+    input:focus, select:focus { border-color: #E8590A; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .checkbox-row input { width: auto; margin-bottom: 0; }
+    .checkbox-row label { margin-bottom: 0; }
+    button { display: inline-flex; align-items: center; gap: 7px; background: #E8590A; color: #fff; font-size: 14px; font-weight: 700; border: none; border-radius: 9px; padding: 11px 20px; cursor: pointer; transition: opacity 0.15s; }
+    button:hover { opacity: 0.85; }
+    button.secondary { background: #1D4ED8; }
+    button.danger { background: #DC2626; }
+    button.green { background: #16A34A; }
+    .result { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; display: none; }
+    .result.ok { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #22C55E; }
+    .result.err { background: rgba(220,38,38,0.12); border: 1px solid rgba(220,38,38,0.3); color: #F87171; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; color: #6B7280; font-weight: 600; letter-spacing: 0.5px; padding: 6px 8px; border-bottom: 1px solid #2D3748; }
+    td { padding: 8px; border-bottom: 1px solid #1F2937; color: #D1D5DB; }
+    tr:last-child td { border-bottom: none; }
+    .full { grid-column: 1 / -1; }
+    #leaderboard-table, #results-table { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>March Madness Admin <span class="badge">SWAYGER</span></h1>
+  <p class="subtitle">Protected admin panel — results, scoring, and reminders.</p>
+
+  <div class="grid">
+    <!-- Resolve Game Result -->
+    <div class="card">
+      <h2>Resolve Game Result</h2>
+      <label>Round ID</label>
+      <select id="round_id">
+        <option value="round-64">Round of 64</option>
+        <option value="round-32">Round of 32</option>
+        <option value="sweet-16">Sweet 16</option>
+        <option value="elite-8">Elite 8</option>
+        <option value="final-four">Final Four</option>
+        <option value="championship">Championship</option>
+      </select>
+      <label>Matchup ID (e.g. east-1v16)</label>
+      <input type="text" id="matchup_id" placeholder="east-1v16">
+      <label>Winner Name</label>
+      <input type="text" id="winner_name" placeholder="Duke">
+      <label>Winner Seed</label>
+      <input type="number" id="winner_seed" placeholder="1">
+      <label>Loser Name</label>
+      <input type="text" id="loser_name" placeholder="Siena">
+      <label>Loser Seed</label>
+      <input type="number" id="loser_seed" placeholder="16">
+      <label>Winner Score</label>
+      <input type="number" id="winner_score" placeholder="82">
+      <label>Loser Score</label>
+      <input type="number" id="loser_score" placeholder="61">
+      <div class="checkbox-row">
+        <input type="checkbox" id="was_upset">
+        <label for="was_upset">Was an upset?</label>
+      </div>
+      <button onclick="resolveGame()">💾 Save Result</button>
+      <div class="result" id="resolve-result"></div>
+    </div>
+
+    <!-- Scoring & Leaderboard Actions -->
+    <div class="card">
+      <h2>Scoring & Leaderboard</h2>
+      <p style="font-size:13px;color:#9CA3AF;margin-bottom:16px;line-height:1.5">
+        Run after adding game results to update all user scores. This is idempotent — safe to re-run.
+      </p>
+      <button class="green" onclick="recomputeScores()">⚡ Recompute All Scores</button>
+      <div class="result" id="score-result"></div>
+      <br><br>
+      <button class="secondary" onclick="loadLeaderboard()">📊 Load Leaderboard</button>
+      <div id="leaderboard-table"></div>
+    </div>
+
+    <!-- Reminders -->
+    <div class="card">
+      <h2>Picks Reminder</h2>
+      <p style="font-size:13px;color:#9CA3AF;margin-bottom:16px;line-height:1.5">
+        Sends a "your picks aren't locked yet" email to all users who haven't submitted any locked takes. Only send before the lock date (March 19).
+      </p>
+      <button class="danger" onclick="sendReminders()">📧 Send Reminder Emails</button>
+      <div class="result" id="remind-result"></div>
+    </div>
+
+    <!-- Game Results Log -->
+    <div class="card">
+      <h2>Entered Results</h2>
+      <button onclick="loadResults()" style="background:#374151;">🔄 Refresh</button>
+      <div id="results-table"></div>
+    </div>
+  </div>
+
+  <script>
+    const token = new URLSearchParams(window.location.search).get("token") || "";
+
+    async function apiPost(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    }
+
+    function showResult(id, data) {
+      const el = document.getElementById(id);
+      el.style.display = "block";
+      if (data.ok) {
+        el.className = "result ok";
+        el.textContent = "✓ " + (data.message || "Done");
+      } else {
+        el.className = "result err";
+        el.textContent = "✗ " + (data.error || "Unknown error");
+      }
+    }
+
+    async function resolveGame() {
+      const body = {
+        round_id: document.getElementById("round_id").value,
+        matchup_id: document.getElementById("matchup_id").value.trim(),
+        winner_name: document.getElementById("winner_name").value.trim(),
+        winner_seed: parseInt(document.getElementById("winner_seed").value) || null,
+        loser_name: document.getElementById("loser_name").value.trim() || null,
+        loser_seed: parseInt(document.getElementById("loser_seed").value) || null,
+        winner_score: parseInt(document.getElementById("winner_score").value) || null,
+        loser_score: parseInt(document.getElementById("loser_score").value) || null,
+        was_upset: document.getElementById("was_upset").checked,
+      };
+      const data = await apiPost("/admin/mm/api/resolve", body);
+      showResult("resolve-result", data);
+    }
+
+    async function recomputeScores() {
+      const data = await apiPost("/admin/mm/api/score", {});
+      showResult("score-result", data);
+    }
+
+    async function sendReminders() {
+      if (!confirm("Send reminder emails to all users without picks?")) return;
+      const data = await apiPost("/admin/mm/api/remind", {});
+      showResult("remind-result", data);
+    }
+
+    async function loadLeaderboard() {
+      const res = await fetch(`/admin/mm/api/leaderboard?token=${token}`);
+      const data = await res.json();
+      const el = document.getElementById("leaderboard-table");
+      if (!data.ok || !data.entries?.length) {
+        el.innerHTML = "<p style='color:#6B7280;font-size:12px;margin-top:10px'>No scores yet.</p>";
+        return;
+      }
+      el.innerHTML = `<table id="lb-table">
+        <thead><tr><th>#</th><th>User</th><th>Total</th><th>S16</th><th>E8</th><th>FF</th><th>Champ</th><th>Upsets</th></tr></thead>
+        <tbody>${data.entries.map((e, i) => `
+          <tr>
+            <td>${i+1}</td>
+            <td>${e.display_name || "@" + e.username}</td>
+            <td style="color:#F5A623;font-weight:700">${e.total_points}</td>
+            <td>${e.sweet_sixteen_pts}</td>
+            <td>${e.elite_eight_pts}</td>
+            <td>${e.final_four_pts}</td>
+            <td>${e.champion_pts}</td>
+            <td>${e.upset_pts} (${e.correct_upsets}✓)</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+    }
+
+    async function loadResults() {
+      const res = await fetch(`/admin/mm/api/results?token=${token}`);
+      const data = await res.json();
+      const el = document.getElementById("results-table");
+      if (!data.ok || !data.results?.length) {
+        el.innerHTML = "<p style='color:#6B7280;font-size:12px;margin-top:10px'>No results entered yet.</p>";
+        return;
+      }
+      el.innerHTML = `<table>
+        <thead><tr><th>Round</th><th>Matchup</th><th>Winner</th><th>Score</th><th>Upset?</th></tr></thead>
+        <tbody>${data.results.map(r => `
+          <tr>
+            <td>${r.round_id}</td>
+            <td>${r.matchup_id}</td>
+            <td style="color:#22C55E">${r.winner_name || "—"}</td>
+            <td>${r.winner_score != null ? r.winner_score + "–" + r.loser_score : "—"}</td>
+            <td>${r.was_upset ? "✓" : ""}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`;
+    }
+
+    loadResults();
+  </script>
+</body>
+</html>

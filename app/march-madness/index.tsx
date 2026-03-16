@@ -283,6 +283,26 @@ export default function MarchMadnessHub() {
           </View>
         </View>
 
+        {/* Quick Picks + Locked Takes — centerpiece */}
+        <Pressable
+          style={({ pressed }) => [styles.picksHeroBanner, pressed && { opacity: 0.88 }]}
+          onPress={() => router.push("/march-madness/picks")}
+        >
+          <View style={styles.picksHeroLeft}>
+            <View style={styles.picksHeroBadge}>
+              <Text style={styles.picksHeroBadgeText}>NEW</Text>
+            </View>
+            <Text style={styles.picksHeroTitle}>Quick Picks & Locked Takes</Text>
+            <Text style={styles.picksHeroSub}>
+              Champion · Final Four · Elite Eight · Sweet 16{"\n"}+ Upset Picks — no opponent needed
+            </Text>
+          </View>
+          <View style={styles.picksHeroRight}>
+            <Text style={styles.picksHeroEmoji}>🏆</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.5)" />
+          </View>
+        </Pressable>
+
         {/* Featured Matchups */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -475,6 +495,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 28,
     paddingTop: 8,
+  },
+
+  // Quick Picks banner
+  picksHeroBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1A1238",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#7C3AED",
+    padding: 18,
+    gap: 12,
+  },
+  picksHeroLeft: {
+    flex: 1,
+    gap: 6,
+  },
+  picksHeroBadge: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+  },
+  picksHeroBadgeText: {
+    fontSize: 9,
+    fontWeight: "800" as const,
+    color: "#FFFFFF",
+    letterSpacing: 1,
+  },
+  picksHeroTitle: {
+    fontSize: 17,
+    fontWeight: "800" as const,
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  picksHeroSub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.6)",
+    lineHeight: 17,
+  },
+  picksHeroRight: {
+    alignItems: "center",
+    gap: 4,
+  },
+  picksHeroEmoji: {
+    fontSize: 36,
   },
 
   // Hero

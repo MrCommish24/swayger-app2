@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { sendNotificationEmail, type NotifyPayload } from "./email";
+import { registerMMAdminRoutes } from "./routes-mm-admin";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/config", (_req: Request, res: Response) => {
@@ -26,6 +27,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ ok: false, error: "Failed to send notification" });
     }
   });
+
+  registerMMAdminRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

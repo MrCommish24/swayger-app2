@@ -189,3 +189,35 @@ export async function sendNotificationEmail(
     }
   });
 }
+
+
+// ─── March Madness reminder email ────────────────────────────────────────────
+
+export async function sendMMReminderEmail({
+  to,
+  displayName,
+}: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  const subject = "🏀 Your March Madness Picks Aren't Locked Yet";
+  const headline = "Lock In Your Picks Before Tip-Off";
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      The tournament tips off soon and you haven't locked in your March Madness picks yet.
+      Pick your <strong style="color:#FFFFFF;">Champion, Final Four, Elite Eight, and Sweet Sixteen</strong> — plus up to 3 upset picks for the Round of 64.
+    </p>
+    <p style="margin:0;color:#8B95A5;font-size:14px;">
+      Picks lock at noon ET on March 19. Once it's locked, it's locked.
+    </p>
+  `;
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject,
+    html: buildEmailHtml(subject, headline, body, "Lock My Picks", `${APP_URL}/march-madness/picks`),
+  });
+}
