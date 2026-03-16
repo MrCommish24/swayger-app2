@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { createSwayger, fetchMyBalance, CATEGORIES } from "@/lib/swayger";
+import { createSwayger, fetchMyBalance, CATEGORIES, categoryIcon } from "@/lib/swayger";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
@@ -224,36 +224,48 @@ export default function CreateSwaygerScreen() {
 
           <View>
             <Text style={styles.label}>Category</Text>
-            <View style={styles.categoryGrid}>
-              {CATEGORIES.map((cat) => (
-                <Pressable
-                  key={cat.value}
-                  style={[
-                    styles.categoryOption,
-                    category === cat.value && styles.categoryOptionActive,
-                  ]}
-                  onPress={() => setCategory(cat.value)}
-                >
-                  <Ionicons
-                    name={cat.icon}
-                    size={18}
-                    color={
-                      category === cat.value
-                        ? Colors.dark.tint
-                        : Colors.dark.textSecondary
-                    }
-                  />
-                  <Text
+            {params.prefillCategory ? (
+              <View style={styles.categoryLocked}>
+                <Ionicons
+                  name={categoryIcon(category) as keyof typeof Ionicons.glyphMap}
+                  size={16}
+                  color={Colors.dark.tint}
+                />
+                <Text style={styles.categoryLockedText}>{category}</Text>
+                <Ionicons name="lock-closed-outline" size={13} color={Colors.dark.tabIconDefault} />
+              </View>
+            ) : (
+              <View style={styles.categoryGrid}>
+                {CATEGORIES.map((cat) => (
+                  <Pressable
+                    key={cat.value}
                     style={[
-                      styles.categoryLabel,
-                      category === cat.value && styles.categoryLabelActive,
+                      styles.categoryOption,
+                      category === cat.value && styles.categoryOptionActive,
                     ]}
+                    onPress={() => setCategory(cat.value)}
                   >
-                    {cat.value}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                    <Ionicons
+                      name={cat.icon}
+                      size={18}
+                      color={
+                        category === cat.value
+                          ? Colors.dark.tint
+                          : Colors.dark.textSecondary
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.categoryLabel,
+                        category === cat.value && styles.categoryLabelActive,
+                      ]}
+                    >
+                      {cat.value}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
 
           <View>
@@ -499,6 +511,23 @@ const styles = StyleSheet.create({
     fontWeight: "500" as const,
   },
   categoryLabelActive: {
+    color: Colors.dark.tint,
+  },
+  categoryLocked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(29, 161, 242, 0.08)",
+    borderWidth: 1,
+    borderColor: Colors.dark.tint,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignSelf: "flex-start" as const,
+  },
+  categoryLockedText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
     color: Colors.dark.tint,
   },
   stakeRow: {
