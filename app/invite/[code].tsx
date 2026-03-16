@@ -53,17 +53,20 @@ export default function InviteScreen() {
         return;
       }
       if (result.swaygerId) {
-        setJoinedId(result.swaygerId);
         queryClient.invalidateQueries({ queryKey: ["swaygers"] });
-        const joined = await fetchSwayger(result.swaygerId);
-        if (joined && joined.creator_id !== user?.id) {
-          sendPushNotification(
-            joined.creator_id,
-            "Someone joined your Swayger! 👋",
-            `Your Swayger "${joined.title}" has a challenger. Review and accept!`,
-            { swayger_id: result.swaygerId }
-          );
-        }
+        // Fire push notification without blocking navigation
+        fetchSwayger(result.swaygerId).then((joined) => {
+          if (joined && joined.creator_id !== user?.id) {
+            sendPushNotification(
+              joined.creator_id,
+              "Someone joined your Swayger! 👋",
+              `Your Swayger "${joined.title}" has a challenger. Review and accept!`,
+              { swayger_id: result.swaygerId! }
+            );
+          }
+        });
+        // Navigate immediately — don't block on the post-join fetch
+        router.replace(`/swayger/${result.swaygerId}`);
       }
     },
     onError: () => showError("Failed to join. Try again."),
