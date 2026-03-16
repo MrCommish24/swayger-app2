@@ -121,7 +121,7 @@ export const MM_ROUNDS: MMRound[] = [
         teamA: { name: "UConn", seed: 2 },
         teamB: { name: "Furman", seed: 15 },
         region: "East",
-        prompt: "UConn hunting a three-peat. Furman pulled off an upset in 2023. Is this revenge or redemption?",
+        prompt: "UConn won back-to-back titles in '23 and '24, then Florida stole the crown. Is this the Huskies' redemption run?",
         gameDateLabel: "Mar 20",
         site: "Philadelphia, PA",
       },
