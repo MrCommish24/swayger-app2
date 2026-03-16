@@ -115,7 +115,7 @@ Three pick types per round with per-round lock dates:
 |------|---------|--------|
 | `supabase-mm-migration.sql` | MM tables, special picks, round matchups | Run if not done |
 | `supabase-fix-swayger-rls.sql` | Opponent can read swayger after joining | ✅ Done |
-| `supabase-leaderboard-rls-fix.sql` | Global leaderboard via SECURITY DEFINER RPC | **Needs to be run** |
+| `supabase-leaderboard-rls-fix.sql` | Global leaderboard via SECURITY DEFINER RPC | ✅ Done |
 
 ---
 
