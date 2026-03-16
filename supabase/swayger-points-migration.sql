@@ -105,11 +105,13 @@ BEGIN
   -- Create swayger
   INSERT INTO swaygers (
     creator_id, title, description, category,
-    stake_units, creator_pick, stake_note, points_active
+    stake_units, creator_pick, stake_note, points_active,
+    expires_at
   )
   VALUES (
     v_user_id, p_title, p_description, p_category,
-    p_stake_units, p_creator_pick, p_stake_note, TRUE
+    p_stake_units, p_creator_pick, p_stake_note, TRUE,
+    NOW() + INTERVAL '7 days'
   )
   RETURNING id INTO v_swayger_id;
 
