@@ -38,15 +38,20 @@ export default function CreateSwaygerScreen() {
     rematchTypeForEdit?: string;
     creatorPickPrefill?: string;
     openChallenge?: string;
+    // March Madness quick-create — pre-fills the form without triggering any
+    // special mode (isCounter / isOpenChallenge), so the title stays "Create Swayger"
+    prefillTitle?: string;
+    prefillCategory?: string;
+    prefillDescription?: string;
   }>();
 
   const isOpenChallenge = params.openChallenge === "true";
   const isCounter = !!params.counterTitle && !params.lockedOpponentId && !isOpenChallenge;
   const isRematch = !!params.lockedOpponentId;
 
-  const [title, setTitle] = useState(params.counterTitle || "");
-  const [description, setDescription] = useState(params.counterDescription || "");
-  const [category, setCategory] = useState(params.counterCategory || "Sports");
+  const [title, setTitle] = useState(params.prefillTitle || params.counterTitle || "");
+  const [description, setDescription] = useState(params.prefillDescription || params.counterDescription || "");
+  const [category, setCategory] = useState(params.prefillCategory || params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(
     params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5
   );
@@ -62,14 +67,18 @@ export default function CreateSwaygerScreen() {
   const myBalance = balanceData?.balance ?? 0;
 
   useEffect(() => {
-    if (params.counterTitle) {
+    if (params.prefillTitle) {
+      setTitle(params.prefillTitle);
+      setDescription(params.prefillDescription || "");
+      setCategory(params.prefillCategory || "Sports");
+    } else if (params.counterTitle) {
       setTitle(params.counterTitle);
       setDescription(params.counterDescription || "");
       setCategory(params.counterCategory || "Sports");
       setStakeUnits(params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5);
       setCreatorPick(params.creatorPickPrefill || "");
     }
-  }, [params.counterTitle]);
+  }, [params.prefillTitle, params.counterTitle]);
 
   const canSubmit =
     title.trim().length >= 2 &&

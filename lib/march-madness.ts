@@ -439,13 +439,14 @@ export function getFeaturedMatchups(limit = 9): MMMatchup[] {
 }
 
 // Build create-swayger URL params from a matchup.
+// Uses distinct prefill* keys so the create screen shows a clean "Create Swayger"
+// flow rather than triggering the "Same Swayger, New Opponent" or "Counter Offer" modes.
 export function matchupToCreateParams(matchup: MMMatchup): Record<string, string> {
   const seedA = matchup.teamA.seed > 0 ? `#${matchup.teamA.seed} ` : "";
   const seedB = matchup.teamB.seed > 0 ? `#${matchup.teamB.seed} ` : "";
   return {
-    counterCategory: "March Madness",
-    counterTitle: `${seedA}${matchup.teamA.name} vs. ${seedB}${matchup.teamB.name}`,
-    counterDescription: matchup.prompt,
-    openChallenge: "true",
+    prefillCategory: "March Madness",
+    prefillTitle: `${seedA}${matchup.teamA.name} vs. ${seedB}${matchup.teamB.name}`,
+    prefillDescription: matchup.prompt,
   };
 }
