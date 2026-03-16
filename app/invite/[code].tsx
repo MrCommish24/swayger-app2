@@ -41,6 +41,7 @@ export default function InviteScreen() {
   const [joinedId, setJoinedId] = useState<string | null>(null);
   const [countering, setCountering] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const joinNotifiedRef = useRef(false);
 
   const joinMutation = useMutation({
     mutationFn: () => {
@@ -54,19 +55,9 @@ export default function InviteScreen() {
       }
       if (result.swaygerId) {
         queryClient.invalidateQueries({ queryKey: ["swaygers"] });
-        // Fire push notification without blocking navigation
-        fetchSwayger(result.swaygerId).then((joined) => {
-          if (joined && joined.creator_id !== user?.id) {
-            sendPushNotification(
-              joined.creator_id,
-              "Someone joined your Swayger! 👋",
-              `Your Swayger "${joined.title}" has a challenger. Review and accept!`,
-              { swayger_id: result.swaygerId! }
-            );
-          }
-        });
-        // Navigate immediately — don't block on the post-join fetch
-        router.replace(`/swayger/${result.swaygerId}`);
+        // Stay on invite screen so user can make their pick and accept.
+        // The useQuery below will load the swayger via RPC fallback.
+        setJoinedId(result.swaygerId);
       }
     },
     onError: () => showError("Failed to join. Try again."),
@@ -86,7 +77,9 @@ export default function InviteScreen() {
 
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;
-  const canAccept = swayger && !isCreator && isOpponent && swayger.status === "pending_invite";
+  // opponent_id is null until accept_swayger is called, so we can't rely on isOpponent here.
+  // Any non-creator who joined via invite can accept a pending_invite swayger.
+  const canAccept = swayger && !isCreator && swayger.status === "pending_invite";
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptSwayger(joinedId!, opponentPick, user?.id),
@@ -131,13 +124,25 @@ export default function InviteScreen() {
     onError: () => showError("Failed to decline. Try again."),
   });
 
-  // When join succeeds but RLS timing means the swayger fetch returns null,
-  // navigate directly to the swayger detail page — but in a useEffect, never during render.
+  // If fetch still returns null after join (RPC fallback also failed), go to detail page.
   useEffect(() => {
     if (joinedId && !swaygerLoading && swayger === null && joinMutation.isSuccess) {
       router.replace(`/swayger/${joinedId}`);
     }
   }, [joinedId, swaygerLoading, swayger, joinMutation.isSuccess]);
+
+  // Notify creator once when the swayger loads after joining (fire-and-forget).
+  useEffect(() => {
+    if (!swayger || !user || joinNotifiedRef.current) return;
+    if (swayger.creator_id === user.id) return; // don't notify self
+    joinNotifiedRef.current = true;
+    sendPushNotification(
+      swayger.creator_id,
+      "Someone joined your Swayger! 👋",
+      `Your Swayger "${swayger.title}" has a challenger. Review and accept!`,
+      { swayger_id: swayger.id }
+    );
+  }, [swayger, user]);
 
   const anyPending = joinMutation.isPending || acceptMutation.isPending || declineMutation.isPending || countering;
 
