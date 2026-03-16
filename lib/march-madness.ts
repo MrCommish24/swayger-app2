@@ -24,6 +24,7 @@ export interface MMMatchup {
   prompt: string;
   gameDateLabel?: string;
   site?: string;
+  keyStat?: string; // short reason why this is an intriguing upset pick
 }
 
 export interface MMRound {
