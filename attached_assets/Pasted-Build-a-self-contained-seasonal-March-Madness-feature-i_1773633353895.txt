@@ -1,0 +1,570 @@
+Build a self-contained seasonal March Madness feature inside the existing Swayger app.
+
+Important context:
+- The March Madness banner / seasonal hub (Option A) is already live in Swayger
+- This new work should build on top of that existing March Madness entry point
+- This is NOT a standalone app
+- This is NOT a full bracket product
+- This is NOT a replacement for the core Swayger flow
+- This should reuse existing Swayger infrastructure wherever practical
+
+Critical constraint:
+DO NOT break, refactor, interrupt, or materially change the core existing Swayger functionality.
+This feature must be modular, additive, and easy to remove after the tournament if needed.
+
+Primary product direction:
+March Madness Quick Picks + Locked Takes should be the centerpiece of the seasonal experience.
+
+The March Madness hub should contain two clear paths:
+1. Featured round matchups + Custom Swayger creation
+2. March Madness Quick Picks + Locked Takes (the centerpiece)
+
+Quick Picks + Locked Takes are “1 vs none” picks:
+- no opponent required
+- no acceptance required
+- system-scored
+- separate leaderboard from 1v1 Swaygers
+- built for repeat engagement and shareable receipts
+
+This is the main growth/engagement engine for the seasonal feature.
+
+==================================================
+FIRST TASK — DO NOT START CODING IMMEDIATELY
+==================================================
+
+First, inspect the current codebase and return a concise implementation plan that includes:
+
+1. what already exists in the current March Madness banner / hub
+2. what existing Swayger auth/session/profile flows can be reused
+3. what existing receipt/share-image functionality can be reused
+4. what existing leaderboard functionality can be reused
+5. what existing Swayger creation flow can be reused for featured matchups/custom Swaygers
+6. what new routes, components, tables, and services must be added
+7. exactly which files you plan to create or modify
+8. confirmation that the core Swayger flow will remain untouched
+9. any risks, assumptions, or questions
+
+Only after showing that plan should you begin implementation.
+
+==================================================
+PRODUCT OVERVIEW
+==================================================
+
+Build a March Madness seasonal experience with this structure:
+
+A. Existing March Madness hub remains the entry point
+
+B. Within the March Madness hub, present two major areas:
+   1. Featured Matchups / Custom Swayger
+   2. Quick Picks + Locked Takes (centerpiece)
+
+The Quick Picks + Locked Takes experience should be the most prominent path because it is easier for users to participate in, easier to share, and more likely to drive repeat app opens.
+
+==================================================
+BRAND / LANGUAGE
+==================================================
+
+Use Swayger branding prominently:
+- Swayger
+- Think you're right? Swayger on it.
+- Friendly wagers. No real money. Just bragging rights.
+
+The experience should feel:
+- social
+- competitive
+- sports-forward
+- simple
+- mobile-friendly
+- highly shareable
+
+==================================================
+MARCH MADNESS HUB STRUCTURE
+==================================================
+
+When a user taps the March Madness banner, the hub should show:
+
+Section 1:
+Featured Matchups / Featured Picks / Custom Swayger path
+
+Section 2:
+March Madness Quick Picks + Locked Takes (centerpiece)
+
+The hub should make it very clear that:
+- users can create custom Swaygers for specific games
+- users can also make personal tournament picks/takes without needing an opponent
+
+The Quick Picks + Locked Takes section should include obvious CTAs such as:
+- Lock My Champion
+- Lock My Final Four
+- Make This Round’s Picks
+- View March Madness Picks Leaderboard
+- Share My Receipts
+
+==================================================
+PART 1 — FEATURED MATCHUPS / CUSTOM SWAYGER
+==================================================
+
+Keep and improve the existing featured matchup/custom Swayger path.
+
+Requirements:
+- show featured round-of-64 / current round matchups
+- include clear CTA to create a custom Swayger from a featured game
+- reuse the existing Swayger creation flow whenever possible
+- prefill March Madness category, matchup title, team options, and relevant details if possible
+
+This remains important, but it is not the centerpiece.
+
+If live game data is easy to pull from BallDontLie, use it.
+If not, support admin-configured featured matchups for MVP.
+
+==================================================
+PART 2 — QUICK PICKS + LOCKED TAKES (CENTERPIECE)
+==================================================
+
+This is the main new feature set.
+
+These are not 1v1 wagers.
+These are personal picks that are scored by the system.
+
+Build two sub-sections:
+
+A. Locked Takes
+B. Round-Based Quick Picks
+
+==================================================
+FEATURE A — LOCKED TAKES
+==================================================
+
+Build a Locked Takes area with one-time tournament picks.
+
+MVP Locked Takes:
+1. Champion Pick
+   - one champion pick per account
+   - locks at tournament start
+   - cannot be edited after lock
+
+2. Final Four Picks
+   - one Final Four submission per account
+   - user selects 4 teams
+   - locks at tournament start
+   - cannot be edited after lock
+
+3. Elite Eight Picks
+   - include only if practical after the first two are working well
+   - treat as secondary to Champion + Final Four
+   - if included, one Elite Eight submission per account
+   - also locks at tournament start
+
+Implementation notes:
+- enforce one submission per user/account for each locked take type
+- enforce lock server-side, not just in the UI
+- users should be able to view their locked takes after submission
+- users should be able to generate share cards for these picks immediately after locking them
+
+==================================================
+FEATURE B — ROUND-BASED QUICK PICKS
+==================================================
+
+Build round-based quick picks, not weekly picks.
+
+Reason:
+March Madness works best in round windows, not generic weeks.
+
+Each round should have a set of quick pick props users can make.
+
+MVP quick pick types:
+
+1. Upset Picks
+Definition of upset for MVP:
+- lower seed beats higher seed
+
+Round-based upset pick limits:
+- Round of 64: up to 3 upset picks
+- Round of 32: up to 2 upset picks
+- Sweet 16: up to 1 upset pick
+- Elite 8: up to 1 upset pick
+- Final Four: optional only if practical
+- Championship: not needed as upset pick type
+
+2. Biggest Blowout
+For a given round, user picks which matchup/team will produce the largest margin of victory
+
+3. Highest-Scoring Game
+For a given round, user picks which game will have the most combined points
+
+If needed, prioritize implementation in this order:
+1. Upset Picks
+2. Highest-Scoring Game
+3. Biggest Blowout
+
+Do NOT add too many prop categories in MVP.
+Keep it simple and understandable.
+
+==================================================
+QUICK PICKS UX
+==================================================
+
+Inside the March Madness hub, Quick Picks + Locked Takes should have a clean card/list-based interface.
+
+Do NOT build a full bracket tree.
+
+Preferred UX:
+- cards for each pick type
+- clear status badges (Open / Locked / Scored / Won / Lost / Still Alive)
+- easy tap flow
+- easy to understand on mobile
+
+Examples:
+- Lock My Champion
+- Lock My Final Four
+- Round of 64 Upset Picks
+- Round of 64 Highest-Scoring Game
+- Round of 64 Biggest Blowout
+
+Each card should show:
+- current status
+- deadline/lock info
+- remaining picks allowed (for upset picks)
+- quick CTA
+
+==================================================
+LEADERBOARD — SEPARATE FROM 1V1 SWAYGERS
+==================================================
+
+Build a separate March Madness Picks leaderboard.
+
+This is important:
+1v1 Swaygers and 1-vs-none Quick Picks should NOT be blended together.
+
+Add a separate pill/tab/filter for this category.
+
+Examples:
+- Picks
+- Swaygers
+
+or
+- Quick Picks
+- 1v1
+
+The March Madness Picks leaderboard should show:
+- rank
+- display name / alias
+- total March Madness Picks points
+- correct upset picks
+- Final Four hits
+- Champion status if useful
+
+Highlight top 3.
+
+Leaderboard should feel polished, social, and clearly separate from the normal Swayger competitive record.
+
+==================================================
+SCORING MODEL
+==================================================
+
+Keep scoring simple, transparent, and easy to explain.
+
+Recommended MVP scoring:
+
+Locked Takes:
+- correct Champion pick = 10 points
+- each correct Final Four team = 5 points
+- each correct Elite Eight team = 2 or 3 points only if Elite Eight is included
+
+Quick Picks:
+- each correct upset pick = 3 points
+- correct Biggest Blowout pick = 3 points
+- correct Highest-Scoring Game pick = 3 points
+
+If needed, skip bonuses in MVP.
+
+Important requirements:
+- scoring must be recomputable
+- scoring must be idempotent
+- no double counting
+- admin must be able to re-run scoring safely
+
+==================================================
+SHAREABLE RECEIPTS / IMAGE CARDS
+==================================================
+
+This is must-have and central to the product.
+
+These receipts are the main viral/share loop and should encourage others to come into the app to make picks even if they are not creating custom Swaygers.
+
+Reuse the existing Swayger receipt/share-image flow if possible.
+If not reusable directly, use html2canvas or similar.
+
+Build image-based share cards for:
+
+Early / pre-tournament:
+- My Champion Pick
+- My Final Four Picks
+- My Elite Eight Picks if included
+- My March Madness Takes Are Locked
+
+Round-based:
+- My Round of 64 Upset Picks
+- I Called the Upset
+- I Nailed the Highest-Scoring Game
+- I Called the Biggest Blowout
+
+Leaderboard / status:
+- My March Madness Picks Rank
+- Top 3 on the March Madness Picks leaderboard
+- My Champion Is Still Alive
+- X of My Final Four Teams Are Still Alive
+
+These cards should use:
+- Swayger branding
+- display name / alias
+- seasonal context
+- Think you're right? Swayger on it.
+- Friendly wagers. No real money. Just bragging rights.
+
+Focus on generating image assets.
+Do not build a complex new social sharing system.
+
+==================================================
+EMAIL REMINDER LOGIC
+==================================================
+
+Build practical reminder logic for this feature, but do not overbuild it.
+
+The app only has email notifications.
+We want reminders that are useful and timely, not spammy.
+
+Build a reminder rules system tied to:
+- tournament round / round start
+- whether the user has made their Champion / Final Four picks
+- whether the user has made their available quick picks for the current round
+- whether the user has been active recently
+- whether the user has a good share-worthy status update
+
+Recommended reminder behavior:
+- pre-tournament reminder to lock Champion + Final Four picks
+- round-start reminder when new quick picks are open
+- optional check-your-standing reminder after scoring updates
+- suppress reminders if the user already completed the relevant picks
+- suppress reminders if the user has been active recently
+
+Important:
+Do NOT build a giant fully automated email system if risky.
+If needed, build:
+1. reminder rules engine / eligibility logic
+2. admin preview and/or admin-trigger capability
+3. optional automation later
+
+If there is an existing email/status pipeline in Swayger, reuse it carefully.
+
+==================================================
+TOURNAMENT DATA / RESULTS
+==================================================
+
+Use BallDontLie March Madness API if practical for:
+- teams
+- seeds
+- rounds
+- matchups
+- game results
+- winner determination
+- margins
+- combined game totals
+
+If BallDontLie integration is incomplete or slower than expected, support a practical fallback:
+- admin-managed JSON/config for relevant games
+- manual result resolution/admin scoring
+
+Important:
+Do NOT let imperfect API integration block the MVP.
+
+Priority order:
+1. locked takes UI and storage
+2. quick pick UI and storage
+3. separate leaderboard
+4. receipts/share cards
+5. scoring
+6. BallDontLie automation where practical
+7. reminder automation later
+
+==================================================
+ADMIN TOOLS
+==================================================
+
+Build a simple admin page for this feature.
+
+Admin tools should allow:
+- manage featured matchups if needed
+- configure active quick pick categories by round
+- configure round-based upset limits
+- toggle Elite Eight pick availability if it exists
+- manually manage or upload relevant matchup/game data
+- trigger BallDontLie sync if integrated
+- manually resolve a game result
+- manually score/re-score picks
+- rebuild leaderboard
+- preview reminder eligibility / reminder status if practical
+- optionally toggle feature visibility if helpful
+
+Admin access should be based on authenticated email allowlist.
+Use existing auth and env/config like ADMIN_EMAILS.
+
+==================================================
+AUTH / INFRASTRUCTURE
+==================================================
+
+Use existing real Supabase magic link auth.
+Do not create a separate auth system.
+
+Use existing PostgreSQL / Supabase setup.
+Do not create a parallel database.
+
+Reuse existing display-name / alias logic for:
+- receipts
+- leaderboard
+- pick ownership
+
+==================================================
+DATA MODEL
+==================================================
+
+Use Supabase/Postgres.
+
+Create a lightweight but practical schema for this seasonal system, for example:
+
+- march_madness_locked_takes
+- march_madness_quick_picks
+- march_madness_games
+- march_madness_pick_results
+- march_madness_leaderboard_scores
+- march_madness_round_config
+- march_madness_featured_matchups
+- march_madness_admin_actions
+- march_madness_reminder_logs if needed
+
+The schema should support:
+- one Champion pick per user
+- one Final Four pick set per user
+- optional one Elite Eight pick set per user
+- multiple round-based quick picks with limits
+- game/round result tracking
+- recomputable scoring
+- share-card data generation
+- separate leaderboard aggregation
+
+Do NOT overbuild this into a giant generalized tournament engine unless necessary.
+
+==================================================
+LOCKING / VALIDATION RULES
+==================================================
+
+This is critical.
+
+Locked Takes:
+- Champion / Final Four / Elite Eight (if included) lock at tournament start
+- enforce server-side, not just UI-side
+
+Round-Based Quick Picks:
+- picks lock when the relevant game starts, or when the round lock window closes depending on implementation
+- enforce round limits server-side
+- prevent duplicate pick submissions where not allowed
+- validate seeds and matchup eligibility on the server
+
+All important validation must happen server-side.
+
+==================================================
+UI / DESIGN
+==================================================
+
+Design should feel:
+- clean
+- sports-themed
+- current/live
+- mobile-friendly
+- native to Swayger
+- highly shareable
+
+Prefer cards, lists, pills/tabs, and simple selectors.
+Do NOT build a complex bracket tree.
+
+The Quick Picks + Locked Takes area should feel like the centerpiece of the March Madness experience.
+
+==================================================
+PROTECTION OF CORE SWAYGER APP
+==================================================
+
+This is critical.
+
+Do not break or materially alter:
+- existing 1v1 Swayger flow
+- existing settlement flow
+- existing share flow outside this seasonal module
+- existing auth/session behavior
+- existing email/status update logic
+- existing core data models unless necessary
+
+If something reusable already exists, integrate carefully.
+If integration is risky, isolate the March Madness feature instead of changing the core app.
+
+This must remain a seasonal extension, not a rewrite.
+
+==================================================
+NON-GOALS
+==================================================
+
+Do NOT build:
+- full bracket builder
+- ESPN/Yahoo-style bracket clone
+- public pools
+- payments
+- gambling
+- push notifications
+- complex social feed
+- broad app refactors
+- overengineered tournament infrastructure
+
+Keep it focused and launch-oriented.
+
+==================================================
+OUTPUT FORMAT
+==================================================
+
+Work in this order:
+
+STEP 1:
+Audit the current codebase and summarize:
+- what already exists from the current March Madness hub
+- what can be reused
+- what new systems are needed
+- exact files to create/modify
+- schema changes
+- risks
+- confirmation of isolation approach
+
+STEP 2:
+Show the exact phased implementation plan.
+
+STEP 3:
+Then begin implementation.
+
+As you implement:
+- keep changes scoped
+- explain important file additions/changes
+- avoid touching unrelated files
+- prefer isolated feature folders/modules
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+This feature is successful if:
+- users can enter through the existing March Madness hub
+- users can create custom Swaygers from featured matchups
+- users can submit one Champion pick and one Final Four pick
+- optional Elite Eight pick exists only if practical
+- users can make round-based quick picks
+- leaderboard for March Madness Picks is separate from 1v1 Swaygers
+- shareable image receipts work early and often
+- reminder logic exists in a practical and non-spammy way
+- admin can manage and correct the feature if needed
+- core Swayger functionality remains stable and unaffected
