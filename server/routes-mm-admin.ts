@@ -307,7 +307,7 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(401).send("<h1>401 — Invalid or missing admin token</h1><p>Append ?token=YOUR_TOKEN to the URL.</p>");
       return;
     }
-    const htmlPath = path.join(__dirname, "templates", "mm-admin.html");
+    const htmlPath = path.resolve(process.cwd(), "server", "templates", "mm-admin.html");
     if (fs.existsSync(htmlPath)) {
       res.sendFile(htmlPath);
     } else {

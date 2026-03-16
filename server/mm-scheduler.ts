@@ -5,7 +5,7 @@ import { sendMMReminderEmail } from "./email";
 
 // ─── State file (persists across restarts) ────────────────────────────────────
 
-const STATE_FILE = path.join(__dirname, "mm-email-state.json");
+const STATE_FILE = path.resolve(process.cwd(), "mm-email-state.json");
 
 interface EmailState {
   pre_lock: {
