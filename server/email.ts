@@ -214,6 +214,10 @@ export async function sendMMScoreUpdateEmail({
   championPts,
   upsetPts,
   correctUpsets,
+  blowoutPts,
+  correctBlowouts,
+  highScorerPts,
+  correctHighScorers,
   rank,
   totalPlayers,
 }: {
@@ -226,6 +230,10 @@ export async function sendMMScoreUpdateEmail({
   championPts: number;
   upsetPts: number;
   correctUpsets: number;
+  blowoutPts: number;
+  correctBlowouts: number;
+  highScorerPts: number;
+  correctHighScorers: number;
   rank: number;
   totalPlayers: number;
 }): Promise<void> {
@@ -265,9 +273,17 @@ export async function sendMMScoreUpdateEmail({
         <span style="font-size:13px;color:#8B95A5;">Champion</span>
         <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${championPts} pts</span>
       </td></tr>
-      <tr><td style="padding:10px 0;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
         <span style="font-size:13px;color:#8B95A5;">Upset Picks</span>
         <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${upsetPts} pts (${correctUpsets} correct)</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Blowout Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${blowoutPts} pts (${correctBlowouts} correct)</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;">
+        <span style="font-size:13px;color:#8B95A5;">High Scorer Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${highScorerPts} pts (${correctHighScorers} correct)</span>
       </td></tr>
     </table>
   `;

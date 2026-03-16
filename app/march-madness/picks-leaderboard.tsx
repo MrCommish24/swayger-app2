@@ -25,11 +25,13 @@ const RANK_LABELS = ["🥇", "🥈", "🥉"] as const;
 
 function ScoreBreakdown({ score }: { score: PickScore }) {
   const parts = [
-    { label: "S16", pts: score.sweet_sixteen_pts, color: "#3B82F6" },
-    { label: "E8", pts: score.elite_eight_pts, color: "#F97316" },
-    { label: "FF", pts: score.final_four_pts, color: PURPLE },
-    { label: "Champ", pts: score.champion_pts, color: GOLD },
-    { label: "Upsets", pts: score.upset_pts, color: "#22C55E" },
+    { label: "S16",    pts: score.sweet_sixteen_pts, color: "#3B82F6" },
+    { label: "E8",     pts: score.elite_eight_pts,   color: "#F97316" },
+    { label: "FF",     pts: score.final_four_pts,    color: PURPLE },
+    { label: "Champ",  pts: score.champion_pts,      color: GOLD },
+    { label: "Upset",  pts: score.upset_pts,         color: "#22C55E" },
+    { label: "Blowout",pts: score.blowout_pts ?? 0,  color: "#A855F7" },
+    { label: "Hi-Sc",  pts: score.high_scorer_pts ?? 0, color: "#3B82F6" },
   ].filter((p) => p.pts > 0);
 
   if (!parts.length) return null;
@@ -153,9 +155,19 @@ export default function PicksLeaderboard() {
               </View>
             ))}
             <View style={styles.scoringItem}>
-              <Text style={styles.scoringEmoji}>🎯</Text>
+              <Text style={styles.scoringEmoji}>💥</Text>
               <Text style={styles.scoringPts}>+3</Text>
               <Text style={styles.scoringLabel}>Upset</Text>
+            </View>
+            <View style={styles.scoringItem}>
+              <Text style={styles.scoringEmoji}>🎯</Text>
+              <Text style={styles.scoringPts}>+3</Text>
+              <Text style={styles.scoringLabel}>Blowout</Text>
+            </View>
+            <View style={styles.scoringItem}>
+              <Text style={styles.scoringEmoji}>🏀</Text>
+              <Text style={styles.scoringPts}>+3</Text>
+              <Text style={styles.scoringLabel}>Hi-Sc</Text>
             </View>
           </View>
         </View>
@@ -237,7 +249,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   scoringInfo: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -320,7 +332,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.dark.border,

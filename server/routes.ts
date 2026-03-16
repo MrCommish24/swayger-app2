@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { sendNotificationEmail, type NotifyPayload } from "./email";
 import { registerMMAdminRoutes } from "./routes-mm-admin";
+import { registerMMSpecialRoutes } from "./routes-mm-special";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/config", (_req: Request, res: Response) => {
@@ -29,6 +30,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   registerMMAdminRoutes(app);
+  registerMMSpecialRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

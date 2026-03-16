@@ -32,6 +32,9 @@ export interface MMRound {
   shortLabel: string;
   startDate: string;
   endDate: string;
+  // lockDate: ISO 8601 with UTC offset. Special picks for this round lock at this time.
+  // Bracket takes use a separate BRACKET_LOCK_DATE.
+  lockDate: string;
   featured: MMMatchup[];
 }
 
@@ -49,6 +52,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "First Four",
     startDate: "2026-03-17",
     endDate: "2026-03-18",
+    lockDate: "2026-03-17T12:00:00-05:00",
     featured: [
       {
         id: "ff-1",
@@ -96,6 +100,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "R64",
     startDate: "2026-03-19",
     endDate: "2026-03-20",
+    lockDate: "2026-03-19T12:00:00-05:00",
     featured: [
       // ── EAST ──
       {
@@ -192,6 +197,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "R32",
     startDate: "2026-03-21",
     endDate: "2026-03-22",
+    lockDate: "2026-03-21T12:00:00-05:00",
     featured: [
       {
         id: "r32-1",
@@ -235,6 +241,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "S16",
     startDate: "2026-03-26",
     endDate: "2026-03-27",
+    lockDate: "2026-03-27T12:00:00-05:00",
     featured: [
       {
         id: "s16-east",
@@ -278,6 +285,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "E8",
     startDate: "2026-03-28",
     endDate: "2026-03-29",
+    lockDate: "2026-03-28T12:00:00-05:00",
     featured: [
       {
         id: "e8-east",
@@ -321,6 +329,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "FF",
     startDate: "2026-04-04",
     endDate: "2026-04-04",
+    lockDate: "2026-04-04T18:00:00-05:00",
     featured: [
       {
         id: "ff-sf1",
@@ -350,6 +359,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "🏆",
     startDate: "2026-04-06",
     endDate: "2026-04-06",
+    lockDate: "2026-04-06T20:00:00-05:00",
     featured: [
       {
         id: "champ-2026",
@@ -439,8 +449,6 @@ export function getFeaturedMatchups(limit = 9): MMMatchup[] {
 }
 
 // Build create-swayger URL params from a matchup.
-// Uses distinct prefill* keys so the create screen shows a clean "Create Swayger"
-// flow rather than triggering the "Same Swayger, New Opponent" or "Counter Offer" modes.
 export function matchupToCreateParams(matchup: MMMatchup): Record<string, string> {
   const seedA = matchup.teamA.seed > 0 ? `#${matchup.teamA.seed} ` : "";
   const seedB = matchup.teamB.seed > 0 ? `#${matchup.teamB.seed} ` : "";

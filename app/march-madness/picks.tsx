@@ -21,32 +21,56 @@ import {
   TAKE_ORDER,
   type TakeType,
   type LockedTake,
-  type UpsetPick,
+  type SpecialPick,
+  type RankedMatchup,
+  type RoundMatchups,
   UPSET_LIMITS,
   PICKS_LOCK_DATE,
   isPicksLocked,
+  isRoundLocked,
+  getRoundLockDate,
   fetchMyLockedTakes,
-  fetchMyUpsetPicks,
+  fetchMySpecialPicks,
   fetchMyPickScore,
-  toggleUpsetPick,
-  getUpsetMatchupsForRound,
+  fetchRoundMatchups,
+  saveSpecialPick,
 } from "@/lib/mm-picks";
 import { getCurrentRound } from "@/lib/march-madness";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
 const PURPLE = "#A855F7";
+const GREEN = "#22C55E";
+const BLUE = "#3B82F6";
 
-function LockBanner() {
-  const locked = isPicksLocked();
-  const lockDate = new Date(PICKS_LOCK_DATE);
-  const formatted = lockDate.toLocaleDateString("en-US", {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatLockDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
   });
+}
+
+function roundLabel(roundId: string): string {
+  const map: Record<string, string> = {
+    "round-64": "Round of 64",
+    "round-32": "Round of 32",
+    "sweet-16": "Sweet 16",
+    "elite-8":  "Elite 8",
+    "final-four": "Final Four",
+  };
+  return map[roundId] ?? roundId;
+}
+
+// ─── Lock Banner (bracket takes) ─────────────────────────────────────────────
+
+function BracketLockBanner() {
+  const locked = isPicksLocked();
+  const formatted = formatLockDate(PICKS_LOCK_DATE);
   return (
     <View style={[styles.lockBanner, locked && styles.lockBannerLocked]}>
       <Ionicons
@@ -56,19 +80,23 @@ function LockBanner() {
       />
       <Text style={[styles.lockBannerText, locked && styles.lockBannerTextLocked]}>
         {locked
-          ? "Picks are locked — tournament in progress"
-          : `Picks lock ${formatted}`}
+          ? "Bracket picks locked — tournament in progress"
+          : `Bracket picks lock ${formatted}`}
       </Text>
     </View>
   );
 }
 
+// ─── Scoring Guide ────────────────────────────────────────────────────────────
+
 const SCORING_ROWS = [
-  { emoji: "🏆", label: "Champion", pts: "10 pts", note: "1 pick" },
-  { emoji: "🔥", label: "Final Four", pts: "5 pts each", note: "4 picks" },
-  { emoji: "⚡", label: "Elite Eight", pts: "3 pts each", note: "8 picks" },
-  { emoji: "🌀", label: "Sweet Sixteen", pts: "2 pts each", note: "16 picks" },
-  { emoji: "💥", label: "Upset Picks", pts: "3 pts each", note: "3 max" },
+  { emoji: "🏆", label: "Champion",        pts: "10 pts",   note: "1 pick" },
+  { emoji: "🔥", label: "Final Four",       pts: "5 pts ea", note: "4 picks" },
+  { emoji: "⚡", label: "Elite Eight",      pts: "3 pts ea", note: "8 picks" },
+  { emoji: "🌀", label: "Sweet Sixteen",    pts: "2 pts ea", note: "16 picks" },
+  { emoji: "💥", label: "Upset Pick",       pts: "3 pts ea", note: "per round" },
+  { emoji: "🎯", label: "Blowout Pick",     pts: "3 pts",    note: "per round" },
+  { emoji: "🏀", label: "High Scorer Pick", pts: "3 pts",    note: "per round" },
 ];
 
 function ScoringGuide() {
@@ -81,11 +109,7 @@ function ScoringGuide() {
 
   return (
     <View style={styles.scoringCard}>
-      <Pressable
-        style={styles.scoringHeader}
-        onPress={toggle}
-        hitSlop={8}
-      >
+      <Pressable style={styles.scoringHeader} onPress={toggle} hitSlop={8}>
         <View style={styles.scoringHeaderLeft}>
           <Ionicons name="information-circle-outline" size={16} color={GOLD} />
           <Text style={styles.scoringHeaderText}>How scoring works</Text>
@@ -96,7 +120,6 @@ function ScoringGuide() {
           color={Colors.dark.textSecondary}
         />
       </Pressable>
-
       {expanded ? (
         <View style={styles.scoringBody}>
           {SCORING_ROWS.map((row) => (
@@ -107,11 +130,17 @@ function ScoringGuide() {
               <Text style={styles.scoringPts}>{row.pts}</Text>
             </View>
           ))}
+          <View style={styles.scoringDivider} />
+          <Text style={styles.scoringFootnote}>
+            Blowout: pick the game with the largest margin. High Scorer: pick the highest-scoring game. One pick per category per round. Picks lock before each round tips off.
+          </Text>
         </View>
       ) : null}
     </View>
   );
 }
+
+// ─── Take Card (locked takes) ─────────────────────────────────────────────────
 
 function TakeCard({
   takeType,
@@ -127,14 +156,13 @@ function TakeCard({
   const submitted = take?.is_submitted === true;
   const teams = take?.teams ?? [];
 
-  const statusColor = submitted ? "#22C55E" : locked ? "#6B7280" : GOLD;
+  const statusColor = submitted ? GREEN : locked ? "#6B7280" : GOLD;
   const statusIcon = submitted ? "checkmark-circle" : locked ? "lock-closed" : "radio-button-off";
   const statusText = submitted
     ? `${teams.length}/${cfg.count} locked in`
     : locked
     ? "No pick made"
     : `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""}`;
-
   const preview =
     submitted && teams.length > 0
       ? teams.slice(0, 3).join(", ") + (teams.length > 3 ? ` +${teams.length - 3}` : "")
@@ -161,21 +189,17 @@ function TakeCard({
           <Text style={[styles.takeStatus, { color: statusColor }]}>{statusText}</Text>
         </View>
         {preview ? (
-          <Text style={styles.takePreview} numberOfLines={1}>
-            {preview}
-          </Text>
+          <Text style={styles.takePreview} numberOfLines={1}>{preview}</Text>
         ) : null}
       </View>
       <View style={styles.takeMeta}>
-        <Text style={styles.takePoints}>
-          +{cfg.pointsEach * cfg.count}
-        </Text>
+        <Text style={styles.takePoints}>+{cfg.pointsEach * cfg.count}</Text>
         <Text style={styles.takePointsLabel}>pts max</Text>
         {!locked || submitted ? (
           <Ionicons
             name={submitted ? (locked ? "eye-outline" : "create-outline") : "chevron-forward"}
             size={16}
-            color={submitted ? "#22C55E" : Colors.dark.textSecondary}
+            color={submitted ? GREEN : Colors.dark.textSecondary}
           />
         ) : null}
       </View>
@@ -183,106 +207,230 @@ function TakeCard({
   );
 }
 
-function UpsetPicksSection({
-  roundId,
-  picks,
-  onToggle,
-  toggling,
+// ─── Matchup Card (shared by all special pick types) ─────────────────────────
+
+function MatchupCard({
+  matchup,
+  picked,
+  canPick,
+  isToggling,
+  pickType,
+  onPress,
 }: {
-  roundId: string;
-  picks: UpsetPick[];
-  onToggle: (matchupId: string, upsetTeam: string) => void;
-  toggling: string | null;
+  matchup: RankedMatchup;
+  picked: boolean;
+  canPick: boolean;
+  isToggling: boolean;
+  pickType: "upset" | "blowout" | "high_scorer";
+  onPress: () => void;
 }) {
-  const locked = isPicksLocked();
-  const limit = UPSET_LIMITS[roundId] ?? 3;
-  const matchups = getUpsetMatchupsForRound(roundId);
-  const pickedIds = new Set(picks.map((p) => p.matchup_id));
+  const accentColor =
+    pickType === "upset" ? ORANGE : pickType === "blowout" ? PURPLE : BLUE;
+
+  const rankDot = (
+    <View style={[styles.rankDot, { backgroundColor: picked ? accentColor : "rgba(255,255,255,0.08)" }]}>
+      <Text style={[styles.rankDotText, { color: picked ? "#fff" : Colors.dark.textSecondary }]}>
+        {matchup.rank}
+      </Text>
+    </View>
+  );
+
+  const showSeeds = matchup.seedA > 0 && matchup.seedB > 0;
 
   return (
-    <View style={styles.upsetSection}>
-      <View style={styles.upsetHeader}>
-        <View>
-          <Text style={styles.sectionLabel}>UPSET PICKS</Text>
-          <Text style={styles.upsetRoundLabel}>{roundId.replace("-", " of ").replace("-", " ").toUpperCase()}</Text>
-        </View>
-        <View style={styles.upsetCounter}>
-          <Text style={[styles.upsetCountNum, picks.length >= limit && styles.upsetCountFull]}>
-            {picks.length}
-          </Text>
-          <Text style={styles.upsetCountDivider}>/{limit}</Text>
+    <Pressable
+      style={({ pressed }) => [
+        styles.matchupCard,
+        picked && { borderColor: `${accentColor}50`, backgroundColor: `${accentColor}08` },
+        !canPick && !picked && styles.matchupCardDisabled,
+        pressed && canPick && styles.cardPressed,
+      ]}
+      onPress={onPress}
+      disabled={(!canPick && !picked) || isToggling}
+    >
+      <View style={styles.matchupLeft}>
+        {rankDot}
+        <View style={styles.matchupTeams}>
+          <View style={styles.matchupTeamRow}>
+            {showSeeds ? (
+              <View style={[styles.seedPill, pickType === "upset" && styles.seedPillFav]}>
+                <Text style={styles.seedPillText}>{matchup.seedA}</Text>
+              </View>
+            ) : null}
+            <Text
+              style={[
+                styles.matchupTeamName,
+                pickType === "upset" && styles.matchupFavName,
+              ]}
+              numberOfLines={1}
+            >
+              {matchup.teamA}
+            </Text>
+          </View>
+          <Text style={styles.vsLine}>vs</Text>
+          <View style={styles.matchupTeamRow}>
+            {showSeeds ? (
+              <View style={[styles.seedPill, pickType === "upset" && styles.seedPillUnder]}>
+                <Text style={[styles.seedPillText, pickType === "upset" && { color: ORANGE }]}>
+                  {matchup.seedB}
+                </Text>
+              </View>
+            ) : null}
+            <Text
+              style={[
+                styles.matchupTeamName,
+                picked && pickType === "upset" && { color: GREEN },
+              ]}
+              numberOfLines={1}
+            >
+              {matchup.teamB}
+            </Text>
+          </View>
+          {matchup.gameDate ? (
+            <Text style={styles.matchupMeta}>{matchup.gameDate}</Text>
+          ) : null}
         </View>
       </View>
-      {locked ? (
-        <View style={styles.upsetLockedNote}>
-          <Ionicons name="lock-closed" size={13} color="#6B7280" />
-          <Text style={styles.upsetLockedText}>Upset picks are locked</Text>
+      <View style={styles.matchupRight}>
+        {isToggling ? (
+          <ActivityIndicator size="small" color={accentColor} />
+        ) : picked ? (
+          <View style={[styles.pickedBadge, { backgroundColor: `${accentColor}15` }]}>
+            <Ionicons name="checkmark" size={14} color={accentColor} />
+            <Text style={[styles.pickedBadgeText, { color: accentColor }]}>Called it</Text>
+          </View>
+        ) : canPick ? (
+          <Ionicons name="add-circle-outline" size={20} color={Colors.dark.textSecondary} />
+        ) : (
+          <Ionicons name="remove-circle-outline" size={20} color="#374151" />
+        )}
+        {matchup.oddsSource === "live" && matchup.spread !== undefined ? (
+          <Text style={styles.oddsHint}>
+            {pickType === "blowout" ? `${matchup.spread.toFixed(1)} spread` : ""}
+            {pickType === "high_scorer" && matchup.overUnder ? `o/u ${matchup.overUnder}` : ""}
+            {pickType === "upset" && matchup.underdogMoneyline ? `+${matchup.underdogMoneyline}` : ""}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+// ─── Special Picks Section ────────────────────────────────────────────────────
+
+function SpecialPicksSection({
+  roundId,
+  pickType,
+  label,
+  icon,
+  accentColor,
+  description,
+  matchups,
+  picks,
+  pickLimit,
+  roundLocked,
+  togglingId,
+  onPick,
+}: {
+  roundId: string;
+  pickType: "upset" | "blowout" | "high_scorer";
+  label: string;
+  icon: string;
+  accentColor: string;
+  description: string;
+  matchups: RankedMatchup[];
+  picks: SpecialPick[];
+  pickLimit: number;
+  roundLocked: boolean;
+  togglingId: string | null;
+  onPick: (matchup: RankedMatchup) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  const pickedIds = new Set(picks.filter((p) => p.pick_type === pickType).map((p) => p.matchup_id));
+  const pickedCount = pickedIds.size;
+
+  if (!matchups.length && !roundLocked) return null;
+
+  const lockDate = getRoundLockDate(roundId);
+  const lockStr = lockDate ? formatLockDate(lockDate.toISOString()) : "";
+
+  function toggle() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((v) => !v);
+  }
+
+  return (
+    <View style={styles.specialSection}>
+      <Pressable style={styles.specialSectionHeader} onPress={toggle} hitSlop={6}>
+        <View style={[styles.specialIconBadge, { backgroundColor: `${accentColor}18` }]}>
+          <Text style={{ fontSize: 16 }}>{icon}</Text>
         </View>
-      ) : (
-        <Text style={styles.upsetHint}>
-          Pick up to {limit} team{limit > 1 ? "s" : ""} you think will pull off an upset. Correct picks earn 3 pts each.
-        </Text>
-      )}
-      {matchups.slice(0, 12).map((m) => {
-        const picked = pickedIds.has(m.matchupId);
-        const isToggling = toggling === m.matchupId;
-        const canPick = !locked && (picked || picks.length < limit);
-        return (
-          <Pressable
-            key={m.matchupId}
-            style={({ pressed }) => [
-              styles.upsetCard,
-              picked && styles.upsetCardPicked,
-              !canPick && !picked && styles.upsetCardDisabled,
-              pressed && canPick && styles.cardPressed,
-            ]}
-            onPress={() => canPick && onToggle(m.matchupId, m.underdogTeam)}
-            disabled={!canPick && !picked}
-          >
-            <View style={styles.upsetMatchup}>
-              <View style={styles.upsetTeamRow}>
-                <View style={styles.upsetFavorite}>
-                  <View style={styles.seedPill}>
-                    <Text style={styles.seedPillText}>{m.favoriteSeed}</Text>
-                  </View>
-                  <Text style={[styles.upsetTeamName, styles.upsetFavoriteName]} numberOfLines={1}>
-                    {m.favoriteTeam}
-                  </Text>
-                </View>
-                <Text style={styles.vsSmall}>vs</Text>
-                <View style={styles.upsetUnderdog}>
-                  <View style={[styles.seedPill, styles.seedPillUnderdog]}>
-                    <Text style={[styles.seedPillText, styles.seedPillUnderdogText]}>{m.underdogSeed}</Text>
-                  </View>
-                  <Text style={[styles.upsetTeamName, picked && styles.upsetUnderdogPicked]} numberOfLines={1}>
-                    {m.underdogTeam}
-                  </Text>
-                </View>
-              </View>
-              {m.gameDate || m.site ? (
-                <Text style={styles.upsetMeta}>
-                  {[m.gameDate, m.site].filter(Boolean).join(" · ")}
-                </Text>
-              ) : null}
+        <View style={styles.specialSectionMeta}>
+          <Text style={styles.specialSectionTitle}>{label}</Text>
+          <Text style={styles.specialSectionSub}>{roundLabel(roundId)}</Text>
+        </View>
+        {pickLimit > 1 ? (
+          <View style={[styles.pickCounter, pickedCount >= pickLimit && styles.pickCounterFull]}>
+            <Text style={[styles.pickCountNum, pickedCount >= pickLimit && { color: GREEN }]}>
+              {pickedCount}
+            </Text>
+            <Text style={styles.pickCountDivider}>/{pickLimit}</Text>
+          </View>
+        ) : (
+          <View style={[styles.pickCounter, pickedCount > 0 && styles.pickCounterFull]}>
+            <Ionicons
+              name={pickedCount > 0 ? "checkmark-circle" : "ellipse-outline"}
+              size={20}
+              color={pickedCount > 0 ? GREEN : Colors.dark.textSecondary}
+            />
+          </View>
+        )}
+        <Ionicons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={14}
+          color={Colors.dark.textSecondary}
+          style={{ marginLeft: 4 }}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.specialBody}>
+          {roundLocked ? (
+            <View style={styles.roundLockedRow}>
+              <Ionicons name="lock-closed" size={13} color="#6B7280" />
+              <Text style={styles.roundLockedText}>
+                {lockStr ? `Locked ${lockStr}` : "Picks locked for this round"}
+              </Text>
             </View>
-            {isToggling ? (
-              <ActivityIndicator size="small" color={ORANGE} />
-            ) : picked ? (
-              <View style={styles.upsetPickedBadge}>
-                <Ionicons name="checkmark" size={14} color="#22C55E" />
-                <Text style={styles.upsetPickedText}>Called it</Text>
-              </View>
-            ) : canPick ? (
-              <Ionicons name="add-circle-outline" size={20} color={Colors.dark.textSecondary} />
-            ) : (
-              <Ionicons name="remove-circle-outline" size={20} color="#374151" />
-            )}
-          </Pressable>
-        );
-      })}
+          ) : (
+            <Text style={styles.specialDesc}>{description}</Text>
+          )}
+          {matchups.map((m) => {
+            const picked = pickedIds.has(m.matchupId);
+            const canPick = !roundLocked && (picked || (pickType === "upset" ? pickedCount < pickLimit : pickedCount === 0));
+            return (
+              <MatchupCard
+                key={m.matchupId}
+                matchup={m}
+                picked={picked}
+                canPick={canPick}
+                isToggling={togglingId === `${pickType}:${m.matchupId}`}
+                pickType={pickType}
+                onPress={() => canPick && onPick(m)}
+              />
+            );
+          })}
+          {!matchups.length && roundLocked ? (
+            <Text style={styles.noMatchupsText}>No featured matchups for this round yet.</Text>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function PicksHub() {
   const router = useRouter();
@@ -293,6 +441,7 @@ export default function PicksHub() {
 
   const currentRound = getCurrentRound();
   const roundId = currentRound.id === "first-four" ? "round-64" : currentRound.id;
+  const roundLocked = isRoundLocked(roundId);
 
   const { data: takes, isLoading: takesLoading } = useQuery<
     Partial<Record<TakeType, LockedTake>>
@@ -302,10 +451,16 @@ export default function PicksHub() {
     enabled: !!user,
   });
 
-  const { data: upsetPicks, isLoading: upsetLoading } = useQuery<UpsetPick[]>({
-    queryKey: ["mm-upset-picks", user?.id, roundId],
-    queryFn: () => fetchMyUpsetPicks(user!.id, roundId),
+  const { data: specialPicks, isLoading: picksLoading } = useQuery<SpecialPick[]>({
+    queryKey: ["mm-special-picks", user?.id, roundId],
+    queryFn: () => fetchMySpecialPicks(user!.id, roundId),
     enabled: !!user,
+  });
+
+  const { data: roundMatchups, isLoading: matchupsLoading } = useQuery<RoundMatchups | null>({
+    queryKey: ["mm-round-matchups", roundId],
+    queryFn: () => fetchRoundMatchups(roundId),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: myScore } = useQuery({
@@ -316,28 +471,35 @@ export default function PicksHub() {
 
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  const upsetMutation = useMutation({
+  const pickMutation = useMutation({
     mutationFn: ({
+      pickType,
       matchupId,
-      upsetTeam,
+      pickedTeam,
     }: {
+      pickType: "upset" | "blowout" | "high_scorer";
       matchupId: string;
-      upsetTeam: string;
-    }) => toggleUpsetPick(user!.id, roundId, matchupId, upsetTeam),
+      pickedTeam: string | null;
+    }) => saveSpecialPick(user!.id, roundId, pickType, matchupId, pickedTeam),
     onSuccess: (result, vars) => {
       setTogglingId(null);
       if (result.error) {
         Alert.alert("Can't pick that", result.error);
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["mm-upset-picks"] });
+      queryClient.invalidateQueries({ queryKey: ["mm-special-picks"] });
     },
     onError: () => setTogglingId(null),
   });
 
-  function handleUpsetToggle(matchupId: string, upsetTeam: string) {
-    setTogglingId(matchupId);
-    upsetMutation.mutate({ matchupId, upsetTeam });
+  function handlePick(
+    pickType: "upset" | "blowout" | "high_scorer",
+    matchup: RankedMatchup,
+  ) {
+    const pickedTeam =
+      pickType === "upset" ? (matchup.underdogTeam ?? matchup.teamB) : null;
+    setTogglingId(`${pickType}:${matchup.matchupId}`);
+    pickMutation.mutate({ pickType, matchupId: matchup.matchupId, pickedTeam });
   }
 
   function handleTakePress(takeType: TakeType) {
@@ -348,7 +510,8 @@ export default function PicksHub() {
   }
 
   const topPadding = isWeb ? 67 : insets.top;
-  const isLoading = takesLoading || upsetLoading;
+  const isLoading = takesLoading || picksLoading || matchupsLoading;
+  const upsetLimit = UPSET_LIMITS[roundId] ?? 3;
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -377,22 +540,19 @@ export default function PicksHub() {
           { paddingBottom: isWeb ? 34 + 100 : insets.bottom + 100 },
         ]}
       >
-        <LockBanner />
+        <BracketLockBanner />
         <ScoringGuide />
 
         {isLoading ? (
-          <ActivityIndicator
-            color={ORANGE}
-            style={{ marginTop: 48 }}
-          />
+          <ActivityIndicator color={ORANGE} style={{ marginTop: 48 }} />
         ) : (
           <>
+            {/* Locked Takes Section */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionLabel}>LOCKED TAKES</Text>
+                <Text style={styles.sectionLabel}>BRACKET TAKES</Text>
                 <Text style={styles.sectionSub}>Predict from the full 68-team field</Text>
               </View>
-
               {TAKE_ORDER.map((takeType) => (
                 <TakeCard
                   key={takeType}
@@ -403,12 +563,74 @@ export default function PicksHub() {
               ))}
             </View>
 
-            <UpsetPicksSection
-              roundId={roundId}
-              picks={upsetPicks ?? []}
-              onToggle={handleUpsetToggle}
-              toggling={togglingId}
-            />
+            {/* Per-round lock notice */}
+            {!roundLocked ? (
+              <View style={styles.roundPicksBanner}>
+                <Ionicons name="time-outline" size={14} color={ORANGE} />
+                <Text style={styles.roundPicksBannerText}>
+                  {roundLabel(roundId)} picks lock {formatLockDate(
+                    (getRoundLockDate(roundId) ?? new Date()).toISOString()
+                  )}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Round-by-round Special Picks */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionLabel}>ROUND PICKS · {roundLabel(roundId).toUpperCase()}</Text>
+                <Text style={styles.sectionSub}>
+                  {roundMatchups?.oddsSource === "live"
+                    ? "Ranked by live betting odds"
+                    : "Ranked by seed matchup data"}
+                </Text>
+              </View>
+
+              <SpecialPicksSection
+                roundId={roundId}
+                pickType="upset"
+                label="Upset Pick"
+                icon="💥"
+                accentColor={ORANGE}
+                description={`Pick up to ${upsetLimit} team${upsetLimit > 1 ? "s" : ""} you think will pull off an upset. Top candidates ranked by upset probability. Correct picks earn 3 pts each.`}
+                matchups={roundMatchups?.upset ?? []}
+                picks={specialPicks ?? []}
+                pickLimit={upsetLimit}
+                roundLocked={roundLocked}
+                togglingId={togglingId}
+                onPick={(m) => handlePick("upset", m)}
+              />
+
+              <SpecialPicksSection
+                roundId={roundId}
+                pickType="blowout"
+                label="Blowout Pick"
+                icon="🎯"
+                accentColor={PURPLE}
+                description="Pick the game you think will have the largest margin of victory. Highest margin wins. Earns 3 pts."
+                matchups={roundMatchups?.blowout ?? []}
+                picks={specialPicks ?? []}
+                pickLimit={1}
+                roundLocked={roundLocked}
+                togglingId={togglingId}
+                onPick={(m) => handlePick("blowout", m)}
+              />
+
+              <SpecialPicksSection
+                roundId={roundId}
+                pickType="high_scorer"
+                label="High Scorer Pick"
+                icon="🏀"
+                accentColor={BLUE}
+                description="Pick the game you think will have the most combined points. Highest total wins. Earns 3 pts."
+                matchups={roundMatchups?.highScorer ?? []}
+                picks={specialPicks ?? []}
+                pickLimit={1}
+                roundLocked={roundLocked}
+                togglingId={togglingId}
+                onPick={(m) => handlePick("high_scorer", m)}
+              />
+            </View>
 
             <Pressable
               style={({ pressed }) => [styles.leaderboardBtn, pressed && styles.cardPressed]}
@@ -512,10 +734,28 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     opacity: 0.7,
   },
+  roundPicksBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: `${ORANGE}0A`,
+    borderWidth: 1,
+    borderColor: `${ORANGE}30`,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  roundPicksBannerText: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: ORANGE,
+    flex: 1,
+  },
   takeCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     padding: 14,
@@ -576,101 +816,176 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     letterSpacing: 0.5,
   },
-  upsetSection: {
-    gap: 10,
-    marginTop: 8,
+  specialSection: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    overflow: "hidden",
   },
-  upsetHeader: {
+  specialSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    padding: 14,
+    gap: 10,
   },
-  upsetRoundLabel: {
-    fontSize: 13,
+  specialIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  specialSectionMeta: {
+    flex: 1,
+  },
+  specialSectionTitle: {
+    fontSize: 15,
     fontWeight: "700" as const,
     color: Colors.dark.text,
-    marginTop: 2,
   },
-  upsetCounter: {
+  specialSectionSub: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    marginTop: 1,
+  },
+  pickCounter: {
     flexDirection: "row",
     alignItems: "baseline",
-    backgroundColor: Colors.dark.card,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  upsetCountNum: {
-    fontSize: 20,
+  pickCounterFull: {
+    backgroundColor: "rgba(34,197,94,0.1)",
+  },
+  pickCountNum: {
+    fontSize: 18,
     fontWeight: "800" as const,
     color: ORANGE,
   },
-  upsetCountFull: {
-    color: "#22C55E",
-  },
-  upsetCountDivider: {
-    fontSize: 14,
+  pickCountDivider: {
+    fontSize: 13,
     fontWeight: "600" as const,
     color: Colors.dark.textSecondary,
   },
-  upsetHint: {
-    fontSize: 13,
-    color: Colors.dark.textSecondary,
-    lineHeight: 18,
+  specialBody: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
+    gap: 8,
   },
-  upsetLockedNote: {
+  specialDesc: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  roundLockedRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    marginBottom: 4,
   },
-  upsetLockedText: {
-    fontSize: 13,
+  roundLockedText: {
+    fontSize: 12,
     color: "#6B7280",
   },
-  upsetCard: {
+  noMatchupsText: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 8,
+  },
+  matchupCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: Colors.dark.card,
-    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    padding: 12,
-    gap: 12,
+    borderColor: "rgba(255,255,255,0.07)",
+    padding: 10,
+    gap: 10,
   },
-  upsetCardPicked: {
-    borderColor: "rgba(34,197,94,0.35)",
-    backgroundColor: "rgba(34,197,94,0.05)",
+  matchupCardDisabled: {
+    opacity: 0.38,
   },
-  upsetCardDisabled: {
-    opacity: 0.4,
-  },
-  upsetMatchup: {
+  matchupLeft: {
     flex: 1,
-    gap: 4,
-  },
-  upsetTeamRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 8,
   },
-  upsetFavorite: {
-    flexDirection: "row",
+  rankDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
-    gap: 5,
-    flex: 1,
+    justifyContent: "center",
+    marginTop: 2,
   },
-  upsetUnderdog: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    flex: 1,
-  },
-  vsSmall: {
+  rankDotText: {
     fontSize: 10,
+    fontWeight: "700" as const,
+  },
+  matchupTeams: {
+    flex: 1,
+    gap: 2,
+  },
+  matchupTeamRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  matchupTeamName: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  matchupFavName: {
+    color: Colors.dark.textSecondary,
+    fontWeight: "500" as const,
+  },
+  vsLine: {
+    fontSize: 9,
     fontWeight: "600" as const,
     color: Colors.dark.textSecondary,
     letterSpacing: 0.5,
+    marginLeft: 27,
+  },
+  matchupMeta: {
+    fontSize: 10,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
+    marginLeft: 27,
+  },
+  matchupRight: {
+    alignItems: "flex-end",
+    gap: 4,
+    minWidth: 70,
+  },
+  pickedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  pickedBadgeText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+  },
+  oddsHint: {
+    fontSize: 10,
+    color: Colors.dark.textSecondary,
+    fontStyle: "italic",
   },
   seedPill: {
     backgroundColor: "rgba(107,114,128,0.25)",
@@ -680,7 +995,10 @@ const styles = StyleSheet.create({
     minWidth: 20,
     alignItems: "center",
   },
-  seedPillUnderdog: {
+  seedPillFav: {
+    backgroundColor: "rgba(107,114,128,0.18)",
+  },
+  seedPillUnder: {
     backgroundColor: `${ORANGE}25`,
   },
   seedPillText: {
@@ -688,43 +1006,8 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
     color: Colors.dark.textSecondary,
   },
-  seedPillUnderdogText: {
-    color: ORANGE,
-  },
-  upsetTeamName: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-    color: Colors.dark.text,
-    flex: 1,
-  },
-  upsetFavoriteName: {
-    color: Colors.dark.textSecondary,
-    fontWeight: "500" as const,
-  },
-  upsetUnderdogPicked: {
-    color: "#22C55E",
-  },
-  upsetMeta: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-    marginTop: 2,
-  },
-  upsetPickedBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(34,197,94,0.12)",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  upsetPickedText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    color: "#22C55E",
-  },
   scoringCard: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(245,166,35,0.15)",
@@ -783,11 +1066,22 @@ const styles = StyleSheet.create({
     minWidth: 80,
     textAlign: "right" as const,
   },
+  scoringDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginVertical: 4,
+  },
+  scoringFootnote: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    lineHeight: 16,
+    fontStyle: "italic",
+  },
   leaderboardBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -795,9 +1089,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   leaderboardBtnText: {
-    flex: 1,
     fontSize: 15,
     fontWeight: "600" as const,
     color: Colors.dark.text,
+    flex: 1,
   },
 });

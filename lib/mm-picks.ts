@@ -1,9 +1,11 @@
 import { supabase } from "@/lib/supabase";
+import { getApiUrl } from "@/lib/query-client";
 import { FULL_BRACKET } from "@/lib/march-madness";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type TakeType = "sweet_sixteen" | "elite_eight" | "final_four" | "champion";
+export type SpecialPickType = "upset" | "blowout" | "high_scorer";
 
 export interface TakeConfig {
   label: string;
@@ -66,14 +68,47 @@ export interface LockedTake {
   updated_at: string;
 }
 
-export interface UpsetPick {
+export interface SpecialPick {
   id: string;
   user_id: string;
   round_id: string;
+  pick_type: SpecialPickType;
   matchup_id: string;
-  upset_team: string;
-  is_submitted: boolean;
+  picked_team: string | null;
   created_at: string;
+}
+
+export interface RankedMatchup {
+  matchupId: string;
+  teamA: string;
+  teamB: string;
+  seedA: number;
+  seedB: number;
+  region: string;
+  rank: number;
+  // Upset-specific
+  underdogTeam?: string;
+  underdogSeed?: number;
+  favoriteTeam?: string;
+  favoriteSeed?: number;
+  upsetProbability?: number;
+  // Odds data when available
+  spread?: number;       // absolute spread (blowout indicator)
+  overUnder?: number;    // total points line (high-scorer indicator)
+  underdogMoneyline?: number; // positive moneyline (upset indicator)
+  gameDate?: string;
+  site?: string;
+  oddsSource?: "live" | "seed-based";
+}
+
+export interface RoundMatchups {
+  roundId: string;
+  upset: RankedMatchup[];
+  blowout: RankedMatchup[];
+  highScorer: RankedMatchup[];
+  isLocked: boolean;
+  lockedAt: string;
+  oddsSource?: "live" | "seed-based";
 }
 
 export interface GameResult {
@@ -99,6 +134,10 @@ export interface PickScore {
   sweet_sixteen_pts: number;
   upset_pts: number;
   correct_upsets: number;
+  blowout_pts: number;
+  high_scorer_pts: number;
+  correct_blowouts: number;
+  correct_high_scorers: number;
   updated_at: string;
   username?: string;
   display_name?: string | null;
@@ -110,6 +149,7 @@ export interface BracketTeam {
   region: string;
 }
 
+// Keep for backward compat reference
 export interface UpsetMatchup {
   matchupId: string;
   favoriteTeam: string;
@@ -121,20 +161,56 @@ export interface UpsetMatchup {
   site?: string;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Lock Dates ───────────────────────────────────────────────────────────────
 
-export const PICKS_LOCK_DATE = "2026-03-19T12:00:00-05:00";
+// Bracket locked takes lock before the tournament starts
+export const BRACKET_LOCK_DATE = "2026-03-19T12:00:00-05:00";
 
-export const UPSET_LIMITS: Record<string, number> = {
-  "round-64": 3,
-  "round-32": 2,
-  "sweet-16": 1,
-  "elite-8": 1,
+// Per-round lock dates for special picks (upset / blowout / high-scorer)
+export const ROUND_LOCK_DATES: Record<string, string> = {
+  "first-four":   "2026-03-17T12:00:00-05:00",
+  "round-64":     "2026-03-19T12:00:00-05:00",  // noon CDT, first games tip ~12:30
+  "round-32":     "2026-03-21T12:00:00-05:00",  // noon CDT, R32 starts Mar 21
+  "sweet-16":     "2026-03-27T12:00:00-05:00",  // noon CDT
+  "elite-8":      "2026-03-28T12:00:00-05:00",  // noon CDT
+  "final-four":   "2026-04-04T18:00:00-05:00",  // 6 PM CDT, games start ~7 PM CDT
 };
 
+// Keep old export for bracket-take lock banners
+export const PICKS_LOCK_DATE = BRACKET_LOCK_DATE;
+
 export function isPicksLocked(): boolean {
-  return new Date() >= new Date(PICKS_LOCK_DATE);
+  return new Date() >= new Date(BRACKET_LOCK_DATE);
 }
+
+export function isRoundLocked(roundId: string): boolean {
+  const lockDate = ROUND_LOCK_DATES[roundId];
+  if (!lockDate) return true;
+  return new Date() >= new Date(lockDate);
+}
+
+export function getRoundLockDate(roundId: string): Date | null {
+  const lockDate = ROUND_LOCK_DATES[roundId];
+  return lockDate ? new Date(lockDate) : null;
+}
+
+// ─── Upset limits per round ───────────────────────────────────────────────────
+export const UPSET_LIMITS: Record<string, number> = {
+  "round-64":  3,
+  "round-32":  3,
+  "sweet-16":  2,
+  "elite-8":   1,
+  "final-four": 1,
+};
+
+// How many candidates to show per pick type per round
+export const CANDIDATE_COUNTS: Record<string, Record<SpecialPickType, number>> = {
+  "round-64":   { upset: 5, blowout: 5, high_scorer: 5 },
+  "round-32":   { upset: 5, blowout: 4, high_scorer: 4 },
+  "sweet-16":   { upset: 4, blowout: 4, high_scorer: 4 },
+  "elite-8":    { upset: 3, blowout: 4, high_scorer: 4 },
+  "final-four": { upset: 2, blowout: 2, high_scorer: 2 },
+};
 
 // ─── Team Data Helpers ───────────────────────────────────────────────────────
 
@@ -174,37 +250,6 @@ export function getTeamsByRegion(): Record<string, BracketTeam[]> {
     map[t.region].push(t);
   }
   return map;
-}
-
-export function getUpsetMatchupsForRound(roundId: string): UpsetMatchup[] {
-  const result: UpsetMatchup[] = [];
-  for (const region of REGION_ORDER) {
-    const games = FULL_BRACKET[region] as Array<{
-      seed1: number;
-      team1: string;
-      seed2: number;
-      team2: string;
-      date?: string;
-      site?: string;
-    }>;
-    for (const g of games) {
-      if (g.team1.includes("/") || g.team2.includes("/")) continue;
-      const matchupId = `${region}-${g.seed1}v${g.seed2}`;
-      result.push({
-        matchupId,
-        favoriteTeam: g.team1,
-        favoriteSeed: g.seed1,
-        underdogTeam: g.team2,
-        underdogSeed: g.seed2,
-        region,
-        gameDate: (g as { date?: string }).date,
-        site: (g as { site?: string }).site,
-      });
-    }
-  }
-  return result.sort(
-    (a, b) => a.underdogSeed - a.favoriteSeed - (b.underdogSeed - b.favoriteSeed),
-  );
 }
 
 // ─── CRUD — Locked Takes ─────────────────────────────────────────────────────
@@ -256,64 +301,93 @@ export async function saveTake(
   return { error: null };
 }
 
-// ─── CRUD — Upset Picks ──────────────────────────────────────────────────────
+// ─── CRUD — Special Picks (upset / blowout / high_scorer) ────────────────────
 
-export async function fetchMyUpsetPicks(
+export async function fetchMySpecialPicks(
   userId: string,
   roundId: string,
-): Promise<UpsetPick[]> {
+): Promise<SpecialPick[]> {
   const { data, error } = await supabase
-    .from("mm_upset_picks")
+    .from("mm_special_picks")
     .select("*")
     .eq("user_id", userId)
     .eq("round_id", roundId);
   if (error) {
-    console.error("[mm-picks] fetchMyUpsetPicks:", error.message);
+    console.error("[mm-picks] fetchMySpecialPicks:", error.message);
     return [];
   }
-  return (data ?? []) as UpsetPick[];
+  return (data ?? []) as SpecialPick[];
 }
 
-export async function toggleUpsetPick(
+export async function saveSpecialPick(
   userId: string,
   roundId: string,
+  pickType: SpecialPickType,
   matchupId: string,
-  upsetTeam: string,
+  pickedTeam: string | null,
 ): Promise<{ error: string | null }> {
-  if (isPicksLocked()) return { error: "Picks are locked." };
+  if (isRoundLocked(roundId)) return { error: "Picks for this round are locked." };
 
-  const { data: existing } = await supabase
-    .from("mm_upset_picks")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("round_id", roundId)
-    .eq("matchup_id", matchupId)
-    .maybeSingle();
-
-  if (existing) {
-    const { error } = await supabase.from("mm_upset_picks").delete().eq("id", existing.id);
-    return { error: error?.message ?? null };
+  // For blowout / high_scorer: single pick per round — delete any existing before insert
+  if (pickType !== "upset") {
+    await supabase
+      .from("mm_special_picks")
+      .delete()
+      .eq("user_id", userId)
+      .eq("round_id", roundId)
+      .eq("pick_type", pickType);
+  } else {
+    // Upset: check if already picked (toggle off)
+    const { data: existing } = await supabase
+      .from("mm_special_picks")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("round_id", roundId)
+      .eq("pick_type", "upset")
+      .eq("matchup_id", matchupId)
+      .maybeSingle();
+    if (existing) {
+      const { error } = await supabase
+        .from("mm_special_picks")
+        .delete()
+        .eq("id", existing.id);
+      return { error: error?.message ?? null };
+    }
+    // Check upset limit
+    const limit = UPSET_LIMITS[roundId] ?? 3;
+    const { count } = await supabase
+      .from("mm_special_picks")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("round_id", roundId)
+      .eq("pick_type", "upset");
+    if ((count ?? 0) >= limit) {
+      return { error: `You can pick at most ${limit} upset${limit !== 1 ? "s" : ""} this round.` };
+    }
   }
 
-  const { count } = await supabase
-    .from("mm_upset_picks")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("round_id", roundId);
-
-  const limit = UPSET_LIMITS[roundId] ?? 3;
-  if ((count ?? 0) >= limit) {
-    return { error: `You can pick at most ${limit} upset${limit !== 1 ? "s" : ""} this round.` };
-  }
-
-  const { error } = await supabase.from("mm_upset_picks").insert({
+  const { error } = await supabase.from("mm_special_picks").insert({
     user_id: userId,
     round_id: roundId,
+    pick_type: pickType,
     matchup_id: matchupId,
-    upset_team: upsetTeam,
-    is_submitted: true,
+    picked_team: pickedTeam,
   });
   return { error: error?.message ?? null };
+}
+
+// ─── Ranked Matchups (fetched from backend) ──────────────────────────────────
+
+export async function fetchRoundMatchups(roundId: string): Promise<RoundMatchups | null> {
+  try {
+    const url = new URL(`/api/mm/round-matchups/${roundId}`, getApiUrl());
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    return (await res.json()) as RoundMatchups;
+  } catch (e) {
+    console.error("[mm-picks] fetchRoundMatchups:", e);
+    return null;
+  }
 }
 
 // ─── Game Results ────────────────────────────────────────────────────────────

@@ -38,20 +38,29 @@ const TAKE_ROUND_MAP: Record<string, string> = {
 };
 
 const UPSET_POINTS = 3;
+const BLOWOUT_POINTS = 3;
+const HIGH_SCORER_POINTS = 3;
 
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function computeAndSaveScores(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
 ): Promise<{ scored: number; error: string | null }> {
-  const { data: results, error: resultsErr } = await supabase
+  type GameResultRow = { round_id: string; matchup_id: string; winner_name: string | null; winner_score: number | null; loser_score: number | null };
+  type LockedTakeRow = { user_id: string; take_type: string; teams: string[] | null; is_submitted: boolean };
+  type SpecialPickRow = { user_id: string; round_id: string; pick_type: string; matchup_id: string; picked_team: string | null };
+  type RankedMatchupRow = { round_id: string; pick_type: string; matchup_id: string };
+
+  const { data: resultsRaw, error: resultsErr } = await supabase
     .from("mm_game_results")
     .select("*");
   if (resultsErr) return { scored: 0, error: resultsErr.message };
+  const results = (resultsRaw ?? []) as GameResultRow[];
 
   // Build winners by round
   const winnersByRound: Record<string, Set<string>> = {};
-  for (const r of results ?? []) {
+  for (const r of results) {
     if (!winnersByRound[r.round_id]) winnersByRound[r.round_id] = new Set();
     if (r.winner_name) winnersByRound[r.round_id].add(r.winner_name);
   }
@@ -65,26 +74,31 @@ async function computeAndSaveScores(
       champion: number;
       upset: number;
       correct_upsets: number;
+      blowout: number;
+      correct_blowouts: number;
+      high_scorer: number;
+      correct_high_scorers: number;
     }
   > = {};
 
+  function emptyScore() {
+    return {
+      sweet_sixteen: 0, elite_eight: 0, final_four: 0, champion: 0,
+      upset: 0, correct_upsets: 0,
+      blowout: 0, correct_blowouts: 0,
+      high_scorer: 0, correct_high_scorers: 0,
+    };
+  }
+
   // Score locked takes
-  const { data: takes } = await supabase
+  const { data: takesRaw } = await supabase
     .from("mm_locked_takes")
     .select("*")
     .eq("is_submitted", true);
+  const takes = (takesRaw ?? []) as LockedTakeRow[];
 
-  for (const take of takes ?? []) {
-    if (!scores[take.user_id]) {
-      scores[take.user_id] = {
-        sweet_sixteen: 0,
-        elite_eight: 0,
-        final_four: 0,
-        champion: 0,
-        upset: 0,
-        correct_upsets: 0,
-      };
-    }
+  for (const take of takes) {
+    if (!scores[take.user_id]) scores[take.user_id] = emptyScore();
     const roundId = TAKE_ROUND_MAP[take.take_type];
     const advancedTeams = winnersByRound[roundId];
     if (!advancedTeams || advancedTeams.size === 0) continue;
@@ -97,48 +111,110 @@ async function computeAndSaveScores(
     }
   }
 
-  // Score upset picks
-  const { data: upsetPicks } = await supabase
-    .from("mm_upset_picks")
-    .select("*")
-    .eq("is_submitted", true);
+  // Score special picks (upset / blowout / high_scorer) from mm_special_picks
+  const { data: specialPicksRaw } = await supabase
+    .from("mm_special_picks")
+    .select("*");
+  const specialPicks = (specialPicksRaw ?? []) as SpecialPickRow[];
 
-  for (const pick of upsetPicks ?? []) {
-    if (!scores[pick.user_id]) {
-      scores[pick.user_id] = {
-        sweet_sixteen: 0,
-        elite_eight: 0,
-        final_four: 0,
-        champion: 0,
-        upset: 0,
-        correct_upsets: 0,
-      };
+  // Fetch ranked matchups to know which matchup_id won each category per round
+  const { data: rankedMatchupsRaw } = await supabase
+    .from("mm_round_matchups")
+    .select("*");
+  const rankedMatchups = (rankedMatchupsRaw ?? []) as RankedMatchupRow[];
+
+  // Build a map: round_id + pick_type → set of matchup_ids that are candidates
+  const candidateMap: Record<string, Set<string>> = {};
+  for (const rm of rankedMatchups) {
+    const key = `${rm.round_id}:${rm.pick_type}`;
+    if (!candidateMap[key]) candidateMap[key] = new Set();
+    candidateMap[key].add(rm.matchup_id);
+  }
+
+  // Build per-round result maps for blowout/high_scorer scoring
+  // Group results by round → compute biggest blowout and highest scorer
+  const roundResults: Record<string, GameResultRow[]> = {};
+  for (const r of results) {
+    if (!roundResults[r.round_id]) roundResults[r.round_id] = [];
+    roundResults[r.round_id].push(r);
+  }
+
+  // For each round, find the winning blowout matchup and winning high_scorer matchup
+  const biggestBlowout: Record<string, string | null> = {};
+  const highestScorer: Record<string, string | null> = {};
+
+  for (const [roundId, roundRes] of Object.entries(roundResults)) {
+    const blowoutCandidates = candidateMap[`${roundId}:blowout`] ?? new Set();
+    const hsCandidates = candidateMap[`${roundId}:high_scorer`] ?? new Set();
+
+    let maxMargin = -1;
+    let maxTotal = -1;
+
+    for (const r of roundRes) {
+      const margin = r.winner_score != null && r.loser_score != null
+        ? r.winner_score - r.loser_score : -1;
+      const total = r.winner_score != null && r.loser_score != null
+        ? r.winner_score + r.loser_score : -1;
+
+      if (blowoutCandidates.has(r.matchup_id) && margin > maxMargin) {
+        maxMargin = margin;
+        biggestBlowout[roundId] = r.matchup_id;
+      }
+      if (hsCandidates.has(r.matchup_id) && total > maxTotal) {
+        maxTotal = total;
+        highestScorer[roundId] = r.matchup_id;
+      }
     }
-    const resultForGame = (results ?? []).find(
-      (r) => r.round_id === pick.round_id && r.matchup_id === pick.matchup_id,
-    );
-    if (resultForGame && resultForGame.winner_name === pick.upset_team) {
-      scores[pick.user_id].upset += UPSET_POINTS;
-      scores[pick.user_id].correct_upsets += 1;
+  }
+
+  for (const pick of specialPicks) {
+    if (!scores[pick.user_id]) scores[pick.user_id] = emptyScore();
+
+    if (pick.pick_type === "upset") {
+      const resultForGame = results.find(
+        (r) => r.round_id === pick.round_id && r.matchup_id === pick.matchup_id,
+      );
+      if (resultForGame && resultForGame.winner_name === pick.picked_team) {
+        scores[pick.user_id].upset += UPSET_POINTS;
+        scores[pick.user_id].correct_upsets += 1;
+      }
+    } else if (pick.pick_type === "blowout") {
+      const winningMatchup = biggestBlowout[pick.round_id];
+      if (winningMatchup && pick.matchup_id === winningMatchup) {
+        scores[pick.user_id].blowout += BLOWOUT_POINTS;
+        scores[pick.user_id].correct_blowouts += 1;
+      }
+    } else if (pick.pick_type === "high_scorer") {
+      const winningMatchup = highestScorer[pick.round_id];
+      if (winningMatchup && pick.matchup_id === winningMatchup) {
+        scores[pick.user_id].high_scorer += HIGH_SCORER_POINTS;
+        scores[pick.user_id].correct_high_scorers += 1;
+      }
     }
   }
 
   const upserts = Object.entries(scores).map(([userId, p]) => ({
     user_id: userId,
-    total_points: p.sweet_sixteen + p.elite_eight + p.final_four + p.champion + p.upset,
+    total_points: p.sweet_sixteen + p.elite_eight + p.final_four + p.champion +
+      p.upset + p.blowout + p.high_scorer,
     sweet_sixteen_pts: p.sweet_sixteen,
     elite_eight_pts: p.elite_eight,
     final_four_pts: p.final_four,
     champion_pts: p.champion,
     upset_pts: p.upset,
     correct_upsets: p.correct_upsets,
+    blowout_pts: p.blowout,
+    correct_blowouts: p.correct_blowouts,
+    high_scorer_pts: p.high_scorer,
+    correct_high_scorers: p.correct_high_scorers,
     updated_at: new Date().toISOString(),
   }));
 
   if (upserts.length > 0) {
     const { error: upsertErr } = await supabase
       .from("mm_pick_scores")
-      .upsert(upserts, { onConflict: "user_id" });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .upsert(upserts as any, { onConflict: "user_id" });
     if (upsertErr) return { scored: 0, error: upsertErr.message };
   }
 
@@ -147,29 +223,47 @@ async function computeAndSaveScores(
 
 // ─── Score update email blast ─────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function sendScoreUpdateBlast(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
 ): Promise<void> {
   const { sendMMScoreUpdateEmail } = await import("./email");
 
+  type PickScoreRow = {
+    user_id: string;
+    total_points: number | null;
+    sweet_sixteen_pts: number | null;
+    elite_eight_pts: number | null;
+    final_four_pts: number | null;
+    champion_pts: number | null;
+    upset_pts: number | null;
+    correct_upsets: number | null;
+    blowout_pts: number | null;
+    correct_blowouts: number | null;
+    high_scorer_pts: number | null;
+    correct_high_scorers: number | null;
+  };
+
   // Get all scores ordered by total (to compute rank)
-  const { data: allScores } = await supabase
+  const { data: allScoresRaw } = await supabase
     .from("mm_pick_scores")
     .select("*")
     .order("total_points", { ascending: false });
+  const allScores = (allScoresRaw ?? []) as PickScoreRow[];
 
-  if (!allScores?.length) return;
+  if (!allScores.length) return;
 
   const totalPlayers = allScores.length;
-  const userIds = allScores.map((s: { user_id: string }) => s.user_id);
+  const userIds = allScores.map((s) => s.user_id);
 
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, username, display_name, notification_email")
     .in("id", userIds);
 
-  const profileMap = new Map(
-    (profiles ?? []).map((p: { id: string; notification_email?: string | null; display_name?: string | null; username: string }) => [p.id, p]),
+  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string };
+  const profileMap = new Map<string, ProfileRow>(
+    ((profiles ?? []) as ProfileRow[]).map((p) => [p.id, p]),
   );
 
   let sent = 0;
@@ -188,6 +282,10 @@ export async function sendScoreUpdateBlast(
         championPts: s.champion_pts ?? 0,
         upsetPts: s.upset_pts ?? 0,
         correctUpsets: s.correct_upsets ?? 0,
+        blowoutPts: s.blowout_pts ?? 0,
+        correctBlowouts: s.correct_blowouts ?? 0,
+        highScorerPts: s.high_scorer_pts ?? 0,
+        correctHighScorers: s.correct_high_scorers ?? 0,
         rank: i + 1,
         totalPlayers,
       });
