@@ -49,12 +49,10 @@ interface LeaderboardEntry {
 }
 
 async function fetchAllSettled(): Promise<AllSettledData> {
-  const { data: settled, error } = await supabase
-    .from("swaygers")
-    .select("id, creator_id, opponent_id, settled_outcome, stake_units, category, title, updated_at")
-    .eq("status", "settled")
-    .not("settled_outcome", "is", null)
-    .order("updated_at", { ascending: false });
+  // Use SECURITY DEFINER RPC to bypass per-user RLS on swaygers table.
+  // Direct query returns only rows where caller is creator/opponent,
+  // giving each viewer a different slice and incorrect global leaderboard stats.
+  const { data: settled, error } = await supabase.rpc("get_all_settled_swaygers");
 
   if (error) {
     console.error("[leaderboard] fetch error:", error.message);
