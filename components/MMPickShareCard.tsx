@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import QRCode from "react-native-qrcode-svg";
 import { TAKE_CONFIGS, type TakeType } from "@/lib/mm-picks";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
+const JOIN_URL = process.env.EXPO_PUBLIC_APP_URL || "https://swayger.replit.app";
 
 interface Props {
   takeType: TakeType;
@@ -47,6 +49,10 @@ export default function MMPickShareCard({ takeType, teams, displayName }: Props)
         ))}
       </View>
 
+      <View style={styles.challengeBanner}>
+        <Text style={styles.challengeText}>Think I'm wrong? Bet against me.</Text>
+      </View>
+
       <View style={styles.divider} />
 
       <View style={styles.footer}>
@@ -56,7 +62,16 @@ export default function MMPickShareCard({ takeType, teams, displayName }: Props)
             {displayName}
           </Text>
         </View>
-        <Text style={styles.tagline}>Think you're right? Swayger on it.</Text>
+        <View style={styles.qrBlock}>
+          {Platform.OS !== "web" ? (
+            <>
+              <QRCode value={JOIN_URL} size={56} color="#FFFFFF" backgroundColor="#111827" />
+              <Text style={styles.scanLabel}>SCAN TO JOIN</Text>
+            </>
+          ) : (
+            <Text style={styles.urlLabel}>swayger.replit.app</Text>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -69,7 +84,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: ORANGE,
     padding: 22,
-    gap: 16,
+    gap: 14,
     width: 300,
   },
   topBar: {
@@ -145,6 +160,21 @@ const styles = StyleSheet.create({
     color: "#F3F4F6",
     flex: 1,
   },
+  challengeBanner: {
+    backgroundColor: "rgba(232,89,10,0.12)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.3)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  challengeText: {
+    fontSize: 13,
+    fontWeight: "800" as const,
+    color: ORANGE,
+    textAlign: "center",
+    letterSpacing: 0.2,
+  },
   divider: {
     height: 1,
     backgroundColor: "rgba(255,255,255,0.08)",
@@ -153,7 +183,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
   },
   footerLeft: {
     flexDirection: "row",
@@ -167,12 +196,20 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     flex: 1,
   },
-  tagline: {
+  qrBlock: {
+    alignItems: "center",
+    gap: 4,
+  },
+  scanLabel: {
+    fontSize: 7,
+    fontWeight: "700" as const,
+    color: "#6B7280",
+    letterSpacing: 0.8,
+  },
+  urlLabel: {
     fontSize: 9,
-    fontWeight: "600" as const,
+    fontWeight: "700" as const,
     color: ORANGE,
-    fontStyle: "italic",
-    textAlign: "right",
-    flex: 1,
+    letterSpacing: 0.3,
   },
 });

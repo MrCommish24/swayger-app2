@@ -1,6 +1,11 @@
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import QRCode from "react-native-qrcode-svg";
 import Colors from "@/constants/colors";
+
+const ORANGE = "#E8590A";
+const GOLD = "#F5A623";
+const JOIN_URL = process.env.EXPO_PUBLIC_APP_URL || "https://swayger.replit.app";
 
 interface MMStats {
   wins: number;
@@ -20,6 +25,15 @@ export default function MarchMadnessShareCard({ stats }: Props) {
   const decided = wins + losses;
   const winPct = decided > 0 ? Math.round((wins / decided) * 100) : null;
   const handle = displayName || `@${username}`;
+
+  const challengeText =
+    decided === 0
+      ? "Join the action on Swayger."
+      : wins > losses
+      ? `${wins}-${losses}. Think you can beat my record?`
+      : wins === losses
+      ? `${wins}-${losses}. Think you can pull ahead of me?`
+      : `${wins}-${losses}. I'm coming for you — join Swayger.`;
 
   return (
     <View style={styles.card}>
@@ -73,6 +87,10 @@ export default function MarchMadnessShareCard({ stats }: Props) {
         ) : null}
       </View>
 
+      <View style={styles.challengeBanner}>
+        <Text style={styles.challengeText}>{challengeText}</Text>
+      </View>
+
       <View style={styles.divider} />
 
       <View style={styles.footer}>
@@ -80,14 +98,20 @@ export default function MarchMadnessShareCard({ stats }: Props) {
           <Ionicons name="person-circle-outline" size={14} color={Colors.dark.textSecondary} />
           <Text style={styles.footerHandle} numberOfLines={1}>{handle}</Text>
         </View>
-        <Text style={styles.tagline}>Think you're right? Swayger on it.</Text>
+        <View style={styles.qrBlock}>
+          {Platform.OS !== "web" ? (
+            <>
+              <QRCode value={JOIN_URL} size={56} color="#FFFFFF" backgroundColor="#111827" />
+              <Text style={styles.scanLabel}>SCAN TO JOIN</Text>
+            </>
+          ) : (
+            <Text style={styles.urlLabel}>swayger.replit.app</Text>
+          )}
+        </View>
       </View>
     </View>
   );
 }
-
-const ORANGE = "#E8590A";
-const GOLD = "#F5A623";
 
 const styles = StyleSheet.create({
   card: {
@@ -96,7 +120,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: ORANGE,
     padding: 24,
-    gap: 16,
+    gap: 14,
     width: 320,
   },
   topBar: {
@@ -183,6 +207,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.border,
     marginVertical: 4,
   },
+  challengeBanner: {
+    backgroundColor: "rgba(232,89,10,0.12)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.3)",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  challengeText: {
+    fontSize: 13,
+    fontWeight: "800" as const,
+    color: ORANGE,
+    textAlign: "center",
+    letterSpacing: 0.2,
+  },
   divider: {
     height: 1,
     backgroundColor: Colors.dark.border,
@@ -191,7 +230,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
   },
   footerLeft: {
     flexDirection: "row",
@@ -205,12 +243,20 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     flex: 1,
   },
-  tagline: {
-    fontSize: 10,
-    fontWeight: "600" as const,
+  qrBlock: {
+    alignItems: "center",
+    gap: 4,
+  },
+  scanLabel: {
+    fontSize: 7,
+    fontWeight: "700" as const,
+    color: Colors.dark.textSecondary,
+    letterSpacing: 0.8,
+  },
+  urlLabel: {
+    fontSize: 9,
+    fontWeight: "700" as const,
     color: ORANGE,
-    fontStyle: "italic",
-    textAlign: "right",
-    flex: 1,
+    letterSpacing: 0.3,
   },
 });
