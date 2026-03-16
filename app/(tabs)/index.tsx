@@ -111,7 +111,7 @@ function StatsStrip({
         <Text style={[styles.statValue, styles.statValueSP]}>
           {spBalance !== null ? spBalance.toLocaleString() : "—"}
         </Text>
-        <Text style={styles.statLabel}>SP</Text>
+        <Text style={styles.statLabel}>Swayger Pts</Text>
       </View>
     </View>
   );

@@ -432,7 +432,7 @@ export default function LeaderboardScreen() {
             <View style={styles.columnHeaders}>
               <View style={styles.rankCol} />
               <Text style={[styles.colLabel, { flex: 1 }]}>Player</Text>
-              <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  SP  Win%</Text>
+              <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  Swayger Pts  Win%</Text>
             </View>
           }
           ListFooterComponent={
