@@ -288,7 +288,13 @@ function MatchupCard({
             </Text>
           </View>
           {matchup.gameDate ? (
-            <Text style={styles.matchupMeta}>{matchup.gameDate}</Text>
+            <Text style={styles.matchupMeta}>{matchup.gameDate}{matchup.site ? ` · ${matchup.site}` : ""}</Text>
+          ) : null}
+          {matchup.keyStat ? (
+            <View style={styles.keyStatRow}>
+              <Ionicons name="stats-chart" size={10} color={accentColor} />
+              <Text style={[styles.keyStatText, { color: accentColor }]}>{matchup.keyStat}</Text>
+            </View>
           ) : null}
         </View>
       </View>
@@ -305,9 +311,9 @@ function MatchupCard({
         ) : (
           <Ionicons name="remove-circle-outline" size={20} color="#374151" />
         )}
-        {matchup.oddsSource === "live" && matchup.spread !== undefined ? (
+        {(matchup.spread !== undefined || matchup.underdogMoneyline !== undefined || matchup.overUnder !== undefined) ? (
           <Text style={styles.oddsHint}>
-            {pickType === "blowout" ? `${matchup.spread.toFixed(1)} spread` : ""}
+            {pickType === "blowout" && matchup.spread !== undefined ? `${matchup.spread.toFixed(1)} spread` : ""}
             {pickType === "high_scorer" && matchup.overUnder ? `o/u ${matchup.overUnder}` : ""}
             {pickType === "upset" && matchup.underdogMoneyline ? `+${matchup.underdogMoneyline}` : ""}
           </Text>
@@ -969,6 +975,18 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     marginTop: 2,
     marginLeft: 27,
+  },
+  keyStatRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+    marginTop: 3,
+    marginLeft: 27,
+  },
+  keyStatText: {
+    fontSize: 10,
+    fontWeight: "600" as const,
+    fontStyle: "italic" as const,
   },
   matchupRight: {
     alignItems: "flex-end",

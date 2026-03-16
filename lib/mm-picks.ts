@@ -99,6 +99,7 @@ export interface RankedMatchup {
   gameDate?: string;
   site?: string;
   oddsSource?: "live" | "seed-based";
+  keyStat?: string;      // curated reason this is an intriguing pick
 }
 
 export interface RoundMatchups {

@@ -85,6 +85,7 @@ interface RankedMatchup {
   gameDate?: string;
   site?: string;
   oddsSource: "live" | "seed-based";
+  keyStat?: string;
 }
 
 interface OddsGame {
@@ -140,6 +141,99 @@ function getUpsetProb(seedFavorite: number, seedUnderdog: number): number {
   const key = `${seedUnderdog}v${seedFavorite}`;
   return UPSET_PROB[key] ?? Math.max(0.02, 0.5 - (seedUnderdog - seedFavorite) * 0.03);
 }
+
+// ─── Manually curated Round-64 upset candidates ───────────────────────────────
+// These replace the auto-ranked upset list for R64 — chosen for intrigue,
+// not just raw upset probability. Odds computed from seed-based formula;
+// if live Odds API data is available it will be merged in below.
+
+const CURATED_R64_UPSETS: RankedMatchup[] = [
+  {
+    matchupId: "south-5v12-mcneese",
+    teamA: "Vanderbilt", seedA: 5,
+    teamB: "McNeese",    seedB: 12,
+    region: "South",
+    rank: 1,
+    favoriteTeam: "Vanderbilt", favoriteSeed: 5,
+    underdogTeam: "McNeese",    underdogSeed: 12,
+    upsetProbability: 0.35,
+    spread: 12.5,
+    underdogMoneyline: 185,
+    overUnder: 137,
+    gameDate: "Mar 19",
+    site: "Oklahoma City, OK",
+    oddsSource: "seed-based",
+    keyStat: "McNeese #1 in turnover margin",
+  },
+  {
+    matchupId: "south-6v11-vcu",
+    teamA: "North Carolina", seedA: 6,
+    teamB: "VCU",            seedB: 11,
+    region: "South",
+    rank: 2,
+    favoriteTeam: "North Carolina", favoriteSeed: 6,
+    underdogTeam: "VCU",            underdogSeed: 11,
+    upsetProbability: 0.37,
+    spread: 9.0,
+    underdogMoneyline: 170,
+    overUnder: 139,
+    gameDate: "Mar 19",
+    site: "Greenville, SC",
+    oddsSource: "seed-based",
+    keyStat: "UNC missing star Caleb Wilson",
+  },
+  {
+    matchupId: "west-5v12-highpoint",
+    teamA: "Wisconsin",  seedA: 5,
+    teamB: "High Point", seedB: 12,
+    region: "West",
+    rank: 3,
+    favoriteTeam: "Wisconsin",  favoriteSeed: 5,
+    underdogTeam: "High Point", underdogSeed: 12,
+    upsetProbability: 0.35,
+    spread: 12.5,
+    underdogMoneyline: 185,
+    overUnder: 137,
+    gameDate: "Mar 19",
+    site: "Portland, OR",
+    oddsSource: "seed-based",
+    keyStat: "High Point #5 in forcing turnovers",
+  },
+  {
+    matchupId: "midwest-7v10-santaclara",
+    teamA: "Kentucky",     seedA: 7,
+    teamB: "Santa Clara",  seedB: 10,
+    region: "Midwest",
+    rank: 4,
+    favoriteTeam: "Kentucky",    favoriteSeed: 7,
+    underdogTeam: "Santa Clara", underdogSeed: 10,
+    upsetProbability: 0.40,
+    spread: 5.5,
+    underdogMoneyline: 150,
+    overUnder: 139,
+    gameDate: "Mar 20",
+    site: "St. Louis, MO",
+    oddsSource: "seed-based",
+    keyStat: "Kentucky ranks 299th in forcing TOs",
+  },
+  {
+    matchupId: "east-6v11-usf",
+    teamA: "Louisville",     seedA: 6,
+    teamB: "South Florida",  seedB: 11,
+    region: "East",
+    rank: 5,
+    favoriteTeam: "Louisville",    favoriteSeed: 6,
+    underdogTeam: "South Florida", underdogSeed: 11,
+    upsetProbability: 0.37,
+    spread: 9.0,
+    underdogMoneyline: 170,
+    overUnder: 139,
+    gameDate: "Mar 19",
+    site: "Buffalo, NY",
+    oddsSource: "seed-based",
+    keyStat: "USF on 11-game winning streak",
+  },
+];
 
 // ─── Server-side 30-minute cache ─────────────────────────────────────────────
 
@@ -414,6 +508,11 @@ export function registerMMSpecialRoutes(app: Express) {
     if (!ranked) {
       ranked = buildSeedBasedMatchups(roundId);
       source = "seed-based";
+    }
+
+    // For Round of 64, always use the manually curated upset list
+    if (roundId === "round-64") {
+      ranked = { ...ranked, upset: CURATED_R64_UPSETS };
     }
 
     console.log(`[mm-special] ${roundId} matchups: ${source}, ` +
