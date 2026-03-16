@@ -8,7 +8,9 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
+  Share,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -42,6 +44,24 @@ export default function ProfileScreen() {
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
   const [claimingBankruptcy, setClaimingBankruptcy] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+
+  const INVITE_MESSAGE =
+    "March Madness is here.\nI'm testing a new app where you can lock your champion, call upsets, and make friendly wagers with friends.\n\nNo real money — just bragging rights.\n\nCome make your picks: https://swayger-app.replit.app";
+
+  async function handleInvite() {
+    if (Platform.OS === "web") {
+      await Clipboard.setStringAsync(INVITE_MESSAGE);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    } else {
+      try {
+        await Share.share({ message: INVITE_MESSAGE });
+      } catch {
+        // user dismissed share sheet — no action needed
+      }
+    }
+  }
 
   const { data: balanceData, refetch: refetchBalance } = useQuery({
     queryKey: ["balance", user?.id],
@@ -333,6 +353,33 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
           </Pressable>
 
+          <View style={styles.menuDivider} />
+
+          <Pressable
+            style={({ pressed }) => [styles.inviteRow, pressed && styles.menuItemPressed]}
+            onPress={handleInvite}
+            testID="profile-invite-friends"
+          >
+            <View style={styles.inviteIconWrap}>
+              <Ionicons name="person-add-outline" size={18} color="#E8590A" />
+            </View>
+            <View style={styles.menuItemBody}>
+              <Text style={styles.inviteText}>
+                {inviteCopied ? "Invite copied!" : "Invite Friends"}
+              </Text>
+              <Text style={styles.menuItemSub}>
+                {inviteCopied
+                  ? "Paste it anywhere — texts, Discord, socials"
+                  : "Share Swayger with your crew"}
+              </Text>
+            </View>
+            <Ionicons
+              name={inviteCopied ? "checkmark-circle" : "share-outline"}
+              size={18}
+              color={inviteCopied ? "#22C55E" : "#E8590A"}
+            />
+          </Pressable>
+
         </View>
 
         {/* Bottom area */}
@@ -487,6 +534,22 @@ const styles = StyleSheet.create({
   menuItemText: { fontSize: 16, color: Colors.dark.text },
   menuItemSub: { fontSize: 13, color: Colors.dark.textSecondary },
   menuItemSubMuted: { color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
+
+  inviteRow: {
+    flexDirection: "row" as const, alignItems: "center", gap: 12,
+    backgroundColor: "rgba(232,89,10,0.06)",
+    borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderWidth: 1, borderColor: "rgba(232,89,10,0.25)",
+  },
+  inviteIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: "rgba(232,89,10,0.12)",
+    alignItems: "center" as const, justifyContent: "center" as const,
+  },
+  inviteText: {
+    fontSize: 16, color: Colors.dark.text, fontWeight: "600" as const,
+  },
 
   inlineForm: {
     backgroundColor: Colors.dark.surface, borderRadius: 12,
