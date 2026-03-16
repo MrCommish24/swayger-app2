@@ -31,11 +31,12 @@ CREATE POLICY "Users manage own balance" ON user_balances
   FOR ALL USING (auth.uid() = user_id);
 
 -- 5. Seed initial balances for every existing user in profiles
---    Formula: 1000 + (net points from settled swaygers)
+--    Formula: GREATEST(1000, 1000 + net points from settled swaygers)
+--    Everyone gets at least 1000 SP; winners keep whatever they earned on top.
 INSERT INTO user_balances (user_id, swayger_points)
 SELECT
   p.id,
-  GREATEST(0, 1000 + COALESCE((
+  GREATEST(1000, 1000 + COALESCE((
     SELECT SUM(
       CASE
         WHEN s.settled_outcome = 'creator' AND s.creator_id = p.id THEN  s.stake_units
@@ -53,7 +54,7 @@ SELECT
   ), 0)) AS swayger_points
 FROM profiles p
 ON CONFLICT (user_id) DO UPDATE
-  SET swayger_points = EXCLUDED.swayger_points,
+  SET swayger_points = GREATEST(1000, EXCLUDED.swayger_points),
       updated_at = NOW();
 
 -- ================================================================
@@ -536,6 +537,24 @@ $$;
 -- ================================================================
 GRANT EXECUTE ON FUNCTION expire_old_proposals() TO anon;
 GRANT EXECUTE ON FUNCTION expire_old_proposals() TO authenticated;
+
+-- ================================================================
+-- Fix-up: ensure every existing row has at least 1000 SP
+-- (handles users who were seeded before the floor was applied,
+--  e.g. someone who hit 0 and used emergency refill)
+-- ================================================================
+UPDATE user_balances
+SET swayger_points = 1000,
+    updated_at     = NOW()
+WHERE swayger_points < 1000;
+
+-- Also make sure every profile that somehow has NO row yet gets one
+INSERT INTO user_balances (user_id, swayger_points)
+SELECT p.id, 1000
+FROM profiles p
+WHERE NOT EXISTS (
+  SELECT 1 FROM user_balances ub WHERE ub.user_id = p.id
+);
 
 -- ================================================================
 -- Reload PostgREST schema cache
