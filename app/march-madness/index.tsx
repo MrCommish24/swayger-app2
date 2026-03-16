@@ -133,14 +133,16 @@ function MatchupCard({
 
       <View style={styles.matchupTeams}>
         <View style={styles.teamSide}>
-          {matchup.teamA.seed > 0 ? (
-            <View style={styles.seedBadge}>
-              <Text style={styles.seedText}>{matchup.teamA.seed}</Text>
-            </View>
-          ) : null}
-          <Text style={styles.teamName} numberOfLines={2}>
-            {matchup.teamA.name}
-          </Text>
+          <View style={styles.teamRow}>
+            {matchup.teamA.seed > 0 ? (
+              <View style={styles.seedBadge}>
+                <Text style={styles.seedText}>{matchup.teamA.seed}</Text>
+              </View>
+            ) : null}
+            <Text style={styles.teamName} numberOfLines={1}>
+              {matchup.teamA.name}
+            </Text>
+          </View>
         </View>
 
         <View style={styles.vsColumn}>
@@ -148,14 +150,16 @@ function MatchupCard({
         </View>
 
         <View style={[styles.teamSide, styles.teamSideRight]}>
-          {matchup.teamB.seed > 0 ? (
-            <View style={[styles.seedBadge, styles.seedBadgeRight]}>
-              <Text style={styles.seedText}>{matchup.teamB.seed}</Text>
-            </View>
-          ) : null}
-          <Text style={[styles.teamName, styles.teamNameRight]} numberOfLines={2}>
-            {matchup.teamB.name}
-          </Text>
+          <View style={[styles.teamRow, styles.teamRowRight]}>
+            <Text style={[styles.teamName, styles.teamNameRight]} numberOfLines={1}>
+              {matchup.teamB.name}
+            </Text>
+            {matchup.teamB.seed > 0 ? (
+              <View style={styles.seedBadge}>
+                <Text style={styles.seedText}>{matchup.teamB.seed}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
       </View>
 
@@ -725,10 +729,17 @@ const styles = StyleSheet.create({
   },
   teamSide: {
     flex: 1,
-    gap: 5,
   },
   teamSideRight: {
     alignItems: "flex-end",
+  },
+  teamRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  teamRowRight: {
+    justifyContent: "flex-end",
   },
   seedBadge: {
     width: 24,
