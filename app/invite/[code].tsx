@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -128,6 +128,14 @@ export default function InviteScreen() {
     onError: () => showError("Failed to decline. Try again."),
   });
 
+  // When join succeeds but RLS timing means the swayger fetch returns null,
+  // navigate directly to the swayger detail page — but in a useEffect, never during render.
+  useEffect(() => {
+    if (joinedId && !swaygerLoading && swayger === null && joinMutation.isSuccess) {
+      router.replace(`/swayger/${joinedId}`);
+    }
+  }, [joinedId, swaygerLoading, swayger, joinMutation.isSuccess]);
+
   const anyPending = joinMutation.isPending || acceptMutation.isPending || declineMutation.isPending || countering;
 
   const handleCounter = async () => {
@@ -209,9 +217,8 @@ export default function InviteScreen() {
   }
 
   if (!swayger) {
-    // Join succeeded but fetch returned null (RLS timing) — navigate to swayger detail directly
+    // Join succeeded but fetch returned null (RLS timing) — useEffect will redirect
     if (joinedId) {
-      router.replace(`/swayger/${joinedId}`);
       return (
         <View style={[styles.container, styles.centered, { paddingTop: isWeb ? 67 : insets.top }]}>
           <ActivityIndicator size="large" color={Colors.dark.tint} />
