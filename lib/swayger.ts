@@ -164,10 +164,33 @@ export async function fetchSwayger(swaygerId: string): Promise<SwaygerData | nul
     .limit(1);
 
   if (error) {
-    console.error("[swayger] fetchSwayger error:", error.message, "id:", swaygerId);
+    console.error("[swayger] fetchSwayger error:", error.message, error.code, "id:", swaygerId);
     return null;
   }
-  return (data?.[0] ?? null) as SwaygerData | null;
+
+  if (data && data.length > 0) {
+    return data[0] as SwaygerData;
+  }
+
+  // RLS may be blocking the direct read (e.g. opponent just joined).
+  // Fall back to the SECURITY DEFINER RPC which checks creator/opponent/invite.
+  console.log("[swayger] fetchSwayger direct query returned 0 rows — trying RPC fallback for:", swaygerId);
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("get_swayger_by_id", { p_swayger_id: swaygerId });
+
+  if (rpcError) {
+    console.error("[swayger] get_swayger_by_id RPC error:", rpcError.message);
+    return null;
+  }
+
+  const rows = rpcData as SwaygerData[] | null;
+  if (rows && rows.length > 0) {
+    console.log("[swayger] fetchSwayger RPC fallback succeeded for:", swaygerId);
+    return rows[0];
+  }
+
+  console.warn("[swayger] fetchSwayger: swayger not found via direct query or RPC:", swaygerId);
+  return null;
 }
 
 export async function fetchSwaygerInvite(swaygerId: string): Promise<SwaygerInvite | null> {
