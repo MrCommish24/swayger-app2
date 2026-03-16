@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
+import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 const log = console.log;
@@ -242,6 +243,24 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+async function runSettlementExpiry() {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return;
+
+  try {
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data, error } = await supabase.rpc("expire_old_proposals");
+    if (error) {
+      console.error("[expiry] expire_old_proposals error:", error.message);
+    } else if ((data as number) > 0) {
+      log(`[expiry] Expired ${data} stale settlement proposal(s)`);
+    }
+  } catch (err) {
+    console.error("[expiry] Unexpected error:", err);
+  }
+}
+
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
@@ -262,6 +281,9 @@ function setupErrorHandler(app: express.Application) {
     },
     () => {
       log(`express server serving on port ${port}`);
+      // Run expiry check every hour
+      runSettlementExpiry();
+      setInterval(runSettlementExpiry, 60 * 60 * 1000);
     },
   );
 })();

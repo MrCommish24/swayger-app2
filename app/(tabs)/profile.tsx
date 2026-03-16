@@ -12,12 +12,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError, showMessage, getAvatarColor } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 import type { Profile } from "@/types";
 import { verifyGameplaySchema } from "@/lib/verify-schema";
+import { fetchMyBalance, claimBankruptcy } from "@/lib/swayger";
 
 interface SchemaCheck {
   name: string;
@@ -35,9 +37,36 @@ export default function ProfileScreen() {
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
 
+  const queryClient = useQueryClient();
   const [showDevPanel, setShowDevPanel] = useState(false);
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
+  const [claimingBankruptcy, setClaimingBankruptcy] = useState(false);
+
+  const { data: balanceData, refetch: refetchBalance } = useQuery({
+    queryKey: ["balance", user?.id],
+    queryFn: () => fetchMyBalance(user!.id),
+    enabled: !!user,
+    staleTime: 0,
+  });
+  const spBalance = balanceData?.balance ?? null;
+  const bankruptcyUsed = balanceData?.bankruptcyUsed ?? false;
+
+  async function handleClaimBankruptcy() {
+    setClaimingBankruptcy(true);
+    try {
+      const result = await claimBankruptcy();
+      if (result.error) {
+        showError(result.error);
+      } else {
+        showMessage(`Emergency refill applied — ${result.newBalance} SP added!`);
+        refetchBalance();
+        queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
+      }
+    } finally {
+      setClaimingBankruptcy(false);
+    }
+  }
 
   const avatarSeed = profile?.username || user?.email || "?";
   const avatarColor = getAvatarColor(avatarSeed);
@@ -192,6 +221,37 @@ export default function ProfileScreen() {
           )}
           {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
         </View>
+
+        {/* Swayger Points balance card */}
+        {spBalance !== null && (
+          <View style={styles.spCard}>
+            <View style={styles.spCardLeft}>
+              <Ionicons name="wallet" size={22} color={Colors.dark.accentGold} />
+              <View>
+                <Text style={styles.spCardLabel}>Swayger Points</Text>
+                <Text style={styles.spCardBalance}>{spBalance.toLocaleString()} SP</Text>
+              </View>
+            </View>
+            {spBalance === 0 && !bankruptcyUsed && (
+              <Pressable
+                style={({ pressed }) => [styles.bankruptcyBtn, pressed && { opacity: 0.75 }]}
+                onPress={handleClaimBankruptcy}
+                disabled={claimingBankruptcy}
+              >
+                {claimingBankruptcy ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.bankruptcyBtnText}>Emergency Refill</Text>
+                )}
+              </Pressable>
+            )}
+            {bankruptcyUsed && (
+              <View style={styles.bankruptcyUsedBadge}>
+                <Text style={styles.bankruptcyUsedText}>Refill used</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Account section */}
         <View style={styles.section}>
@@ -355,6 +415,61 @@ const styles = StyleSheet.create({
   displayNameMuted: { fontSize: 15, color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
   email: { fontSize: 13, color: Colors.dark.tabIconDefault, marginTop: 2 },
 
+  spCard: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    marginHorizontal: 24,
+    marginBottom: 8,
+    backgroundColor: `${Colors.dark.accentGold}10`,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.accentGold}40`,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  spCardLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+  },
+  spCardLabel: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: Colors.dark.accentGold,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+  },
+  spCardBalance: {
+    fontSize: 22,
+    fontWeight: "800" as const,
+    color: Colors.dark.text,
+  },
+  bankruptcyBtn: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 80,
+    alignItems: "center" as const,
+  },
+  bankruptcyBtnText: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  bankruptcyUsedBadge: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  bankruptcyUsedText: {
+    fontSize: 11,
+    color: Colors.dark.tabIconDefault,
+  },
   section: { paddingHorizontal: 24, paddingTop: 8, gap: 12 },
   sectionTitle: {
     fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tabIconDefault,

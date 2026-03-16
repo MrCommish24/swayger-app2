@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import {
   fetchMySwaygers,
+  fetchMyBalance,
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
@@ -54,9 +55,11 @@ function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
 function StatsStrip({
   swaygers,
   userId,
+  spBalance,
 }: {
   swaygers: SwaygerData[];
   userId: string;
+  spBalance: number | null;
 }) {
   const stats = useMemo(() => {
     const total = swaygers.length;
@@ -103,6 +106,13 @@ function StatsStrip({
         <Text style={styles.statValue}>{stats.winPct}</Text>
         <Text style={styles.statLabel}>Win %</Text>
       </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statTile}>
+        <Text style={[styles.statValue, styles.statValueSP]}>
+          {spBalance !== null ? spBalance.toLocaleString() : "—"}
+        </Text>
+        <Text style={styles.statLabel}>SP</Text>
+      </View>
     </View>
   );
 }
@@ -124,6 +134,14 @@ export default function DashboardScreen() {
     queryFn: () => fetchMySwaygers(user!.id),
     enabled: !!user,
   });
+
+  const { data: balanceData } = useQuery({
+    queryKey: ["balance", user?.id],
+    queryFn: () => fetchMyBalance(user!.id),
+    enabled: !!user,
+    staleTime: 0,
+  });
+  const spBalance = balanceData?.balance ?? null;
 
   type FilterKey = "all" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -261,7 +279,7 @@ export default function DashboardScreen() {
       </View>
 
       {!isLoading && !error && user && (
-        <StatsStrip swaygers={swaygers} userId={user.id} />
+        <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
       )}
 
       <MarchMadnessBanner onPress={() => router.push("/march-madness")} />
@@ -490,6 +508,10 @@ const styles = StyleSheet.create({
   },
   statValueActive: {
     color: "#22C55E",
+  },
+  statValueSP: {
+    color: Colors.dark.accentGold,
+    fontSize: 18,
   },
   statLabel: {
     fontSize: 11,

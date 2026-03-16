@@ -26,6 +26,7 @@ export interface SwaygerData {
   description: string | null;
   category: string;
   stake_units: number;
+  stake_note: string | null;
   creator_pick: string;
   opponent_pick: string | null;
   status: SwaygerStatus;
@@ -36,6 +37,15 @@ export interface SwaygerData {
   accepted_at: string | null;
   settled_at: string | null;
   cancelled_by: string | null;
+  points_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserBalance {
+  user_id: string;
+  swayger_points: number;
+  bankruptcy_used: boolean;
   created_at: string;
   updated_at: string;
 }

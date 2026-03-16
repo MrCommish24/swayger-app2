@@ -3,6 +3,7 @@ import {
   SwaygerData,
   SwaygerInvite,
   SettlementProposal,
+  UserBalance,
 } from "@/types";
 import { getApiUrl } from "@/lib/query-client";
 
@@ -104,7 +105,8 @@ export async function createSwayger(
   stakeUnits: number,
   creatorPick: string,
   userId: string,
-  description?: string
+  description?: string,
+  stakeNote?: string
 ): Promise<{ swayger: SwaygerData | null; error: string | null }> {
   const inviteCode = await generateUniqueInviteCode();
 
@@ -112,9 +114,10 @@ export async function createSwayger(
     p_title: title.trim(),
     p_description: description?.trim() || null,
     p_category: category || "Other",
-    p_stake_units: Math.max(1, stakeUnits),
+    p_stake_units: Math.max(5, stakeUnits),
     p_creator_pick: creatorPick.trim(),
     p_invite_code: inviteCode,
+    p_stake_note: stakeNote?.trim() || null,
   });
 
   if (error) {
@@ -373,7 +376,8 @@ export async function createRematch(
     newStake,
     newCreatorPick,
     userId,
-    original.description || undefined
+    original.description || undefined,
+    undefined
   );
 
   if (result.error || !result.swayger) return result;
@@ -474,6 +478,52 @@ export function displayOutcomeForViewer(
     case "no_contest": return "No Contest";
     default: return outcome;
   }
+}
+
+// ─── Swayger Points ──────────────────────────────────────────────────────────
+
+export async function fetchMyBalance(userId: string): Promise<{ balance: number; bankruptcyUsed: boolean } | null> {
+  const { data, error } = await supabase
+    .from("user_balances")
+    .select("swayger_points, bankruptcy_used")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[swayger] fetchMyBalance error:", error.message);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    balance: (data as { swayger_points: number; bankruptcy_used: boolean }).swayger_points,
+    bankruptcyUsed: (data as { swayger_points: number; bankruptcy_used: boolean }).bankruptcy_used,
+  };
+}
+
+export async function fetchAllBalances(): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from("user_balances")
+    .select("user_id, swayger_points");
+
+  if (error) {
+    console.error("[swayger] fetchAllBalances error:", error.message);
+    return new Map();
+  }
+  const map = new Map<string, number>();
+  (data || []).forEach((row: { user_id: string; swayger_points: number }) => {
+    map.set(row.user_id, row.swayger_points);
+  });
+  return map;
+}
+
+export async function claimBankruptcy(): Promise<{ error: string | null; newBalance: number | null }> {
+  const { data, error } = await supabase.rpc("claim_bankruptcy");
+  if (error) {
+    console.error("[swayger] claim_bankruptcy RPC error:", error.message);
+    return { error: error.message, newBalance: null };
+  }
+  const result = data as { error: string | null; new_balance?: number };
+  return { error: result.error, newBalance: result.new_balance ?? null };
 }
 
 export const CATEGORIES = [

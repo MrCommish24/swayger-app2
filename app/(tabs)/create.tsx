@@ -13,9 +13,9 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
-import { createSwayger, CATEGORIES } from "@/lib/swayger";
+import { createSwayger, fetchMyBalance, CATEGORIES } from "@/lib/swayger";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
@@ -47,24 +47,39 @@ export default function CreateSwaygerScreen() {
   const [title, setTitle] = useState(params.counterTitle || "");
   const [description, setDescription] = useState(params.counterDescription || "");
   const [category, setCategory] = useState(params.counterCategory || "Sports");
-  const [stakeUnits, setStakeUnits] = useState(params.counterStake ? parseInt(params.counterStake, 10) : 0);
+  const [stakeUnits, setStakeUnits] = useState(
+    params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5
+  );
+  const [stakeNote, setStakeNote] = useState("");
   const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
+
+  const { data: balanceData } = useQuery({
+    queryKey: ["balance", user?.id],
+    queryFn: () => fetchMyBalance(user!.id),
+    enabled: !!user,
+    staleTime: 0,
+  });
+  const myBalance = balanceData?.balance ?? 0;
 
   useEffect(() => {
     if (params.counterTitle) {
       setTitle(params.counterTitle);
       setDescription(params.counterDescription || "");
       setCategory(params.counterCategory || "Sports");
-      setStakeUnits(params.counterStake ? parseInt(params.counterStake, 10) : 0);
+      setStakeUnits(params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5);
       setCreatorPick(params.creatorPickPrefill || "");
     }
   }, [params.counterTitle]);
 
-  const canSubmit = title.trim().length >= 2 && creatorPick.trim().length > 0 && stakeUnits >= 1;
+  const canSubmit =
+    title.trim().length >= 2 &&
+    creatorPick.trim().length > 0 &&
+    stakeUnits >= 5 &&
+    (balanceData == null || stakeUnits <= myBalance);
 
   const mutation = useMutation({
     mutationFn: () =>
-      createSwayger(title, category, stakeUnits, creatorPick, user!.id, description),
+      createSwayger(title, category, stakeUnits, creatorPick, user!.id, description, stakeNote),
     onSuccess: async (result) => {
       if (result.error) {
         showError(result.error);
@@ -79,10 +94,12 @@ export default function CreateSwaygerScreen() {
         await supabase.from("swaygers").update(updates).eq("id", result.swayger.id);
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
+      queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
       setTitle("");
       setDescription("");
       setCategory("Sports");
-      setStakeUnits(0);
+      setStakeUnits(5);
+      setStakeNote("");
       setCreatorPick("");
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}`);
@@ -231,34 +248,49 @@ export default function CreateSwaygerScreen() {
           </View>
 
           <View>
-            <Text style={styles.label}>Stake (units)</Text>
+            <View style={styles.stakeLabelRow}>
+              <Text style={styles.label}>Swayger Points</Text>
+              {balanceData != null && (
+                <View style={styles.balancePill}>
+                  <Ionicons name="wallet-outline" size={12} color={Colors.dark.accentGold} />
+                  <Text style={styles.balancePillText}>{myBalance.toLocaleString()} SP available</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.stakeRow}>
               <Pressable
-                style={[styles.stakeButton, stakeUnits === 0 && styles.stakeButtonDisabled]}
-                onPress={() => setStakeUnits((v) => Math.max(0, v - 1))}
-                disabled={stakeUnits === 0}
+                style={[styles.stakeButton, stakeUnits <= 5 && styles.stakeButtonDisabled]}
+                onPress={() => setStakeUnits((v) => Math.max(5, v - 1))}
+                disabled={stakeUnits <= 5}
               >
-                <Ionicons name="remove" size={20} color={stakeUnits === 0 ? Colors.dark.tabIconDefault : Colors.dark.text} />
+                <Ionicons name="remove" size={20} color={stakeUnits <= 5 ? Colors.dark.tabIconDefault : Colors.dark.text} />
               </Pressable>
-              <Text style={[styles.stakeValue, stakeUnits === 0 && styles.stakeValueZero]}>
-                {stakeUnits === 0 ? "—" : stakeUnits}
-              </Text>
+              <Text style={styles.stakeValue}>{stakeUnits}</Text>
               <Pressable
-                style={styles.stakeButton}
-                onPress={() => setStakeUnits((v) => Math.min(10000, v + 1))}
+                style={[styles.stakeButton, stakeUnits >= myBalance && balanceData != null && styles.stakeButtonDisabled]}
+                onPress={() => setStakeUnits((v) => balanceData != null ? Math.min(myBalance, v + 1) : v + 1)}
+                disabled={balanceData != null && stakeUnits >= myBalance}
               >
-                <Ionicons name="add" size={20} color={Colors.dark.text} />
+                <Ionicons name="add" size={20} color={balanceData != null && stakeUnits >= myBalance ? Colors.dark.tabIconDefault : Colors.dark.text} />
               </Pressable>
             </View>
+            {balanceData != null && stakeUnits > myBalance && (
+              <Text style={styles.stakeError}>
+                Not enough SP — you have {myBalance.toLocaleString()}
+              </Text>
+            )}
             <View style={styles.quickPickRow}>
-              {[5, 10, 25, 50].map((amount) => (
+              {[5, 10, 25, 50, 100].map((amount) => (
                 <Pressable
                   key={amount}
                   style={({ pressed }) => [
                     styles.quickPickChip,
                     pressed && styles.quickPickChipPressed,
                   ]}
-                  onPress={() => setStakeUnits((v) => Math.min(10000, v + amount))}
+                  onPress={() => setStakeUnits((v) => {
+                    const next = v + amount;
+                    return balanceData != null ? Math.min(myBalance, next) : next;
+                  })}
                 >
                   <Text style={styles.quickPickText}>+{amount}</Text>
                 </Pressable>
@@ -269,11 +301,26 @@ export default function CreateSwaygerScreen() {
                   styles.quickPickClear,
                   pressed && styles.quickPickChipPressed,
                 ]}
-                onPress={() => setStakeUnits(0)}
+                onPress={() => setStakeUnits(5)}
               >
                 <Text style={[styles.quickPickText, styles.quickPickClearText]}>Reset</Text>
               </Pressable>
             </View>
+            <Text style={styles.hint}>Min: 5 SP · What are you wagering for?</Text>
+          </View>
+
+          <View>
+            <Text style={styles.label}>Stake Note (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder='e.g. "bragging rights" or "pizza"'
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={stakeNote}
+              onChangeText={setStakeNote}
+              editable={!mutation.isPending}
+              maxLength={80}
+            />
+            <Text style={styles.hint}>Add social flavor — what's on the line beyond points.</Text>
           </View>
 
           <View>
@@ -480,6 +527,33 @@ const styles = StyleSheet.create({
   quickPickClearText: {
     color: Colors.dark.tabIconDefault,
   },
+  stakeLabelRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    marginBottom: 8,
+  },
+  balancePill: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+    backgroundColor: `${Colors.dark.accentGold}18`,
+    borderWidth: 1,
+    borderColor: `${Colors.dark.accentGold}40`,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  balancePillText: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: Colors.dark.accentGold,
+  },
+  stakeError: {
+    fontSize: 12,
+    color: "#EF4444",
+    marginTop: 6,
+  },
   stakeButton: {
     width: 44,
     height: 44,
@@ -496,10 +570,6 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
     minWidth: 40,
     textAlign: "center",
-  },
-  stakeValueZero: {
-    color: Colors.dark.tabIconDefault,
-    fontSize: 24,
   },
   stakeButtonDisabled: {
     opacity: 0.35,

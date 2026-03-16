@@ -10,7 +10,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
-import { categoryIcon } from "@/lib/swayger";
+import { categoryIcon, fetchAllBalances } from "@/lib/swayger";
 import Colors from "@/constants/colors";
 
 interface SettledRow {
@@ -43,6 +43,7 @@ interface LeaderboardEntry {
   draws: number;
   totalUnitsWon: number;
   totalUnitsLost: number;
+  swaygerPoints: number;
   winPct: number;
   currentStreak: number;
 }
@@ -103,7 +104,11 @@ function computeCurrentStreak(userId: string, rows: SettledRow[]): number {
   return streak;
 }
 
-function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileInfo>): LeaderboardEntry[] {
+function computeLeaderboard(
+  rows: SettledRow[],
+  profileMap: Map<string, ProfileInfo>,
+  balanceMap: Map<string, number>
+): LeaderboardEntry[] {
   const statsMap = new Map<string, LeaderboardEntry>();
 
   function getEntry(userId: string): LeaderboardEntry {
@@ -115,6 +120,7 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
         displayName: p?.display_name || null,
         wins: 0, losses: 0, draws: 0,
         totalUnitsWon: 0, totalUnitsLost: 0,
+        swaygerPoints: balanceMap.get(userId) ?? 0,
         winPct: 0,
         currentStreak: 0,
       });
@@ -143,9 +149,12 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
     }
   });
 
-  // Compute streaks from raw rows so they're always accurate regardless of profile columns
   statsMap.forEach((entry, userId) => {
     entry.currentStreak = computeCurrentStreak(userId, rows);
+    // Update balance in case it wasn't populated via getEntry (edge case)
+    if (!entry.swaygerPoints && balanceMap.has(userId)) {
+      entry.swaygerPoints = balanceMap.get(userId) ?? 0;
+    }
   });
 
   return Array.from(statsMap.values())
@@ -154,11 +163,13 @@ function computeLeaderboard(rows: SettledRow[], profileMap: Map<string, ProfileI
       return { ...e, winPct: decided > 0 ? Math.round((e.wins / decided) * 100) : 0 };
     })
     .sort((a, b) => {
-      const aUnits = a.totalUnitsWon - a.totalUnitsLost;
-      const bUnits = b.totalUnitsWon - b.totalUnitsLost;
-      if (bUnits !== aUnits) return bUnits - aUnits;
+      // Primary: bank balance (highest first)
+      if (b.swaygerPoints !== a.swaygerPoints) return b.swaygerPoints - a.swaygerPoints;
+      // Secondary: W-L record
+      const aNet = a.wins - a.losses;
+      const bNet = b.wins - b.losses;
+      if (bNet !== aNet) return bNet - aNet;
       if (b.currentStreak !== a.currentStreak) return b.currentStreak - a.currentStreak;
-      if (b.wins !== a.wins) return b.wins - a.wins;
       return b.winPct - a.winPct;
     });
 }
@@ -251,7 +262,7 @@ function RecentSection({ rows, profileMap }: RecentSectionProps) {
             </View>
             <View style={styles.recentRight}>
               {!isDraw && !isNoContest && (
-                <Text style={styles.recentUnits}>+{s.stake_units}u</Text>
+                <Text style={styles.recentUnits}>{s.stake_units} SP</Text>
               )}
               <Text style={styles.recentDate}>{formatDate(s.updated_at)}</Text>
             </View>
@@ -277,6 +288,13 @@ export default function LeaderboardScreen() {
     refetchOnMount: "always",
   });
 
+  const { data: balanceMap = new Map<string, number>() } = useQuery<Map<string, number>>({
+    queryKey: ["balances-all"],
+    queryFn: fetchAllBalances,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
   const allRows = data?.rows ?? [];
   const profileMap = data?.profileMap ?? new Map();
 
@@ -291,11 +309,12 @@ export default function LeaderboardScreen() {
     return allRows.filter((r) => r.category === selectedCategory);
   }, [allRows, selectedCategory]);
 
-  const entries = useMemo(() => computeLeaderboard(filteredRows, profileMap), [filteredRows, profileMap]);
+  const entries = useMemo(
+    () => computeLeaderboard(filteredRows, profileMap, balanceMap),
+    [filteredRows, profileMap, balanceMap]
+  );
 
   function renderEntry({ item, index }: { item: LeaderboardEntry; index: number }) {
-    const netUnits = item.totalUnitsWon - item.totalUnitsLost;
-    const netColor = netUnits > 0 ? "#22C55E" : netUnits < 0 ? "#EF4444" : Colors.dark.tabIconDefault;
     const decided = item.wins + item.losses;
     const isMe = item.userId === user?.id;
 
@@ -353,9 +372,11 @@ export default function LeaderboardScreen() {
             )}
           </View>
           <View style={styles.statsRow}>
-            <Text style={[styles.netUnits, { color: netColor }]}>
-              {netUnits > 0 ? "+" : ""}{netUnits}u
-            </Text>
+            <View style={styles.spPill}>
+              <Text style={[styles.spPillText, isMe && styles.spPillTextMe]}>
+                {item.swaygerPoints.toLocaleString()} SP
+              </Text>
+            </View>
             {decided > 0 && (
               <Text style={styles.winPct}>{item.winPct}%</Text>
             )}
@@ -411,7 +432,7 @@ export default function LeaderboardScreen() {
             <View style={styles.columnHeaders}>
               <View style={styles.rankCol} />
               <Text style={[styles.colLabel, { flex: 1 }]}>Player</Text>
-              <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  Units  Win%</Text>
+              <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  SP  Win%</Text>
             </View>
           }
           ListFooterComponent={
@@ -495,7 +516,14 @@ const styles = StyleSheet.create({
   },
   streakText: { fontSize: 11, fontWeight: "700" as const, color: "#FB923C" },
   statsRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
-  netUnits: { fontSize: 12, fontWeight: "600" as const },
+  spPill: {
+    backgroundColor: `${Colors.dark.accentGold}18`,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  spPillText: { fontSize: 12, fontWeight: "700" as const, color: Colors.dark.accentGold },
+  spPillTextMe: { color: Colors.dark.tint },
   winPct: { fontSize: 12, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },
 
   recentSection: {

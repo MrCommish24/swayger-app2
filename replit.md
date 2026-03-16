@@ -7,7 +7,7 @@ A mobile-first app built with Expo (React Native) and an Express backend, using 
 - **Frontend**: Expo (v54) with Expo Router v6 for file-based navigation
 - **Backend**: Express v5 on port 5000 (placeholder, not yet used for app logic)
 - **Auth**: Supabase OTP code + magic link + password sign-in via `@supabase/supabase-js`
-- **Data**: Supabase (`swaygers`, `swayger_invites`, `profiles`, `settlement_proposals` tables)
+- **Data**: Supabase (`swaygers`, `swayger_invites`, `profiles`, `settlement_proposals`, `user_balances` tables)
 - **State Management**: TanStack React Query v5, React Context for auth
 - **Styling**: React Native StyleSheet with a dark theme
 - **Session Storage**: AsyncStorage (native), localStorage (web)
@@ -113,7 +113,8 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 - `title` — swayger title
 - `description` — optional description
 - `category` — Sports, Entertainment, Gaming, Lifestyle, Politics, Other
-- `stake_units` — integer (1-100)
+- `stake_units` — integer (5-100, min 5 for Swayger Points)
+- `stake_note` — optional free-text note about what the stake represents (e.g., "bragging rights")
 - `creator_pick` — creator's prediction text
 - `opponent_pick` — opponent's prediction text (set on accept)
 - `expires_at` — auto-set to 7 days from creation
@@ -133,13 +134,37 @@ Create → Invite → Accept (opponent_pick) → Active → Propose Settlement �
 
 ### Gameplay RPCs (SECURITY DEFINER)
 
-- `create_swayger(p_title, p_description, p_category, p_stake_units, p_creator_pick, p_invite_code)` — creates swayger + invite record
+- `create_swayger(p_title, p_description, p_category, p_stake_units, p_creator_pick, p_invite_code, p_stake_note?)` — creates swayger + invite record; deducts SP escrow if `points_active=true`
 - `join_swayger_by_code(p_invite_code)` — sets caller as opponent
-- `accept_swayger(p_swayger_id, p_opponent_pick)` — accept + set opponent pick, status → active
-- `decline_swayger(p_swayger_id)` — decline invite
-- `cancel_swayger(p_swayger_id)` — creator only, cancel
+- `accept_swayger(p_swayger_id, p_opponent_pick)` — accept + set opponent pick, status → active; deducts opponent SP escrow
+- `decline_swayger(p_swayger_id)` — decline invite; refunds creator escrow
+- `cancel_swayger(p_swayger_id)` — creator only; refunds all escrow
 - `propose_settlement(p_swayger_id, p_outcome)` — propose an outcome
-- `confirm_settlement(p_swayger_id, p_proposal_id)` — confirm a proposal; settles if both confirmed
+- `confirm_settlement(p_swayger_id, p_proposal_id)` — confirm a proposal; settles + redistributes SP if both confirmed
+- `withdraw_settlement_proposal(p_swayger_id)` — withdraw your own proposal; status → active
+- `claim_bankruptcy()` — one-time emergency refill: sets balance to 250 SP when at 0
+- `expire_old_proposals()` — called hourly by server; withdraws proposals older than 7 days
+
+## Swayger Points (SP) System
+
+Virtual currency for tracking social stakes. Migration: `supabase/swayger-points-migration.sql`.
+
+### Rules
+- Every user starts with **1000 SP** (seeded from migration, or gets 1000 + net_units from settled history)
+- Min stake is **5 SP** per swayger
+- On create: creator's SP are **escrowed** (deducted) immediately
+- On accept: opponent's SP are **escrowed**
+- On settle: winner gets `2 × stake`, draw = both refunded, no_contest = both refunded
+- On cancel/decline: escrowed SP is fully refunded
+- **Bankruptcy**: If balance = 0, user can claim a one-time 250 SP lifeline (profile screen)
+- Legacy/older swaygers have `points_active=FALSE` — no SP impact
+
+### `user_balances` Table
+- `user_id` — FK to auth.users
+- `balance` — current SP bank balance (available to bet)
+- `escrowed` — SP currently locked in active swaygers
+- `total_earned` / `total_lost` — lifetime stats
+- `bankruptcy_used` — whether the one-time lifeline has been claimed
 
 ## Theme (Brand Colors)
 
@@ -174,10 +199,11 @@ Notifications are fire-and-forget; they never block the UI. On web, all notifica
 ## Supabase Tables
 
 - `profiles` — user profiles (username, display_name, avatar_url)
-- `swaygers` — 1v1 wager contracts (title, category, creator_id, opponent_id, status, etc.)
+- `swaygers` — 1v1 wager contracts (title, category, creator_id, opponent_id, status, stake_note, points_active, etc.)
 - `swayger_invites` — invite codes (swayger_id, invite_code)
 - `settlement_proposals` — settlement proposals (swayger_id, proposed_by, outcome, confirmations)
 - `push_tokens` — Expo push tokens per user (one row per user, upserted on login)
+- `user_balances` — Swayger Points ledger (balance, escrowed, total_earned, total_lost, bankruptcy_used)
 
 ### Migration Order
 
@@ -186,8 +212,9 @@ Run in Supabase SQL Editor in order:
 2. `002_fix_rls_recursion.sql` — RLS fix
 3. `005_fix_schema_to_swaygers.sql` — creates `swaygers`, `swayger_invites`, `settlement_proposals` tables, all gameplay RPCs
 4. `012_push_tokens.sql` — creates `push_tokens` table + `get_push_token` RPC
+5. `supabase/swayger-points-migration.sql` — creates `user_balances` table, adds `stake_note`/`points_active` columns to `swaygers`, rewrites all gameplay RPCs with SP logic, seeds all existing users
 
-Note: Migrations 003 and 004 are superseded by 005. If starting fresh: 001 + 002 + 005 + 012.
+Note: Migrations 003 and 004 are superseded by 005. If starting fresh: 001 + 002 + 005 + 012 + swayger-points-migration.
 
 ## Smoke Test Checklist
 
