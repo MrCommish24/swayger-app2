@@ -1,11 +1,10 @@
-import { View, Text, StyleSheet, Platform } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import QRCode from "react-native-qrcode-svg";
 import Colors from "@/constants/colors";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
-const JOIN_URL = process.env.EXPO_PUBLIC_APP_URL || "https://swayger.replit.app";
+const APP_URL = "swayger-app.replit.app";
 
 interface MMStats {
   wins: number;
@@ -98,15 +97,9 @@ export default function MarchMadnessShareCard({ stats }: Props) {
           <Ionicons name="person-circle-outline" size={14} color={Colors.dark.textSecondary} />
           <Text style={styles.footerHandle} numberOfLines={1}>{handle}</Text>
         </View>
-        <View style={styles.qrBlock}>
-          {Platform.OS !== "web" ? (
-            <>
-              <QRCode value={JOIN_URL} size={56} color="#FFFFFF" backgroundColor="#111827" />
-              <Text style={styles.scanLabel}>SCAN TO JOIN</Text>
-            </>
-          ) : (
-            <Text style={styles.urlLabel}>swayger.replit.app</Text>
-          )}
+        <View style={styles.urlBlock}>
+          <Ionicons name="globe-outline" size={11} color={ORANGE} />
+          <Text style={styles.urlText}>{APP_URL}</Text>
         </View>
       </View>
     </View>
@@ -243,20 +236,19 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     flex: 1,
   },
-  qrBlock: {
-    alignItems: "center",
+  urlBlock: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 4,
+    backgroundColor: "rgba(232,89,10,0.12)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  scanLabel: {
-    fontSize: 7,
-    fontWeight: "700" as const,
-    color: Colors.dark.textSecondary,
-    letterSpacing: 0.8,
-  },
-  urlLabel: {
-    fontSize: 9,
+  urlText: {
+    fontSize: 10,
     fontWeight: "700" as const,
     color: ORANGE,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 });
