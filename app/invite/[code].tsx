@@ -209,6 +209,16 @@ export default function InviteScreen() {
   }
 
   if (!swayger) {
+    // Join succeeded but fetch returned null (RLS timing) — navigate to swayger detail directly
+    if (joinedId) {
+      router.replace(`/swayger/${joinedId}`);
+      return (
+        <View style={[styles.container, styles.centered, { paddingTop: isWeb ? 67 : insets.top }]}>
+          <ActivityIndicator size="large" color={Colors.dark.tint} />
+          <Text style={styles.infoText}>Loading Swayger...</Text>
+        </View>
+      );
+    }
     return (
       <View style={[styles.container, styles.centered, { paddingTop: isWeb ? 67 : insets.top }]}>
         <Ionicons name="alert-circle-outline" size={48} color={Colors.dark.accentGold} />
