@@ -49,9 +49,8 @@ async function sendReminderBlast(label: string): Promise<void> {
   console.log(`[mm-scheduler] Firing pre-lock reminder blast: ${label}`);
   try {
     const supabase = getSupabase();
-    const { data: allProfiles } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, notification_email");
+    // Use SECURITY DEFINER RPC to bypass RLS on profiles table
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
     const { data: takes } = await supabase
       .from("mm_locked_takes")
       .select("user_id")

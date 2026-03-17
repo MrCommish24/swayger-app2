@@ -256,10 +256,8 @@ export async function sendScoreUpdateBlast(
   const totalPlayers = allScores.length;
   const userIds = allScores.map((s) => s.user_id);
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, username, display_name, notification_email")
-    .in("id", userIds);
+  // Use SECURITY DEFINER RPC to bypass RLS on profiles table
+  const { data: profiles } = await supabase.rpc("get_all_notification_profiles");
 
   type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string };
   const profileMap = new Map<string, ProfileRow>(
@@ -451,10 +449,8 @@ export function registerMMAdminRoutes(app: Express): void {
     try {
       const { sendMMReminderEmail } = await import("./email");
       const supabase = getSupabase();
-      // Find users who have no mm_locked_takes at all
-      const { data: allProfiles } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, notification_email");
+      // Use SECURITY DEFINER RPC to bypass RLS on profiles table
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const { data: takes } = await supabase
         .from("mm_locked_takes")
         .select("user_id")
