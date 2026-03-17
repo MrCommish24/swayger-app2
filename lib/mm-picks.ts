@@ -180,6 +180,124 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
 // Keep old export for bracket-take lock banners
 export const PICKS_LOCK_DATE = BRACKET_LOCK_DATE;
 
+// ─── Email Reminder Schedule ──────────────────────────────────────────────────
+// Full cadence of automated emails for the 2026 tournament.
+// "audience": who receives the email
+//   - "no-picks"   → users with zero submitted locked takes
+//   - "all"        → everyone with a notification_email
+//   - "has-score"  → users with at least 1 point in mm_pick_scores
+// "trigger": how the email fires
+//   - "scheduled"  → mm-scheduler.ts fires automatically at triggerAt
+//   - "manual"     → POST /admin/mm/api/remind or /admin/mm/api/score-update
+//   - "admin"      → must be triggered manually from admin panel / curl
+
+export interface EmailScheduleEntry {
+  id: string;
+  label: string;
+  description: string;
+  triggerAt: string;       // ISO date-time (CDT = UTC-5)
+  type: "reminder" | "score-update" | "final";
+  audience: "no-picks" | "all" | "has-score";
+  trigger: "scheduled" | "manual" | "admin";
+  status: "sent" | "pending" | "future";
+}
+
+export const EMAIL_SCHEDULE: EmailScheduleEntry[] = [
+  // ── Pre-lock reminders (bracket picks) ─────────────────────────────────────
+  {
+    id: "pre-lock-mar17",
+    label: "Mar 17 — 2 days to go",
+    description: "Remind users to lock their bracket picks before the tournament starts.",
+    triggerAt: "2026-03-17T09:00:00-05:00",
+    type: "reminder",
+    audience: "no-picks",
+    trigger: "scheduled",
+    status: "sent",
+  },
+  {
+    id: "pre-lock-mar18",
+    label: "Mar 18 — 24 hours left",
+    description: "Final day reminder — bracket picks lock tomorrow at noon CDT.",
+    triggerAt: "2026-03-18T09:00:00-05:00",
+    type: "reminder",
+    audience: "no-picks",
+    trigger: "scheduled",
+    status: "pending",
+  },
+  {
+    id: "pre-lock-mar19",
+    label: "Mar 19 — Final warning (4hrs to lock)",
+    description: "Last chance — bracket picks lock at noon CDT today.",
+    triggerAt: "2026-03-19T08:00:00-05:00",
+    type: "reminder",
+    audience: "no-picks",
+    trigger: "scheduled",
+    status: "pending",
+  },
+
+  // ── Round score updates (manual — enter results in admin first) ─────────────
+  {
+    id: "scores-r64",
+    label: "Round of 64 results",
+    description: "Score update after Round of 64 results are entered in admin panel.",
+    triggerAt: "2026-03-21T12:00:00-05:00",
+    type: "score-update",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+  {
+    id: "scores-r32",
+    label: "Round of 32 results",
+    description: "Score update after Round of 32 results are entered.",
+    triggerAt: "2026-03-23T12:00:00-05:00",
+    type: "score-update",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+  {
+    id: "scores-s16",
+    label: "Sweet 16 results",
+    description: "Score update after Sweet 16 results are entered.",
+    triggerAt: "2026-03-29T12:00:00-05:00",
+    type: "score-update",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+  {
+    id: "scores-e8",
+    label: "Elite 8 results",
+    description: "Score update after Elite 8 results are entered.",
+    triggerAt: "2026-03-30T12:00:00-05:00",
+    type: "score-update",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+  {
+    id: "scores-ff",
+    label: "Final Four results",
+    description: "Score update after Final Four results are entered.",
+    triggerAt: "2026-04-05T20:00:00-05:00",
+    type: "score-update",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+  {
+    id: "scores-championship",
+    label: "Championship results + final standings",
+    description: "Final score update with winner announced and full leaderboard standings.",
+    triggerAt: "2026-04-07T22:00:00-05:00",
+    type: "final",
+    audience: "has-score",
+    trigger: "admin",
+    status: "future",
+  },
+];
+
 export function isPicksLocked(): boolean {
   return new Date() >= new Date(BRACKET_LOCK_DATE);
 }
