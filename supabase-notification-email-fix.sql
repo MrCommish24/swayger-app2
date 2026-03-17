@@ -1,8 +1,8 @@
--- ─── Backfill notification_email for all existing profiles ───────────────────
--- notification_email is the field the email scheduler queries.
--- It was never auto-populated on signup, so this backfills it from auth.users.
--- Run this once in the Supabase SQL Editor.
+-- ─── Step 1: Add notification_email column to profiles ───────────────────────
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS notification_email text;
 
+-- ─── Step 2: Backfill from auth.users for all existing profiles ───────────────
 UPDATE public.profiles p
 SET notification_email = u.email
 FROM auth.users u
@@ -10,10 +10,7 @@ WHERE p.id = u.id
   AND p.notification_email IS NULL
   AND u.email IS NOT NULL;
 
--- ─── Update the new-user trigger to auto-set notification_email ───────────────
--- This ensures future signups automatically get their email recorded.
--- Replace your existing handle_new_user function with this version.
-
+-- ─── Step 3: Update new-user trigger to auto-set notification_email ───────────
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql
