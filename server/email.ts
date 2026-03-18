@@ -431,3 +431,100 @@ export async function sendLeaderboardBlast(opts: {
     html: buildLeaderboardBlastHtml(),
   });
 }
+
+// ─── Last-Chance Leaderboard Blast (Mar 19 9am — 2hrs before lock) ───────────
+
+export function buildLastChanceBlastHtml(): string {
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+
+  const body = `
+    <p style="margin:0 0 18px;font-size:15px;color:#D1D5DB;line-height:1.6;">
+      Picks close at <strong style="color:#FFFFFF;">11am CDT today.</strong> After that the leaderboard is locked and there's nothing left to do but watch.
+    </p>
+
+    <div style="background:linear-gradient(135deg,#1a1200 0%,#2a1f00 100%);border:1px solid rgba(245,166,35,0.35);border-radius:12px;padding:16px 20px;margin-bottom:22px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#F5A623;text-transform:uppercase;">The prize</p>
+      <p style="margin:0;font-size:18px;font-weight:800;color:#FFFFFF;">Whoever leads the leaderboard when the tournament ends walks away with something good.</p>
+    </div>
+
+    <p style="margin:0 0 6px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Still have time to make</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #6C63FF;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#FFFFFF;">⚡ Quick Picks</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.5;">Pick the biggest <strong style="color:#FFFFFF;">upset</strong>, <strong style="color:#FFFFFF;">blowout</strong>, and <strong style="color:#FFFFFF;">high-scoring</strong> game of the round. 3 points each — these reset every round, so you can climb fast.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #F5A623;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#FFFFFF;">🔒 Locked Takes</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.5;">Lock a prediction on a game result before it tips. Sweet 16 = 2pts, Elite Eight = 3pts, Final Four = 5pts, Champion = 10pts. No opponent needed.</p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">After 11am the door closes. That's it.</p>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Picks close at 11am</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">First place on the leaderboard walks away with something good. Picks close at 11am.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}"
+                     style="display:inline-block;background:#F5A623;color:#000000;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Lock My Picks →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendLastChanceBlast(opts: {
+  to: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "First place on the leaderboard walks away with something good. Picks close at 11am.",
+    html: buildLastChanceBlastHtml(),
+  });
+}

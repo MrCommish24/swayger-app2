@@ -446,6 +446,13 @@ export function registerMMAdminRoutes(app: Express): void {
     res.send(buildLeaderboardBlastHtml());
   });
 
+  // Preview last-chance blast email
+  app.get("/admin/mm/email-preview/last-chance", (_req: Request, res: Response) => {
+    const { buildLastChanceBlastHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildLastChanceBlastHtml());
+  });
+
   // Send leaderboard blast to all registered users
   app.post("/admin/mm/api/blast-leaderboard", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
