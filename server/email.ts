@@ -51,7 +51,7 @@ function detailRow(label: string, value: string): string {
 }
 
 function swaygerDetailsHtml(p: NotifyPayload): string {
-  const stake = `${p.swayger.stakeUnits} unit${p.swayger.stakeUnits !== 1 ? "s" : ""}`;
+  const stake = `${p.swayger.stakeUnits} Swayger Points`;
   return `<table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:8px;">
     ${detailRow("Wager", p.swayger.title)}
     ${detailRow("Category", p.swayger.category)}
