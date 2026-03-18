@@ -190,11 +190,11 @@ export default function DashboardScreen() {
   });
   const spBalance = balanceData?.balance ?? null;
 
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
 
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY).then((val) => {
-      if (!val) setShowOnboarding(true);
+      if (val) setShowOnboarding(false);
     });
   }, []);
 
