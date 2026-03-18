@@ -319,7 +319,7 @@ export async function sendMMReminderEmail({
       Pick your <strong style="color:#FFFFFF;">Champion, Final Four, Elite Eight, and Sweet Sixteen</strong> — plus up to 3 upset picks for the Round of 64.
     </p>
     <p style="margin:0;color:#8B95A5;font-size:14px;">
-      Picks lock at noon ET on March 19. Once it's locked, it's locked.
+      Picks lock at 11am CDT on March 19. Once it's locked, it's locked.
     </p>
   `;
   await resend.emails.send({
@@ -369,7 +369,7 @@ export function buildLeaderboardBlastHtml(): string {
     </table>
 
     <p style="margin:0 0 4px;font-size:13px;color:#8B95A5;text-align:center;">Round of 64 picks are open <strong style="color:#FFFFFF;">right now</strong>.</p>
-    <p style="margin:0;font-size:13px;color:#8B95A5;text-align:center;">Picks lock March 19 at noon ET — don't wait.</p>
+    <p style="margin:0;font-size:13px;color:#8B95A5;text-align:center;">Picks lock March 19 at 11am CDT — don't wait.</p>
   `;
 
   return `<!DOCTYPE html>

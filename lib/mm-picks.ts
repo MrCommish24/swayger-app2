@@ -165,12 +165,12 @@ export interface UpsetMatchup {
 // ─── Lock Dates ───────────────────────────────────────────────────────────────
 
 // Bracket locked takes lock before the tournament starts
-export const BRACKET_LOCK_DATE = "2026-03-19T12:00:00-05:00";
+export const BRACKET_LOCK_DATE = "2026-03-19T11:00:00-05:00";
 
 // Per-round lock dates for special picks (upset / blowout / high-scorer)
 export const ROUND_LOCK_DATES: Record<string, string> = {
   "first-four":   "2026-03-17T12:00:00-05:00",
-  "round-64":     "2026-03-19T12:00:00-05:00",  // noon CDT, first games tip ~12:30
+  "round-64":     "2026-03-19T11:00:00-05:00",  // 11am CDT, first games tip 11:15am CDT
   "round-32":     "2026-03-21T12:00:00-05:00",  // noon CDT, R32 starts Mar 21
   "sweet-16":     "2026-03-27T12:00:00-05:00",  // noon CDT
   "elite-8":      "2026-03-28T12:00:00-05:00",  // noon CDT
@@ -217,7 +217,7 @@ export const EMAIL_SCHEDULE: EmailScheduleEntry[] = [
   {
     id: "pre-lock-mar18",
     label: "Mar 18 — 24 hours left",
-    description: "Final day reminder — bracket picks lock tomorrow at noon CDT.",
+    description: "Final day reminder — bracket picks lock tomorrow at 11am CDT.",
     triggerAt: "2026-03-18T09:00:00-05:00",
     type: "reminder",
     audience: "no-picks",
@@ -227,7 +227,7 @@ export const EMAIL_SCHEDULE: EmailScheduleEntry[] = [
   {
     id: "pre-lock-mar19",
     label: "Mar 19 — Final warning (4hrs to lock)",
-    description: "Last chance — bracket picks lock at noon CDT today.",
+    description: "Last chance — bracket picks lock at 11am CDT today.",
     triggerAt: "2026-03-19T08:00:00-05:00",
     type: "reminder",
     audience: "no-picks",

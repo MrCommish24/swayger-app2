@@ -83,7 +83,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "R64",
     startDate: "2026-03-19",
     endDate: "2026-03-20",
-    lockDate: "2026-03-19T12:00:00-05:00",
+    lockDate: "2026-03-19T11:00:00-05:00",
     featured: [
       // ── EAST ──
       {

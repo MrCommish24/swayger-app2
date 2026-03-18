@@ -81,7 +81,7 @@ async function sendReminderBlast(label: string): Promise<void> {
 }
 
 // ─── Schedule windows — all use explicit CDT offset (-05:00) ──────────────────
-// Picks lock at 2026-03-19T12:00:00-05:00 (noon CDT)
+// Picks lock at 2026-03-19T11:00:00-05:00 (11am CDT)
 // Mar 17 9:00am CDT = 2026-03-17T09:00:00-05:00
 // Mar 18 9:00am CDT = 2026-03-18T09:00:00-05:00
 // Mar 19 8:00am CDT = 2026-03-19T08:00:00-05:00 (4hrs before lock)
