@@ -774,7 +774,9 @@ const styles = StyleSheet.create({
     color: ORANGE,
   },
   teamName: {
-    fontSize: 16,
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 14,
     fontWeight: "700" as const,
     color: "#FFFFFF",
   },
