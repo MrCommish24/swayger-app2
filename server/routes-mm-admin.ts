@@ -439,6 +439,49 @@ export function registerMMAdminRoutes(app: Express): void {
     }
   });
 
+  // Preview leaderboard blast email (no auth — just renders HTML)
+  app.get("/admin/mm/email-preview/leaderboard-blast", (_req: Request, res: Response) => {
+    const { buildLeaderboardBlastHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildLeaderboardBlastHtml());
+  });
+
+  // Send leaderboard blast to all registered users
+  app.post("/admin/mm/api/blast-leaderboard", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const { sendLeaderboardBlast } = await import("./email");
+      const supabase = getSupabase();
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const eligible = (allProfiles ?? []).filter(
+        (p: { notification_email?: string }) => p.notification_email,
+      );
+      let sent = 0;
+      let failed = 0;
+      for (const profile of eligible) {
+        try {
+          await sendLeaderboardBlast({
+            to: profile.notification_email as string,
+            displayName: profile.display_name || `@${profile.username}`,
+          });
+          sent++;
+        } catch (e) {
+          console.error("[mm-admin] blast failed for", profile.id, e);
+          failed++;
+        }
+      }
+      console.log(`[mm-admin] Leaderboard blast: sent=${sent} failed=${failed}`);
+      res.json({ ok: true, message: `Blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
+    } catch (err) {
+      console.error("[mm-admin] blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Admin: send picks reminder email to users who haven't made locked takes
   app.post("/admin/mm/api/remind", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;

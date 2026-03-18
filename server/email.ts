@@ -329,3 +329,105 @@ export async function sendMMReminderEmail({
     html: buildEmailHtml(subject, headline, body, "Lock My Picks", `${APP_URL}/march-madness/picks`),
   });
 }
+
+// ─── Leaderboard Blast ────────────────────────────────────────────────────────
+
+export function buildLeaderboardBlastHtml(): string {
+  const subject = "🏀 Race Up the Leaderboard — Win a $100 Amazon Gift Card";
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+
+  const body = `
+    <div style="background:linear-gradient(135deg,#1a1200 0%,#2a1f00 100%);border:1px solid rgba(245,166,35,0.35);border-radius:12px;padding:18px 20px;margin-bottom:22px;text-align:center;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#F5A623;text-transform:uppercase;">🏆 March Madness Prize</p>
+      <p style="margin:0;font-size:26px;font-weight:800;color:#FFFFFF;line-height:1.2;">$100 Amazon Gift Card</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#C8A84B;">#1 on the leaderboard at the end of the tournament wins.</p>
+    </div>
+
+    <p style="margin:0 0 6px;font-size:14px;color:#8B95A5;">Here's the thing most people don't know:</p>
+    <p style="margin:0 0 20px;font-size:15px;font-weight:600;color:#FFFFFF;">You don't need an opponent. This is solo — you vs. every other Swayger user on one leaderboard.</p>
+
+    <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Two ways to earn points</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:16px;border-left:3px solid #6C63FF;">
+          <p style="margin:0 0 5px;font-size:14px;font-weight:700;color:#FFFFFF;">⚡ Quick Picks</p>
+          <p style="margin:0 0 10px;font-size:13px;color:#8B95A5;line-height:1.5;">Each round, pick which game will be the biggest <strong style="color:#FFFFFF;">upset</strong>, which will be the biggest <strong style="color:#FFFFFF;">blowout</strong>, and which will be the <strong style="color:#FFFFFF;">highest scorer</strong>. 3 points each. New picks open every round.</p>
+          <p style="margin:0;font-size:12px;color:#6C63FF;font-weight:600;">→ Go to March Madness → Quick Picks</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:16px;border-left:3px solid #F5A623;">
+          <p style="margin:0 0 5px;font-size:14px;font-weight:700;color:#FFFFFF;">🔒 Locked Takes</p>
+          <p style="margin:0 0 10px;font-size:13px;color:#8B95A5;line-height:1.5;">Before tip-off, lock in your predictions on specific game outcomes. Hit a Sweet 16 call? 2 pts. Elite Eight? 3 pts. Final Four? 5 pts. Champion? 10 pts. Points stack all tournament.</p>
+          <p style="margin:0;font-size:12px;color:#F5A623;font-weight:600;">→ Go to March Madness → Locked Takes</p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 4px;font-size:13px;color:#8B95A5;text-align:center;">Round of 64 picks are open <strong style="color:#FFFFFF;">right now</strong>.</p>
+    <p style="margin:0;font-size:13px;color:#8B95A5;text-align:center;">Picks lock March 19 at noon ET — don't wait.</p>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">March Madness is heating up — and there's $100 on the line. 🏀</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}"
+                     style="display:inline-block;background:#F5A623;color:#000000;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Make My Picks →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendLeaderboardBlast(opts: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "🏀 Race Up the Leaderboard — Win a $100 Amazon Gift Card",
+    html: buildLeaderboardBlastHtml(),
+  });
+}

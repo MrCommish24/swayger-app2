@@ -98,6 +98,20 @@
       <div class="result" id="remind-result"></div>
     </div>
 
+    <!-- Leaderboard Blast -->
+    <div class="card">
+      <h2>🏀 Leaderboard Blast</h2>
+      <p style="font-size:13px;color:#9CA3AF;margin-bottom:12px;line-height:1.5">
+        Sends the "$100 Amazon Gift Card — race the leaderboard" email to <strong style="color:#E2E8F0;">all registered users</strong>. Explains Quick Picks + Locked Takes and links to the picks screen.
+      </p>
+      <a href="/admin/mm/email-preview/leaderboard-blast" target="_blank"
+         style="display:inline-block;margin-bottom:14px;font-size:12px;color:#6C63FF;text-decoration:none;font-weight:600;">
+        👁 Preview email →
+      </a><br>
+      <button style="background:#F5A623;color:#000;font-weight:800;" onclick="sendLeaderboardBlast()">🚀 Send Leaderboard Blast</button>
+      <div class="result" id="blast-result"></div>
+    </div>
+
     <!-- Game Results Log -->
     <div class="card">
       <h2>Entered Results</h2>
@@ -155,6 +169,12 @@
       if (!confirm("Send reminder emails to all users without picks?")) return;
       const data = await apiPost("/admin/mm/api/remind", {});
       showResult("remind-result", data);
+    }
+
+    async function sendLeaderboardBlast() {
+      if (!confirm("Send the leaderboard blast to ALL registered users?\n\nThis cannot be undone.")) return;
+      const data = await apiPost("/admin/mm/api/blast-leaderboard", {});
+      showResult("blast-result", data);
     }
 
     async function loadLeaderboard() {
