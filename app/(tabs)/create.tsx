@@ -19,6 +19,7 @@ import { createSwayger, fetchMyBalance, CATEGORIES, categoryIcon } from "@/lib/s
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+import CreateOnboardingBanner from "@/components/CreateOnboardingBanner";
 
 export default function CreateSwaygerScreen() {
   const router = useRouter();
@@ -192,6 +193,10 @@ export default function CreateSwaygerScreen() {
             </View>
           </View>
         )}
+
+        {!isCounter && !isRematch && !isOpenChallenge ? (
+          <CreateOnboardingBanner />
+        ) : null}
 
         <View style={styles.form}>
           <View>

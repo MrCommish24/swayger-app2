@@ -12,7 +12,6 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { formatDate, getAvatarColor } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -53,51 +52,7 @@ function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
   );
 }
 
-const ONBOARDING_KEY = "swayger_onboarding_v1_dismissed";
 const GOLD = "#F5A623";
-
-const HOW_TO_STEPS = [
-  { num: "1", title: "Create", sub: "Name your wager & set stakes" },
-  { num: "2", title: "Pick Your Side", sub: "Enter your take" },
-  { num: "3", title: "Share Code", sub: "Friend joins & picks theirs" },
-];
-
-function OnboardingCard({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <View style={styles.onboardingCard}>
-      <View style={styles.onboardingHeader}>
-        <View style={styles.onboardingTitleRow}>
-          <Ionicons name="flash" size={13} color={GOLD} />
-          <Text style={styles.onboardingTitle}>How to create a Swayger</Text>
-        </View>
-        <Pressable onPress={onDismiss} hitSlop={12} testID="onboarding-dismiss">
-          <Ionicons name="close" size={18} color="#6B7280" />
-        </Pressable>
-      </View>
-      <View style={styles.onboardingSteps}>
-        {HOW_TO_STEPS.map((step, i) => (
-          <React.Fragment key={step.num}>
-            <View style={styles.onboardingStep}>
-              <View style={styles.onboardingStepBadge}>
-                <Text style={styles.onboardingStepNum}>{step.num}</Text>
-              </View>
-              <Text style={styles.onboardingStepTitle}>{step.title}</Text>
-              <Text style={styles.onboardingStepSub}>{step.sub}</Text>
-            </View>
-            {i < HOW_TO_STEPS.length - 1 ? (
-              <Ionicons
-                name="chevron-forward"
-                size={13}
-                color="rgba(255,255,255,0.18)"
-                style={styles.onboardingArrow}
-              />
-            ) : null}
-          </React.Fragment>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 function StatsStrip({
   swaygers,
@@ -189,19 +144,6 @@ export default function DashboardScreen() {
     staleTime: 0,
   });
   const spBalance = balanceData?.balance ?? null;
-
-  const [showOnboarding, setShowOnboarding] = useState(true);
-
-  useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY).then((val) => {
-      if (val) setShowOnboarding(false);
-    });
-  }, []);
-
-  function dismissOnboarding() {
-    setShowOnboarding(false);
-    AsyncStorage.setItem(ONBOARDING_KEY, "1");
-  }
 
   type FilterKey = "all" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -343,10 +285,6 @@ export default function DashboardScreen() {
       )}
 
       <MarchMadnessBanner onPress={() => router.push("/march-madness")} />
-
-      {showOnboarding ? (
-        <OnboardingCard onDismiss={dismissOnboarding} />
-      ) : null}
 
       <View style={styles.actions}>
         <Pressable
@@ -867,75 +805,4 @@ const styles = StyleSheet.create({
   cardDetails: { flexDirection: "row", gap: 12, flexWrap: "wrap", rowGap: 4 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailText: { fontSize: 13, color: Colors.dark.textSecondary },
-  onboardingCard: {
-    marginHorizontal: 16,
-    marginBottom: 4,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.2)",
-    padding: 14,
-    gap: 12,
-  },
-  onboardingHeader: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  onboardingTitleRow: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    gap: 6,
-  },
-  onboardingTitle: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-    color: "#F5A623",
-  },
-  onboardingSteps: {
-    flexDirection: "row" as const,
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  onboardingStepWrapper: {
-    flexDirection: "row" as const,
-    alignItems: "flex-start",
-    flex: 1,
-  },
-  onboardingStep: {
-    flex: 1,
-    alignItems: "center" as const,
-    gap: 5,
-  },
-  onboardingStepBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(245,166,35,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.35)",
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  onboardingStepNum: {
-    fontSize: 12,
-    fontWeight: "700" as const,
-    color: "#F5A623",
-  },
-  onboardingStepTitle: {
-    fontSize: 12,
-    fontWeight: "700" as const,
-    color: Colors.dark.text,
-    textAlign: "center" as const,
-  },
-  onboardingStepSub: {
-    fontSize: 10,
-    color: Colors.dark.textSecondary,
-    textAlign: "center" as const,
-    lineHeight: 14,
-  },
-  onboardingArrow: {
-    marginTop: 6,
-    alignSelf: "flex-start" as const,
-  },
 });
