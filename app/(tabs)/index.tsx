@@ -296,7 +296,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.detailRow}>
             <Ionicons name="flame-outline" size={14} color={Colors.dark.accentGold} />
-            <Text style={styles.detailText}>{item.stake_units || 1} unit{(item.stake_units || 1) !== 1 ? "s" : ""}</Text>
+            <Text style={styles.detailText}>{item.stake_units || 1} SP</Text>
           </View>
           <View style={styles.detailRow}>
             <Ionicons name="radio-button-on" size={10} color={st.color} />
@@ -445,7 +445,7 @@ export default function DashboardScreen() {
 
             <View style={styles.sampleFooter}>
               <Ionicons name="flame-outline" size={13} color={Colors.dark.accentGold} />
-              <Text style={styles.sampleFooterText}>5 units at stake</Text>
+              <Text style={styles.sampleFooterText}>5 Swayger Points at stake</Text>
             </View>
           </View>
 
@@ -471,12 +471,12 @@ export default function DashboardScreen() {
 
             <View style={styles.sampleResultRow}>
               <Ionicons name="trophy" size={20} color={Colors.dark.accentGold} />
-              <Text style={styles.sampleResultText}>Darius wins · +5 units</Text>
+              <Text style={styles.sampleResultText}>Darius wins · +5 SP</Text>
             </View>
 
             <View style={styles.sampleFooter}>
               <Ionicons name="person-outline" size={13} color={Colors.dark.tabIconDefault} />
-              <Text style={styles.sampleFooterText}>Mike owes Darius 5 units of bragging rights</Text>
+              <Text style={styles.sampleFooterText}>Mike owes Darius 5 Swayger Points</Text>
             </View>
           </View>
 

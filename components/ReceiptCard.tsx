@@ -106,7 +106,7 @@ export default function ReceiptCard({
           </Text>
           <View style={styles.unitsPill}>
             <Text style={styles.unitsText}>
-              +{stakeUnits} unit{stakeUnits !== 1 ? "s" : ""}
+              +{stakeUnits} Swayger Points
             </Text>
           </View>
         </View>

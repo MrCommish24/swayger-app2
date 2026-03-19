@@ -147,7 +147,7 @@ export default function FightCardModal({
 
             {/* Stake */}
             <Animated.Text style={[styles.stake, stakeStyle]}>
-              {stakeUnits} unit{stakeUnits !== 1 ? "s" : ""} on the line
+              {stakeUnits} SP on the line
             </Animated.Text>
 
             <Animated.Text style={[styles.tapHint, stakeStyle]}>tap to continue</Animated.Text>

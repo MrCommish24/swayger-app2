@@ -295,7 +295,7 @@ export default function InviteScreen() {
           <View style={styles.detailItem}>
             <Text style={styles.detailLabel}>Stake</Text>
             <Text style={styles.detailValue}>
-              {swayger.stake_units} unit{swayger.stake_units !== 1 ? "s" : ""}
+              {swayger.stake_units} Swayger Points
             </Text>
           </View>
           <View style={styles.detailItem}>

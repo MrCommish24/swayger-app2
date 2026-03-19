@@ -590,7 +590,7 @@ export default function SwaygerDetailScreen() {
           `⚡ SWAYGER RECEIPT\n\n${swayger.title}\n\n` +
           `@${creatorName}: "${swayger.creator_pick}"\n` +
           `@${opponentName}: "${swayger.opponent_pick}"\n\n` +
-          `🏆 ${winnerLabel}\n+${swayger.stake_units || 1} units\n\n` +
+          `🏆 ${winnerLabel}\n+${swayger.stake_units || 1} SP\n\n` +
           `Settled on Swayger`;
         await Share.share({ message: textReceipt });
         return;
@@ -923,7 +923,7 @@ export default function SwaygerDetailScreen() {
         <View style={styles.stakeRow}>
           <Ionicons name="flame-outline" size={18} color={Colors.dark.accentGold} />
           <Text style={styles.stakeText}>
-            {swayger.stake_units || 1} unit{(swayger.stake_units || 1) !== 1 ? "s" : ""} at stake
+            {swayger.stake_units || 1} Swayger Points at stake
           </Text>
         </View>
         <View style={styles.expiryRow}>
@@ -1077,7 +1077,7 @@ export default function SwaygerDetailScreen() {
             >
               <Ionicons name="refresh" size={18} color={Colors.dark.tint} />
               <Text style={styles.rematchButtonText}>Run it Back</Text>
-              <Text style={styles.rematchStake}>{swayger.stake_units} units</Text>
+              <Text style={styles.rematchStake}>{swayger.stake_units} SP</Text>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
@@ -1094,7 +1094,7 @@ export default function SwaygerDetailScreen() {
                 Double or Nothing
               </Text>
               <Text style={[styles.rematchStake, { color: Colors.dark.accentGold }]}>
-                {(swayger.stake_units || 1) * 2} units
+                {(swayger.stake_units || 1) * 2} SP
               </Text>
             </Pressable>
           </View>
@@ -1392,7 +1392,7 @@ export default function SwaygerDetailScreen() {
                     </View>
                     <View style={[styles.sheetChip, { borderColor: accentColor }]}>
                       <Text style={styles.sheetChipLabel}>Stake</Text>
-                      <Text style={[styles.sheetChipValue, { color: accentColor }]}>{sheetStake} units</Text>
+                      <Text style={[styles.sheetChipValue, { color: accentColor }]}>{sheetStake} SP</Text>
                     </View>
                   </View>
 

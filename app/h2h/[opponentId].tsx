@@ -72,7 +72,7 @@ export default function H2HDetailScreen() {
           <View style={[styles.resultBadge, { borderColor: resultColor, backgroundColor: `${resultColor}18` }]}>
             <Text style={[styles.resultLabel, { color: resultColor }]}>{resultLabel}</Text>
           </View>
-          <Text style={styles.logUnits}>{item.stake_units}u</Text>
+          <Text style={styles.logUnits}>{item.stake_units} SP</Text>
         </View>
       </View>
     );
