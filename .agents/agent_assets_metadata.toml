@@ -12,3 +12,9 @@ id = "uZZbkdAUCN7bMEc8ME3IP"
 uri = "file://SWAYGER_PRODUCT_STATUS.md"
 type = "text"
 title = "Swayger — Product Status Brief"
+
+[[outputs]]
+id = "zD003OZMCb5_nzafSCS9F"
+uri = "file://attached_assets/generated_images/swayger_mm_instagram.png"
+type = "image"
+title = "Swayger — March Madness Leaderboard Challenge (Instagram Post)"
