@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { sendMMReminderEmail, sendLastChanceBlast } from "./email";
+import { sendMMReminderEmail, sendLastChanceBlast, sendLeaderboardReminderBlast } from "./email";
 
 // ─── State file (persists across restarts) ────────────────────────────────────
 
@@ -13,6 +13,7 @@ interface EmailState {
     mar18: boolean;
     mar19: boolean;
     mar19_last_chance: boolean;
+    mar19_10am_leaderboard: boolean;
   };
 }
 
@@ -22,12 +23,13 @@ function loadState(): EmailState {
       const saved = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as EmailState;
       // Backfill any missing keys so old state files still work
       saved.pre_lock.mar19_last_chance ??= false;
+      saved.pre_lock.mar19_10am_leaderboard ??= false;
       return saved;
     }
   } catch {
     // ignore parse errors
   }
-  return { pre_lock: { mar17: false, mar18: false, mar19: false, mar19_last_chance: false } };
+  return { pre_lock: { mar17: false, mar18: false, mar19: false, mar19_last_chance: false, mar19_10am_leaderboard: false } };
 }
 
 function saveState(state: EmailState): void {
@@ -109,6 +111,31 @@ async function sendLastChanceBlastAll(label: string): Promise<void> {
   }
 }
 
+// ─── Leaderboard reminder blast — all users ───────────────────────────────────
+
+async function sendLeaderboardReminderBlastAll(label: string): Promise<void> {
+  console.log(`[mm-scheduler] Firing leaderboard reminder blast: ${label}`);
+  try {
+    const supabase = getSupabase();
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+    const eligible = (allProfiles ?? []).filter(
+      (p: { notification_email?: string | null }) => p.notification_email,
+    );
+    let sent = 0;
+    for (const profile of eligible) {
+      try {
+        await sendLeaderboardReminderBlast({ to: profile.notification_email as string });
+        sent++;
+      } catch (e) {
+        console.error("[mm-scheduler] Leaderboard reminder failed for", profile.id, e);
+      }
+    }
+    console.log(`[mm-scheduler] ${label}: sent to ${sent} user(s)`);
+  } catch (e) {
+    console.error(`[mm-scheduler] Leaderboard reminder blast error:`, e);
+  }
+}
+
 // ─── Schedule windows — all use explicit CDT offset (-05:00) ──────────────────
 // Picks lock at 2026-03-19T11:00:00-05:00 (11am CDT)
 // Mar 17 9:00am CDT = 2026-03-17T09:00:00-05:00
@@ -120,7 +147,7 @@ interface ScheduleWindow {
   key: keyof EmailState["pre_lock"];
   label: string;
   targetMs: number;
-  type: "reminder" | "last_chance";
+  type: "reminder" | "last_chance" | "leaderboard_reminder";
 }
 
 const WINDOWS: ScheduleWindow[] = [
@@ -148,6 +175,12 @@ const WINDOWS: ScheduleWindow[] = [
     targetMs: new Date("2026-03-19T09:00:00-05:00").getTime(),
     type: "last_chance",
   },
+  {
+    key: "mar19_10am_leaderboard",
+    label: "Mar 19 — 10am (leaderboard reminder — all users)",
+    targetMs: new Date("2026-03-19T10:00:00-05:00").getTime(),
+    type: "leaderboard_reminder",
+  },
 ];
 
 const FIRE_WINDOW_MS = 30 * 60 * 1000; // fire if within 30 min after target
@@ -164,6 +197,8 @@ async function tick(): Promise<void> {
     if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
       if (w.type === "last_chance") {
         await sendLastChanceBlastAll(w.label);
+      } else if (w.type === "leaderboard_reminder") {
+        await sendLeaderboardReminderBlastAll(w.label);
       } else {
         await sendReminderBlast(w.label);
       }

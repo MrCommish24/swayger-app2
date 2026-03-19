@@ -432,6 +432,21 @@ export async function sendLeaderboardBlast(opts: {
   });
 }
 
+export async function sendLeaderboardReminderBlast(opts: {
+  to: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "The winner walks away with something good",
+    html: buildLeaderboardBlastHtml(),
+  });
+}
+
 // ─── Last-Chance Leaderboard Blast (Mar 19 9am — 2hrs before lock) ───────────
 
 export function buildLastChanceBlastHtml(): string {
