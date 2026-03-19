@@ -5,5 +5,19 @@
     "mar19": false,
     "mar19_last_chance": true,
     "mar19_10am_leaderboard": true
-  }
+  },
+  "score_emails": {
+    "mar20_morning": false,
+    "mar21_morning": false,
+    "mar22_morning": false,
+    "mar23_morning": false,
+    "mar28_morning": false,
+    "mar29_morning": false,
+    "mar30_morning": false,
+    "mar31_morning": false,
+    "apr05_morning": false,
+    "apr06_morning": false,
+    "apr08_morning": false
+  },
+  "scores_last_checked_ms": 1773958541545
 }

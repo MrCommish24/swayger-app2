@@ -44,7 +44,7 @@ const HIGH_SCORER_POINTS = 3;
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function computeAndSaveScores(
+export async function computeAndSaveScores(
   supabase: any,
 ): Promise<{ scored: number; error: string | null }> {
   type GameResultRow = { round_id: string; matchup_id: string; winner_name: string | null; winner_score: number | null; loser_score: number | null };
