@@ -18,3 +18,9 @@ id = "zD003OZMCb5_nzafSCS9F"
 uri = "file://attached_assets/generated_images/swayger_mm_instagram.png"
 type = "image"
 title = "Swayger — March Madness Leaderboard Challenge (Instagram Post)"
+
+[[outputs]]
+id = "-COz1UvTaFzj6Fbe6YUlG"
+uri = "file://attached_assets/generated_images/swayger_mm_instagram_v2.png"
+type = "image"
+title = "Swayger — March Madness Leaderboard Challenge (v2)"
