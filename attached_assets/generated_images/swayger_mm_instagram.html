@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swayger — March Madness Leaderboard Challenge</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: #111;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .card {
+    width: 1080px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 60% 30%, #0e1a2e 0%, #080c12 60%, #020304 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  /* Bracket lines */
+  .bracket-left {
+    position: absolute;
+    left: 60px;
+    top: 200px;
+    width: 90px;
+    height: 300px;
+    border: 2px solid rgba(255,255,255,0.07);
+    border-right: none;
+  }
+  .bracket-right {
+    position: absolute;
+    right: 60px;
+    top: 200px;
+    width: 90px;
+    height: 300px;
+    border: 2px solid rgba(255,255,255,0.07);
+    border-left: none;
+  }
+
+  /* Orange light streaks */
+  .streak-1 {
+    position: absolute;
+    width: 900px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, #e8590a 40%, #f5a623 60%, transparent 100%);
+    top: 380px;
+    left: -100px;
+    transform: rotate(-25deg);
+    opacity: 0.85;
+    filter: blur(1px);
+    box-shadow: 0 0 20px 4px rgba(232, 89, 10, 0.6);
+  }
+  .streak-2 {
+    position: absolute;
+    width: 800px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, #e8590a 50%, transparent 100%);
+    top: 700px;
+    right: -100px;
+    transform: rotate(-25deg);
+    opacity: 0.6;
+    filter: blur(1px);
+    box-shadow: 0 0 16px 3px rgba(232, 89, 10, 0.4);
+  }
+
+  /* Particle dots */
+  .particles {
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle, rgba(232,89,10,0.5) 1.5px, transparent 1.5px),
+      radial-gradient(circle, rgba(245,166,35,0.35) 1px, transparent 1px),
+      radial-gradient(circle, rgba(232,89,10,0.3) 1px, transparent 1px);
+    background-size: 80px 80px, 55px 55px, 120px 120px;
+    background-position: 20px 80px, 60px 200px, 10px 350px;
+    pointer-events: none;
+  }
+
+  /* SWAYGER wordmark */
+  .wordmark {
+    position: absolute;
+    top: 48px;
+    left: 60px;
+    font-family: 'Bebas Neue', 'Inter', sans-serif;
+    font-size: 38px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: #ffffff;
+    text-transform: uppercase;
+    z-index: 10;
+  }
+
+  /* Main content */
+  .content {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding-top: 120px;
+  }
+
+  /* Trophy */
+  .trophy-wrap {
+    position: relative;
+    margin-bottom: -20px;
+  }
+  .trophy {
+    font-size: 160px;
+    line-height: 1;
+    filter: drop-shadow(0 0 40px rgba(245, 166, 35, 0.9)) drop-shadow(0 0 80px rgba(232, 89, 10, 0.5));
+    display: block;
+    text-align: center;
+  }
+  .basketball {
+    font-size: 80px;
+    line-height: 1;
+    display: block;
+    text-align: center;
+    margin-top: -20px;
+    filter: drop-shadow(0 0 30px rgba(232, 89, 10, 0.9)) drop-shadow(0 0 60px rgba(232, 89, 10, 0.5));
+  }
+  .trophy-glow {
+    position: absolute;
+    inset: -40px;
+    background: radial-gradient(ellipse at center, rgba(245,166,35,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Headline text */
+  .headline-march {
+    font-family: 'Bebas Neue', 'Inter', sans-serif;
+    font-size: 140px;
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: #ffffff;
+    line-height: 0.9;
+    text-align: center;
+    text-shadow: 0 0 60px rgba(255,255,255,0.15);
+    margin-top: 28px;
+  }
+
+  .gold-banner {
+    background: linear-gradient(135deg, #c8860a 0%, #f5a623 40%, #e8a020 60%, #b8750a 100%);
+    padding: 14px 52px;
+    margin-top: 16px;
+    border-radius: 4px;
+    position: relative;
+  }
+  .gold-banner::before,
+  .gold-banner::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+  }
+  .gold-banner::before {
+    left: -14px;
+    border-top: 24px solid transparent;
+    border-bottom: 24px solid transparent;
+    border-right: 14px solid #c8860a;
+  }
+  .gold-banner::after {
+    right: -14px;
+    border-top: 24px solid transparent;
+    border-bottom: 24px solid transparent;
+    border-left: 14px solid #b8750a;
+  }
+  .gold-banner-text {
+    font-family: 'Bebas Neue', 'Inter', sans-serif;
+    font-size: 36px;
+    font-weight: 900;
+    letter-spacing: 5px;
+    color: #0a0600;
+    text-transform: uppercase;
+  }
+
+  .prize-text {
+    font-size: 32px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: 1px;
+    margin-top: 24px;
+    text-align: center;
+  }
+
+  .cta-button {
+    margin-top: 40px;
+    background: linear-gradient(135deg, #e8590a, #d94f08);
+    border-radius: 50px;
+    padding: 22px 70px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 8px 32px rgba(232, 89, 10, 0.55), 0 2px 8px rgba(0,0,0,0.4);
+  }
+  .cta-button-text {
+    font-size: 30px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 1px;
+  }
+
+  /* Side disclaimer */
+  .disclaimer {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%) rotate(90deg);
+    transform-origin: center center;
+    font-size: 17px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+    z-index: 10;
+  }
+
+  /* Bottom glow */
+  .bottom-glow {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 160px;
+    background: linear-gradient(to top, rgba(232,89,10,0.08), transparent);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <!-- Background effects -->
+  <div class="particles"></div>
+  <div class="bracket-left"></div>
+  <div class="bracket-right"></div>
+  <div class="streak-1"></div>
+  <div class="streak-2"></div>
+  <div class="bottom-glow"></div>
+
+  <!-- Wordmark -->
+  <div class="wordmark">SWAYGER</div>
+
+  <!-- Main content -->
+  <div class="content">
+    <div class="trophy-wrap">
+      <div class="trophy-glow"></div>
+      <span class="trophy">🏆</span>
+      <span class="basketball">🏀</span>
+    </div>
+
+    <div class="headline-march">MARCH<br>MADNESS</div>
+
+    <div class="gold-banner">
+      <span class="gold-banner-text">Leaderboard Challenge</span>
+    </div>
+
+    <div class="prize-text">Win a $100 Amazon Gift Card</div>
+
+    <div class="cta-button">
+      <span class="cta-button-text">Download Swayger</span>
+    </div>
+  </div>
+
+  <!-- Side disclaimer -->
+  <div class="disclaimer">No entry fee &nbsp;·&nbsp; Bragging rights only</div>
+</div>
+</body>
+</html>
