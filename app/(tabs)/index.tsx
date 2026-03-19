@@ -40,9 +40,9 @@ function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
       <View style={styles.mmBannerLeft}>
         <Text style={styles.mmBannerEmoji}>🏀</Text>
         <View style={styles.mmBannerText}>
-          <Text style={styles.mmBannerTitle}>March Madness is ON</Text>
+          <Text style={styles.mmBannerTitle}>Leaderboard Challenge 🏆</Text>
           <Text style={styles.mmBannerSub}>
-            {round.label} · Swayger on the games
+            Win a $100 gift card · Make your picks
           </Text>
         </View>
       </View>

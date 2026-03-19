@@ -285,8 +285,8 @@ export default function MarchMadnessHub() {
             <Text style={styles.heroEmoji}>🏀</Text>
           </View>
           <Text style={styles.heroTitle}>March Madness</Text>
-          <Text style={styles.heroTagline}>Think you're right? Swayger on it.</Text>
-          <Text style={styles.heroSub}>Friendly wagers. No real money. Just bragging rights.</Text>
+          <Text style={styles.heroTagline}>No opponent needed. No entry fee.</Text>
+          <Text style={styles.heroSub}>Make picks each round. Climb the leaderboard. First place wins a $100 Amazon gift card.</Text>
         </View>
 
         {/* Round progress */}
@@ -311,11 +311,11 @@ export default function MarchMadnessHub() {
         >
           <View style={styles.picksHeroLeft}>
             <View style={styles.picksHeroBadge}>
-              <Text style={styles.picksHeroBadgeText}>NEW</Text>
+              <Text style={styles.picksHeroBadgeText}>WIN $100</Text>
             </View>
             <Text style={styles.picksHeroTitle}>Quick Picks & Locked Takes</Text>
             <Text style={styles.picksHeroSub}>
-              Champion · Final Four · Elite Eight · Sweet 16{"\n"}+ Upset Picks — no opponent needed
+              Earn leaderboard points with every pick.{"\n"}First place wins a $100 Amazon gift card.
             </Text>
           </View>
           <View style={styles.picksHeroRight}>

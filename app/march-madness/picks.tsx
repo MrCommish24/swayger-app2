@@ -552,6 +552,15 @@ export default function PicksHub() {
         ]}
       >
         <BracketLockBanner />
+
+        {/* Prize strip */}
+        <View style={styles.prizeStrip}>
+          <Ionicons name="trophy" size={13} color={GOLD} />
+          <Text style={styles.prizeStripText}>
+            Leaderboard leader at the end of the tournament wins a $100 Amazon gift card
+          </Text>
+        </View>
+
         <ScoringGuide />
 
         {isLoading ? (
@@ -562,7 +571,7 @@ export default function PicksHub() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionLabel}>BRACKET TAKES</Text>
-                <Text style={styles.sectionSub}>Predict from the full 68-team field</Text>
+                <Text style={styles.sectionSub}>Correct picks earn leaderboard points</Text>
               </View>
               {TAKE_ORDER.map((takeType) => (
                 <TakeCard
@@ -592,8 +601,8 @@ export default function PicksHub() {
                 <Text style={styles.sectionLabel}>ROUND PICKS · {roundLabel(roundId).toUpperCase()}</Text>
                 <Text style={styles.sectionSub}>
                   {roundMatchups?.oddsSource === "live"
-                    ? "Ranked by live betting odds"
-                    : "Ranked by seed matchup data"}
+                    ? "Ranked by live odds · 3 pts per correct pick"
+                    : "Ranked by seed data · 3 pts per correct pick"}
                 </Text>
               </View>
 
@@ -1116,5 +1125,25 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     color: Colors.dark.text,
     flex: 1,
+  },
+  prizeStrip: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    backgroundColor: "rgba(245,166,35,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.22)",
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  prizeStripText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: "#C8A84B",
+    lineHeight: 17,
   },
 });
