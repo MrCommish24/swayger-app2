@@ -2,6 +2,8 @@
   "pre_lock": {
     "mar17": true,
     "mar18": true,
-    "mar19": false
+    "mar19": false,
+    "mar19_last_chance": true,
+    "mar19_10am_leaderboard": false
   }
 }
