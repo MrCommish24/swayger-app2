@@ -471,6 +471,8 @@ export function displayStatus(status: string): { label: string; color: string } 
     case "canceled": return { label: "Canceled", color: "#6B7280" };
     case "expired": return { label: "Expired", color: "#6B7280" };
     case "expired_active": return { label: "Expired (Active)", color: "#F97316" };
+    case "invite_expired": return { label: "Invite Expired", color: "#6B7280" };
+    case "settlement_expired": return { label: "Time Expired", color: "#EF4444" };
     default: return { label: status, color: "#8B95A5" };
   }
 }

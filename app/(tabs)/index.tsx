@@ -148,12 +148,14 @@ export default function DashboardScreen() {
   type FilterKey = "all" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
+  const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
+
   const counts = useMemo(() => ({
     all:     swaygers.length,
     active:  swaygers.filter((s) => ["active", "settlement_proposed"].includes(s.status)).length,
     pending: swaygers.filter((s) => s.status === "pending_invite").length,
     settled: swaygers.filter((s) => s.status === "settled").length,
-    other:   swaygers.filter((s) => ["canceled", "declined", "expired"].includes(s.status)).length,
+    other:   swaygers.filter((s) => OTHER_STATUSES.includes(s.status)).length,
   }), [swaygers]);
 
   const filteredSwaygers = useMemo(() => {
@@ -169,7 +171,7 @@ export default function DashboardScreen() {
           if (activeFilter === "active")  return ["active", "settlement_proposed"].includes(s.status);
           if (activeFilter === "pending") return s.status === "pending_invite";
           if (activeFilter === "settled") return s.status === "settled";
-          if (activeFilter === "other")   return ["canceled", "declined", "expired"].includes(s.status);
+          if (activeFilter === "other")   return OTHER_STATUSES.includes(s.status);
           return true;
         });
     return filtered.sort((a, b) => {

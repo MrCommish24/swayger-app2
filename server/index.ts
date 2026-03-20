@@ -252,16 +252,56 @@ async function runSettlementExpiry() {
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const now = new Date();
+    const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Fetch swaygers that are about to be expired, with participant emails
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: expiring } = await supabase
+    // ── 1. Pre-fetch swaygers about to expire (for emails BEFORE they're gone) ──
+
+    // Invites expiring now
+    const { data: expiringInvites } = await supabase
+      .from("swaygers")
+      .select("id, title, category, stake_units, creator_id, opponent_id")
+      .eq("status", "pending_invite")
+      .lt("expires_at", now.toISOString());
+
+    // Settlements expiring now (by settlement_deadline)
+    const { data: expiringSettlements } = await supabase
       .from("swaygers")
       .select("id, title, category, stake_units, creator_id, opponent_id")
       .eq("status", "settlement_proposed")
-      .lt("updated_at", cutoff);
+      .not("settlement_deadline", "is", null)
+      .lt("settlement_deadline", now.toISOString());
 
-    // Run the expiry RPC
+    // Settlements expiring now (legacy — no deadline, using 7-day updated_at)
+    const legacyCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: legacyExpiringSettlements } = await supabase
+      .from("swaygers")
+      .select("id, title, category, stake_units, creator_id, opponent_id")
+      .eq("status", "settlement_proposed")
+      .is("settlement_deadline", null)
+      .lt("updated_at", legacyCutoff);
+
+    // Upcoming invite reminders (2 days before expires_at, not yet sent)
+    const { data: inviteReminders } = await supabase
+      .from("swaygers")
+      .select("id, title, category, stake_units, creator_id, opponent_id, expires_at")
+      .eq("status", "pending_invite")
+      .eq("invite_reminder_sent", false)
+      .gt("expires_at", now.toISOString())
+      .lt("expires_at", twoDaysFromNow);
+
+    // Upcoming settlement reminders (2 days before settlement_deadline, not yet sent)
+    const { data: settlementReminders } = await supabase
+      .from("swaygers")
+      .select("id, title, category, stake_units, creator_id, opponent_id, settlement_deadline")
+      .eq("status", "settlement_proposed")
+      .eq("settlement_reminder_sent", false)
+      .not("settlement_deadline", "is", null)
+      .gt("settlement_deadline", now.toISOString())
+      .lt("settlement_deadline", twoDaysFromNow);
+
+    // ── 2. Run the expiry RPC ─────────────────────────────────────────────────
+
     const { data, error } = await supabase.rpc("expire_old_proposals");
     if (error) {
       console.error("[expiry] expire_old_proposals error:", error.message);
@@ -270,53 +310,109 @@ async function runSettlementExpiry() {
 
     const count = data as number;
     if (count > 0) {
-      log(`[expiry] Expired ${count} stale settlement proposal(s)`);
+      log(`[expiry] Expired ${count} swayger(s) (invites + settlements)`);
     }
 
-    // Send expiry emails to both parties for each expired swayger
-    if (expiring && expiring.length > 0) {
-      const allUserIds = [...new Set(expiring.flatMap((s: { creator_id: string; opponent_id: string | null }) =>
-        [s.creator_id, s.opponent_id].filter(Boolean) as string[]
-      ))];
+    // ── 3. Build profile map for all affected users ───────────────────────────
 
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, notification_email")
-        .in("id", allUserIds);
+    type SwaygerRow = { id: string; title: string; category: string; stake_units: number; creator_id: string; opponent_id: string | null };
 
-      const profileMap = new Map<string, { username: string; display_name: string | null; notification_email: string | null }>(
-        (profiles || []).map((p: { id: string; username: string; display_name: string | null; notification_email: string | null }) => [p.id, p])
-      );
+    const allRows: SwaygerRow[] = [
+      ...(expiringInvites ?? []),
+      ...(expiringSettlements ?? []),
+      ...(legacyExpiringSettlements ?? []),
+      ...(inviteReminders ?? []),
+      ...(settlementReminders ?? []),
+    ];
 
-      for (const sw of expiring as { id: string; title: string; category: string; stake_units: number; creator_id: string; opponent_id: string | null }[]) {
-        const creatorProfile = profileMap.get(sw.creator_id);
-        const opponentProfile = sw.opponent_id ? profileMap.get(sw.opponent_id) : null;
+    if (allRows.length === 0) return;
 
-        const recipients: { email: string; name: string }[] = [];
-        if (creatorProfile?.notification_email) {
-          recipients.push({ email: creatorProfile.notification_email, name: creatorProfile.display_name || creatorProfile.username });
-        }
-        if (opponentProfile?.notification_email) {
-          recipients.push({ email: opponentProfile.notification_email, name: opponentProfile.display_name || opponentProfile.username });
-        }
+    const allUserIds = [...new Set(allRows.flatMap((s) =>
+      [s.creator_id, s.opponent_id].filter(Boolean) as string[]
+    ))];
 
-        if (recipients.length === 0) continue;
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, notification_email")
+      .in("id", allUserIds);
 
+    type ProfileRow = { id: string; username: string; display_name: string | null; notification_email: string | null };
+    const profileMap = new Map<string, ProfileRow>(
+      ((profiles ?? []) as ProfileRow[]).map((p) => [p.id, p])
+    );
+
+    function buildRecipients(sw: SwaygerRow, includeOpponent = true): { email: string; name: string }[] {
+      const recs: { email: string; name: string }[] = [];
+      const cp = profileMap.get(sw.creator_id);
+      if (cp?.notification_email) recs.push({ email: cp.notification_email, name: cp.display_name || cp.username });
+      if (includeOpponent && sw.opponent_id) {
+        const op = profileMap.get(sw.opponent_id);
+        if (op?.notification_email) recs.push({ email: op.notification_email, name: op.display_name || op.username });
+      }
+      return recs;
+    }
+
+    // ── 4. Send invite-expired emails ─────────────────────────────────────────
+
+    for (const sw of (expiringInvites ?? []) as SwaygerRow[]) {
+      const recipients = buildRecipients(sw, false); // creator only (no opponent yet)
+      if (!recipients.length) continue;
+      await sendNotificationEmail({
+        event: "invite_expired",
+        swayger: { id: sw.id, title: sw.title, category: sw.category || "Other", stakeUnits: sw.stake_units || 1 },
+        sender: { name: "Swayger" },
+        recipients,
+      }).catch((e: unknown) => console.error(`[expiry] invite_expired email for ${sw.id}:`, e));
+    }
+
+    // ── 5. Send settlement-expired emails ─────────────────────────────────────
+
+    const settlingExpired = [
+      ...(expiringSettlements ?? []),
+      ...(legacyExpiringSettlements ?? []),
+    ] as SwaygerRow[];
+
+    for (const sw of settlingExpired) {
+      const recipients = buildRecipients(sw, true);
+      if (!recipients.length) continue;
+      await sendNotificationEmail({
+        event: "settlement_expired",
+        swayger: { id: sw.id, title: sw.title, category: sw.category || "Other", stakeUnits: sw.stake_units || 1 },
+        sender: { name: "Swayger" },
+        recipients,
+      }).catch((e: unknown) => console.error(`[expiry] settlement_expired email for ${sw.id}:`, e));
+    }
+
+    // ── 6. Send 2-day invite reminder emails + mark sent ──────────────────────
+
+    for (const sw of (inviteReminders ?? []) as SwaygerRow[]) {
+      const recipients = buildRecipients(sw, false); // only creator for invite reminders
+      if (recipients.length) {
         await sendNotificationEmail({
-          event: "swayger_expired",
-          swayger: {
-            id: sw.id,
-            title: sw.title,
-            category: sw.category || "Other",
-            stakeUnits: sw.stake_units || 1,
-          },
+          event: "settlement_deadline_reminder",
+          swayger: { id: sw.id, title: sw.title, category: sw.category || "Other", stakeUnits: sw.stake_units || 1 },
           sender: { name: "Swayger" },
           recipients,
-        }).catch((e: unknown) => {
-          console.error(`[expiry] Failed to send email for swayger ${sw.id}:`, e);
-        });
+        }).catch((e: unknown) => console.error(`[expiry] invite reminder email for ${sw.id}:`, e));
       }
+      await supabase.from("swaygers").update({ invite_reminder_sent: true }).eq("id", sw.id);
     }
+
+    // ── 7. Send 2-day settlement reminder emails + mark sent ──────────────────
+
+    for (const sw of (settlementReminders ?? []) as SwaygerRow[]) {
+      const recipients = buildRecipients(sw, true);
+      if (recipients.length) {
+        await sendNotificationEmail({
+          event: "settlement_deadline_reminder",
+          swayger: { id: sw.id, title: sw.title, category: sw.category || "Other", stakeUnits: sw.stake_units || 1 },
+          sender: { name: "Swayger" },
+          recipients,
+        }).catch((e: unknown) => console.error(`[expiry] settlement reminder email for ${sw.id}:`, e));
+      }
+      await supabase.from("swaygers").update({ settlement_reminder_sent: true }).eq("id", sw.id);
+    }
+
   } catch (err) {
     console.error("[expiry] Unexpected error:", err);
   }

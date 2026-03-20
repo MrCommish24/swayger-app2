@@ -418,7 +418,35 @@ export default function SwaygerDetailScreen() {
   const [fightCardType, setFightCardType] = useState<FightCardType>("game_on");
   const [rematchSheetType, setRematchSheetType] = useState<"run_it_back" | "double_or_nothing" | null>(null);
   const [linkShared, setLinkShared] = useState(false);
+  const [pokeSent, setPokeSent] = useState(false);
   const pendingStreakRef = useRef(0);
+
+  async function pokeSwayger() {
+    if (!swayger || !id) return;
+    const baseUrl = await fetchAppBaseUrl();
+    const link = buildSwaygerLink(id, baseUrl);
+    const title = swayger.title;
+    const message = status === "settlement_proposed"
+      ? `Let's settle our Swayger — "${title}" 🏆\nOpen the app to agree on the outcome: ${link}`
+      : `Time to settle our Swayger — "${title}" ⚡\nAre you ready to call it? ${link}`;
+    try {
+      if (Platform.OS === "web" && typeof window !== "undefined" && (navigator as any).share) {
+        await (navigator as any).share({ title: "Swayger — time to settle up", text: message, url: link });
+      } else if (Platform.OS === "web") {
+        await (navigator as any).clipboard?.writeText(link).catch(() => {});
+        setPokeSent(true);
+        setTimeout(() => setPokeSent(false), 2500);
+      } else {
+        await Share.share({ message, url: link });
+      }
+    } catch {
+      await (Platform.OS === "web"
+        ? (navigator as any).clipboard?.writeText(link).catch(() => {})
+        : Clipboard.setStringAsync(link));
+      setPokeSent(true);
+      setTimeout(() => setPokeSent(false), 2500);
+    }
+  }
 
   async function handleShareSwayger() {
     if (!swayger || !id) return;
@@ -560,7 +588,7 @@ export default function SwaygerDetailScreen() {
   const status = swayger?.status || "pending_invite";
   const canAccept = !isCreator && isOpponent && status === "pending_invite";
   const canCancel =
-    (isCreator && !["settled", "canceled", "declined", "expired"].includes(status)) ||
+    (isCreator && !["settled", "canceled", "declined", "expired", "invite_expired", "settlement_expired"].includes(status)) ||
     (isOpponent && ["active", "settlement_proposed"].includes(status));
   const canSettle = (status === "active" || status === "settlement_proposed") &&
     (isCreator || isOpponent);
@@ -942,6 +970,19 @@ export default function SwaygerDetailScreen() {
             <Text style={styles.expiryText}>Active since {formatDate(swayger.accepted_at)}</Text>
           </View>
         )}
+        {status === "settlement_proposed" && (swayger as any).settlement_deadline && (() => {
+          const deadline = new Date((swayger as any).settlement_deadline);
+          const hoursLeft = (deadline.getTime() - Date.now()) / (1000 * 60 * 60);
+          const isUrgent = hoursLeft < 48;
+          return (
+            <View style={styles.expiryRow}>
+              <Ionicons name="hourglass-outline" size={14} color={isUrgent ? "#EF4444" : Colors.dark.tabIconDefault} />
+              <Text style={[styles.expiryText, isUrgent && { color: "#EF4444" }]}>
+                Settlement deadline: {formatDateTime((swayger as any).settlement_deadline)}
+              </Text>
+            </View>
+          );
+        })()}
       </View>
 
       {status === "settled" && swayger.settled_outcome && (
@@ -1060,6 +1101,28 @@ export default function SwaygerDetailScreen() {
           confirming={confirmMutation.isPending}
           withdrawing={withdrawMutation.isPending}
         />
+      )}
+
+      {(isCreator || isOpponent) && (status === "active" || status === "settlement_proposed") && (
+        <View style={styles.section}>
+          <Pressable
+            style={({ pressed }) => [styles.pokeBtn, pressed && styles.btnPressed]}
+            onPress={pokeSwayger}
+          >
+            <Ionicons
+              name={pokeSent ? "checkmark-circle-outline" : "hand-left-outline"}
+              size={18}
+              color={pokeSent ? "#22C55E" : Colors.dark.tint}
+            />
+            <Text style={[styles.pokeBtnText, pokeSent && { color: "#22C55E" }]}>
+              {pokeSent
+                ? "Link copied!"
+                : status === "settlement_proposed"
+                ? "Poke — Settle Up"
+                : "Poke Opponent"}
+            </Text>
+          </Pressable>
+        </View>
       )}
 
       {status === "settled" && (isCreator || isOpponent) && (
@@ -1621,6 +1684,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(29, 161, 242, 0.07)",
   },
   challengeElseText: { fontSize: 15, color: Colors.dark.tint, fontWeight: "600" as const },
+  pokeBtn: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 8, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1.5, borderColor: Colors.dark.tint,
+    backgroundColor: "rgba(29, 161, 242, 0.07)",
+  },
+  pokeBtnText: { fontSize: 15, color: Colors.dark.tint, fontWeight: "600" as const },
   statusBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: Colors.dark.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,

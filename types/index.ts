@@ -16,7 +16,9 @@ export type SwaygerStatus =
   | "declined"
   | "canceled"
   | "expired"
-  | "expired_active";
+  | "expired_active"
+  | "invite_expired"
+  | "settlement_expired";
 
 export interface SwaygerData {
   id: string;
@@ -31,6 +33,9 @@ export interface SwaygerData {
   opponent_pick: string | null;
   status: SwaygerStatus;
   expires_at: string;
+  settlement_deadline: string | null;
+  invite_reminder_sent: boolean;
+  settlement_reminder_sent: boolean;
   source_swayger_id: string | null;
   rematch_type: string | null;
   settled_outcome: string | null;

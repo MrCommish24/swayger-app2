@@ -11,7 +11,10 @@ export type EmailEvent =
   | "swayger_accepted"
   | "settlement_proposed"
   | "swayger_settled"
-  | "swayger_expired";
+  | "swayger_expired"
+  | "invite_expired"
+  | "settlement_expired"
+  | "settlement_deadline_reminder";
 
 export interface NotifyPayload {
   event: EmailEvent;
@@ -170,8 +173,38 @@ export async function sendNotificationEmail(
       headline = `"${title}" expired without a verdict.`;
       body =
         details +
-        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Neither party reached agreement within 7 days. Your staked Swayger Points have been returned.</p>`;
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Neither party reached agreement. Your staked Swayger Points have been returned.</p>`;
       ctaLabel = "View Swayger";
+      break;
+    }
+
+    case "invite_expired": {
+      subject = `⏰ Your Swayger invite expired`;
+      headline = `"${title}" — invite expired.`;
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">The invite link expired after 14 days without a response. Your staked Swayger Points have been returned.</p>`;
+      ctaLabel = "Create a New Swayger";
+      break;
+    }
+
+    case "settlement_expired": {
+      subject = `⏱️ "${title}" settlement window closed`;
+      headline = `Settlement deadline passed on "${title}".`;
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">The 14-day settlement window closed without mutual agreement. Staked Swayger Points have been returned to both sides.</p>`;
+      ctaLabel = "View Swayger";
+      break;
+    }
+
+    case "settlement_deadline_reminder": {
+      subject = `⏳ 2 days left to settle "${title}"`;
+      headline = `Settlement deadline is in 2 days.`;
+      body =
+        details +
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">You have 2 days left to agree on an outcome. Once the deadline passes, Swayger Points will be returned to both sides. Open the app to propose or confirm a settlement.</p>`;
+      ctaLabel = "Settle Now";
       break;
     }
   }
