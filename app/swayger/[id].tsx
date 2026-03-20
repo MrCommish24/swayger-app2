@@ -431,18 +431,18 @@ export default function SwaygerDetailScreen() {
       : `Time to settle our Swayger — "${title}" ⚡\nAre you ready to call it? ${link}`;
     try {
       if (Platform.OS === "web" && typeof window !== "undefined" && (navigator as any).share) {
-        await (navigator as any).share({ title: "Swayger — time to settle up", text: message, url: link });
+        await (navigator as any).share({ title: "Swayger — time to settle up", text: message });
       } else if (Platform.OS === "web") {
-        await (navigator as any).clipboard?.writeText(link).catch(() => {});
+        await (navigator as any).clipboard?.writeText(message).catch(() => {});
         setPokeSent(true);
         setTimeout(() => setPokeSent(false), 2500);
       } else {
-        await Share.share({ message, url: link });
+        await Share.share({ message });
       }
     } catch {
       await (Platform.OS === "web"
-        ? (navigator as any).clipboard?.writeText(link).catch(() => {})
-        : Clipboard.setStringAsync(link));
+        ? (navigator as any).clipboard?.writeText(message).catch(() => {})
+        : Clipboard.setStringAsync(message));
       setPokeSent(true);
       setTimeout(() => setPokeSent(false), 2500);
     }
