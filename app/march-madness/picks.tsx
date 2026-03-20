@@ -350,7 +350,7 @@ function SpecialPicksSection({
   pickLimit: number;
   roundLocked: boolean;
   togglingId: string | null;
-  onPick: (matchup: RankedMatchup) => void;
+  onPick: (matchup: RankedMatchup, isCurrentlyPicked: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -428,7 +428,7 @@ function SpecialPicksSection({
                 canPick={canPick}
                 isToggling={togglingId === `${pickType}:${m.matchupId}`}
                 pickType={pickType}
-                onPress={() => canPick && onPick(m)}
+                onPress={() => canPick && onPick(m, picked)}
               />
             );
           })}
@@ -481,6 +481,7 @@ export default function PicksHub() {
   });
 
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [nudgeGame, setNudgeGame] = useState<{ title: string } | null>(null);
 
   const pickMutation = useMutation({
     mutationFn: ({
@@ -492,7 +493,7 @@ export default function PicksHub() {
       matchupId: string;
       pickedTeam: string | null;
     }) => saveSpecialPick(user!.id, roundId, pickType, matchupId, pickedTeam),
-    onSuccess: (result, vars) => {
+    onSuccess: (result) => {
       setTogglingId(null);
       if (result.error) {
         Alert.alert("Can't pick that", result.error);
@@ -506,10 +507,16 @@ export default function PicksHub() {
   function handlePick(
     pickType: "upset" | "blowout" | "high_scorer",
     matchup: RankedMatchup,
+    isCurrentlyPicked: boolean,
   ) {
     const pickedTeam =
       pickType === "upset" ? (matchup.underdogTeam ?? matchup.teamB) : null;
     setTogglingId(`${pickType}:${matchup.matchupId}`);
+    if (!isCurrentlyPicked) {
+      setNudgeGame({ title: `${matchup.teamA} vs. ${matchup.teamB}` });
+    } else {
+      setNudgeGame(null);
+    }
     pickMutation.mutate({ pickType, matchupId: matchup.matchupId, pickedTeam });
   }
 
@@ -618,7 +625,7 @@ export default function PicksHub() {
                 pickLimit={upsetLimit}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
-                onPick={(m) => handlePick("upset", m)}
+                onPick={(m, isPicked) => handlePick("upset", m, isPicked)}
               />
 
               <SpecialPicksSection
@@ -633,7 +640,7 @@ export default function PicksHub() {
                 pickLimit={1}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
-                onPick={(m) => handlePick("blowout", m)}
+                onPick={(m, isPicked) => handlePick("blowout", m, isPicked)}
               />
 
               <SpecialPicksSection
@@ -648,9 +655,43 @@ export default function PicksHub() {
                 pickLimit={1}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
-                onPick={(m) => handlePick("high_scorer", m)}
+                onPick={(m, isPicked) => handlePick("high_scorer", m, isPicked)}
               />
             </View>
+
+            {nudgeGame && (
+              <View style={styles.nudgeCard}>
+                <View style={styles.nudgeLeft}>
+                  <Text style={styles.nudgeHeading}>Nice pick 👊</Text>
+                  <Text style={styles.nudgeGame} numberOfLines={1}>{nudgeGame.title}</Text>
+                  <Text style={styles.nudgeBody}>
+                    Challenge a friend on this game and put bragging rights on the line.
+                  </Text>
+                  <Pressable
+                    style={({ pressed }) => [styles.nudgeBtn, pressed && { opacity: 0.85 }]}
+                    onPress={() => {
+                      router.push({
+                        pathname: "/(tabs)/create",
+                        params: {
+                          prefillCategory: "March Madness",
+                          prefillTitle: nudgeGame.title,
+                        },
+                      });
+                    }}
+                  >
+                    <Ionicons name="flash" size={13} color="#fff" />
+                    <Text style={styles.nudgeBtnText}>Make it a Swayger</Text>
+                  </Pressable>
+                </View>
+                <Pressable
+                  style={styles.nudgeDismiss}
+                  onPress={() => setNudgeGame(null)}
+                  hitSlop={12}
+                >
+                  <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
+                </Pressable>
+              </View>
+            )}
 
             <Pressable
               style={({ pressed }) => [styles.leaderboardBtn, pressed && styles.cardPressed]}
@@ -1145,5 +1186,54 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     color: "#C8A84B",
     lineHeight: 17,
+  },
+  nudgeCard: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    backgroundColor: "rgba(232,89,10,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.35)",
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+    marginTop: 4,
+  },
+  nudgeLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  nudgeHeading: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: ORANGE,
+  },
+  nudgeGame: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+  },
+  nudgeBody: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    lineHeight: 17,
+  },
+  nudgeBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+    backgroundColor: ORANGE,
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    alignSelf: "flex-start" as const,
+    marginTop: 6,
+  },
+  nudgeBtnText: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+    color: "#fff",
+  },
+  nudgeDismiss: {
+    padding: 2,
   },
 });

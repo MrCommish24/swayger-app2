@@ -174,6 +174,8 @@ export const MM_ROUNDS: MMRound[] = [
   },
 
   // ── ROUND OF 32 ───────────────────────────────────────────
+  // Updated with confirmed R64 results. Games still in progress on Mar 20
+  // are marked TBD and should be updated once all R64 results are final.
   {
     id: "round-32",
     label: "Round of 32",
@@ -182,36 +184,58 @@ export const MM_ROUNDS: MMRound[] = [
     endDate: "2026-03-22",
     lockDate: "2026-03-21T12:00:00-05:00",
     featured: [
+      // ── EAST ──
+      // Duke (1) beat Siena. Louisville (6) beat South Florida.
+      // Duke plays the 8/9 winner; Louisville plays the 3/14 winner.
       {
-        id: "r32-1",
-        teamA: { name: "TBD", seed: 0 },
+        id: "r32-east-duke",
+        teamA: { name: "Duke", seed: 1 },
         teamB: { name: "TBD", seed: 0 },
         region: "East",
-        prompt: "East bracket Round of 32 — update with real matchups after the first weekend.",
+        prompt: "Duke is the consensus title favorite. They handled Siena. Who steps up to slow them down in the Round of 32?",
         gameDateLabel: "Mar 21",
+        site: "Raleigh, NC",
       },
       {
-        id: "r32-2",
-        teamA: { name: "TBD", seed: 0 },
+        id: "r32-east-louisville",
+        teamA: { name: "Louisville", seed: 6 },
         teamB: { name: "TBD", seed: 0 },
-        region: "South",
-        prompt: "South bracket Round of 32 — update with real matchups after the first weekend.",
+        region: "East",
+        prompt: "Louisville's back. They dispatched South Florida and now face the 3/14 survivor. Is this a Cinderella story or a speed bump?",
         gameDateLabel: "Mar 21",
+        site: "Raleigh, NC",
       },
+      // ── WEST ──
+      // High Point (12) shocked Wisconsin (5) — one of the biggest upsets of R64.
+      // High Point now plays the 4/13 winner in the West.
       {
-        id: "r32-3",
-        teamA: { name: "TBD", seed: 0 },
+        id: "r32-west-highpoint",
+        teamA: { name: "High Point", seed: 12 },
         teamB: { name: "TBD", seed: 0 },
         region: "West",
-        prompt: "West bracket Round of 32 — update with real matchups after the first weekend.",
+        prompt: "High Point knocked off Wisconsin in a 1-point thriller. Can the 12-seed keep the magic going or does the bracket correct itself?",
         gameDateLabel: "Mar 22",
+        site: "Portland, OR",
+        keyStat: "83-82 upset over Wisconsin",
       },
+      // ── SOUTH ──
+      // Vanderbilt (5) beat McNeese. Faces 4/13 winner in the South.
       {
-        id: "r32-4",
+        id: "r32-south-vanderbilt",
+        teamA: { name: "Vanderbilt", seed: 5 },
+        teamB: { name: "TBD", seed: 0 },
+        region: "South",
+        prompt: "Vanderbilt took care of business against McNeese. Now they face whoever survives the 4/13 game. Vandy or the bracket's next surprise?",
+        gameDateLabel: "Mar 21",
+        site: "Oklahoma City, OK",
+      },
+      // ── MIDWEST ──
+      {
+        id: "r32-midwest-tbd",
         teamA: { name: "TBD", seed: 0 },
         teamB: { name: "TBD", seed: 0 },
         region: "Midwest",
-        prompt: "Midwest bracket Round of 32 — update with real matchups after the first weekend.",
+        prompt: "Midwest Round of 32 — results coming in from Mar 20 games. Check back for the confirmed matchup.",
         gameDateLabel: "Mar 22",
       },
     ],
