@@ -11,8 +11,8 @@ function getSupabase() {
 }
 
 // ─── Game windows (CDT = UTC-5) ───────────────────────────────────────────────
-// Each window covers noon CDT (17:00 UTC) to midnight CDT (05:00 UTC next day)
-// Final Four / Championship games start later so window starts at 5pm CDT (22:00 UTC)
+// Round of 64/32: noon CDT (17:00 UTC) to midnight CDT (05:00 UTC next day)
+// Final Four / Championship start later — window opens at 5pm CDT (22:00 UTC)
 
 export interface GameWindow {
   roundId: string;
@@ -46,6 +46,7 @@ interface OddsScoreGame {
 }
 
 // ─── Team name fuzzy matching ─────────────────────────────────────────────────
+// Handles "Louisville Cardinals" → "Louisville", "South Florida Bulls" → "South Florida", etc.
 
 function normalizeTeam(name: string): string {
   return name
@@ -62,13 +63,20 @@ function teamsMatch(apiName: string, ourName: string): boolean {
   const b = normalizeTeam(ourName);
   if (a === b) return true;
   if (a.includes(b) || b.includes(a)) return true;
-  // First significant word match (length > 3 to avoid false positives)
+  // First significant word match (length > 3 to avoid false positives like "the", "ohio")
   const aFirst = a.split(" ").find((w) => w.length > 3) ?? "";
   const bFirst = b.split(" ").find((w) => w.length > 3) ?? "";
   return aFirst.length > 3 && aFirst === bFirst;
 }
 
-// ─── Main: fetch completed scores, insert results, recompute ─────────────────
+// ─── Main: fetch completed scores → insert per-matchup-id results → recompute ─
+//
+// KEY DESIGN: Each physical game has up to 3 different matchup_ids in mm_round_matchups
+// (one per pick_type: upset, blowout, high_scorer). We insert ONE result row per
+// matchup_id so that each pick_type's scoring logic finds the correct row.
+//
+// Team names in result rows use the CURATED (upset) row's short names when available
+// (e.g. "Louisville" not "Louisville Cardinals") so they match mm_locked_takes.teams.
 
 export async function checkAndAutoScore(): Promise<{ newResults: number; scored: number; skipped: string }> {
   const apiKey = process.env.ODDS_API_KEY;
@@ -97,7 +105,7 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
     return { newResults: 0, scored: 0, skipped: "fetch error" };
   }
 
-  // Only process games that completed AND commenced within our window
+  // Only process games that completed AND commenced within our active window
   const completedGames = allGames.filter((g) => {
     if (!g.completed || !g.scores || g.scores.length < 2) return false;
     const commenceMs = new Date(g.commence_time).getTime();
@@ -111,21 +119,23 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
 
   const supabase = getSupabase();
 
-  // ── Get existing results to avoid double-inserts ──────────────────────────
-  const { data: existingResults } = await supabase
+  // ── Load existing result keys to avoid double-inserts ─────────────────────
+  const { data: existingResultsRaw } = await supabase
     .from("mm_game_results")
     .select("matchup_id, round_id")
     .eq("round_id", window.roundId);
   const existingKeys = new Set(
-    (existingResults ?? []).map(
+    (existingResultsRaw ?? []).map(
       (r: { round_id: string; matchup_id: string }) => `${r.round_id}:${r.matchup_id}`,
     ),
   );
 
-  // ── Get ranked matchups from DB so we can resolve matchup_ids ────────────
+  // ── Load all matchup rows for this round (all pick_types) ─────────────────
+  // Critically: include pick_type so we can prefer the curated "upset" row for
+  // canonical team names, and insert a result row for EVERY pick_type's matchup_id.
   type RankedRow = {
-    round_id: string;
     matchup_id: string;
+    pick_type: string;
     team_a: string;
     team_b: string;
     seed_a: number;
@@ -133,25 +143,17 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
   };
   const { data: rankedRaw } = await supabase
     .from("mm_round_matchups")
-    .select("round_id, matchup_id, team_a, team_b, seed_a, seed_b")
+    .select("matchup_id, pick_type, team_a, team_b, seed_a, seed_b")
     .eq("round_id", window.roundId);
-  const matchupRows = (rankedRaw ?? []) as RankedRow[];
-
-  // Deduplicate by matchup_id (keep first occurrence per unique matchup)
-  const seenMatchupIds = new Set<string>();
-  const uniqueMatchupRows = matchupRows.filter((r) => {
-    if (seenMatchupIds.has(r.matchup_id)) return false;
-    seenMatchupIds.add(r.matchup_id);
-    return true;
-  });
+  const allMatchupRows = (rankedRaw ?? []) as RankedRow[];
 
   // ── Process each completed game ───────────────────────────────────────────
   let newResults = 0;
 
   for (const game of completedGames) {
-    const scores = game.scores!;
-    const homeScoreStr = scores.find((s) => s.name === game.home_team)?.score ?? "0";
-    const awayScoreStr = scores.find((s) => s.name === game.away_team)?.score ?? "0";
+    const gameScores = game.scores!;
+    const homeScoreStr = gameScores.find((s) => s.name === game.home_team)?.score ?? "0";
+    const awayScoreStr = gameScores.find((s) => s.name === game.away_team)?.score ?? "0";
     const homeScore = parseInt(homeScoreStr, 10);
     const awayScore = parseInt(awayScoreStr, 10);
 
@@ -165,76 +167,99 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
     const winnerScore   = Math.max(homeScore, awayScore);
     const loserScore    = Math.min(homeScore, awayScore);
 
-    // Find our matchup entry by fuzzy-matching both teams
-    const matchedRow = uniqueMatchupRows.find(
+    // Find ALL matchup rows that reference these two teams (across all pick_types)
+    const matchingRows = allMatchupRows.filter(
       (r) =>
         (teamsMatch(game.home_team, r.team_a) || teamsMatch(game.home_team, r.team_b)) &&
         (teamsMatch(game.away_team, r.team_a) || teamsMatch(game.away_team, r.team_b)),
     );
 
-    // Use our matchup_id if found; otherwise generate a stable fallback from the odds game ID
-    const matchupId = matchedRow?.matchup_id ?? `auto-${game.id.slice(-8)}`;
-    const resultKey = `${window.roundId}:${matchupId}`;
+    // Prefer the curated "upset" row for canonical team names (short names like "Louisville"
+    // rather than full API names like "Louisville Cardinals") — these must match mm_locked_takes.teams
+    const canonicalRow =
+      matchingRows.find((r) => r.pick_type === "upset") ??
+      matchingRows[0] ??
+      null;
 
-    if (existingKeys.has(resultKey)) {
-      continue; // already processed
-    }
-
-    // Determine seeds and upset flag
+    // Resolve canonical winner/loser names and seeds from the best row we have
+    let canonicalWinnerName: string;
+    let canonicalLoserName: string;
     let winnerSeed: number | null = null;
     let loserSeed:  number | null = null;
     let wasUpset = false;
 
-    if (matchedRow) {
-      const homeIsTeamA = teamsMatch(game.home_team, matchedRow.team_a);
-      const winnerIsTeamA = winnerApiName === game.home_team ? homeIsTeamA : !homeIsTeamA;
-      winnerSeed = winnerIsTeamA ? matchedRow.seed_a : matchedRow.seed_b;
-      loserSeed  = winnerIsTeamA ? matchedRow.seed_b : matchedRow.seed_a;
-      wasUpset   = winnerSeed > loserSeed; // higher seed number = bigger underdog
+    if (canonicalRow) {
+      const homeIsTeamA   = teamsMatch(game.home_team, canonicalRow.team_a);
+      const winnerIsTeamA = (winnerApiName === game.home_team) ? homeIsTeamA : !homeIsTeamA;
+      canonicalWinnerName = winnerIsTeamA ? canonicalRow.team_a : canonicalRow.team_b;
+      canonicalLoserName  = winnerIsTeamA ? canonicalRow.team_b : canonicalRow.team_a;
+      winnerSeed = winnerIsTeamA ? canonicalRow.seed_a : canonicalRow.seed_b;
+      loserSeed  = winnerIsTeamA ? canonicalRow.seed_b : canonicalRow.seed_a;
+      wasUpset   = (winnerSeed ?? 0) > (loserSeed ?? 0); // higher seed # = underdog
+    } else {
+      // Game not in our picks system — use raw API names (won't match any picks,
+      // but winner_name still goes into winnersByRound for potential locked_takes)
+      canonicalWinnerName = winnerApiName;
+      canonicalLoserName  = loserApiName;
     }
 
-    // Resolve team names — use our DB names if we matched, otherwise use API names
-    const winnerName = matchedRow
-      ? (teamsMatch(winnerApiName, matchedRow.team_a) ? matchedRow.team_a : matchedRow.team_b)
-      : winnerApiName;
-    const loserName = matchedRow
-      ? (teamsMatch(loserApiName, matchedRow.team_a) ? matchedRow.team_a : matchedRow.team_b)
-      : loserApiName;
+    // Collect all unique matchup_ids to insert results for
+    // (one per pick_type that covers this game — so each pick_type's scoring finds its row)
+    const matchupIdsForGame = new Set<string>();
+    for (const r of matchingRows) {
+      matchupIdsForGame.add(r.matchup_id);
+    }
+    if (matchupIdsForGame.size === 0) {
+      // Game not tracked in our system — insert one fallback row under a stable ID
+      matchupIdsForGame.add(`auto-${game.id.slice(-8)}`);
+    }
 
-    const { error } = await supabase.from("mm_game_results").upsert(
-      {
-        round_id:     window.roundId,
-        matchup_id:   matchupId,
-        winner_name:  winnerName,
-        winner_seed:  winnerSeed,
-        loser_name:   loserName,
-        loser_seed:   loserSeed,
-        winner_score: winnerScore,
-        loser_score:  loserScore,
-        was_upset:    wasUpset,
-        resolved_at:  new Date().toISOString(),
-        resolved_by:  "auto-odds-api",
-      },
-      { onConflict: "round_id,matchup_id" },
-    );
+    // Insert one result row per matchup_id (skip any already in DB)
+    for (const matchupId of matchupIdsForGame) {
+      const resultKey = `${window.roundId}:${matchupId}`;
+      if (existingKeys.has(resultKey)) continue;
 
-    if (error) {
-      console.error(`[auto-score] Insert failed for ${winnerName} vs ${loserName}:`, error.message);
-    } else {
-      console.log(
-        `[auto-score] ✓ ${winnerName} ${winnerScore}-${loserScore} over ${loserName}` +
-        (wasUpset ? " (UPSET)" : "") +
-        ` [${window.roundId}]`,
+      const { error } = await supabase.from("mm_game_results").upsert(
+        {
+          round_id:     window.roundId,
+          matchup_id:   matchupId,
+          winner_name:  canonicalWinnerName,
+          winner_seed:  winnerSeed,
+          loser_name:   canonicalLoserName,
+          loser_seed:   loserSeed,
+          winner_score: winnerScore,
+          loser_score:  loserScore,
+          was_upset:    wasUpset,
+          resolved_at:  new Date().toISOString(),
+          resolved_by:  "auto-odds-api",
+        },
+        { onConflict: "round_id,matchup_id" },
       );
-      existingKeys.add(resultKey);
-      newResults++;
+
+      if (error) {
+        console.error(
+          `[auto-score] Insert failed for matchup ${matchupId} (${canonicalWinnerName} vs ${canonicalLoserName}):`,
+          error.message,
+        );
+      } else {
+        existingKeys.add(resultKey);
+        newResults++;
+      }
+    }
+
+    if (matchupIdsForGame.size > 0) {
+      const upsetLabel = wasUpset ? " (UPSET)" : "";
+      console.log(
+        `[auto-score] ✓ ${canonicalWinnerName} ${winnerScore}-${loserScore} over ${canonicalLoserName}${upsetLabel}` +
+        ` [${window.roundId}] — ${matchupIdsForGame.size} row(s) inserted`,
+      );
     }
   }
 
-  // ── Recompute scores silently if anything new came in ────────────────────
+  // ── Recompute scores silently if anything changed ─────────────────────────
   let scored = 0;
   if (newResults > 0) {
-    console.log(`[auto-score] ${newResults} new result(s) — recomputing scores (no emails)...`);
+    console.log(`[auto-score] ${newResults} new result row(s) — recomputing scores (no emails)...`);
     const { scored: s, error } = await computeAndSaveScores(supabase);
     if (error) {
       console.error("[auto-score] Score compute error:", error);
