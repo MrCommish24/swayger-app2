@@ -546,11 +546,17 @@ async function persistRankedMatchups(
     })),
   ];
 
+  // DELETE existing matchups for this round before reinserting so the stored
+  // pool always exactly matches what was shown to users.  Using upsert would
+  // accumulate stale matchups when odds-based rankings change between refreshes,
+  // causing scoring to compare against a larger pool than the N games presented.
+  await supabase.from("mm_round_matchups").delete().eq("round_id", roundId);
+
   if (rows.length > 0) {
     await supabase
       .from("mm_round_matchups")
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .upsert(rows as any, { onConflict: "round_id,pick_type,matchup_id" });
+      .insert(rows as any);
   }
 }
 

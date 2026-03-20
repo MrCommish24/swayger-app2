@@ -179,6 +179,12 @@ export async function computeAndSaveScores(
     if (!scores[pick.user_id]) scores[pick.user_id] = emptyScore();
 
     if (pick.pick_type === "upset") {
+      // Scope to the presented pool when pool data is available.
+      // If the pool is empty (table not yet populated), fall back to natural
+      // scoping — the user's pick already carries the matchup_id from the UI.
+      const pool = candidateMap[`${pick.round_id}:upset`];
+      if (pool && pool.size > 0 && !pool.has(pick.matchup_id)) continue;
+
       const resultForGame = results.find(
         (r) => r.round_id === pick.round_id && r.matchup_id === pick.matchup_id,
       );
