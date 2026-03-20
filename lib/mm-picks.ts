@@ -177,6 +177,18 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
   "final-four":   "2026-04-04T18:00:00-05:00",  // 6 PM CDT, games start ~7 PM CDT
 };
 
+// When a round's picks first become available to make.
+// We don't advance to the next round until this date passes — so R64 games
+// finishing on March 20 don't flip the UI to R32 picks until midnight Mar 21.
+export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
+  "round-64":      "2026-03-19T11:00:00-05:00",  // same as lock (always open from start)
+  "round-32":      "2026-03-21T00:00:00-05:00",  // midnight CDT — after R64 games end Mar 20
+  "sweet-16":      "2026-03-26T00:00:00-05:00",  // midnight CDT — after R32 games end Mar 23
+  "elite-8":       "2026-03-27T00:00:00-05:00",  // midnight CDT — after S16 games end Mar 28 (same day open/lock is fine)
+  "final-four":    "2026-04-03T00:00:00-05:00",  // midnight CDT — after E8 games end Mar 30
+  "championship":  "2026-04-05T00:00:00-05:00",  // midnight CDT — after FF games end Apr 5
+};
+
 // Keep old export for bracket-take lock banners
 export const PICKS_LOCK_DATE = BRACKET_LOCK_DATE;
 
@@ -319,20 +331,35 @@ const PICKS_ROUND_ORDER = [
 ];
 
 // Returns the round whose special picks are currently open.
-// If the current round (by date) is already locked, advances to the next
-// unlocked round so users see open picks as early as possible.
+// Advances past the current round ONLY when:
+//   1. The current round's picks are locked, AND
+//   2. The next round's PICKS_OPEN date has passed.
+// This prevents flipping to R32 on March 20 just because R64 locked on March 19 —
+// we wait until midnight March 21 when R64 games are fully done.
 export function getActivePicksRoundId(currentDateRoundId: string): string {
   const normalised =
     currentDateRoundId === "first-four" ? "round-64" : currentDateRoundId;
   const idx = PICKS_ROUND_ORDER.indexOf(normalised);
   if (idx === -1) return normalised;
 
-  // Walk forward until we find an unlocked round (or run out)
+  const now = Date.now();
+
+  // Walk forward: only advance when current is locked AND next is open
   for (let i = idx; i < PICKS_ROUND_ORDER.length; i++) {
     const r = PICKS_ROUND_ORDER[i];
+    // If this round's picks aren't locked yet, show it
     if (!isRoundLocked(r)) return r;
+    // Locked — check if the next round's open date has passed before advancing
+    const next = PICKS_ROUND_ORDER[i + 1];
+    if (!next) break; // no more rounds
+    const openDateStr = ROUND_PICKS_OPEN_DATES[next];
+    if (!openDateStr || now < new Date(openDateStr).getTime()) {
+      // Next round isn't open yet — stay on current locked round
+      return r;
+    }
+    // Next round is open — continue the loop to evaluate it
   }
-  // All future rounds locked — fall back to the current date round
+  // All rounds locked/done — show the last known round
   return normalised;
 }
 
