@@ -3,7 +3,7 @@ import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { sendMMReminderEmail, sendLastChanceBlast, sendLeaderboardReminderBlast } from "./email";
 import { checkAndAutoScore, getActiveGameWindow } from "./mm-auto-score";
-import { sendScoreUpdateBlast } from "./routes-mm-admin";
+import { sendScoreUpdateBlast, SCORE_EMAILS_PAUSED } from "./routes-mm-admin";
 
 // ─── State file (persists across restarts) ────────────────────────────────────
 
@@ -297,9 +297,14 @@ async function tick(): Promise<void> {
     if (state.score_emails[w.key]) continue;
     const elapsed = now - w.targetMs;
     if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
-      await sendMorningScoreBlast(w.label);
-      state.score_emails[w.key] = true;
-      saveState(state);
+      if (SCORE_EMAILS_PAUSED) {
+        console.log(`[mm-scheduler] Score emails paused — skipping morning blast: ${w.label}`);
+        // Do NOT mark as sent — will fire once SCORE_EMAILS_PAUSED is set to false
+      } else {
+        await sendMorningScoreBlast(w.label);
+        state.score_emails[w.key] = true;
+        saveState(state);
+      }
     }
   }
 

@@ -46,6 +46,9 @@ const UPSET_POINTS = 3;
 const BLOWOUT_POINTS = 3;
 const HIGH_SCORER_POINTS = 3;
 
+// Set to true to pause automated score-update emails until scoring is verified.
+export const SCORE_EMAILS_PAUSED = true;
+
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -373,11 +376,14 @@ export function registerMMAdminRoutes(app: Express): void {
         res.status(500).json({ ok: false, error });
         return;
       }
-      // Respond immediately, then blast score emails in background
-      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s) — sending score update emails` });
-      sendScoreUpdateBlast(supabase).catch((e) =>
-        console.error("[mm-admin] score blast error:", e),
-      );
+      // Respond immediately, then blast score emails in background (when not paused)
+      const emailNote = SCORE_EMAILS_PAUSED ? " (score emails paused)" : " — sending score update emails";
+      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s)${emailNote}` });
+      if (!SCORE_EMAILS_PAUSED) {
+        sendScoreUpdateBlast(supabase).catch((e) =>
+          console.error("[mm-admin] score blast error:", e),
+        );
+      }
     } catch (err) {
       console.error("[mm-admin] score error:", err);
       res.status(500).json({ ok: false, error: "Server error" });
