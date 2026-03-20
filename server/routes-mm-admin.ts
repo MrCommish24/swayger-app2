@@ -29,11 +29,16 @@ const TAKE_POINTS: Record<string, number> = {
   champion: 10,
 };
 
-// Map take_type to the round_id that determines which teams advanced
+// Map take_type to the round_id that determines which teams advanced.
+// A team reaches a round by WINNING the previous round:
+//   Sweet 16  → must win Round of 32  (R64 win only means R32, not S16)
+//   Elite 8   → must win Sweet 16
+//   Final Four→ must win Elite 8
+//   Champion  → must win Championship
 const TAKE_ROUND_MAP: Record<string, string> = {
-  sweet_sixteen: "round-64",   // won in R64 → reached Sweet 16
-  elite_eight:   "round-32",   // won in R32 → reached Elite 8
-  final_four:    "sweet-16",   // won in S16 → reached Final Four
+  sweet_sixteen: "round-32",    // won in R32 → reached Sweet 16
+  elite_eight:   "sweet-16",    // won in S16 → reached Elite 8
+  final_four:    "elite-8",     // won in E8  → reached Final Four
   champion:      "championship", // won the championship
 };
 
