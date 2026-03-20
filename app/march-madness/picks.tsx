@@ -34,6 +34,7 @@ import {
   fetchMyPickScore,
   fetchRoundMatchups,
   saveSpecialPick,
+  getActivePicksRoundId,
 } from "@/lib/mm-picks";
 import { getCurrentRound } from "@/lib/march-madness";
 
@@ -451,7 +452,7 @@ export default function PicksHub() {
   const queryClient = useQueryClient();
 
   const currentRound = getCurrentRound();
-  const roundId = currentRound.id === "first-four" ? "round-64" : currentRound.id;
+  const roundId = getActivePicksRoundId(currentRound.id);
   const roundLocked = isRoundLocked(roundId);
 
   const { data: takes, isLoading: takesLoading } = useQuery<

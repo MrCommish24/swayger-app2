@@ -384,6 +384,76 @@ export function registerMMAdminRoutes(app: Express): void {
     }
   });
 
+  // Debug: show special picks vs results matching for a username
+  app.get("/admin/mm/api/debug-picks", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const supabase = getSupabase();
+      const usernameFilter = req.query.username as string | undefined;
+
+      // Get all special picks, optionally filtered by user via profiles join
+      const { data: allPicks } = await supabase
+        .from("mm_special_picks")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      const { data: allResults } = await supabase
+        .from("mm_game_results")
+        .select("round_id, matchup_id, winner_name, loser_name, was_upset");
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username");
+
+      const profileMap = new Map((profiles ?? []).map((p: { id: string; username: string }) => [p.id, p.username]));
+      const resultMap = new Map((allResults ?? []).map((r: { round_id: string; matchup_id: string; winner_name: string; loser_name: string; was_upset: boolean }) =>
+        [`${r.round_id}:${r.matchup_id}`, r]
+      ));
+
+      const picks = (allPicks ?? []).filter((p: { user_id: string }) => {
+        if (!usernameFilter) return true;
+        const uname = profileMap.get(p.user_id);
+        return uname?.toLowerCase().includes(usernameFilter.toLowerCase());
+      });
+
+      const debug = picks.map((p: { user_id: string; round_id: string; pick_type: string; matchup_id: string; picked_team: string | null }) => {
+        const key = `${p.round_id}:${p.matchup_id}`;
+        const result = resultMap.get(key);
+        let scored = false;
+        let reason = "";
+        if (!result) {
+          reason = `NO result found for matchup_id=${p.matchup_id} round=${p.round_id}`;
+        } else if (p.pick_type === "upset") {
+          scored = result.winner_name === p.picked_team;
+          reason = scored ? "MATCH" : `winner="${result.winner_name}" != picked="${p.picked_team}"`;
+        } else {
+          reason = "blowout/hs: scored based on best-in-round";
+          scored = false; // can't tell here without full round analysis
+        }
+        return {
+          username: profileMap.get(p.user_id) ?? p.user_id.slice(0, 8),
+          pick_type: p.pick_type,
+          round_id: p.round_id,
+          matchup_id: p.matchup_id,
+          picked_team: p.picked_team,
+          result_winner: result?.winner_name ?? null,
+          result_loser: result?.loser_name ?? null,
+          was_upset: result?.was_upset ?? null,
+          scored,
+          reason,
+        };
+      });
+
+      res.json({ ok: true, total_picks: picks.length, debug });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Get current game results
   app.get("/admin/mm/api/results", async (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;

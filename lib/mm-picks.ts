@@ -313,6 +313,29 @@ export function getRoundLockDate(roundId: string): Date | null {
   return lockDate ? new Date(lockDate) : null;
 }
 
+// Round sequence for special picks (in tournament order)
+const PICKS_ROUND_ORDER = [
+  "round-64", "round-32", "sweet-16", "elite-8", "final-four", "championship",
+];
+
+// Returns the round whose special picks are currently open.
+// If the current round (by date) is already locked, advances to the next
+// unlocked round so users see open picks as early as possible.
+export function getActivePicksRoundId(currentDateRoundId: string): string {
+  const normalised =
+    currentDateRoundId === "first-four" ? "round-64" : currentDateRoundId;
+  const idx = PICKS_ROUND_ORDER.indexOf(normalised);
+  if (idx === -1) return normalised;
+
+  // Walk forward until we find an unlocked round (or run out)
+  for (let i = idx; i < PICKS_ROUND_ORDER.length; i++) {
+    const r = PICKS_ROUND_ORDER[i];
+    if (!isRoundLocked(r)) return r;
+  }
+  // All future rounds locked — fall back to the current date round
+  return normalised;
+}
+
 // ─── Upset limits per round ───────────────────────────────────────────────────
 export const UPSET_LIMITS: Record<string, number> = {
   "round-64":  3,
