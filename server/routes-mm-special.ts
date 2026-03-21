@@ -769,57 +769,71 @@ async function persistRankedMatchups(
   blowout: RankedMatchup[],
   highScorer: RankedMatchup[],
 ) {
+  const toRow = (m: RankedMatchup, pickType: string) => ({
+    round_id: roundId,
+    pick_type: pickType,
+    matchup_id: m.matchupId,
+    team_a: m.teamA,
+    team_b: m.teamB,
+    seed_a: m.seedA,
+    seed_b: m.seedB,
+    rank: m.rank,
+    // Store the complete matchup so we can reconstruct it from the DB after round lock
+    odds_data: {
+      spread: m.spread,
+      overUnder: m.overUnder,
+      underdogMoneyline: m.underdogMoneyline,
+      favoriteTeam: m.favoriteTeam,
+      underdogTeam: m.underdogTeam,
+      favoriteSeed: m.favoriteSeed,
+      underdogSeed: m.underdogSeed,
+      region: m.region,
+      gameDate: m.gameDate,
+      site: m.site,
+      keyStat: m.keyStat,
+      source: m.oddsSource,
+    },
+    updated_at: new Date().toISOString(),
+  });
+
   const rows = [
-    ...upset.map((m) => ({
-      round_id: roundId,
-      pick_type: "upset",
-      matchup_id: m.matchupId,
-      team_a: m.teamA,
-      team_b: m.teamB,
-      seed_a: m.seedA,
-      seed_b: m.seedB,
-      rank: m.rank,
-      odds_data: { spread: m.spread, overUnder: m.overUnder, underdogMoneyline: m.underdogMoneyline, source: m.oddsSource },
-      updated_at: new Date().toISOString(),
-    })),
-    ...blowout.map((m) => ({
-      round_id: roundId,
-      pick_type: "blowout",
-      matchup_id: m.matchupId,
-      team_a: m.teamA,
-      team_b: m.teamB,
-      seed_a: m.seedA,
-      seed_b: m.seedB,
-      rank: m.rank,
-      odds_data: { spread: m.spread, overUnder: m.overUnder, source: m.oddsSource },
-      updated_at: new Date().toISOString(),
-    })),
-    ...highScorer.map((m) => ({
-      round_id: roundId,
-      pick_type: "high_scorer",
-      matchup_id: m.matchupId,
-      team_a: m.teamA,
-      team_b: m.teamB,
-      seed_a: m.seedA,
-      seed_b: m.seedB,
-      rank: m.rank,
-      odds_data: { overUnder: m.overUnder, source: m.oddsSource },
-      updated_at: new Date().toISOString(),
-    })),
+    ...upset.map((m) => toRow(m, "upset")),
+    ...blowout.map((m) => toRow(m, "blowout")),
+    ...highScorer.map((m) => toRow(m, "high_scorer")),
   ];
 
-  // DELETE existing matchups for this round before reinserting so the stored
-  // pool always exactly matches what was shown to users.  Using upsert would
-  // accumulate stale matchups when odds-based rankings change between refreshes,
-  // causing scoring to compare against a larger pool than the N games presented.
-  await supabase.from("mm_round_matchups").delete().eq("round_id", roundId);
+  if (rows.length === 0) return;
 
-  if (rows.length > 0) {
-    await supabase
+  // Only delete+reinsert while the round is still open. Once locked, the persisted
+  // rows are the source-of-truth for the picks UI — never overwrite them.
+  const lockDatesForPersist: Record<string, string> = {
+    "first-four":   "2026-03-17T12:00:00-05:00",
+    "round-64":     "2026-03-19T11:00:00-05:00",
+    "round-32":     "2026-03-21T12:00:00-05:00",
+    "sweet-16":     "2026-03-27T12:00:00-05:00",
+    "elite-8":      "2026-03-28T12:00:00-05:00",
+    "final-four":   "2026-04-04T18:00:00-05:00",
+  };
+  const lockAt = lockDatesForPersist[roundId];
+  const roundIsLocked = lockAt ? new Date() >= new Date(lockAt) : false;
+  if (roundIsLocked) {
+    // Check if rows already exist — if so, leave them intact
+    const { data: existing } = await supabase
       .from("mm_round_matchups")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .insert(rows as any);
+      .select("matchup_id")
+      .eq("round_id", roundId)
+      .limit(1);
+    if (existing && existing.length > 0) {
+      console.log(`[mm-special] ${roundId} is locked — skipping persist to protect stored matchups`);
+      return;
+    }
   }
+
+  await supabase.from("mm_round_matchups").delete().eq("round_id", roundId);
+  await supabase
+    .from("mm_round_matchups")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(rows as any);
 }
 
 // ─── Route Registration ───────────────────────────────────────────────────────
@@ -831,14 +845,74 @@ export function registerMMSpecialRoutes(app: Express) {
   app.get("/api/mm/round-matchups/:roundId", async (req: Request, res: Response) => {
     const roundId = req.params.roundId as string;
 
-    // Check cache first
+    const lockDates: Record<string, string> = {
+      "first-four":   "2026-03-17T12:00:00-05:00",
+      "round-64":     "2026-03-19T11:00:00-05:00",
+      "round-32":     "2026-03-21T12:00:00-05:00",
+      "sweet-16":     "2026-03-27T12:00:00-05:00",
+      "elite-8":      "2026-03-28T12:00:00-05:00",
+      "final-four":   "2026-04-04T18:00:00-05:00",
+    };
+    const lockDate = lockDates[roundId] ?? "2026-03-19T11:00:00-05:00";
+    const isLocked = new Date() >= new Date(lockDate);
+
+    // Check in-memory cache first (fast path)
     const cacheKey = `round-matchups-${roundId}`;
     const cached = getCached<object>(cacheKey);
     if (cached) {
       return res.json(cached);
     }
 
-    // Try live Odds API first; fall back to seed-based
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ── After lock: serve from persisted DB — never call the Odds API ──────────
+    // Once games tip off, bookmakers pull lines and the API returns nothing.
+    // The DB has the exact matchups users saw when they made their picks.
+    if (isLocked) {
+      const { data: rows } = await supabase
+        .from("mm_round_matchups")
+        .select("*")
+        .eq("round_id", roundId)
+        .order("rank", { ascending: true });
+
+      if (rows && rows.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rowToMatchup = (r: any): RankedMatchup => ({
+          matchupId:         r.matchup_id,
+          teamA:             r.team_a,
+          teamB:             r.team_b,
+          seedA:             r.seed_a ?? 0,
+          seedB:             r.seed_b ?? 0,
+          rank:              r.rank,
+          favoriteTeam:      r.odds_data?.favoriteTeam ?? r.team_a,
+          underdogTeam:      r.odds_data?.underdogTeam ?? r.team_b,
+          favoriteSeed:      r.odds_data?.favoriteSeed,
+          underdogSeed:      r.odds_data?.underdogSeed,
+          spread:            r.odds_data?.spread,
+          overUnder:         r.odds_data?.overUnder,
+          underdogMoneyline: r.odds_data?.underdogMoneyline,
+          region:            r.odds_data?.region ?? "—",
+          gameDate:          r.odds_data?.gameDate,
+          site:              r.odds_data?.site,
+          keyStat:           r.odds_data?.keyStat,
+          oddsSource:        r.odds_data?.source ?? "live",
+        });
+
+        const upset      = rows.filter((r: any) => r.pick_type === "upset").map(rowToMatchup);
+        const blowout    = rows.filter((r: any) => r.pick_type === "blowout").map(rowToMatchup);
+        const highScorer = rows.filter((r: any) => r.pick_type === "high_scorer").map(rowToMatchup);
+
+        console.log(`[mm-special] ${roundId} (locked) served from DB: upset=${upset.length} blowout=${blowout.length} hs=${highScorer.length}`);
+
+        const response = { roundId, upset, blowout, highScorer, isLocked: true, lockedAt: lockDate, oddsSource: "persisted" };
+        setCache(cacheKey, response);
+        return res.json(response);
+      }
+
+      // No persisted rows yet — fall through to build them fresh (first lock hit)
+    }
+
+    // ── Pre-lock: build from Odds API or seed-based fallback ───────────────────
     let ranked = await buildOddsBasedMatchups(roundId);
     let source: "live" | "seed-based" = "live";
 
@@ -865,21 +939,9 @@ export function registerMMSpecialRoutes(app: Express) {
     console.log(`[mm-special] ${roundId} matchups: ${source}, ` +
       `upset=${ranked.upset.length} blowout=${ranked.blowout.length} hs=${ranked.highScorer.length}`);
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
     // Persist for scoring (non-blocking)
     persistRankedMatchups(supabase, roundId, ranked.upset, ranked.blowout, ranked.highScorer)
       .catch((e) => console.error("[mm-special] persist failed:", e));
-
-    const lockDates: Record<string, string> = {
-      "first-four":   "2026-03-17T12:00:00-05:00",
-      "round-64":     "2026-03-19T11:00:00-05:00",
-      "round-32":     "2026-03-21T12:00:00-05:00",
-      "sweet-16":     "2026-03-27T12:00:00-05:00",
-      "elite-8":      "2026-03-28T12:00:00-05:00",
-      "final-four":   "2026-04-04T18:00:00-05:00",
-    };
-    const lockDate = lockDates[roundId] ?? "2026-03-19T11:00:00-05:00";
-    const isLocked = new Date() >= new Date(lockDate);
 
     const response = {
       roundId,
