@@ -24,3 +24,9 @@ id = "-COz1UvTaFzj6Fbe6YUlG"
 uri = "file://attached_assets/generated_images/swayger_mm_instagram_v2.png"
 type = "image"
 title = "Swayger — March Madness Leaderboard Challenge (v2)"
+
+[[outputs]]
+id = "irsK6iia--WFQ7JwEIsHP"
+uri = "file://docs/swayger-email-catalog.md"
+type = "text"
+title = "Swayger Email Catalog"
