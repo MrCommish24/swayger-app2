@@ -91,7 +91,7 @@ Sent once to users who never submitted their locked bracket takes (Sweet 16 / El
 
 | # | Scheduled Date | Subject Line | Who Gets It | Status |
 |---|---------------|-------------|-------------|--------|
-| 27 | Mar 21 — 5:00pm CDT | "You can still get in — second shot at the leaderboard" | Users with **no submitted locked takes** | Pending (fires today) |
+| 27 | Mar 21 — 9:00am CDT | "You can still get in — second shot at the leaderboard" | Users with **no submitted locked takes** | Pending (fires tomorrow before tip-off) |
 
 ---
 
