@@ -385,8 +385,8 @@ const MORNING_EMAIL_WINDOWS: MorningEmailWindow[] = [
 ];
 
 // ─── Second-shot email window ─────────────────────────────────────────────────
-// Target: 9am CDT on March 21 — before the first R32 game at 11:10am CDT.
-const SECOND_SHOT_TARGET_MS = new Date("2026-03-21T09:00:00-05:00").getTime();
+// Target: 9:30am CDT on March 21 — 30 min after R32 quick picks blast, before 11:10am tip.
+const SECOND_SHOT_TARGET_MS = new Date("2026-03-21T09:30:00-05:00").getTime();
 
 // ─── Per-round quick pick reminder windows ────────────────────────────────────
 

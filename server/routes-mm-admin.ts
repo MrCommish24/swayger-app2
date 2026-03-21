@@ -555,6 +555,49 @@ export function registerMMAdminRoutes(app: Express): void {
     res.send(buildSecondShotEmailHtml("Swayger User"));
   });
 
+  // Preview R32 quick picks launch email
+  app.get("/admin/mm/email-preview/r32-picks", (_req: Request, res: Response) => {
+    const { buildMMR32PicksEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildMMR32PicksEmailHtml("Swayger User"));
+  });
+
+  // Blast R32 quick picks open email to all users
+  app.post("/admin/mm/api/blast-r32-picks", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const { sendMMR32PicksEmail } = await import("./email");
+      const supabase = getSupabase();
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const eligible = (allProfiles ?? []).filter(
+        (p: { notification_email?: string }) => p.notification_email,
+      );
+      let sent = 0;
+      let failed = 0;
+      for (const profile of eligible) {
+        try {
+          await sendMMR32PicksEmail({
+            to: profile.notification_email as string,
+            displayName: profile.display_name || `@${profile.username}`,
+          });
+          sent++;
+        } catch (e) {
+          console.error("[mm-admin] r32-picks blast failed for", profile.id, e);
+          failed++;
+        }
+      }
+      console.log(`[mm-admin] R32 picks blast: sent=${sent} failed=${failed}`);
+      res.json({ ok: true, message: `R32 picks blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
+    } catch (err) {
+      console.error("[mm-admin] r32-picks blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Send leaderboard blast to all registered users
   app.post("/admin/mm/api/blast-leaderboard", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;

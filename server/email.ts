@@ -665,6 +665,108 @@ export async function sendSecondShotEmail(opts: {
   });
 }
 
+// ─── R32 Quick Picks Launch Blast ────────────────────────────────────────────
+
+export function buildMMR32PicksEmailHtml(displayName = "there"): string {
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+  const subject = "🏀 Round of 32 Quick Picks are OPEN — Games start at 11am";
+  const headline = "Round of 32 is here. Make your picks before tip-off.";
+
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 18px;color:#E2E8F0;font-size:15px;line-height:1.6">
+      Round of 32 Quick Picks are <strong style="color:#FFFFFF;">open right now</strong>. Three picks. Three chances to earn points before the first tip at <strong style="color:#FFFFFF;">11:10am CDT</strong> — picks lock at noon.
+    </p>
+
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Your 3 picks this round</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #F59E0B;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🚨 Upset Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Pick which game the underdog pulls off the shocker. High Point (12) vs Arkansas. VCU (11) vs Illinois. Nebraska vs Vanderbilt is basically a coin flip.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #3B82F6;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">💥 Blowout Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Pick which game ends in a blowout. Duke is -11.5. Michigan is -12.5. Houston hasn't lost a game cleanly in weeks.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #10B981;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🔥 High Scorer Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Pick the highest-scoring game. Arkansas vs High Point has an O/U of <strong style="color:#FFFFFF;">169.5</strong> — the highest on the entire weekend slate.</p>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background:linear-gradient(135deg,#0d1a2a 0%,#0a1020 100%);border:1px solid rgba(108,99,255,0.35);border-radius:12px;padding:14px 18px;margin-bottom:20px;">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#A78BFA;text-transform:uppercase;">Today's marquee games</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding:6px 0;border-bottom:1px solid #1e2030;">
+            <span style="font-size:13px;color:#D1D5DB;">Michigan (1) vs Saint Louis (9)</span>
+            <span style="float:right;font-size:12px;color:#6C63FF;font-weight:600;">11:10am CDT</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;border-bottom:1px solid #1e2030;">
+            <span style="font-size:13px;color:#D1D5DB;">Duke (1) vs TCU (9)</span>
+            <span style="float:right;font-size:12px;color:#6C63FF;font-weight:600;">4:15pm CDT</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;border-bottom:1px solid #1e2030;">
+            <span style="font-size:13px;color:#D1D5DB;">Houston (2) vs Texas A&amp;M (10)</span>
+            <span style="float:right;font-size:12px;color:#6C63FF;font-weight:600;">5:10pm CDT</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;border-bottom:1px solid #1e2030;">
+            <span style="font-size:13px;color:#D1D5DB;">Nebraska (4) vs Vanderbilt (5)</span>
+            <span style="float:right;font-size:12px;color:#6C63FF;font-weight:600;">7:45pm CDT</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;">
+            <span style="font-size:13px;color:#D1D5DB;">Arkansas (4) vs High Point (12)</span>
+            <span style="float:right;font-size:12px;color:#6C63FF;font-weight:600;">8:45pm CDT</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Quick picks lock at noon CDT. Scores post after each game wraps up tonight.</p>
+  `;
+
+  return buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl);
+}
+
+export async function sendMMR32PicksEmail(opts: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "🏀 Round of 32 Quick Picks are OPEN — Games start at 11am",
+    html: buildMMR32PicksEmailHtml(opts.displayName),
+  });
+}
+
 // ─── Per-Round Quick Pick Reminder ───────────────────────────────────────────
 
 export async function sendQuickPickReminderEmail(opts: {
