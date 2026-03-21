@@ -42,3 +42,9 @@ id = "WRFBO4T5rU47xOlfQV8RI"
 uri = "file://attached_assets/generated_images/swayger-r32-instagram-v2.png"
 type = "image"
 title = "Swayger — R32 Instagram Post v2"
+
+[[outputs]]
+id = "TP-e7D4K0p6YUuQRhzXKA"
+uri = "file://attached_assets/generated_images/swayger-r32-instagram-v3.png"
+type = "image"
+title = "Swayger — R32 Instagram (Trophy Style)"
