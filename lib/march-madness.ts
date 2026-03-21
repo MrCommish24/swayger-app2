@@ -436,10 +436,13 @@ export const FULL_BRACKET = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Returns the active round based on today's date.
+// Returns the active round based on today's date in CDT (UTC-5).
+// startDate values are CDT calendar dates, so we must compare
+// against the CDT date — not the raw UTC date string.
 // ─────────────────────────────────────────────────────────────
 export function getCurrentRound(): MMRound {
-  const today = new Date().toISOString().split("T")[0];
+  const cdtDate = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const today = cdtDate.toISOString().split("T")[0];
   let activeRound = MM_ROUNDS[1]; // Default: Round of 64
   for (const round of MM_ROUNDS) {
     if (round.startDate <= today) {

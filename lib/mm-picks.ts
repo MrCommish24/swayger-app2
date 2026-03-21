@@ -331,36 +331,46 @@ const PICKS_ROUND_ORDER = [
 ];
 
 // Returns the round whose special picks are currently open.
-// Advances past the current round ONLY when:
-//   1. The current round's picks are locked, AND
-//   2. The next round's PICKS_OPEN date has passed.
-// This prevents flipping to R32 on March 20 just because R64 locked on March 19 —
-// we wait until midnight March 21 when R64 games are fully done.
-export function getActivePicksRoundId(currentDateRoundId: string): string {
-  const normalised =
-    currentDateRoundId === "first-four" ? "round-64" : currentDateRoundId;
-  const idx = PICKS_ROUND_ORDER.indexOf(normalised);
-  if (idx === -1) return normalised;
-
+// Always walks forward from round-64, regardless of what getCurrentRound()
+// returns, so that open-date guards are evaluated for every round including
+// the starting one. This prevents a UTC-vs-CDT date mismatch from skipping
+// a round's gate entirely.
+//
+// Advances to the next round ONLY when:
+//   1. The current round's open date has passed (ROUND_PICKS_OPEN_DATES), AND
+//   2. The current round's picks are locked (ROUND_LOCK_DATES), AND
+//   3. The next round's open date has also passed.
+export function getActivePicksRoundId(_currentDateRoundId: string): string {
   const now = Date.now();
+  let result = PICKS_ROUND_ORDER[0]; // fall-back: round-64
 
-  // Walk forward: only advance when current is locked AND next is open
-  for (let i = idx; i < PICKS_ROUND_ORDER.length; i++) {
+  for (let i = 0; i < PICKS_ROUND_ORDER.length; i++) {
     const r = PICKS_ROUND_ORDER[i];
-    // If this round's picks aren't locked yet, show it
-    if (!isRoundLocked(r)) return r;
-    // Locked — check if the next round's open date has passed before advancing
-    const next = PICKS_ROUND_ORDER[i + 1];
-    if (!next) break; // no more rounds
-    const openDateStr = ROUND_PICKS_OPEN_DATES[next];
-    if (!openDateStr || now < new Date(openDateStr).getTime()) {
-      // Next round isn't open yet — stay on current locked round
-      return r;
+
+    // Has this round opened yet?
+    const openDateStr = ROUND_PICKS_OPEN_DATES[r];
+    if (openDateStr && now < new Date(openDateStr).getTime()) {
+      // Not open yet — stay on whatever we had before
+      break;
     }
-    // Next round is open — continue the loop to evaluate it
+
+    result = r;
+
+    // If picks aren't locked yet, this is the active round — stop here
+    if (!isRoundLocked(r)) break;
+
+    // Locked — only advance if the next round is already open
+    const next = PICKS_ROUND_ORDER[i + 1];
+    if (!next) break;
+    const nextOpenStr = ROUND_PICKS_OPEN_DATES[next];
+    if (!nextOpenStr || now < new Date(nextOpenStr).getTime()) {
+      // Next round not open yet — stay on this locked round
+      break;
+    }
+    // Next round is open — continue to evaluate it
   }
-  // All rounds locked/done — show the last known round
-  return normalised;
+
+  return result;
 }
 
 // ─── Upset limits per round ───────────────────────────────────────────────────
