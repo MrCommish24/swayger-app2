@@ -455,8 +455,9 @@ export async function saveTake(
   userId: string,
   takeType: TakeType,
   teams: string[],
+  isSecondChance = false,
 ): Promise<{ error: string | null }> {
-  if (isPicksLocked()) {
+  if (isPicksLocked() && !isSecondChance) {
     return { error: "The tournament has started — picks are locked." };
   }
   const expected = TAKE_CONFIGS[takeType].count;
@@ -471,6 +472,7 @@ export async function saveTake(
         take_type: takeType,
         teams,
         is_submitted: true,
+        is_second_chance: isSecondChance,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id,take_type" },

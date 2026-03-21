@@ -24,6 +24,7 @@ import {
   type BracketTeam,
   isPicksLocked,
   fetchMyLockedTakes,
+  fetchSecondChanceStatus,
   saveTake,
   getTeamsByRegion,
 } from "@/lib/mm-picks";
@@ -109,12 +110,21 @@ export default function LockedTakePicker() {
   const [sharing, setSharing] = useState(false);
   const shareCardRef = useRef<View>(null);
 
-  const { data: takes, isLoading } = useQuery({
+  const { data: takes, isLoading: takesLoading } = useQuery({
     queryKey: ["mm-locked-takes", user?.id],
     queryFn: () => fetchMyLockedTakes(user!.id),
     enabled: !!user,
     staleTime: 0,
   });
+
+  const { data: isSecondChance = false, isLoading: scLoading } = useQuery<boolean>({
+    queryKey: ["mm-second-chance", user?.id],
+    queryFn: () => fetchSecondChanceStatus(user!.id),
+    enabled: !!user,
+    staleTime: 60 * 1000,
+  });
+
+  const isLoading = takesLoading || scLoading;
 
   React.useEffect(() => {
     const existing = takes?.[takeType];
@@ -124,7 +134,7 @@ export default function LockedTakePicker() {
   }, [takes, takeType]);
 
   const saveMutation = useMutation({
-    mutationFn: () => saveTake(user!.id, takeType, Array.from(selected)),
+    mutationFn: () => saveTake(user!.id, takeType, Array.from(selected), isSecondChance),
     onSuccess: (result) => {
       if (result.error) {
         Alert.alert("Couldn't lock takes", result.error);
@@ -190,7 +200,7 @@ export default function LockedTakePicker() {
 
   const existing = takes?.[takeType];
   const alreadySubmitted = existing?.is_submitted === true;
-  const canEdit = !locked;
+  const canEdit = !locked || isSecondChance;
   const selectionComplete = selected.size === cfg.count;
   const topPadding = isWeb ? 67 : insets.top;
 
@@ -233,7 +243,9 @@ export default function LockedTakePicker() {
             </Text>
             <Text style={styles.successSub}>
               {teams.length} team{teams.length > 1 ? "s" : ""} ·{" "}
-              {cfg.pointsEach * teams.length} pts possible
+              {isSecondChance
+                ? `${cfg.pointsEach * 0.5 * teams.length} pts possible (½ pts — second chance)`
+                : `${cfg.pointsEach * teams.length} pts possible`}
             </Text>
           </View>
 
@@ -317,7 +329,13 @@ export default function LockedTakePicker() {
         </View>
       </View>
 
-      {locked ? (
+      {locked && isSecondChance ? (
+        <View style={[styles.instructionBanner, { borderBottomColor: "rgba(245,158,11,0.2)", backgroundColor: "rgba(245,158,11,0.08)" }]}>
+          <Text style={[styles.instructionText, { color: "#F59E0B" }]}>
+            ⚡ Second chance — pick {cfg.count} team{cfg.count > 1 ? "s" : ""} for the {cfg.label}. Each correct pick = {cfg.pointsEach * 0.5} pts (½ points).
+          </Text>
+        </View>
+      ) : locked ? (
         <View style={styles.lockedBanner}>
           <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
           <Text style={styles.lockedBannerText}>
@@ -368,7 +386,7 @@ export default function LockedTakePicker() {
         />
       </ScrollView>
 
-      {!locked ? (
+      {canEdit ? (
         <View
           style={[
             styles.lockBar,
@@ -397,7 +415,9 @@ export default function LockedTakePicker() {
               ) : (
                 <>
                   <Ionicons name="lock-closed" size={16} color="#FFFFFF" />
-                  <Text style={styles.lockBtnText}>Lock It In</Text>
+                  <Text style={styles.lockBtnText}>
+                    {isSecondChance ? "Lock It In (½ pts)" : "Lock It In"}
+                  </Text>
                 </>
               )}
             </Pressable>

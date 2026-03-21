@@ -56,7 +56,7 @@ export async function computeAndSaveScores(
   supabase: any,
 ): Promise<{ scored: number; error: string | null }> {
   type GameResultRow = { round_id: string; matchup_id: string; winner_name: string | null; winner_score: number | null; loser_score: number | null };
-  type LockedTakeRow = { user_id: string; take_type: string; teams: string[] | null; is_submitted: boolean };
+  type LockedTakeRow = { user_id: string; take_type: string; teams: string[] | null; is_submitted: boolean; is_second_chance: boolean };
   type SpecialPickRow = { user_id: string; round_id: string; pick_type: string; matchup_id: string; picked_team: string | null; points_multiplier: number | null };
   type RankedMatchupRow = { round_id: string; pick_type: string; matchup_id: string };
 
@@ -113,7 +113,9 @@ export async function computeAndSaveScores(
     const advancedTeams = winnersByRound[roundId];
     if (!advancedTeams || advancedTeams.size === 0) continue;
 
-    const ptsEach = TAKE_POINTS[take.take_type] ?? 0;
+    const mult = take.is_second_chance ? 0.5 : 1;
+    if (take.is_second_chance) scores[take.user_id].is_second_chance = true;
+    const ptsEach = (TAKE_POINTS[take.take_type] ?? 0) * mult;
     for (const team of take.teams ?? []) {
       if (advancedTeams.has(team)) {
         scores[take.user_id][take.take_type as keyof typeof scores[string]] += ptsEach;

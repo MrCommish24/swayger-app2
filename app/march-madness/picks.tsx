@@ -70,9 +70,21 @@ function roundLabel(roundId: string): string {
 
 // ─── Lock Banner (bracket takes) ─────────────────────────────────────────────
 
-function BracketLockBanner() {
+function BracketLockBanner({ isSecondChance }: { isSecondChance: boolean }) {
   const locked = isPicksLocked();
   const formatted = formatLockDate(PICKS_LOCK_DATE);
+
+  if (locked && isSecondChance) {
+    return (
+      <View style={[styles.lockBanner, styles.lockBannerSecondChance]}>
+        <Ionicons name="flash-outline" size={14} color="#F59E0B" />
+        <Text style={[styles.lockBannerText, { color: "#F59E0B" }]}>
+          Second chance active — bracket takes earn ½ points
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.lockBanner, locked && styles.lockBannerLocked]}>
       <Ionicons
@@ -147,23 +159,28 @@ function ScoringGuide() {
 function TakeCard({
   takeType,
   take,
+  isSecondChance,
   onPress,
 }: {
   takeType: TakeType;
   take: LockedTake | undefined;
+  isSecondChance: boolean;
   onPress: () => void;
 }) {
   const cfg = TAKE_CONFIGS[takeType];
   const locked = isPicksLocked();
   const submitted = take?.is_submitted === true;
   const teams = take?.teams ?? [];
+  const canInteract = !locked || submitted || isSecondChance;
 
-  const statusColor = submitted ? GREEN : locked ? "#6B7280" : GOLD;
-  const statusIcon = submitted ? "checkmark-circle" : locked ? "lock-closed" : "radio-button-off";
+  const statusColor = submitted ? GREEN : (locked && !isSecondChance) ? "#6B7280" : GOLD;
+  const statusIcon = submitted ? "checkmark-circle" : (locked && !isSecondChance) ? "lock-closed" : "radio-button-off";
   const statusText = submitted
     ? `${teams.length}/${cfg.count} locked in`
-    : locked
+    : locked && !isSecondChance
     ? "No pick made"
+    : isSecondChance
+    ? `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""} (½ pts)`
     : `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""}`;
   const preview =
     submitted && teams.length > 0
@@ -174,12 +191,12 @@ function TakeCard({
     <Pressable
       style={({ pressed }) => [
         styles.takeCard,
-        { borderColor: submitted ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.08)" },
+        { borderColor: submitted ? "rgba(34,197,94,0.3)" : isSecondChance ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.08)" },
         pressed && styles.cardPressed,
-        locked && !submitted && styles.cardDimmed,
+        !canInteract && styles.cardDimmed,
       ]}
       onPress={onPress}
-      disabled={locked && !submitted}
+      disabled={!canInteract}
     >
       <View style={[styles.takeIconBadge, { backgroundColor: `${cfg.color}18` }]}>
         <Text style={styles.takeEmoji}>{cfg.emoji}</Text>
@@ -196,8 +213,8 @@ function TakeCard({
       </View>
       <View style={styles.takeMeta}>
         <Text style={styles.takePoints}>+{cfg.pointsEach * cfg.count}</Text>
-        <Text style={styles.takePointsLabel}>pts max</Text>
-        {!locked || submitted ? (
+        <Text style={styles.takePointsLabel}>{isSecondChance && !submitted ? "½ pts" : "pts max"}</Text>
+        {canInteract ? (
           <Ionicons
             name={submitted ? (locked ? "eye-outline" : "create-outline") : "chevron-forward"}
             size={16}
@@ -567,7 +584,7 @@ export default function PicksHub() {
           { paddingBottom: isWeb ? 34 + 100 : insets.bottom + 100 },
         ]}
       >
-        <BracketLockBanner />
+        <BracketLockBanner isSecondChance={isSecondChance} />
 
         {/* Prize strip */}
         <View style={styles.prizeStrip}>
@@ -603,6 +620,7 @@ export default function PicksHub() {
                   key={takeType}
                   takeType={takeType}
                   take={takes?.[takeType]}
+                  isSecondChance={isSecondChance}
                   onPress={() => handleTakePress(takeType)}
                 />
               ))}
@@ -799,6 +817,10 @@ const styles = StyleSheet.create({
   lockBannerLocked: {
     backgroundColor: "rgba(107,114,128,0.08)",
     borderColor: "rgba(107,114,128,0.2)",
+  },
+  lockBannerSecondChance: {
+    backgroundColor: "rgba(245,158,11,0.08)",
+    borderColor: "rgba(245,158,11,0.3)",
   },
   lockBannerText: {
     fontSize: 13,
