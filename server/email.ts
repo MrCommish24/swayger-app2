@@ -579,20 +579,13 @@ export async function sendLastChanceBlast(opts: {
 
 // ─── Second Shot Email ────────────────────────────────────────────────────────
 
-export async function sendSecondShotEmail(opts: {
-  to: string;
-  displayName: string;
-}): Promise<void> {
-  if (!process.env.RESEND_API_KEY) {
-    console.log("[email] RESEND_API_KEY not set — skipping");
-    return;
-  }
+export function buildSecondShotEmailHtml(displayName = "there"): string {
   const picksUrl = `${APP_URL}/march-madness/picks`;
   const subject = "You can still get in — second shot at the leaderboard";
   const headline = "The tournament started. You're not out yet.";
   const body = `
     <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
-      Hey ${opts.displayName},
+      Hey ${displayName},
     </p>
     <p style="margin:0 0 16px;color:#E2E8F0;font-size:15px;line-height:1.6">
       The Round of 64 bracket picks are locked — but that's not the only way to score points on the Swayger leaderboard.
@@ -646,11 +639,22 @@ export async function sendSecondShotEmail(opts: {
       <p style="margin:0;font-size:18px;font-weight:800;color:#FFFFFF;">#1 on the leaderboard wins a $100 Amazon Gift Card</p>
     </div>
   `;
+  return buildEmailHtml(subject, headline, body, "Make My Quick Picks →", picksUrl);
+}
+
+export async function sendSecondShotEmail(opts: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
   await resend.emails.send({
     from: FROM,
     to: opts.to,
-    subject,
-    html: buildEmailHtml(subject, headline, body, "Make My Quick Picks →", picksUrl),
+    subject: "You can still get in — second shot at the leaderboard",
+    html: buildSecondShotEmailHtml(opts.displayName),
   });
 }
 

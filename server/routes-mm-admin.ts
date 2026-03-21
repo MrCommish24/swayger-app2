@@ -546,6 +546,13 @@ export function registerMMAdminRoutes(app: Express): void {
     res.send(buildLastChanceBlastHtml());
   });
 
+  // Preview second-shot email
+  app.get("/admin/mm/email-preview/second-shot", (_req: Request, res: Response) => {
+    const { buildSecondShotEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildSecondShotEmailHtml("Swayger User"));
+  });
+
   // Send leaderboard blast to all registered users
   app.post("/admin/mm/api/blast-leaderboard", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
