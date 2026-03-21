@@ -52,6 +52,58 @@ function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
   );
 }
 
+const PENDING_AMBER = "#F59E0B";
+
+function PendingBanner({
+  challengeCount,
+  settlementCount,
+  onViewChallenges,
+  onViewSettlements,
+  onDismiss,
+}: {
+  challengeCount: number;
+  settlementCount: number;
+  onViewChallenges: () => void;
+  onViewSettlements: () => void;
+  onDismiss: () => void;
+}) {
+  const total = challengeCount + settlementCount;
+  if (total === 0) return null;
+
+  return (
+    <View style={bannerStyles.wrapper}>
+      <View style={bannerStyles.container}>
+        <View style={bannerStyles.left}>
+          <Ionicons name="notifications" size={18} color={PENDING_AMBER} />
+        </View>
+        <View style={bannerStyles.body}>
+          {challengeCount > 0 && (
+            <Pressable onPress={onViewChallenges} style={bannerStyles.row}>
+              <Text style={bannerStyles.text}>
+                <Text style={bannerStyles.count}>{challengeCount}</Text>
+                {challengeCount === 1 ? " challenge" : " challenges"} waiting for you
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={PENDING_AMBER} />
+            </Pressable>
+          )}
+          {settlementCount > 0 && (
+            <Pressable onPress={onViewSettlements} style={bannerStyles.row}>
+              <Text style={bannerStyles.text}>
+                <Text style={bannerStyles.count}>{settlementCount}</Text>
+                {settlementCount === 1 ? " settlement" : " settlements"} to review
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={PENDING_AMBER} />
+            </Pressable>
+          )}
+        </View>
+        <Pressable onPress={onDismiss} style={bannerStyles.dismiss} hitSlop={8}>
+          <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const GOLD = "#F5A623";
 
 function StatsStrip({
@@ -147,6 +199,16 @@ export default function DashboardScreen() {
 
   type FilterKey = "all" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const challengeCount = useMemo(
+    () => swaygers.filter((s) => s.status === "pending_invite" && s.creator_id !== user?.id).length,
+    [swaygers, user?.id]
+  );
+  const settlementCount = useMemo(
+    () => swaygers.filter((s) => s.status === "settlement_proposed").length,
+    [swaygers]
+  );
 
   const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
 
@@ -284,6 +346,16 @@ export default function DashboardScreen() {
 
       {!isLoading && !error && user && (
         <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
+      )}
+
+      {!isLoading && !bannerDismissed && (
+        <PendingBanner
+          challengeCount={challengeCount}
+          settlementCount={settlementCount}
+          onViewChallenges={() => setActiveFilter("pending")}
+          onViewSettlements={() => setActiveFilter("active")}
+          onDismiss={() => setBannerDismissed(true)}
+        />
       )}
 
       <MarchMadnessBanner onPress={() => router.push("/march-madness")} />
@@ -448,6 +520,48 @@ export default function DashboardScreen() {
     </View>
   );
 }
+
+const bannerStyles = StyleSheet.create({
+  wrapper: {
+    marginHorizontal: 24,
+    marginBottom: 12,
+  },
+  container: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    backgroundColor: "rgba(245,158,11,0.10)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.35)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  left: {
+    paddingRight: 2,
+  },
+  body: {
+    flex: 1,
+    gap: 4,
+  },
+  row: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  text: {
+    fontSize: 13,
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  count: {
+    fontWeight: "700" as const,
+    color: PENDING_AMBER,
+  },
+  dismiss: {
+    paddingLeft: 4,
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },

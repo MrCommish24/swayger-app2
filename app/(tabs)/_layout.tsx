@@ -3,8 +3,12 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
+import { useAuth } from "@/lib/auth-context";
+import { fetchMySwaygers } from "@/lib/swayger";
+import { SwaygerData } from "@/types";
 
 // Safely check for liquid glass — expo-glass-effect requires a custom native build
 // and is not available in Expo Go, so we lazy-require to avoid a top-level crash.
@@ -18,7 +22,7 @@ function checkLiquidGlass(): boolean {
   }
 }
 
-function NativeTabLayout() {
+function NativeTabLayout({ badgeCount }: { badgeCount: number }) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { NativeTabs, Icon, Label } = require("expo-router/unstable-native-tabs");
@@ -43,11 +47,11 @@ function NativeTabLayout() {
       </NativeTabs>
     );
   } catch {
-    return <ClassicTabLayout />;
+    return <ClassicTabLayout badgeCount={badgeCount} />;
   }
 }
 
-function ClassicTabLayout() {
+function ClassicTabLayout({ badgeCount }: { badgeCount: number }) {
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
 
@@ -77,6 +81,7 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "Swaygers",
+          tabBarBadge: badgeCount > 0 ? badgeCount : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="flash-outline" color={color} size={size} />
           ),
@@ -114,8 +119,23 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
+  const { user } = useAuth();
+
+  const { data: swaygers = [] } = useQuery<SwaygerData[]>({
+    queryKey: ["swaygers", "mine", user?.id],
+    queryFn: () => fetchMySwaygers(user!.id),
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+
+  const badgeCount = swaygers.filter((s) => {
+    if (s.status === "pending_invite" && s.creator_id !== user?.id) return true;
+    if (s.status === "settlement_proposed") return true;
+    return false;
+  }).length;
+
   if (checkLiquidGlass()) {
-    return <NativeTabLayout />;
+    return <NativeTabLayout badgeCount={badgeCount} />;
   }
-  return <ClassicTabLayout />;
+  return <ClassicTabLayout badgeCount={badgeCount} />;
 }
