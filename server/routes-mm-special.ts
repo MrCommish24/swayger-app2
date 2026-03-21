@@ -304,6 +304,255 @@ const CURATED_R64_UPSETS: RankedMatchup[] = [
   },
 ];
 
+// ─── Curated Round-32 matchup candidates ─────────────────────────────────────
+// Based on confirmed R64 results (through Mar 20, 2026).
+// TBD opponents noted where Mar 20 games were still in progress.
+// matchupId keys must be used consistently when admin enters game results.
+
+const CURATED_R32_UPSETS: RankedMatchup[] = [
+  {
+    matchupId: "r32-west-highpoint-arkansas",
+    teamA: "High Point", seedA: 12,
+    teamB: "Arkansas",   seedB: 4,
+    region: "West",
+    rank: 1,
+    favoriteTeam: "Arkansas",  favoriteSeed: 4,
+    underdogTeam: "High Point", underdogSeed: 12,
+    upsetProbability: 0.35,
+    spread: 8.5,
+    underdogMoneyline: 230,
+    overUnder: 145,
+    gameDate: "Mar 22",
+    site: "Portland, OR",
+    oddsSource: "seed-based",
+    keyStat: "High Point already stunned Wisconsin 83-82 — momentum is real",
+  },
+  {
+    matchupId: "r32-south-vcu-illinois",
+    teamA: "VCU",      seedA: 11,
+    teamB: "Illinois", seedB: 3,
+    region: "South",
+    rank: 2,
+    favoriteTeam: "Illinois", favoriteSeed: 3,
+    underdogTeam: "VCU",      underdogSeed: 11,
+    upsetProbability: 0.30,
+    spread: 6.5,
+    underdogMoneyline: 200,
+    overUnder: 140,
+    gameDate: "Mar 22",
+    site: "Greenville, SC",
+    oddsSource: "seed-based",
+    keyStat: "VCU just upset #6 North Carolina — tournament mode unlocked",
+  },
+  {
+    matchupId: "r32-west-texas-gonzaga",
+    teamA: "Texas",   seedA: 11,
+    teamB: "Gonzaga", seedB: 3,
+    region: "West",
+    rank: 3,
+    favoriteTeam: "Gonzaga", favoriteSeed: 3,
+    underdogTeam: "Texas",   underdogSeed: 11,
+    upsetProbability: 0.28,
+    spread: 7.5,
+    underdogMoneyline: 210,
+    overUnder: 152,
+    gameDate: "Mar 22",
+    site: "Portland, OR",
+    oddsSource: "seed-based",
+    keyStat: "Texas upset BYU in R64; Gonzaga hasn't won a title despite 6 Final Fours",
+  },
+  {
+    matchupId: "r32-south-texasam-houston",
+    teamA: "Texas A&M", seedA: 10,
+    teamB: "Houston",   seedB: 2,
+    region: "South",
+    rank: 4,
+    favoriteTeam: "Houston",   favoriteSeed: 2,
+    underdogTeam: "Texas A&M", underdogSeed: 10,
+    upsetProbability: 0.25,
+    spread: 8.0,
+    underdogMoneyline: 220,
+    overUnder: 134,
+    gameDate: "Mar 22",
+    site: "Oklahoma City, OK",
+    oddsSource: "seed-based",
+    keyStat: "Texas A&M upset #7 Saint Mary's — defense travels in March",
+  },
+  {
+    matchupId: "r32-midwest-stlouis-michigan",
+    teamA: "Saint Louis", seedA: 9,
+    teamB: "Michigan",    seedB: 1,
+    region: "Midwest",
+    rank: 5,
+    favoriteTeam: "Michigan",    favoriteSeed: 1,
+    underdogTeam: "Saint Louis", underdogSeed: 9,
+    upsetProbability: 0.18,
+    spread: 10.5,
+    underdogMoneyline: 280,
+    overUnder: 138,
+    gameDate: "Mar 22",
+    site: "Buffalo, NY",
+    oddsSource: "seed-based",
+    keyStat: "Saint Louis beat Georgia by 25 — their defense is suffocating",
+  },
+];
+
+const CURATED_R32_BLOWOUT: RankedMatchup[] = [
+  {
+    matchupId: "r32-south-florida-iowa",
+    teamA: "Florida", seedA: 1,
+    teamB: "Iowa",    seedB: 9,
+    region: "South",
+    rank: 1,
+    favoriteTeam: "Florida", favoriteSeed: 1,
+    underdogTeam: "Iowa",    underdogSeed: 9,
+    spread: 14.5,
+    overUnder: 145,
+    gameDate: "Mar 21",
+    site: "Tampa, FL",
+    oddsSource: "seed-based",
+    keyStat: "Florida is the nation's #1 team and hasn't allowed 70+ pts in 3 weeks",
+  },
+  {
+    matchupId: "r32-midwest-michigan-stlouis",
+    teamA: "Michigan",    seedA: 1,
+    teamB: "Saint Louis", seedB: 9,
+    region: "Midwest",
+    rank: 2,
+    favoriteTeam: "Michigan",    favoriteSeed: 1,
+    underdogTeam: "Saint Louis", underdogSeed: 9,
+    spread: 10.5,
+    overUnder: 138,
+    gameDate: "Mar 22",
+    site: "Buffalo, NY",
+    oddsSource: "seed-based",
+    keyStat: "Michigan averaged +18.5 margin in final 5 regular-season wins",
+  },
+  {
+    matchupId: "r32-west-arizona-utahst",
+    teamA: "Arizona",   seedA: 1,
+    teamB: "Utah State", seedB: 9,
+    region: "West",
+    rank: 3,
+    favoriteTeam: "Arizona",   favoriteSeed: 1,
+    underdogTeam: "Utah State", underdogSeed: 9,
+    spread: 12.5,
+    overUnder: 143,
+    gameDate: "Mar 22",
+    site: "San Diego, CA",
+    oddsSource: "seed-based",
+    keyStat: "Arizona's defense held LIU to 58 points — elite interior defense",
+  },
+  {
+    matchupId: "r32-east-michst-louisville",
+    teamA: "Michigan St.", seedA: 3,
+    teamB: "Louisville",   seedB: 6,
+    region: "East",
+    rank: 4,
+    favoriteTeam: "Michigan St.", favoriteSeed: 3,
+    underdogTeam: "Louisville",   underdogSeed: 6,
+    spread: 4.5,
+    overUnder: 136,
+    gameDate: "Mar 21",
+    site: "Raleigh, NC",
+    oddsSource: "seed-based",
+    keyStat: "Michigan St's Izzo-coached teams cover the spread in 71% of tournament games",
+  },
+  {
+    matchupId: "r32-midwest-texastech-alabama",
+    teamA: "Texas Tech", seedA: 5,
+    teamB: "Alabama",    seedB: 4,
+    region: "Midwest",
+    rank: 5,
+    favoriteTeam: "Alabama",    favoriteSeed: 4,
+    underdogTeam: "Texas Tech", underdogSeed: 5,
+    spread: 1.5,
+    overUnder: 143,
+    gameDate: "Mar 22",
+    site: "Tampa, FL",
+    oddsSource: "seed-based",
+    keyStat: "Alabama is a slight favorite but this is essentially a coin flip",
+  },
+];
+
+const CURATED_R32_HIGH_SCORER: RankedMatchup[] = [
+  {
+    matchupId: "r32-west-texas-gonzaga",
+    teamA: "Texas",   seedA: 11,
+    teamB: "Gonzaga", seedB: 3,
+    region: "West",
+    rank: 1,
+    favoriteTeam: "Gonzaga", favoriteSeed: 3,
+    underdogTeam: "Texas",   underdogSeed: 11,
+    spread: 7.5,
+    overUnder: 152,
+    gameDate: "Mar 22",
+    site: "Portland, OR",
+    oddsSource: "seed-based",
+    keyStat: "Gonzaga plays at the 4th fastest pace in the nation (76+ possessions/game)",
+  },
+  {
+    matchupId: "r32-south-florida-iowa",
+    teamA: "Florida", seedA: 1,
+    teamB: "Iowa",    seedB: 9,
+    region: "South",
+    rank: 2,
+    favoriteTeam: "Florida", favoriteSeed: 1,
+    underdogTeam: "Iowa",    underdogSeed: 9,
+    spread: 14.5,
+    overUnder: 145,
+    gameDate: "Mar 21",
+    site: "Tampa, FL",
+    oddsSource: "seed-based",
+    keyStat: "Iowa averages 83.4 ppg — they need to outscore teams to stay alive",
+  },
+  {
+    matchupId: "r32-west-arizona-utahst",
+    teamA: "Arizona",    seedA: 1,
+    teamB: "Utah State", seedB: 9,
+    region: "West",
+    rank: 3,
+    favoriteTeam: "Arizona",    favoriteSeed: 1,
+    underdogTeam: "Utah State", underdogSeed: 9,
+    spread: 12.5,
+    overUnder: 143,
+    gameDate: "Mar 22",
+    site: "San Diego, CA",
+    oddsSource: "seed-based",
+    keyStat: "Arizona averages 84.2 ppg — top 5 nationally in offensive efficiency",
+  },
+  {
+    matchupId: "r32-midwest-texastech-alabama",
+    teamA: "Texas Tech", seedA: 5,
+    teamB: "Alabama",    seedB: 4,
+    region: "Midwest",
+    rank: 4,
+    favoriteTeam: "Alabama",    favoriteSeed: 4,
+    underdogTeam: "Texas Tech", underdogSeed: 5,
+    spread: 1.5,
+    overUnder: 143,
+    gameDate: "Mar 22",
+    site: "Tampa, FL",
+    oddsSource: "seed-based",
+    keyStat: "Alabama's up-tempo style + Texas Tech's pace = high-scoring affair expected",
+  },
+  {
+    matchupId: "r32-south-vcu-illinois",
+    teamA: "VCU",      seedA: 11,
+    teamB: "Illinois", seedB: 3,
+    region: "South",
+    rank: 5,
+    favoriteTeam: "Illinois", favoriteSeed: 3,
+    underdogTeam: "VCU",      underdogSeed: 11,
+    spread: 6.5,
+    overUnder: 140,
+    gameDate: "Mar 22",
+    site: "Greenville, SC",
+    oddsSource: "seed-based",
+    keyStat: "Illinois averages 9.8 made three-pointers per game — peaking at right time",
+  },
+];
+
 // ─── Server-side 30-minute cache ─────────────────────────────────────────────
 
 const matchupCache = new Map<string, { data: unknown; fetchedAt: number }>();
@@ -332,11 +581,22 @@ function buildSeedBasedMatchups(roundId: string): {
   blowout: RankedMatchup[];
   highScorer: RankedMatchup[];
 } {
+  // ── Round of 32: return curated lists based on confirmed R64 results ──────
+  if (roundId === "round-32") {
+    const counts = CANDIDATE_COUNTS["round-32"];
+    return {
+      upset:      CURATED_R32_UPSETS.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
+      blowout:    CURATED_R32_BLOWOUT.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
+      highScorer: CURATED_R32_HIGH_SCORER.slice(0, counts.high_scorer).map((m, i) => ({ ...m, rank: i + 1 })),
+    };
+  }
+
+  // ── For Sweet 16 and beyond: auto-build from whatever matchup data is available ──
   if (roundId !== "round-64") {
-    // For later rounds, TBD teams — return empty ranked lists
     return { upset: [], blowout: [], highScorer: [] };
   }
 
+  // ── Round of 64: auto-build from full bracket ─────────────────────────────
   const all: RankedMatchup[] = [];
   for (const region of REGIONS) {
     const games = FULL_BRACKET[region];
@@ -358,8 +618,8 @@ function buildSeedBasedMatchups(roundId: string): {
         underdogTeam: g.team2,
         underdogSeed: g.seed2,
         upsetProbability: upsetProb,
-        spread: seedDiff * 1.8,    // rough approximation: ~1.8 pts per seed
-        overUnder: 140 - seedDiff, // lower seed diff → closer game → higher combined score
+        spread: seedDiff * 1.8,
+        overUnder: 140 - seedDiff,
         gameDate: (g as { date?: string }).date,
         site: (g as { site?: string }).site,
         oddsSource: "seed-based",
@@ -367,21 +627,15 @@ function buildSeedBasedMatchups(roundId: string): {
     }
   }
 
-  // Upset: rank by upset probability descending
-  const upsetSorted = [...all].sort((a, b) => (b.upsetProbability ?? 0) - (a.upsetProbability ?? 0));
-
-  // Blowout: rank by seed differential descending (bigger gap = likely bigger blowout)
-  const blowoutSorted = [...all].sort((a, b) => (b.seedB - b.seedA) - (a.seedB - a.seedA));
-
-  // High scorer: rank by seed differential ascending (closer game = higher combined score)
-  // Closer matchups (small seed diff) tend to be higher-scoring competitive games
+  const upsetSorted    = [...all].sort((a, b) => (b.upsetProbability ?? 0) - (a.upsetProbability ?? 0));
+  const blowoutSorted  = [...all].sort((a, b) => (b.seedB - b.seedA) - (a.seedB - a.seedA));
   const highScorerSorted = [...all].sort((a, b) => (a.seedB - a.seedA) - (b.seedB - b.seedA));
 
   const counts = CANDIDATE_COUNTS[roundId] ?? { upset: 5, blowout: 5, high_scorer: 5 };
 
   return {
-    upset: upsetSorted.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
-    blowout: blowoutSorted.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
+    upset:      upsetSorted.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
+    blowout:    blowoutSorted.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
     highScorer: highScorerSorted.slice(0, counts.high_scorer).map((m, i) => ({ ...m, rank: i + 1 })),
   };
 }
@@ -471,18 +725,24 @@ async function buildOddsBasedMatchups(roundId: string): Promise<{
 
     const counts = CANDIDATE_COUNTS[roundId] ?? { upset: 5, blowout: 5, high_scorer: 5 };
 
+    // Filter to only recognized tournament teams (seed > 0 for at least one team)
+    // This prevents NIT/CBI games from polluting the tournament candidate lists.
+    const tournamentMatchups = matchups.filter((m) => m.seedA > 0 || m.seedB > 0);
+
     // Sort: upset by underdog moneyline desc (+800 > +300 = bigger underdog)
-    const upsetSorted = [...matchups]
-      .filter((m) => m.underdogMoneyline !== undefined && m.underdogMoneyline > 0)
+    // Cap at +900: above that the underdog has <10% chance — not a meaningful pick.
+    // Lower cutoff at +120: anything below is essentially a pick 'em, not an upset.
+    const upsetSorted = [...tournamentMatchups]
+      .filter((m) => m.underdogMoneyline !== undefined && m.underdogMoneyline > 120 && m.underdogMoneyline <= 900)
       .sort((a, b) => (b.underdogMoneyline ?? 0) - (a.underdogMoneyline ?? 0));
 
     // Sort: blowout by spread desc (bigger spread = expected bigger margin)
-    const blowoutSorted = [...matchups]
+    const blowoutSorted = [...tournamentMatchups]
       .filter((m) => m.spread !== undefined)
       .sort((a, b) => (b.spread ?? 0) - (a.spread ?? 0));
 
     // Sort: high scorer by over/under desc
-    const highScorerSorted = [...matchups]
+    const highScorerSorted = [...tournamentMatchups]
       .filter((m) => m.overUnder !== undefined)
       .sort((a, b) => (b.overUnder ?? 0) - (a.overUnder ?? 0));
 
