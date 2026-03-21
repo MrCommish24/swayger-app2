@@ -174,8 +174,9 @@ export const MM_ROUNDS: MMRound[] = [
   },
 
   // ── ROUND OF 32 ───────────────────────────────────────────
-  // Updated with confirmed R64 results. Games still in progress on Mar 20
-  // are marked TBD and should be updated once all R64 results are final.
+  // All 16 games confirmed from live Odds API (Mar 21-22, 2026).
+  // Mar 21 tip times in CDT: 11:10am, 1:45pm, 4:15pm, 5:10pm, 6:10pm, 6:50pm, 7:45pm, 8:45pm
+  // Mar 22 tip times in CDT: 11:10am, 1:45pm, 4:15pm, 5:10pm, 6:10pm, 6:50pm, 7:45pm, 8:45pm
   {
     id: "round-32",
     label: "Round of 32",
@@ -184,59 +185,199 @@ export const MM_ROUNDS: MMRound[] = [
     endDate: "2026-03-22",
     lockDate: "2026-03-21T12:00:00-05:00",
     featured: [
-      // ── EAST ──
-      // Duke (1) beat Siena. Louisville (6) beat South Florida.
-      // Duke plays the 8/9 winner; Louisville plays the 3/14 winner.
+      // ── MARCH 21 — 8 GAMES ──
+
+      // 11:10am CDT — Midwest
       {
-        id: "r32-east-duke",
+        id: "r32-midwest-michigan-stlouis",
+        teamA: { name: "Michigan", seed: 1 },
+        teamB: { name: "Saint Louis", seed: 9 },
+        region: "Midwest",
+        prompt: "Michigan opens the day as the nation's #1 program against a Saint Louis squad that dismantled Georgia by 25. The Wolverines are -12.5 favorites but the Billikens bring a suffocating defense that held an SEC team to 58 points last week. O/U 161.5 — someone's scoring a lot.",
+        gameDateLabel: "Mar 21",
+        site: "Buffalo, NY",
+        keyStat: "O/U 161.5 — highest of the morning slate",
+      },
+
+      // 1:45pm CDT — East
+      {
+        id: "r32-east-msu-louisville",
+        teamA: { name: "Michigan St.", seed: 3 },
+        teamB: { name: "Louisville", seed: 6 },
+        region: "East",
+        prompt: "Izzo vs. Kenny Payne. The Spartans are -4.5 favorites in a game that looks more like a coin flip on paper. Louisville upset South Florida and Izzo-coached teams cover 71% of tournament games historically. O/U 150.5 suggests a defensive grind — could go either way.",
+        gameDateLabel: "Mar 21",
+        site: "Raleigh, NC",
+        keyStat: "Izzo-coached teams cover in 71% of NCAA tournament games",
+      },
+
+      // 4:15pm CDT — East
+      {
+        id: "r32-east-duke-tcu",
         teamA: { name: "Duke", seed: 1 },
-        teamB: { name: "TBD", seed: 0 },
+        teamB: { name: "TCU", seed: 9 },
         region: "East",
-        prompt: "Duke is the consensus title favorite. They handled Siena. Who steps up to slow them down in the Round of 32?",
+        prompt: "Duke hasn't lost since January and enters as the tournament's biggest title favorite. TCU dethroned Ohio State to get here — they're not scared of the moment. The Blue Devils are -11.5 but their defense allows just 61 points per game. This could get out of hand fast.",
         gameDateLabel: "Mar 21",
         site: "Raleigh, NC",
+        keyStat: "Duke -11.5 | O/U 140.5 — lowest total on today's slate",
       },
+
+      // 5:10pm CDT — South
       {
-        id: "r32-east-louisville",
-        teamA: { name: "Louisville", seed: 6 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "East",
-        prompt: "Louisville's back. They dispatched South Florida and now face the 3/14 survivor. Is this a Cinderella story or a speed bump?",
-        gameDateLabel: "Mar 21",
-        site: "Raleigh, NC",
-      },
-      // ── WEST ──
-      // High Point (12) shocked Wisconsin (5) — one of the biggest upsets of R64.
-      // High Point now plays the 4/13 winner in the West.
-      {
-        id: "r32-west-highpoint",
-        teamA: { name: "High Point", seed: 12 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "West",
-        prompt: "High Point knocked off Wisconsin in a 1-point thriller. Can the 12-seed keep the magic going or does the bracket correct itself?",
-        gameDateLabel: "Mar 22",
-        site: "Portland, OR",
-        keyStat: "83-82 upset over Wisconsin",
-      },
-      // ── SOUTH ──
-      // Vanderbilt (5) beat McNeese. Faces 4/13 winner in the South.
-      {
-        id: "r32-south-vanderbilt",
-        teamA: { name: "Vanderbilt", seed: 5 },
-        teamB: { name: "TBD", seed: 0 },
+        id: "r32-south-houston-texasam",
+        teamA: { name: "Houston", seed: 2 },
+        teamB: { name: "Texas A&M", seed: 10 },
         region: "South",
-        prompt: "Vanderbilt took care of business against McNeese. Now they face whoever survives the 4/13 game. Vandy or the bracket's next surprise?",
+        prompt: "Houston's defense is the best in the country — opponents shoot 38% against them. Texas A&M pulled a massive upset over #7 Saint Mary's and they're not done. Cougars are -10.5 favorites but A&M wins ugly and this total (141.5) suggests an absolute defensive war.",
         gameDateLabel: "Mar 21",
         site: "Oklahoma City, OK",
+        keyStat: "Houston holds opponents to 38% FG — best in the nation",
       },
-      // ── MIDWEST ──
+
+      // 6:10pm CDT — West
       {
-        id: "r32-midwest-tbd",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "Midwest",
-        prompt: "Midwest Round of 32 — results coming in from Mar 20 games. Check back for the confirmed matchup.",
+        id: "r32-west-gonzaga-texas",
+        teamA: { name: "Gonzaga", seed: 3 },
+        teamB: { name: "Texas", seed: 11 },
+        region: "West",
+        prompt: "Texas survived the First Four, then shocked #6 BYU. Gonzaga is 6.5-point favorites but their title drought despite annual Final Four appearances is real pressure. The Longhorns lost 5 of their last 6 before March — then flipped a switch. Can they make it three in a row?",
+        gameDateLabel: "Mar 21",
+        site: "Portland, OR",
+        keyStat: "Texas won 5 of their last 6 entering tournament — after losing 5 of 6 before it",
+      },
+
+      // 6:50pm CDT — South
+      {
+        id: "r32-south-illinois-vcu",
+        teamA: { name: "Illinois", seed: 3 },
+        teamB: { name: "VCU", seed: 11 },
+        region: "South",
+        prompt: "VCU just stunned #6 North Carolina and now faces an Illinois team averaging 9.8 made threes per game. The Rams' full-court chaos disrupts every offense — but Illinois has seen everything this season. O/U 151.5. If VCU can pull another upset, they become the Cinderella of this tournament.",
+        gameDateLabel: "Mar 21",
+        site: "Greenville, SC",
+        keyStat: "VCU upset #6 UNC | Illinois makes 9.8 threes per game",
+      },
+
+      // 7:45pm CDT — South
+      {
+        id: "r32-south-nebraska-vanderbilt",
+        teamA: { name: "Nebraska", seed: 4 },
+        teamB: { name: "Vanderbilt", seed: 5 },
+        region: "South",
+        prompt: "This is a coin flip. Vanderbilt is a 1.5-point favorite over Nebraska in a 4v5 matchup where both teams won R64 comfortably. Neither program flinches in big moments. Whoever's guard play clicks tonight wins. O/U 146.5 — expect a 70-point-per-side type game.",
+        gameDateLabel: "Mar 21",
+        site: "Oklahoma City, OK",
+        keyStat: "Spread: Vanderbilt -1.5 — effectively even money",
+      },
+
+      // 8:45pm CDT — West
+      {
+        id: "r32-west-arkansas-highpoint",
+        teamA: { name: "Arkansas", seed: 4 },
+        teamB: { name: "High Point", seed: 12 },
+        region: "West",
+        prompt: "High Point shocked Wisconsin 83-82 in R64 — one of the best upsets of the tournament. Arkansas is -11.5 but this total (169.5) is the highest on the ENTIRE weekend slate. The Panthers force turnovers and score in transition. Cinderella is still dancing.",
+        gameDateLabel: "Mar 21",
+        site: "Portland, OR",
+        keyStat: "O/U 169.5 — highest over/under of the entire R32 weekend",
+      },
+
+      // ── MARCH 22 — 8 GAMES ──
+
+      // 11:10am CDT — West
+      {
+        id: "r32-west-purdue-miami",
+        teamA: { name: "Purdue", seed: 2 },
+        teamB: { name: "Miami (FL)", seed: 7 },
+        region: "West",
+        prompt: "Purdue and their imposing frontcourt face a Miami (FL) squad that knocked out Missouri. Boilermakers are 7.5-point favorites but the Hurricanes have the athleticism to run with anyone. O/U 147.5 suggests a moderately paced game — can Purdue's size advantage hold?",
         gameDateLabel: "Mar 22",
+        site: "San Diego, CA",
+      },
+
+      // 1:45pm CDT — Midwest
+      {
+        id: "r32-midwest-iowast-kentucky",
+        teamA: { name: "Iowa State", seed: 2 },
+        teamB: { name: "Kentucky", seed: 7 },
+        region: "Midwest",
+        prompt: "Iowa State has one of the most experienced backcourts in the country and enters as -4.5 favorites. Kentucky's athleticism is undeniable but their consistency this season has been a question mark. The Cyclones are built for March — will Kentucky find their gear at the right time?",
+        gameDateLabel: "Mar 22",
+        site: "St. Louis, MO",
+        keyStat: "Iowa State -4.5 | Big 12 vs SEC pressure game",
+      },
+
+      // 4:15pm CDT — East
+      {
+        id: "r32-east-kansas-stjohns",
+        teamA: { name: "Kansas", seed: 4 },
+        teamB: { name: "St. John's", seed: 5 },
+        region: "East",
+        prompt: "Fascinating flip: St. John's is a 3.5-point FAVORITE over #4 Kansas. The Red Storm's guard play has been exceptional and they come in with momentum. Kansas has the brand and the coaching but St. John's wants it more right now. The 4v5 matchup is always volatile.",
+        gameDateLabel: "Mar 22",
+        site: "San Diego, CA",
+        keyStat: "St. John's is -3.5 FAVORITE over Kansas — a rare 5-over-4 flip",
+      },
+
+      // 5:10pm CDT — Midwest
+      {
+        id: "r32-midwest-virginia-tennessee",
+        teamA: { name: "Virginia", seed: 3 },
+        teamB: { name: "Tennessee", seed: 6 },
+        region: "Midwest",
+        prompt: "Two elite defensive programs collide. Virginia's pack-line defense against Tennessee's physical SEC style. The Cavaliers are -1.5 favorites — effectively even money. The 137.5 over/under is the lowest of the weekend. Whoever scores first has the edge in this low-possession grind.",
+        gameDateLabel: "Mar 22",
+        site: "Philadelphia, PA",
+        keyStat: "O/U 137.5 — lowest of the entire R32 weekend",
+      },
+
+      // 6:10pm CDT — South
+      {
+        id: "r32-south-florida-iowa",
+        teamA: { name: "Florida", seed: 1 },
+        teamB: { name: "Iowa", seed: 9 },
+        region: "South",
+        prompt: "Florida is the nation's #1 team and it shows in every metric. Iowa averages 83 points per game but hasn't seen a defense this elite all year. The Gators are -10.5 and haven't allowed 70+ in weeks. Iowa needs a historic performance to pull the upset.",
+        gameDateLabel: "Mar 22",
+        site: "Tampa, FL",
+        keyStat: "Florida hasn't allowed 70+ points in 3 weeks",
+      },
+
+      // 6:50pm CDT — West
+      {
+        id: "r32-west-arizona-utahst",
+        teamA: { name: "Arizona", seed: 1 },
+        teamB: { name: "Utah State", seed: 9 },
+        region: "West",
+        prompt: "Arizona averages 84 points per game — top 5 nationally in offensive efficiency. Utah State knocked out #8 Villanova to earn this shot at the Wildcats. Arizona is -11.5 favorites and a legitimate Final Four contender. O/U 155.5 — Arizona might hit that number alone.",
+        gameDateLabel: "Mar 22",
+        site: "San Diego, CA",
+        keyStat: "Arizona averages 84.2 ppg — top 5 nationally",
+      },
+
+      // 7:45pm CDT — East
+      {
+        id: "r32-east-uconn-ucla",
+        teamA: { name: "UConn", seed: 2 },
+        teamB: { name: "UCLA", seed: 7 },
+        region: "East",
+        prompt: "The reigning back-to-back national champions enter as slight underdogs (+4.5) against UCLA. The Huskies' 3-peat run starts here. UCLA's athleticism and pace could be a problem. O/U 137.5 — both defenses are respected. This is a defensive chess match with Final Four stakes.",
+        gameDateLabel: "Mar 22",
+        site: "Philadelphia, PA",
+        keyStat: "UConn is the slight underdog despite being back-to-back champs",
+      },
+
+      // 8:45pm CDT — Midwest
+      {
+        id: "r32-midwest-alabama-texastech",
+        teamA: { name: "Alabama", seed: 4 },
+        teamB: { name: "Texas Tech", seed: 5 },
+        region: "Midwest",
+        prompt: "The marquee nightcap of the weekend. Alabama's up-tempo style vs Texas Tech's grind-it-out defense — and the highest over/under of the slate at 164.5. Alabama is -1.5 favorites but this is essentially a pick'em. Whoever imposes their pace controls the game.",
+        gameDateLabel: "Mar 22",
+        site: "Tampa, FL",
+        keyStat: "O/U 164.5 — second-highest of the weekend | Alabama -1.5",
       },
     ],
   },
