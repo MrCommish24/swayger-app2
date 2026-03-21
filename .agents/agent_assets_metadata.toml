@@ -30,3 +30,9 @@ id = "irsK6iia--WFQ7JwEIsHP"
 uri = "file://docs/swayger-email-catalog.md"
 type = "text"
 title = "Swayger Email Catalog"
+
+[[outputs]]
+id = "n7GXbrmQFoEiHSIIdo1lW"
+uri = "file://attached_assets/generated_images/swayger-r32-instagram.png"
+type = "image"
+title = "Swayger — R32 Instagram Post"
