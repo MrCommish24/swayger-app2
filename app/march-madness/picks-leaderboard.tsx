@@ -85,6 +85,11 @@ function LeaderboardRow({
               <Text style={styles.meBadgeText}>You</Text>
             </View>
           ) : null}
+          {entry.is_second_chance ? (
+            <View style={styles.secondChanceBadge}>
+              <Text style={styles.secondChanceBadgeText}>½ pts</Text>
+            </View>
+          ) : null}
         </View>
         {entry.total_points > 0 ? <ScoreBreakdown score={entry} /> : (
           <Text style={styles.rowNoPoints}>No points yet</Text>
@@ -387,6 +392,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700" as const,
     color: Colors.dark.tint,
+  },
+  secondChanceBadge: {
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  secondChanceBadgeText: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    color: "#F59E0B",
   },
   rowNoPoints: {
     fontSize: 11,

@@ -76,6 +76,7 @@ export interface SpecialPick {
   matchup_id: string;
   picked_team: string | null;
   created_at: string;
+  points_multiplier: number;
 }
 
 export interface RankedMatchup {
@@ -140,6 +141,7 @@ export interface PickScore {
   correct_blowouts: number;
   correct_high_scorers: number;
   updated_at: string;
+  is_second_chance?: boolean;
   username?: string;
   display_name?: string | null;
 }
@@ -498,12 +500,29 @@ export async function fetchMySpecialPicks(
   return (data ?? []) as SpecialPick[];
 }
 
+// Returns whether a user is on "second chance" mode:
+// - R64 must be locked (past deadline)
+// - User must have zero full-price picks (never picked before the deadline)
+// Users with even a single full-price pick are ineligible.
+export async function fetchSecondChanceStatus(userId: string): Promise<boolean> {
+  if (!isRoundLocked("round-64")) return false;
+
+  const { count } = await supabase
+    .from("mm_special_picks")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("points_multiplier", 1.0);
+
+  return (count ?? 0) === 0;
+}
+
 export async function saveSpecialPick(
   userId: string,
   roundId: string,
   pickType: SpecialPickType,
   matchupId: string,
   pickedTeam: string | null,
+  multiplier: number = 1.0,
 ): Promise<{ error: string | null }> {
   if (isRoundLocked(roundId)) return { error: "Picks for this round are locked." };
 
@@ -551,6 +570,7 @@ export async function saveSpecialPick(
     pick_type: pickType,
     matchup_id: matchupId,
     picked_team: pickedTeam,
+    points_multiplier: multiplier,
   });
   return { error: error?.message ?? null };
 }

@@ -57,7 +57,7 @@ export async function computeAndSaveScores(
 ): Promise<{ scored: number; error: string | null }> {
   type GameResultRow = { round_id: string; matchup_id: string; winner_name: string | null; winner_score: number | null; loser_score: number | null };
   type LockedTakeRow = { user_id: string; take_type: string; teams: string[] | null; is_submitted: boolean };
-  type SpecialPickRow = { user_id: string; round_id: string; pick_type: string; matchup_id: string; picked_team: string | null };
+  type SpecialPickRow = { user_id: string; round_id: string; pick_type: string; matchup_id: string; picked_team: string | null; points_multiplier: number | null };
   type RankedMatchupRow = { round_id: string; pick_type: string; matchup_id: string };
 
   const { data: resultsRaw, error: resultsErr } = await supabase
@@ -86,6 +86,7 @@ export async function computeAndSaveScores(
       correct_blowouts: number;
       high_scorer: number;
       correct_high_scorers: number;
+      is_second_chance: boolean;
     }
   > = {};
 
@@ -95,6 +96,7 @@ export async function computeAndSaveScores(
       upset: 0, correct_upsets: 0,
       blowout: 0, correct_blowouts: 0,
       high_scorer: 0, correct_high_scorers: 0,
+      is_second_chance: false,
     };
   }
 
@@ -178,6 +180,9 @@ export async function computeAndSaveScores(
   for (const pick of specialPicks) {
     if (!scores[pick.user_id]) scores[pick.user_id] = emptyScore();
 
+    const mult = pick.points_multiplier ?? 1;
+    if (mult < 1) scores[pick.user_id].is_second_chance = true;
+
     if (pick.pick_type === "upset") {
       // Scope to the presented pool when pool data is available.
       // If the pool is empty (table not yet populated), fall back to natural
@@ -189,19 +194,19 @@ export async function computeAndSaveScores(
         (r) => r.round_id === pick.round_id && r.matchup_id === pick.matchup_id,
       );
       if (resultForGame && resultForGame.winner_name === pick.picked_team) {
-        scores[pick.user_id].upset += UPSET_POINTS;
+        scores[pick.user_id].upset += UPSET_POINTS * mult;
         scores[pick.user_id].correct_upsets += 1;
       }
     } else if (pick.pick_type === "blowout") {
       const winningMatchup = biggestBlowout[pick.round_id];
       if (winningMatchup && pick.matchup_id === winningMatchup) {
-        scores[pick.user_id].blowout += BLOWOUT_POINTS;
+        scores[pick.user_id].blowout += BLOWOUT_POINTS * mult;
         scores[pick.user_id].correct_blowouts += 1;
       }
     } else if (pick.pick_type === "high_scorer") {
       const winningMatchup = highestScorer[pick.round_id];
       if (winningMatchup && pick.matchup_id === winningMatchup) {
-        scores[pick.user_id].high_scorer += HIGH_SCORER_POINTS;
+        scores[pick.user_id].high_scorer += HIGH_SCORER_POINTS * mult;
         scores[pick.user_id].correct_high_scorers += 1;
       }
     }
@@ -221,6 +226,7 @@ export async function computeAndSaveScores(
     correct_blowouts: p.correct_blowouts,
     high_scorer_pts: p.high_scorer,
     correct_high_scorers: p.correct_high_scorers,
+    is_second_chance: p.is_second_chance,
     updated_at: new Date().toISOString(),
   }));
 

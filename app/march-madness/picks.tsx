@@ -31,6 +31,7 @@ import {
   getRoundLockDate,
   fetchMyLockedTakes,
   fetchMySpecialPicks,
+  fetchSecondChanceStatus,
   fetchMyPickScore,
   fetchRoundMatchups,
   saveSpecialPick,
@@ -481,6 +482,13 @@ export default function PicksHub() {
     enabled: !!user,
   });
 
+  const { data: isSecondChance = false } = useQuery<boolean>({
+    queryKey: ["mm-second-chance", user?.id],
+    queryFn: () => fetchSecondChanceStatus(user!.id),
+    enabled: !!user,
+    staleTime: 60 * 1000,
+  });
+
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [nudgeGame, setNudgeGame] = useState<{ title: string } | null>(null);
 
@@ -493,7 +501,7 @@ export default function PicksHub() {
       pickType: "upset" | "blowout" | "high_scorer";
       matchupId: string;
       pickedTeam: string | null;
-    }) => saveSpecialPick(user!.id, roundId, pickType, matchupId, pickedTeam),
+    }) => saveSpecialPick(user!.id, roundId, pickType, matchupId, pickedTeam, isSecondChance ? 0.5 : 1.0),
     onSuccess: (result) => {
       setTogglingId(null);
       if (result.error) {
@@ -603,14 +611,37 @@ export default function PicksHub() {
               </View>
             ) : null}
 
+            {/* Second-chance banner */}
+            {isSecondChance && !roundLocked && (
+              <View style={styles.secondChanceBanner}>
+                <Ionicons name="flash-outline" size={16} color="#F59E0B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.secondChanceTitle}>Second Chance — ½ Points</Text>
+                  <Text style={styles.secondChanceSub}>
+                    You missed the initial deadline. You can still pick, but correct picks earn half points (1.5 pts each).
+                  </Text>
+                </View>
+              </View>
+            )}
+            {isSecondChance && roundLocked && (
+              <View style={[styles.secondChanceBanner, { opacity: 0.7 }]}>
+                <Ionicons name="flash-outline" size={16} color="#F59E0B" />
+                <Text style={styles.secondChanceTitle}>Second Chance picks — locked</Text>
+              </View>
+            )}
+
             {/* Round-by-round Special Picks */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionLabel}>ROUND PICKS · {roundLabel(roundId).toUpperCase()}</Text>
                 <Text style={styles.sectionSub}>
-                  {roundMatchups?.oddsSource === "live"
-                    ? "Ranked by live odds · 3 pts per correct pick"
-                    : "Ranked by seed data · 3 pts per correct pick"}
+                  {isSecondChance
+                    ? (roundMatchups?.oddsSource === "live"
+                        ? "Ranked by live odds · 1.5 pts per correct pick (2nd chance)"
+                        : "Ranked by seed data · 1.5 pts per correct pick (2nd chance)")
+                    : (roundMatchups?.oddsSource === "live"
+                        ? "Ranked by live odds · 3 pts per correct pick"
+                        : "Ranked by seed data · 3 pts per correct pick")}
                 </Text>
               </View>
 
@@ -813,6 +844,29 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     color: ORANGE,
     flex: 1,
+  },
+  secondChanceBanner: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 10,
+    backgroundColor: "rgba(245, 158, 11, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  secondChanceTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#F59E0B",
+  },
+  secondChanceSub: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginTop: 2,
+    lineHeight: 17,
   },
   takeCard: {
     flexDirection: "row",
