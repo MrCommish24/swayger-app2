@@ -1,7 +1,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
-import { sendMMReminderEmail, sendLastChanceBlast, sendLeaderboardReminderBlast } from "./email";
+import {
+  sendMMReminderEmail,
+  sendLastChanceBlast,
+  sendLeaderboardReminderBlast,
+  sendSecondShotEmail,
+  sendQuickPickReminderEmail,
+} from "./email";
 import { checkAndAutoScore, getActiveGameWindow } from "./mm-auto-score";
 import { sendScoreUpdateBlast, SCORE_EMAILS_PAUSED } from "./routes-mm-admin";
 
@@ -19,17 +25,32 @@ interface EmailState {
   };
   // Morning-after score update emails — one per game day
   score_emails: {
-    mar20_morning: boolean; // after Mar 19 games
-    mar21_morning: boolean; // after Mar 20 games
-    mar22_morning: boolean; // after Mar 21 games
-    mar23_morning: boolean; // after Mar 22 games
-    mar28_morning: boolean; // after Mar 27 games
-    mar29_morning: boolean; // after Mar 28 games
-    mar30_morning: boolean; // after Mar 29 games
-    mar31_morning: boolean; // after Mar 30 games
-    apr05_morning: boolean; // after Apr 4 games
-    apr06_morning: boolean; // after Apr 5 games
-    apr08_morning: boolean; // after Apr 7 games
+    mar20_morning: boolean;
+    mar21_morning: boolean;
+    mar22_morning: boolean;
+    mar23_morning: boolean;
+    mar28_morning: boolean;
+    mar29_morning: boolean;
+    mar30_morning: boolean;
+    mar31_morning: boolean;
+    apr05_morning: boolean;
+    apr06_morning: boolean;
+    apr08_morning: boolean;
+  };
+  // Second-shot email — users who missed R64 bracket picks
+  second_shot: {
+    mar21: boolean;
+  };
+  // Per-round quick pick reminders
+  quick_pick_reminders: {
+    s16_mar25: boolean;
+    s16_mar27_last_chance: boolean;
+    e8_mar27: boolean;
+    e8_mar28_last_chance: boolean;
+    ff_apr03: boolean;
+    ff_apr04_last_chance: boolean;
+    champ_apr05: boolean;
+    champ_apr06_last_chance: boolean;
   };
   // Timestamp of last Odds API scores poll (ms)
   scores_last_checked_ms: number;
@@ -54,6 +75,17 @@ function loadState(): EmailState {
         apr05_morning: false,
         apr06_morning: false,
         apr08_morning: false,
+      };
+      saved.second_shot ??= { mar21: false };
+      saved.quick_pick_reminders ??= {
+        s16_mar25: false,
+        s16_mar27_last_chance: false,
+        e8_mar27: false,
+        e8_mar28_last_chance: false,
+        ff_apr03: false,
+        ff_apr04_last_chance: false,
+        champ_apr05: false,
+        champ_apr06_last_chance: false,
       };
       saved.scores_last_checked_ms ??= 0;
       return saved;
@@ -81,6 +113,19 @@ function loadState(): EmailState {
       apr05_morning: false,
       apr06_morning: false,
       apr08_morning: false,
+    },
+    second_shot: {
+      mar21: false,
+    },
+    quick_pick_reminders: {
+      s16_mar25: false,
+      s16_mar27_last_chance: false,
+      e8_mar27: false,
+      e8_mar28_last_chance: false,
+      ff_apr03: false,
+      ff_apr04_last_chance: false,
+      champ_apr05: false,
+      champ_apr06_last_chance: false,
     },
     scores_last_checked_ms: 0,
   };
@@ -202,6 +247,79 @@ async function sendMorningScoreBlast(label: string): Promise<void> {
   }
 }
 
+// ─── Second-shot blast (users who never submitted locked takes) ───────────────
+
+async function sendSecondShotBlast(label: string): Promise<void> {
+  console.log(`[mm-scheduler] Firing second-shot blast: ${label}`);
+  try {
+    const supabase = getSupabase();
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+    const { data: takes } = await supabase
+      .from("mm_locked_takes")
+      .select("user_id")
+      .eq("is_submitted", true);
+    const usersWithTakes = new Set(
+      (takes ?? []).map((t: { user_id: string }) => t.user_id),
+    );
+    // Target: everyone who has NOT submitted locked takes
+    const eligible = (allProfiles ?? []).filter(
+      (p: { id: string; notification_email?: string | null }) =>
+        !usersWithTakes.has(p.id) && p.notification_email,
+    );
+    let sent = 0;
+    for (const profile of eligible) {
+      try {
+        await sendSecondShotEmail({
+          to: profile.notification_email as string,
+          displayName: profile.display_name || `@${profile.username}`,
+        });
+        sent++;
+      } catch (e) {
+        console.error("[mm-scheduler] Second-shot email failed for", profile.id, e);
+      }
+    }
+    console.log(`[mm-scheduler] ${label}: sent to ${sent} user(s)`);
+  } catch (e) {
+    console.error(`[mm-scheduler] Second-shot blast error:`, e);
+  }
+}
+
+// ─── Per-round quick pick reminder blast (all users) ─────────────────────────
+
+async function sendQuickPickReminderBlast(
+  label: string,
+  roundLabel: string,
+  lockDateLabel: string,
+  isLastChance: boolean,
+): Promise<void> {
+  console.log(`[mm-scheduler] Firing quick pick reminder blast: ${label}`);
+  try {
+    const supabase = getSupabase();
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+    const eligible = (allProfiles ?? []).filter(
+      (p: { notification_email?: string | null }) => p.notification_email,
+    );
+    let sent = 0;
+    for (const profile of eligible) {
+      try {
+        await sendQuickPickReminderEmail({
+          to: profile.notification_email as string,
+          displayName: profile.display_name || `@${profile.username}`,
+          roundLabel,
+          lockDateLabel,
+          isLastChance,
+        });
+        sent++;
+      } catch (e) {
+        console.error("[mm-scheduler] Quick pick reminder failed for", profile.id, e);
+      }
+    }
+    console.log(`[mm-scheduler] ${label}: sent to ${sent} user(s)`);
+  } catch (e) {
+    console.error(`[mm-scheduler] Quick pick reminder blast error:`, e);
+  }
+}
+
 // ─── Pre-lock schedule windows ────────────────────────────────────────────────
 
 interface PreLockWindow {
@@ -266,8 +384,94 @@ const MORNING_EMAIL_WINDOWS: MorningEmailWindow[] = [
   { key: "apr08_morning", label: "Apr 8  — morning scores (after Championship)", targetMs: new Date("2026-04-08T13:00:00Z").getTime() },
 ];
 
-const FIRE_WINDOW_MS    = 30 * 60 * 1000; // 30-min fire window per blast
-const POLL_INTERVAL_MS  = 20 * 60 * 1000; // poll Odds API every 20 min during game windows
+// ─── Second-shot email window ─────────────────────────────────────────────────
+
+const SECOND_SHOT_TARGET_MS = new Date("2026-03-21T17:00:00-05:00").getTime();
+
+// ─── Per-round quick pick reminder windows ────────────────────────────────────
+
+interface QuickPickWindow {
+  key: keyof EmailState["quick_pick_reminders"];
+  label: string;
+  roundLabel: string;
+  lockDateLabel: string;
+  targetMs: number;
+  isLastChance: boolean;
+}
+
+const QUICK_PICK_WINDOWS: QuickPickWindow[] = [
+  // Sweet 16 — games Mar 26-27, picks lock Mar 27 noon CDT
+  {
+    key: "s16_mar25",
+    label: "Mar 25 — Sweet 16 picks open reminder",
+    roundLabel: "Sweet 16",
+    lockDateLabel: "noon CDT on Friday Mar 27",
+    targetMs: new Date("2026-03-25T09:00:00-05:00").getTime(),
+    isLastChance: false,
+  },
+  {
+    key: "s16_mar27_last_chance",
+    label: "Mar 27 — Sweet 16 picks last chance",
+    roundLabel: "Sweet 16",
+    lockDateLabel: "noon CDT today",
+    targetMs: new Date("2026-03-27T08:00:00-05:00").getTime(),
+    isLastChance: true,
+  },
+  // Elite 8 — games Mar 28-29, picks lock Mar 28 noon CDT
+  {
+    key: "e8_mar27",
+    label: "Mar 27 — Elite 8 picks open reminder",
+    roundLabel: "Elite 8",
+    lockDateLabel: "noon CDT on Saturday Mar 28",
+    targetMs: new Date("2026-03-27T14:00:00-05:00").getTime(),
+    isLastChance: false,
+  },
+  {
+    key: "e8_mar28_last_chance",
+    label: "Mar 28 — Elite 8 picks last chance",
+    roundLabel: "Elite 8",
+    lockDateLabel: "noon CDT today",
+    targetMs: new Date("2026-03-28T09:00:00-05:00").getTime(),
+    isLastChance: true,
+  },
+  // Final Four — games Apr 4, picks lock Apr 4 6pm CDT
+  {
+    key: "ff_apr03",
+    label: "Apr 3 — Final Four picks open reminder",
+    roundLabel: "Final Four",
+    lockDateLabel: "6pm CDT on Saturday Apr 4",
+    targetMs: new Date("2026-04-03T09:00:00-05:00").getTime(),
+    isLastChance: false,
+  },
+  {
+    key: "ff_apr04_last_chance",
+    label: "Apr 4 — Final Four picks last chance",
+    roundLabel: "Final Four",
+    lockDateLabel: "6pm CDT today",
+    targetMs: new Date("2026-04-04T14:00:00-05:00").getTime(),
+    isLastChance: true,
+  },
+  // Championship — game Apr 6, picks lock Apr 6 8pm CDT
+  {
+    key: "champ_apr05",
+    label: "Apr 5 — Championship picks open reminder",
+    roundLabel: "Championship",
+    lockDateLabel: "8pm CDT on Monday Apr 6",
+    targetMs: new Date("2026-04-05T09:00:00-05:00").getTime(),
+    isLastChance: false,
+  },
+  {
+    key: "champ_apr06_last_chance",
+    label: "Apr 6 — Championship picks last chance",
+    roundLabel: "Championship",
+    lockDateLabel: "8pm CDT tonight",
+    targetMs: new Date("2026-04-06T16:00:00-05:00").getTime(),
+    isLastChance: true,
+  },
+];
+
+const FIRE_WINDOW_MS   = 30 * 60 * 1000; // 30-min fire window per blast
+const POLL_INTERVAL_MS = 20 * 60 * 1000; // poll Odds API every 20 min during game windows
 
 // ─── Scheduler tick ───────────────────────────────────────────────────────────
 
@@ -308,7 +512,28 @@ async function tick(): Promise<void> {
     }
   }
 
-  // ── 3. Real-time score polling during active game windows ─────────────────
+  // ── 3. Second-shot email (users with no submitted locked takes) ───────────
+  if (!state.second_shot.mar21) {
+    const elapsed = now - SECOND_SHOT_TARGET_MS;
+    if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
+      await sendSecondShotBlast("Mar 21 — second shot email");
+      state.second_shot.mar21 = true;
+      saveState(state);
+    }
+  }
+
+  // ── 4. Per-round quick pick reminders ─────────────────────────────────────
+  for (const w of QUICK_PICK_WINDOWS) {
+    if (state.quick_pick_reminders[w.key]) continue;
+    const elapsed = now - w.targetMs;
+    if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
+      await sendQuickPickReminderBlast(w.label, w.roundLabel, w.lockDateLabel, w.isLastChance);
+      state.quick_pick_reminders[w.key] = true;
+      saveState(state);
+    }
+  }
+
+  // ── 5. Real-time score polling during active game windows ─────────────────
   const activeWindow = getActiveGameWindow();
   if (activeWindow) {
     const msSinceLastCheck = now - (state.scores_last_checked_ms ?? 0);

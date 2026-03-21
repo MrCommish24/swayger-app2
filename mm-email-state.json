@@ -19,5 +19,18 @@
     "apr06_morning": false,
     "apr08_morning": false
   },
-  "scores_last_checked_ms": 1774060159695
+  "scores_last_checked_ms": 1774061410656,
+  "second_shot": {
+    "mar21": false
+  },
+  "quick_pick_reminders": {
+    "s16_mar25": false,
+    "s16_mar27_last_chance": false,
+    "e8_mar27": false,
+    "e8_mar28_last_chance": false,
+    "ff_apr03": false,
+    "ff_apr04_last_chance": false,
+    "champ_apr05": false,
+    "champ_apr06_last_chance": false
+  }
 }

@@ -85,12 +85,32 @@ These are available via the admin panel at `/admin/mm` and can be fired on-deman
 
 ---
 
-## What's NOT yet built
+## Section 5 — Second Shot Email
 
-| Candidate | Description | Audience | Complexity |
-|-----------|-------------|----------|------------|
-| **"Second Shot" email** | Notify users who missed R64 picks that they can still join as second-chance participants (earn ½ points going forward) | Users with **zero R64 quick picks** in `mm_special_picks` | Low — 1 new template, 1 scheduler entry, same filter pattern as existing reminders |
-| **Per-round Quick Pick reminders** | "R32 picks are open — 3 new chances to score" sent before each round locks | All users (or users without that round's picks) | Medium — needs a per-round lock date schedule |
+Sent once to users who never submitted their locked bracket takes (Sweet 16 / Elite 8 / Final Four / Champion). Tells them the Quick Picks program is still open and they can still climb the leaderboard as a second-chance participant.
+
+| # | Scheduled Date | Subject Line | Who Gets It | Status |
+|---|---------------|-------------|-------------|--------|
+| 27 | Mar 21 — 5:00pm CDT | "You can still get in — second shot at the leaderboard" | Users with **no submitted locked takes** | Pending (fires today) |
+
+---
+
+## Section 6 — Per-Round Quick Pick Reminder Emails
+
+Sent to all users before each remaining round's Quick Picks lock. Two emails per round: one when picks open, one morning-of as a last chance.
+
+| # | Scheduled Date | Round | Subject Line | Is Last Chance | Status |
+|---|---------------|-------|-------------|----------------|--------|
+| 28 | Mar 25 — 9:00am CDT | Sweet 16 | "🏀 Sweet 16 Quick Picks are open" | No | Pending |
+| 29 | Mar 27 — 8:00am CDT | Sweet 16 | "⏰ Last chance — Sweet 16 Quick Picks close noon CDT today" | Yes | Pending |
+| 30 | Mar 27 — 2:00pm CDT | Elite 8 | "🏀 Elite 8 Quick Picks are open" | No | Pending |
+| 31 | Mar 28 — 9:00am CDT | Elite 8 | "⏰ Last chance — Elite 8 Quick Picks close noon CDT today" | Yes | Pending |
+| 32 | Apr 3 — 9:00am CDT | Final Four | "🏀 Final Four Quick Picks are open" | No | Pending |
+| 33 | Apr 4 — 2:00pm CDT | Final Four | "⏰ Last chance — Final Four Quick Picks close 6pm CDT today" | Yes | Pending |
+| 34 | Apr 5 — 9:00am CDT | Championship | "🏀 Championship Quick Picks are open" | No | Pending |
+| 35 | Apr 6 — 4:00pm CDT | Championship | "⏰ Last chance — Championship Quick Picks close 8pm CDT tonight" | Yes | Pending |
+
+All quick pick reminder emails go to **all users** with a notification email.
 
 ---
 

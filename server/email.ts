@@ -576,3 +576,148 @@ export async function sendLastChanceBlast(opts: {
     html: buildLastChanceBlastHtml(),
   });
 }
+
+// ─── Second Shot Email ────────────────────────────────────────────────────────
+
+export async function sendSecondShotEmail(opts: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+  const subject = "You can still get in — second shot at the leaderboard";
+  const headline = "The tournament started. You're not out yet.";
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${opts.displayName},
+    </p>
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:15px;line-height:1.6">
+      The Round of 64 bracket picks are locked — but that's not the only way to score points on the Swayger leaderboard.
+    </p>
+
+    <div style="background:linear-gradient(135deg,#12001a 0%,#1e0030 100%);border:1px solid rgba(108,99,255,0.4);border-radius:12px;padding:18px 20px;margin-bottom:22px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#A78BFA;text-transform:uppercase;">⚡ Quick Picks — Every Round</p>
+      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">3 new picks open every single round. Round of 32 is live right now.</p>
+      <p style="margin:0;font-size:13px;color:#C4B5FD;line-height:1.5">Each round, pick one game for each category — biggest upset, biggest blowout, highest scorer. 3 points each. These reset every round, so you can climb the board fast.</p>
+    </div>
+
+    <div style="background:#13131D;border-radius:10px;padding:16px 20px;margin-bottom:22px;">
+      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">How the leaderboard still works for you</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
+            <span style="font-size:13px;color:#8B95A5;">Round of 32 Quick Picks</span>
+            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
+            <span style="font-size:13px;color:#8B95A5;">Sweet 16 Quick Picks</span>
+            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
+            <span style="font-size:13px;color:#8B95A5;">Elite 8 Quick Picks</span>
+            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
+            <span style="font-size:13px;color:#8B95A5;">Final Four Quick Picks</span>
+            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;">
+            <span style="font-size:13px;color:#8B95A5;">Championship Quick Picks</span>
+            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">Note: late entries earn ½ points — still plenty to compete.</p>
+    </div>
+
+    <div style="background:linear-gradient(135deg,#1a1200 0%,#2a1f00 100%);border:1px solid rgba(245,166,35,0.35);border-radius:12px;padding:14px 18px;margin-bottom:6px;text-align:center;">
+      <p style="margin:0 0 2px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#F5A623;text-transform:uppercase;">🏆 The Prize</p>
+      <p style="margin:0;font-size:18px;font-weight:800;color:#FFFFFF;">#1 on the leaderboard wins a $100 Amazon Gift Card</p>
+    </div>
+  `;
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject,
+    html: buildEmailHtml(subject, headline, body, "Make My Quick Picks →", picksUrl),
+  });
+}
+
+// ─── Per-Round Quick Pick Reminder ───────────────────────────────────────────
+
+export async function sendQuickPickReminderEmail(opts: {
+  to: string;
+  displayName: string;
+  roundLabel: string;
+  lockDateLabel: string;
+  isLastChance?: boolean;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+  const subject = opts.isLastChance
+    ? `⏰ Last chance — ${opts.roundLabel} Quick Picks close ${opts.lockDateLabel}`
+    : `🏀 ${opts.roundLabel} Quick Picks are open`;
+  const headline = opts.isLastChance
+    ? `${opts.roundLabel} picks close ${opts.lockDateLabel}.`
+    : `New round, new picks. ${opts.roundLabel} is here.`;
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${opts.displayName},
+    </p>
+    <p style="margin:0 0 18px;color:#E2E8F0;font-size:15px;line-height:1.6">
+      ${opts.isLastChance
+        ? `Quick Picks for the <strong style="color:#FFFFFF;">${opts.roundLabel}</strong> close at <strong style="color:#FFFFFF;">${opts.lockDateLabel}</strong>. If you haven't made yours yet, now's the time.`
+        : `<strong style="color:#FFFFFF;">${opts.roundLabel}</strong> Quick Picks are now open. Three chances to score points before this round tips off.`
+      }
+    </p>
+
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Make your ${opts.roundLabel} picks</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #F59E0B;margin-bottom:8px;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🚨 Upset Pick</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Which underdog pulls off the shocker this round? Pick the game, earn 3 points if you're right.</p>
+        </td>
+      </tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #3B82F6;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">💥 Blowout Pick</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Which game ends in a blowout? Pick the matchup with the biggest expected margin. 3 points if you nail it.</p>
+        </td>
+      </tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #10B981;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🔥 High Scorer Pick</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Which game goes for the most total points? Pick the highest-scoring matchup. 3 points if you're right.</p>
+        </td>
+      </tr>
+    </table>
+
+    ${opts.isLastChance ? `<p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks close at ${opts.lockDateLabel}. After that the round is locked.</p>` : `<p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks close at ${opts.lockDateLabel}. Scores update after games complete.</p>`}
+  `;
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject,
+    html: buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl),
+  });
+}
