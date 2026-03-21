@@ -117,9 +117,9 @@ const ROUND_DATE_RANGES: Record<string, { start: string; end: string }> = {
 // How many candidates to surface per type per round
 const CANDIDATE_COUNTS: Record<string, Record<string, number>> = {
   "round-64":   { upset: 15, blowout: 5, high_scorer: 5 },
-  "round-32":   { upset: 5, blowout: 4, high_scorer: 4 },
-  "sweet-16":   { upset: 4, blowout: 4, high_scorer: 4 },
-  "elite-8":    { upset: 3, blowout: 4, high_scorer: 4 },
+  "round-32":   { upset: 5, blowout: 5, high_scorer: 5 },
+  "sweet-16":   { upset: 4, blowout: 5, high_scorer: 5 },
+  "elite-8":    { upset: 3, blowout: 5, high_scorer: 5 },
   "final-four": { upset: 2, blowout: 2, high_scorer: 2 },
   "championship": { upset: 0, blowout: 0, high_scorer: 0 },
 };
