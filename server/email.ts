@@ -23,10 +23,12 @@ export interface NotifyPayload {
     title: string;
     category: string;
     stakeUnits: number;
+    stakeNote?: string | null;
   };
   sender: { name: string };
   recipients: { email: string; name: string }[];
   outcome?: string;
+  winnerName?: string;
 }
 
 function outcomeLabel(outcome: string): string {
@@ -54,11 +56,13 @@ function detailRow(label: string, value: string): string {
 }
 
 function swaygerDetailsHtml(p: NotifyPayload): string {
-  const stake = `${p.swayger.stakeUnits} Swayger Points`;
+  const stakePoints = `${p.swayger.stakeUnits} Swayger Points`;
+  const stakeNote = p.swayger.stakeNote?.trim();
   return `<table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:8px;">
     ${detailRow("Wager", p.swayger.title)}
     ${detailRow("Category", p.swayger.category)}
-    ${detailRow("Stake", stake)}
+    ${detailRow("Points", stakePoints)}
+    ${stakeNote ? detailRow("The Real Bet", stakeNote) : ""}
   </table>`;
 }
 
@@ -149,21 +153,33 @@ export async function sendNotificationEmail(
     case "settlement_proposed": {
       subject = `⚖️ ${sender} proposed a settlement`;
       headline = `${sender} wants to settle "${title}"`;
-      const proposed = payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      const proposedLabel = (() => {
+        if (payload.outcome === "draw") return "It's a draw";
+        if (payload.outcome === "no_contest") return "No contest";
+        if (payload.winnerName) return `${payload.winnerName} wins`;
+        return payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      })();
       body =
         details +
-        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Proposed outcome: <strong style="color:#FFFFFF;">${proposed}</strong></p>`;
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Proposed outcome: <strong style="color:#FFFFFF;">${proposedLabel}</strong></p>`;
       ctaLabel = "Review & Confirm";
       break;
     }
 
     case "swayger_settled": {
-      subject = `🏆 "${title}" has been settled`;
-      headline = `The results are in.`;
-      const final = payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      const winnerLabel = (() => {
+        if (payload.outcome === "draw") return "It's a draw";
+        if (payload.outcome === "no_contest") return "No contest";
+        if (payload.winnerName) return `🏆 ${payload.winnerName} wins`;
+        return payload.outcome ? outcomeLabel(payload.outcome) : "—";
+      })();
+      subject = payload.winnerName
+        ? `🏆 ${payload.winnerName} wins "${title}"`
+        : `🏆 "${title}" has been settled`;
+      headline = winnerLabel;
       body =
         details +
-        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">Final outcome: <strong style="color:#FFFFFF;">${final}</strong></p>`;
+        `<p style="margin:16px 0 0;font-size:14px;color:#8B95A5;">The Swayger is officially closed. Open the app to see the full breakdown.</p>`;
       ctaLabel = "See Results";
       break;
     }

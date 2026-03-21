@@ -55,6 +55,10 @@ async function notifyEvent(
 
     if (recipients.length === 0) return;
 
+    let winnerName: string | undefined;
+    if (outcome === "creator") winnerName = name(swayger.creator_id);
+    else if (outcome === "opponent" && swayger.opponent_id) winnerName = name(swayger.opponent_id);
+
     await fetch(`${getApiUrl()}api/notify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,10 +69,12 @@ async function notifyEvent(
           title: swayger.title,
           category: swayger.category,
           stakeUnits: swayger.stake_units,
+          stakeNote: swayger.stake_note ?? undefined,
         },
         sender: { name: name(callerId) },
         recipients,
         outcome,
+        winnerName,
       }),
     });
   } catch (err) {
