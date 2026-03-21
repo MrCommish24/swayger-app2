@@ -385,11 +385,8 @@ const MORNING_EMAIL_WINDOWS: MorningEmailWindow[] = [
 ];
 
 // ─── Second-shot email window ─────────────────────────────────────────────────
-// Target: 9am CDT — must go out before the first R32 game at 11:10am CDT.
-// Fire window is 4 hours (vs the usual 30 min) so the next scheduler tick
-// catches it even if the server restarted shortly after 9am.
+// Target: 9am CDT on March 21 — before the first R32 game at 11:10am CDT.
 const SECOND_SHOT_TARGET_MS = new Date("2026-03-21T09:00:00-05:00").getTime();
-const SECOND_SHOT_FIRE_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // ─── Per-round quick pick reminder windows ────────────────────────────────────
 
@@ -518,7 +515,7 @@ async function tick(): Promise<void> {
   // ── 3. Second-shot email (users with no submitted locked takes) ───────────
   if (!state.second_shot.mar21) {
     const elapsed = now - SECOND_SHOT_TARGET_MS;
-    if (elapsed >= 0 && elapsed < SECOND_SHOT_FIRE_WINDOW_MS) {
+    if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
       await sendSecondShotBlast("Mar 21 9am CDT — second shot email");
       state.second_shot.mar21 = true;
       saveState(state);
