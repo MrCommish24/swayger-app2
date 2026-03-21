@@ -577,6 +577,15 @@ export default function PicksHub() {
           </Text>
         </View>
 
+        <Pressable
+          style={({ pressed }) => [styles.leaderboardBtn, pressed && styles.cardPressed]}
+          onPress={() => router.push("/march-madness/picks-leaderboard")}
+        >
+          <Ionicons name="trophy-outline" size={18} color={GOLD} />
+          <Text style={styles.leaderboardBtnText}>Picks Leaderboard</Text>
+          <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+
         <ScoringGuide />
 
         {isLoading ? (
@@ -725,14 +734,6 @@ export default function PicksHub() {
               </View>
             )}
 
-            <Pressable
-              style={({ pressed }) => [styles.leaderboardBtn, pressed && styles.cardPressed]}
-              onPress={() => router.push("/march-madness/picks-leaderboard")}
-            >
-              <Ionicons name="trophy-outline" size={18} color={GOLD} />
-              <Text style={styles.leaderboardBtnText}>Picks Leaderboard</Text>
-              <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
-            </Pressable>
           </>
         )}
       </ScrollView>
