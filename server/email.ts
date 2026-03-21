@@ -581,7 +581,7 @@ export async function sendLastChanceBlast(opts: {
 
 export function buildSecondShotEmailHtml(displayName = "there"): string {
   const picksUrl = `${APP_URL}/march-madness/picks`;
-  const subject = "You missed the deadline — but you still have a shot";
+  const subject = "You missed the opening round deadline — but you still have a shot";
   const headline = "Second chance to lock your picks.";
   const body = `
     <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
@@ -644,7 +644,7 @@ export async function sendSecondShotEmail(opts: {
   await resend.emails.send({
     from: FROM,
     to: opts.to,
-    subject: "You can still get in — second shot at the leaderboard",
+    subject: "You missed the opening round deadline — but you still have a shot",
     html: buildSecondShotEmailHtml(opts.displayName),
   });
 }
