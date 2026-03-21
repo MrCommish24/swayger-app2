@@ -581,65 +581,56 @@ export async function sendLastChanceBlast(opts: {
 
 export function buildSecondShotEmailHtml(displayName = "there"): string {
   const picksUrl = `${APP_URL}/march-madness/picks`;
-  const subject = "You can still get in — second shot at the leaderboard";
-  const headline = "The tournament started. You're not out yet.";
+  const subject = "You missed the deadline — but you still have a shot";
+  const headline = "Second chance to lock your picks.";
   const body = `
     <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
       Hey ${displayName},
     </p>
     <p style="margin:0 0 16px;color:#E2E8F0;font-size:15px;line-height:1.6">
-      The Round of 64 bracket picks are locked — but that's not the only way to score points on the Swayger leaderboard.
+      The Round of 64 deadline passed and you didn't get your locked picks in. We're giving you a second chance — but there's a catch.
     </p>
 
     <div style="background:linear-gradient(135deg,#12001a 0%,#1e0030 100%);border:1px solid rgba(108,99,255,0.4);border-radius:12px;padding:18px 20px;margin-bottom:22px;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#A78BFA;text-transform:uppercase;">⚡ Quick Picks — Every Round</p>
-      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">3 new picks open every single round. Round of 32 is live right now.</p>
-      <p style="margin:0;font-size:13px;color:#C4B5FD;line-height:1.5">Each round, pick one game for each category — biggest upset, biggest blowout, highest scorer. 3 points each. These reset every round, so you can climb the board fast.</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#A78BFA;text-transform:uppercase;">🔒 Second Chance Picks — Available Now</p>
+      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">You can still lock in your Sweet 16, Elite 8, Final Four, and Champion picks.</p>
+      <p style="margin:0;font-size:13px;color:#C4B5FD;line-height:1.5">Late entries earn <strong style="color:#FFFFFF;">half the normal points</strong>. You're not out of the running — but you'll need to be right more often to climb the board.</p>
     </div>
 
-    <div style="background:#13131D;border-radius:10px;padding:16px 20px;margin-bottom:22px;">
-      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">How the leaderboard still works for you</p>
-      <table width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
-            <span style="font-size:13px;color:#8B95A5;">Round of 32 Quick Picks</span>
-            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
-            <span style="font-size:13px;color:#8B95A5;">Sweet 16 Quick Picks</span>
-            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
-            <span style="font-size:13px;color:#8B95A5;">Elite 8 Quick Picks</span>
-            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;border-bottom:1px solid #2A2A3A;">
-            <span style="font-size:13px;color:#8B95A5;">Final Four Quick Picks</span>
-            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;">
-            <span style="font-size:13px;color:#8B95A5;">Championship Quick Picks</span>
-            <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">up to 9 pts</span>
-          </td>
-        </tr>
-      </table>
-      <p style="margin:12px 0 0;font-size:12px;color:#6B7280;">Note: late entries earn ½ points — still plenty to compete.</p>
-    </div>
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">What you can still earn</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:22px;">
+      <tr>
+        <td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+          <span style="font-size:13px;color:#8B95A5;">Sweet 16 picks</span>
+          <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">1 pt each <span style="color:#6B7280;font-weight:400;">(normally 2)</span></span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+          <span style="font-size:13px;color:#8B95A5;">Elite 8 picks</span>
+          <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">1.5 pts each <span style="color:#6B7280;font-weight:400;">(normally 3)</span></span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+          <span style="font-size:13px;color:#8B95A5;">Final Four picks</span>
+          <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">2.5 pts each <span style="color:#6B7280;font-weight:400;">(normally 5)</span></span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:10px 0;">
+          <span style="font-size:13px;color:#8B95A5;">Champion pick</span>
+          <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">5 pts <span style="color:#6B7280;font-weight:400;">(normally 10)</span></span>
+        </td>
+      </tr>
+    </table>
 
     <div style="background:linear-gradient(135deg,#1a1200 0%,#2a1f00 100%);border:1px solid rgba(245,166,35,0.35);border-radius:12px;padding:14px 18px;margin-bottom:6px;text-align:center;">
       <p style="margin:0 0 2px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#F5A623;text-transform:uppercase;">🏆 The Prize</p>
       <p style="margin:0;font-size:18px;font-weight:800;color:#FFFFFF;">#1 on the leaderboard wins a $100 Amazon Gift Card</p>
     </div>
   `;
-  return buildEmailHtml(subject, headline, body, "Make My Quick Picks →", picksUrl);
+  return buildEmailHtml(subject, headline, body, "Lock My Picks →", picksUrl);
 }
 
 export async function sendSecondShotEmail(opts: {
