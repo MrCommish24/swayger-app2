@@ -124,9 +124,9 @@ export async function computeAndSaveScores(
   }
 
   // Score special picks (upset / blowout / high_scorer) from mm_special_picks
-  const { data: specialPicksRaw } = await supabase
-    .from("mm_special_picks")
-    .select("*");
+  // NOTE: Direct table select is blocked by RLS (anon key has no JWT).
+  // Use the SECURITY DEFINER RPC to read all picks regardless of auth context.
+  const { data: specialPicksRaw } = await supabase.rpc("get_all_mm_special_picks");
   const specialPicks = (specialPicksRaw ?? []) as SpecialPickRow[];
 
   // Fetch ranked matchups to know which matchup_id won each category per round
@@ -415,11 +415,8 @@ export function registerMMAdminRoutes(app: Express): void {
       const supabase = getSupabase();
       const usernameFilter = req.query.username as string | undefined;
 
-      // Get all special picks, optionally filtered by user via profiles join
-      const { data: allPicks } = await supabase
-        .from("mm_special_picks")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // Get all special picks via SECURITY DEFINER RPC (RLS blocks direct select)
+      const { data: allPicks } = await supabase.rpc("get_all_mm_special_picks");
 
       const { data: allResults } = await supabase
         .from("mm_game_results")
