@@ -593,10 +593,45 @@ export function getCurrentRound(): MMRound {
   return activeRound;
 }
 
+// Parse a gameDateLabel like "Mar 22" into a comparable "YYYY-MM-DD" string
+// using the current year so we can sort by actual date.
+function parseDateLabel(label: string | undefined): string {
+  if (!label) return "9999-99-99";
+  const months: Record<string, string> = {
+    Jan: "01", Feb: "02", Mar: "03", Apr: "04",
+    May: "05", Jun: "06", Jul: "07", Aug: "08",
+    Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+  };
+  const parts = label.trim().split(/\s+/);
+  const mon = months[parts[0]] ?? "01";
+  const day = (parts[1] ?? "1").padStart(2, "0");
+  return `2026-${mon}-${day}`;
+}
+
 // Returns featured matchups for the current round, up to `limit`.
+// Games are sorted: today first, then future dates, then past dates last —
+// so when a multi-day round rolls over, the current day's slate rises to the top.
 export function getFeaturedMatchups(limit = 9): MMMatchup[] {
   const round = getCurrentRound();
-  return round.featured.slice(0, limit);
+  const cdtDate = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const today = cdtDate.toISOString().split("T")[0]; // "2026-03-22"
+
+  const sorted = [...round.featured].sort((a, b) => {
+    const da = parseDateLabel(a.gameDateLabel);
+    const db = parseDateLabel(b.gameDateLabel);
+    // Today's games first
+    if (da === today && db !== today) return -1;
+    if (db === today && da !== today) return 1;
+    // Past games (before today) go to the bottom
+    const aPast = da < today;
+    const bPast = db < today;
+    if (aPast && !bPast) return 1;
+    if (bPast && !aPast) return -1;
+    // Otherwise preserve original order within the same tier
+    return 0;
+  });
+
+  return sorted.slice(0, limit);
 }
 
 // Build create-swayger URL params from a matchup.
