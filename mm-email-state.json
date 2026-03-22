@@ -7,17 +7,16 @@
     "mar19_10am_leaderboard": true
   },
   "score_emails": {
-    "mar20_morning": false,
-    "mar21_morning": false,
-    "mar22_morning": false,
+    "mar20_morning": true,
+    "mar21_morning": true,
+    "mar22_morning": true,
     "mar23_morning": false,
+    "mar27_morning": false,
     "mar28_morning": false,
     "mar29_morning": false,
     "mar30_morning": false,
-    "mar31_morning": false,
     "apr05_morning": false,
-    "apr06_morning": false,
-    "apr08_morning": false
+    "apr07_morning": false
   },
   "scores_last_checked_ms": 1774205807356,
   "second_shot": {

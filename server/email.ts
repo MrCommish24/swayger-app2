@@ -767,6 +767,104 @@ export async function sendMMR32PicksEmail(opts: {
   });
 }
 
+// ─── R32 Wrapup Blast (Mar 23 8am CDT — after R32 Day 2, Sweet 16 push) ─────
+
+export function buildR32WrapupEmailHtml({
+  displayName = "there",
+  totalPoints,
+  upsetPts,
+  correctUpsets,
+  blowoutPts,
+  correctBlowouts,
+  highScorerPts,
+  correctHighScorers,
+  rank,
+  totalPlayers,
+}: {
+  displayName: string;
+  totalPoints: number;
+  upsetPts: number;
+  correctUpsets: number;
+  blowoutPts: number;
+  correctBlowouts: number;
+  highScorerPts: number;
+  correctHighScorers: number;
+  rank: number;
+  totalPlayers: number;
+}): string {
+  const subject = "🏀 R32 wrapped — Sweet 16 starts Thursday. Here's your score.";
+  const headline = "Round of 32 is done. Here's where you stand.";
+  const rankLabel =
+    rank === 1
+      ? "🥇 You're in first place!"
+      : rank <= 3
+      ? `🔥 You're #${rank} out of ${totalPlayers}`
+      : `#${rank} out of ${totalPlayers} players`;
+
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 4px;font-size:13px;color:#8B95A5;letter-spacing:0.5px;text-transform:uppercase;">Leaderboard</p>
+    <p style="margin:0 0 20px;font-size:28px;font-weight:800;color:#F5A623;">${rankLabel}</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:24px;">
+      <tr><td style="padding:12px 0 4px;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:15px;color:#8B95A5;">Total Points</span>
+        <span style="float:right;font-size:22px;font-weight:800;color:#F5A623;">${totalPoints}</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">🚨 Upset Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${upsetPts} pts (${correctUpsets} correct)</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">💥 Blowout Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${blowoutPts} pts (${correctBlowouts} correct)</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;">
+        <span style="font-size:13px;color:#8B95A5;">🔥 High Scorer Picks</span>
+        <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${highScorerPts} pts (${correctHighScorers} correct)</span>
+      </td></tr>
+    </table>
+
+    <div style="background:linear-gradient(135deg,#0d1a0f 0%,#091409 100%);border:1px solid rgba(16,185,129,0.3);border-radius:12px;padding:18px 20px;margin-bottom:22px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#10B981;text-transform:uppercase;">🗓 Sweet 16 — Thursday March 26</p>
+      <p style="margin:0 0 12px;font-size:16px;font-weight:700;color:#FFFFFF;line-height:1.4;">32 teams became 16. Now it gets real.</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#D1FAE5;line-height:1.6;">
+        Before the chaos hits, lock in a swayger with someone who thinks they know who's advancing. Pick a matchup. Set stakes. Settle after the buzzer.
+      </p>
+      <p style="margin:0;font-size:13px;color:#6EE7B7;line-height:1.5;">
+        The longer you wait, the more everyone starts second-guessing their bracket. Create now while everyone still believes in their picks.
+      </p>
+    </div>
+
+    <p style="margin:0;font-size:12px;color:#6B7280;text-align:center;">Sweet 16 quick picks open soon — keep an eye out.</p>
+  `;
+
+  return buildEmailHtml(subject, headline, body, "Create a Sweet 16 Swayger →", `${APP_URL}/create`);
+}
+
+export async function sendR32WrapupEmail(opts: {
+  to: string;
+  displayName: string;
+  totalPoints: number;
+  upsetPts: number;
+  correctUpsets: number;
+  blowoutPts: number;
+  correctBlowouts: number;
+  highScorerPts: number;
+  correctHighScorers: number;
+  rank: number;
+  totalPlayers: number;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "🏀 R32 wrapped — Sweet 16 starts Thursday. Here's your score.",
+    html: buildR32WrapupEmailHtml(opts),
+  });
+}
+
 // ─── Per-Round Quick Pick Reminder ───────────────────────────────────────────
 
 export async function sendQuickPickReminderEmail(opts: {

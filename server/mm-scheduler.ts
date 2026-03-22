@@ -9,7 +9,7 @@ import {
   sendQuickPickReminderEmail,
 } from "./email";
 import { checkAndAutoScore, getActiveGameWindow } from "./mm-auto-score";
-import { sendScoreUpdateBlast, SCORE_EMAILS_PAUSED } from "./routes-mm-admin";
+import { sendScoreUpdateBlast, sendR32WrapupBlast, SCORE_EMAILS_PAUSED } from "./routes-mm-admin";
 
 // ─── State file (persists across restarts) ────────────────────────────────────
 
@@ -28,14 +28,13 @@ interface EmailState {
     mar20_morning: boolean;
     mar21_morning: boolean;
     mar22_morning: boolean;
-    mar23_morning: boolean;
-    mar28_morning: boolean;
-    mar29_morning: boolean;
-    mar30_morning: boolean;
-    mar31_morning: boolean;
-    apr05_morning: boolean;
-    apr06_morning: boolean;
-    apr08_morning: boolean;
+    mar23_morning: boolean; // R32 wrapup + Sweet 16 push
+    mar27_morning: boolean; // after S16 Day 1 (Mar 26)
+    mar28_morning: boolean; // after S16 Day 2 (Mar 27)
+    mar29_morning: boolean; // after E8 Day 1 (Mar 28)
+    mar30_morning: boolean; // after E8 Day 2 (Mar 29)
+    apr05_morning: boolean; // after Final Four (Apr 4)
+    apr07_morning: boolean; // after Championship (Apr 6)
   };
   // Second-shot email — users who missed R64 bracket picks
   second_shot: {
@@ -68,14 +67,16 @@ function loadState(): EmailState {
         mar21_morning: false,
         mar22_morning: false,
         mar23_morning: false,
+        mar27_morning: false,
         mar28_morning: false,
         mar29_morning: false,
         mar30_morning: false,
-        mar31_morning: false,
         apr05_morning: false,
-        apr06_morning: false,
-        apr08_morning: false,
+        apr07_morning: false,
       };
+      // Backfill new keys added after initial deploy
+      saved.score_emails.mar27_morning ??= false;
+      saved.score_emails.apr07_morning ??= false;
       saved.second_shot ??= { mar21: false };
       saved.quick_pick_reminders ??= {
         s16_mar25: false,
@@ -106,13 +107,12 @@ function loadState(): EmailState {
       mar21_morning: false,
       mar22_morning: false,
       mar23_morning: false,
+      mar27_morning: false,
       mar28_morning: false,
       mar29_morning: false,
       mar30_morning: false,
-      mar31_morning: false,
       apr05_morning: false,
-      apr06_morning: false,
-      apr08_morning: false,
+      apr07_morning: false,
     },
     second_shot: {
       mar21: false,
@@ -368,20 +368,20 @@ interface MorningEmailWindow {
   key: keyof EmailState["score_emails"];
   label: string;
   targetMs: number;
+  blastType?: "r32wrapup"; // special variant — omit for standard score blast
 }
 
 const MORNING_EMAIL_WINDOWS: MorningEmailWindow[] = [
-  { key: "mar20_morning", label: "Mar 20 — morning scores (after R64 Day 1)", targetMs: new Date("2026-03-20T13:00:00Z").getTime() },
-  { key: "mar21_morning", label: "Mar 21 — morning scores (after R64 Day 2)", targetMs: new Date("2026-03-21T13:00:00Z").getTime() },
-  { key: "mar22_morning", label: "Mar 22 — morning scores (after R32 Day 1)", targetMs: new Date("2026-03-22T13:00:00Z").getTime() },
-  { key: "mar23_morning", label: "Mar 23 — morning scores (after R32 Day 2)", targetMs: new Date("2026-03-23T13:00:00Z").getTime() },
-  { key: "mar28_morning", label: "Mar 28 — morning scores (after S16 Day 1)", targetMs: new Date("2026-03-28T13:00:00Z").getTime() },
-  { key: "mar29_morning", label: "Mar 29 — morning scores (after S16 Day 2)", targetMs: new Date("2026-03-29T13:00:00Z").getTime() },
-  { key: "mar30_morning", label: "Mar 30 — morning scores (after E8 Day 1)",  targetMs: new Date("2026-03-30T13:00:00Z").getTime() },
-  { key: "mar31_morning", label: "Mar 31 — morning scores (after E8 Day 2)",  targetMs: new Date("2026-03-31T13:00:00Z").getTime() },
-  { key: "apr05_morning", label: "Apr 5  — morning scores (after FF Day 1)",  targetMs: new Date("2026-04-05T13:00:00Z").getTime() },
-  { key: "apr06_morning", label: "Apr 6  — morning scores (after FF Day 2)",  targetMs: new Date("2026-04-06T13:00:00Z").getTime() },
-  { key: "apr08_morning", label: "Apr 8  — morning scores (after Championship)", targetMs: new Date("2026-04-08T13:00:00Z").getTime() },
+  { key: "mar20_morning", label: "Mar 20 — morning scores (after R64 Day 1)",    targetMs: new Date("2026-03-20T13:00:00Z").getTime() },
+  { key: "mar21_morning", label: "Mar 21 — morning scores (after R64 Day 2)",    targetMs: new Date("2026-03-21T13:00:00Z").getTime() },
+  { key: "mar22_morning", label: "Mar 22 — morning scores (after R32 Day 1)",    targetMs: new Date("2026-03-22T13:00:00Z").getTime() },
+  { key: "mar23_morning", label: "Mar 23 — R32 wrapup + Sweet 16 push (after R32 Day 2)", targetMs: new Date("2026-03-23T13:00:00Z").getTime(), blastType: "r32wrapup" },
+  { key: "mar27_morning", label: "Mar 27 — morning scores (after S16 Day 1)",    targetMs: new Date("2026-03-27T13:00:00Z").getTime() },
+  { key: "mar28_morning", label: "Mar 28 — morning scores (after S16 Day 2)",    targetMs: new Date("2026-03-28T13:00:00Z").getTime() },
+  { key: "mar29_morning", label: "Mar 29 — morning scores (after E8 Day 1)",     targetMs: new Date("2026-03-29T13:00:00Z").getTime() },
+  { key: "mar30_morning", label: "Mar 30 — morning scores (after E8 Day 2)",     targetMs: new Date("2026-03-30T13:00:00Z").getTime() },
+  { key: "apr05_morning", label: "Apr 5  — morning scores (after Final Four)",   targetMs: new Date("2026-04-05T13:00:00Z").getTime() },
+  { key: "apr07_morning", label: "Apr 7  — morning scores (after Championship)", targetMs: new Date("2026-04-07T13:00:00Z").getTime() },
 ];
 
 // ─── Second-shot email window ─────────────────────────────────────────────────
@@ -504,6 +504,17 @@ async function tick(): Promise<void> {
       if (SCORE_EMAILS_PAUSED) {
         console.log(`[mm-scheduler] Score emails paused — skipping morning blast: ${w.label}`);
         // Do NOT mark as sent — will fire once SCORE_EMAILS_PAUSED is set to false
+      } else if (w.blastType === "r32wrapup") {
+        console.log(`[mm-scheduler] Firing R32 wrapup blast: ${w.label}`);
+        const supabase = createClient(
+          process.env.EXPO_PUBLIC_SUPABASE_URL!,
+          process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        );
+        await sendR32WrapupBlast(supabase).catch((e) =>
+          console.error("[mm-scheduler] R32 wrapup blast error:", e),
+        );
+        state.score_emails[w.key] = true;
+        saveState(state);
       } else {
         await sendMorningScoreBlast(w.label);
         state.score_emails[w.key] = true;

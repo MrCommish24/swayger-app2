@@ -47,7 +47,7 @@ const BLOWOUT_POINTS = 3;
 const HIGH_SCORER_POINTS = 3;
 
 // Set to true to pause automated score-update emails until scoring is verified.
-export const SCORE_EMAILS_PAUSED = true;
+export const SCORE_EMAILS_PAUSED = false;
 
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
@@ -317,6 +317,63 @@ export async function sendScoreUpdateBlast(
   console.log(`[mm-admin] Score update blast: sent to ${sent}/${totalPlayers}`);
 }
 
+// ─── R32 Wrapup Blast — personalized score + Sweet 16 push ───────────────────
+
+export async function sendR32WrapupBlast(supabase: any): Promise<void> {
+  const { sendR32WrapupEmail } = await import("./email");
+
+  type PickScoreRow = {
+    user_id: string;
+    total_points: number | null;
+    upset_pts: number | null;
+    correct_upsets: number | null;
+    blowout_pts: number | null;
+    correct_blowouts: number | null;
+    high_scorer_pts: number | null;
+    correct_high_scorers: number | null;
+  };
+
+  const { data: allScoresRaw } = await supabase
+    .from("mm_pick_scores")
+    .select("user_id,total_points,upset_pts,correct_upsets,blowout_pts,correct_blowouts,high_scorer_pts,correct_high_scorers")
+    .order("total_points", { ascending: false });
+  const allScores = (allScoresRaw ?? []) as PickScoreRow[];
+  if (!allScores.length) return;
+
+  const totalPlayers = allScores.length;
+  const { data: profiles } = await supabase.rpc("get_all_notification_profiles");
+  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string };
+  const profileMap = new Map<string, ProfileRow>(
+    ((profiles ?? []) as ProfileRow[]).map((p: ProfileRow) => [p.id, p]),
+  );
+
+  let sent = 0;
+  for (let i = 0; i < allScores.length; i++) {
+    const s = allScores[i];
+    const profile = profileMap.get(s.user_id);
+    if (!profile?.notification_email) continue;
+    try {
+      await sendR32WrapupEmail({
+        to: profile.notification_email as string,
+        displayName: profile.display_name || `@${profile.username}`,
+        totalPoints: s.total_points ?? 0,
+        upsetPts: s.upset_pts ?? 0,
+        correctUpsets: s.correct_upsets ?? 0,
+        blowoutPts: s.blowout_pts ?? 0,
+        correctBlowouts: s.correct_blowouts ?? 0,
+        highScorerPts: s.high_scorer_pts ?? 0,
+        correctHighScorers: s.correct_high_scorers ?? 0,
+        rank: i + 1,
+        totalPlayers,
+      });
+      sent++;
+    } catch (e) {
+      console.error("[mm-admin] R32 wrapup email failed for", s.user_id, e);
+    }
+  }
+  console.log(`[mm-admin] R32 wrapup blast: sent to ${sent}/${totalPlayers}`);
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
 
 export function registerMMAdminRoutes(app: Express): void {
@@ -550,6 +607,20 @@ export function registerMMAdminRoutes(app: Express): void {
     const { buildSecondShotEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildSecondShotEmailHtml("Swayger User"));
+  });
+
+  // Preview R32 wrapup email (personalized score + Sweet 16 push)
+  app.get("/admin/mm/email-preview/r32-wrapup", (_req: Request, res: Response) => {
+    const { buildR32WrapupEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildR32WrapupEmailHtml({
+      displayName: "Swayger User",
+      totalPoints: 9,
+      upsetPts: 6, correctUpsets: 2,
+      blowoutPts: 0, correctBlowouts: 0,
+      highScorerPts: 3, correctHighScorers: 1,
+      rank: 1, totalPlayers: 17,
+    }));
   });
 
   // Preview R32 quick picks launch email
