@@ -1,0 +1,175 @@
+uswith
+  created_stats as (
+    select
+      creator_id as user_id,
+      COUNT(*) as swaygers_created,
+      MAX(created_at) as last_created_at
+    from
+      public.swaygers
+    group by
+      creator_id
+  ),
+  accepted_stats as (
+    select
+      opponent_id as user_id,
+      COUNT(*) as swaygers_accepted,
+      MAX(updated_at) as last_accepted_at
+    from
+      public.swaygers
+    where
+      opponent_id is not null
+    group by
+      opponent_id
+  ),
+  settled_participation as (
+    select
+      creator_id as user_id,
+      status,
+      settled_outcome,
+      stake_units,
+      created_at,
+      updated_at,
+      'creator' as role
+    from
+      public.swaygers
+    where
+      status = 'settled'
+    union all
+    select
+      opponent_id as user_id,
+      status,
+      settled_outcome,
+      stake_units,
+      created_at,
+      updated_at,
+      'opponent' as role
+    from
+      public.swaygers
+    where
+      status = 'settled'
+      and opponent_id is not null
+  ),
+  settled_stats as (
+    select
+      user_id,
+      COUNT(*) as swaygers_settled,
+      SUM(
+        case
+          when (
+            role = 'creator'
+            and settled_outcome = 'creator'
+          )
+          or (
+            role = 'opponent'
+            and settled_outcome = 'opponent'
+          ) then 1
+          else 0
+        end
+      ) as wins,
+      SUM(
+        case
+          when (
+            role = 'creator'
+            and settled_outcome = 'opponent'
+          )
+          or (
+            role = 'opponent'
+            and settled_outcome = 'creator'
+          ) then 1
+          else 0
+        end
+      ) as losses,
+      SUM(
+        case
+          when (
+            role = 'creator'
+            and settled_outcome = 'creator'
+          )
+          or (
+            role = 'opponent'
+            and settled_outcome = 'opponent'
+          ) then stake_units
+          else 0
+        end
+      ) as units_won,
+      SUM(
+        case
+          when (
+            role = 'creator'
+            and settled_outcome = 'opponent'
+          )
+          or (
+            role = 'opponent'
+            and settled_outcome = 'creator'
+          ) then stake_units
+          else 0
+        end
+      ) as units_lost,
+      MAX(updated_at) as last_settled_at
+    from
+      settled_participation
+    group by
+      user_id
+  ),
+  rematch_stats as (
+    select
+      creator_id as user_id,
+      COUNT(*) as rematches_created,
+      MAX(created_at) as last_rematch_at
+    from
+      public.swaygers
+    where
+      source_swayger_id is not null
+    group by
+      creator_id
+  ),
+  activity_stats as (
+    select
+      u.id as user_id,
+      GREATEST(
+        COALESCE(c.last_created_at, '1900-01-01'::timestamptz),
+        COALESCE(a.last_accepted_at, '1900-01-01'::timestamptz),
+        COALESCE(s.last_settled_at, '1900-01-01'::timestamptz),
+        COALESCE(r.last_rematch_at, '1900-01-01'::timestamptz)
+      ) as last_activity_at
+    from
+      auth.users u
+      left join created_stats c on c.user_id = u.id
+      left join accepted_stats a on a.user_id = u.id
+      left join settled_stats s on s.user_id = u.id
+      left join rematch_stats r on r.user_id = u.id
+  )
+select
+  u.id,
+  u.email,
+  u.created_at AT TIME ZONE 'America/Chicago' as account_created_local,
+  p.username,
+  p.display_name,
+  p.created_at AT TIME ZONE 'America/Chicago' as profile_created_local,
+  COALESCE(c.swaygers_created, 0) as swaygers_created,
+  COALESCE(a.swaygers_accepted, 0) as swaygers_accepted,
+  COALESCE(s.swaygers_settled, 0) as swaygers_settled,
+  COALESCE(r.rematches_created, 0) as rematches_created,
+  COALESCE(s.wins, 0) as wins,
+  COALESCE(s.losses, 0) as losses,
+  COALESCE(s.units_won, 0) as units_won,
+  COALESCE(s.units_lost, 0) as units_lost,
+  COALESCE(s.units_won, 0) - COALESCE(s.units_lost, 0) as net_units,
+  activity.last_activity_at AT TIME ZONE 'America/Chicago' as last_activity_local,
+  case
+    when COALESCE(c.swaygers_created, 0) > 0
+    and COALESCE(a.swaygers_accepted, 0) > 0
+    and COALESCE(s.swaygers_settled, 0) > 0 then true
+    else false
+  end as completed_full_loop
+from
+  auth.users u
+  left join public.profiles p on p.id = u.id
+  left join created_stats c on c.user_id = u.id
+  left join accepted_stats a on a.user_id = u.id
+  left join settled_stats s on s.user_id = u.id
+  left join rematch_stats r on r.user_id = u.id
+  left join activity_stats activity on activity.user_id = u.id
+order by
+  activity.last_activity_at desc nulls last,
+  u.created_at desc;
