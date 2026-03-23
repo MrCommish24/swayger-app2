@@ -987,4 +987,35 @@ export function registerMMSpecialRoutes(app: Express) {
     setCache(cacheKey, response);
     return res.json(response);
   });
+
+  // ── POST /api/mm/log-share ────────────────────────────────────────────────
+  // Fire-and-forget analytics: called whenever a user taps "Share Receipt".
+  // Inserts into mm_share_events (see docs/migrations/mm_share_events.sql).
+  // Always returns { ok: true } — never blocks the share flow on the client.
+  app.post("/api/mm/log-share", async (req: Request, res: Response) => {
+    res.json({ ok: true }); // respond immediately — never make the user wait
+    const { user_id, pick_type, round_id, matchup_id } = req.body ?? {};
+    if (!user_id || !pick_type || !round_id || !matchup_id) return;
+    try {
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      const { error } = await supabase.from("mm_share_events").insert({
+        user_id,
+        pick_type,
+        round_id,
+        matchup_id,
+        shared_at: new Date().toISOString(),
+      });
+      if (error) {
+        // Table likely not created yet — log once so the dev knows to run the migration
+        console.warn("[mm-share] Insert failed (run docs/migrations/mm_share_events.sql):", error.message);
+      } else {
+        console.log(`[mm-share] Logged: ${pick_type} / ${round_id} / ${user_id.slice(0, 8)}…`);
+      }
+    } catch (e) {
+      console.warn("[mm-share] Unexpected error:", e);
+    }
+  });
 }

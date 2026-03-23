@@ -46,6 +46,7 @@ import {
   getActivePicksRoundId,
 } from "@/lib/mm-picks";
 import { getCurrentRound } from "@/lib/march-madness";
+import { getApiUrl } from "@/lib/query-client";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
@@ -289,6 +290,19 @@ function PickReceiptModal({
     setSharing(true);
     try {
       const { result, matchup, pick, pickType } = target!;
+
+      // Fire-and-forget — never block the share flow
+      fetch(new URL("/api/mm/log-share", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id:    pick.user_id,
+          pick_type:  pick.pick_type,
+          round_id:   pick.round_id,
+          matchup_id: pick.matchup_id,
+        }),
+      }).catch(() => {});
+
       const cfg = pickTypeConfig(pickType);
       const hasScore = result.winner_score != null && result.loser_score != null;
       const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
