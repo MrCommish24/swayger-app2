@@ -165,7 +165,7 @@ function ScoringGuide() {
 // ─── Pick Receipt Card (capture target for sharing) ──────────────────────────
 
 const CARD_W = 320;
-const CARD_H = 400;
+const CARD_H = 440;
 
 type ReceiptTarget = {
   pick: SpecialPick;
@@ -193,6 +193,10 @@ function PickReceiptCard({
   const cfg = pickTypeConfig(pickType);
   const hasScore = result.winner_score != null && result.loser_score != null;
 
+  const rawPts = 3 * (target.pick.points_multiplier ?? 1);
+  const ptsDisplay = rawPts % 1 === 0 ? `${rawPts}` : rawPts.toFixed(1);
+  const isSecondChance = (target.pick.points_multiplier ?? 1) < 1;
+
   return (
     <View ref={cardRef} style={receiptStyles.card} collapsable={false}>
       <View style={[receiptStyles.accentBar, { backgroundColor: cfg.color }]} />
@@ -207,6 +211,17 @@ function PickReceiptCard({
         <View style={receiptStyles.calledItRow}>
           <Text style={receiptStyles.checkmark}>✓</Text>
           <Text style={receiptStyles.calledItText}>{cfg.receiptHeadline}</Text>
+        </View>
+
+        {/* Points earned badge */}
+        <View style={[receiptStyles.pointsRow, { borderColor: `${cfg.color}40`, backgroundColor: `${cfg.color}14` }]}>
+          <Text style={[receiptStyles.pointsValue, { color: cfg.color }]}>+{ptsDisplay}</Text>
+          <View style={receiptStyles.pointsLabelCol}>
+            <Text style={[receiptStyles.pointsUnit, { color: cfg.color }]}>Swayger Points</Text>
+            {isSecondChance && (
+              <Text style={receiptStyles.pointsSub}>second-chance rate</Text>
+            )}
+          </View>
         </View>
 
         <View style={receiptStyles.divider} />
@@ -249,7 +264,7 @@ function PickReceiptCard({
 
       <View style={receiptStyles.brandingRow}>
         <Text style={receiptStyles.brandingText}>⚡ swayger</Text>
-        <Text style={receiptStyles.brandingSub}>make it a Swayger</Text>
+        <Text style={receiptStyles.brandingSub}>earn pts · make wagers · win</Text>
       </View>
     </View>
   );
@@ -1832,6 +1847,36 @@ const receiptStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700" as const,
     letterSpacing: 0.5,
+  },
+  pointsRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  pointsValue: {
+    fontSize: 28,
+    fontWeight: "900" as const,
+    letterSpacing: -0.5,
+    lineHeight: 32,
+  },
+  pointsLabelCol: {
+    flexDirection: "column" as const,
+    gap: 1,
+  },
+  pointsUnit: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    letterSpacing: 0.3,
+  },
+  pointsSub: {
+    fontSize: 10,
+    color: "#9CA3AF",
+    fontWeight: "400" as const,
   },
   brandingRow: {
     flexDirection: "row" as const,
