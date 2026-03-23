@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,11 @@ import {
   ActivityIndicator,
   Alert,
   LayoutAnimation,
+  Modal,
+  Share,
 } from "react-native";
+import * as Sharing from "expo-sharing";
+import { captureRef } from "react-native-view-shot";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,8 +26,10 @@ import {
   type TakeType,
   type LockedTake,
   type SpecialPick,
+  type SpecialPickType,
   type RankedMatchup,
   type RoundMatchups,
+  type GameResult,
   UPSET_LIMITS,
   PICKS_LOCK_DATE,
   isPicksLocked,
@@ -34,6 +40,7 @@ import {
   fetchSecondChanceStatus,
   fetchMyPickScore,
   fetchRoundMatchups,
+  fetchGameResults,
   saveSpecialPick,
   getActivePicksRoundId,
 } from "@/lib/mm-picks";
@@ -154,6 +161,167 @@ function ScoringGuide() {
   );
 }
 
+// ─── Pick Receipt Card (capture target for sharing) ──────────────────────────
+
+const CARD_W = 320;
+const CARD_H = 400;
+
+type ReceiptTarget = {
+  pick: SpecialPick;
+  matchup: RankedMatchup;
+  result: GameResult;
+  pickType: SpecialPickType;
+};
+
+function pickTypeConfig(pickType: SpecialPickType) {
+  if (pickType === "upset")      return { label: "UPSET PICK",      icon: "💥", color: ORANGE };
+  if (pickType === "blowout")    return { label: "BLOWOUT PICK",    icon: "🎯", color: PURPLE };
+  return                                { label: "HIGH SCORER PICK", icon: "🏀", color: BLUE };
+}
+
+function PickReceiptCard({
+  target,
+  cardRef,
+}: {
+  target: ReceiptTarget;
+  cardRef: React.RefObject<View>;
+}) {
+  const { matchup, result, pickType } = target;
+  const cfg = pickTypeConfig(pickType);
+  const hasScore = result.winner_score != null && result.loser_score != null;
+
+  return (
+    <View ref={cardRef} style={receiptStyles.card} collapsable={false}>
+      <View style={[receiptStyles.accentBar, { backgroundColor: cfg.color }]} />
+      <View style={receiptStyles.body}>
+        <View style={receiptStyles.typeBadgeRow}>
+          <Text style={receiptStyles.typeIcon}>{cfg.icon}</Text>
+          <Text style={[receiptStyles.typeLabel, { color: cfg.color }]}>{cfg.label}</Text>
+        </View>
+
+        <View style={receiptStyles.calledItRow}>
+          <Text style={receiptStyles.checkmark}>✓</Text>
+          <Text style={receiptStyles.calledItText}>CALLED IT</Text>
+        </View>
+
+        <View style={receiptStyles.divider} />
+
+        <View style={receiptStyles.gameBlock}>
+          <View style={receiptStyles.teamRow}>
+            <View style={[receiptStyles.seedBubble, { backgroundColor: `${cfg.color}22` }]}>
+              <Text style={[receiptStyles.seedText, { color: cfg.color }]}>
+                {result.winner_seed ?? "—"}
+              </Text>
+            </View>
+            <Text style={receiptStyles.winnerName} numberOfLines={1}>{result.winner_name}</Text>
+          </View>
+          <Text style={receiptStyles.defLabel}>def.</Text>
+          <View style={receiptStyles.teamRow}>
+            <View style={receiptStyles.seedBubble}>
+              <Text style={receiptStyles.seedText}>{result.loser_seed ?? "—"}</Text>
+            </View>
+            <Text style={receiptStyles.loserName} numberOfLines={1}>{result.loser_name}</Text>
+          </View>
+          {hasScore ? (
+            <Text style={[receiptStyles.score, { color: cfg.color }]}>
+              {result.winner_score} – {result.loser_score}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={receiptStyles.divider} />
+
+        <Text style={receiptStyles.roundLabel}>
+          {matchup.region ? `${matchup.region} Region · ` : ""}{roundLabel(target.pick.round_id)}
+        </Text>
+        <Text style={receiptStyles.tournamentLabel}>2026 NCAA Tournament</Text>
+      </View>
+
+      <View style={receiptStyles.brandingRow}>
+        <Text style={receiptStyles.brandingText}>⚡ swayger</Text>
+        <Text style={receiptStyles.brandingSub}>make it a Swayger</Text>
+      </View>
+    </View>
+  );
+}
+
+function PickReceiptModal({
+  target,
+  onClose,
+}: {
+  target: ReceiptTarget | null;
+  onClose: () => void;
+}) {
+  const cardRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
+
+  if (!target) return null;
+
+  async function handleShare() {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      if (Platform.OS === "web") {
+        const { result, matchup, pickType } = target!;
+        const cfg = pickTypeConfig(pickType);
+        const hasScore = result.winner_score != null && result.loser_score != null;
+        const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
+        const msg =
+          `${cfg.icon} ${cfg.label} — CALLED IT\n\n` +
+          `${result.winner_name} def. ${result.loser_name}${scoreStr}\n` +
+          `${roundLabel(matchup.matchupId)}, 2026 March Madness\n\n` +
+          `⚡ Swayger — make it a Swayger`;
+        await Share.share({ message: msg });
+        return;
+      }
+      if (!cardRef.current) { setSharing(false); return; }
+      const uri = await captureRef(cardRef, { format: "png", quality: 1, result: "tmpfile" });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
+      } else {
+        const { result } = target!;
+        await Share.share({ message: `✓ Called it — ${result.winner_name} def. ${result.loser_name} · Swayger MM picks` });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) Alert.alert("Share failed", "Could not share receipt. Try again.");
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  return (
+    <Modal visible={!!target} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={receiptStyles.modalOverlay}>
+        <View style={receiptStyles.modalSheet}>
+          <Pressable style={receiptStyles.modalClose} onPress={onClose} hitSlop={12}>
+            <Ionicons name="close" size={20} color={Colors.dark.textSecondary} />
+          </Pressable>
+          <Text style={receiptStyles.modalTitle}>Your Pick Receipt</Text>
+          <View style={receiptStyles.cardWrapper}>
+            <PickReceiptCard target={target} cardRef={cardRef} />
+          </View>
+          <Pressable
+            style={({ pressed }) => [receiptStyles.shareBtn, pressed && { opacity: 0.85 }]}
+            onPress={handleShare}
+            disabled={sharing}
+          >
+            {sharing
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <>
+                  <Ionicons name="share-outline" size={18} color="#fff" />
+                  <Text style={receiptStyles.shareBtnText}>Share to Instagram</Text>
+                </>
+            }
+          </Pressable>
+          <Text style={receiptStyles.shareHint}>Saves image to share sheet · works with Instagram, iMessage, and more</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Take Card (locked takes) ─────────────────────────────────────────────────
 
 function TakeCard({
@@ -234,14 +402,18 @@ function MatchupCard({
   canPick,
   isToggling,
   pickType,
+  gameResult,
   onPress,
+  onShareReceipt,
 }: {
   matchup: RankedMatchup;
   picked: boolean;
   canPick: boolean;
   isToggling: boolean;
   pickType: "upset" | "blowout" | "high_scorer";
+  gameResult?: GameResult;
   onPress: () => void;
+  onShareReceipt?: () => void;
 }) {
   const accentColor =
     pickType === "upset" ? ORANGE : pickType === "blowout" ? PURPLE : BLUE;
@@ -321,10 +493,22 @@ function MatchupCard({
         {isToggling ? (
           <ActivityIndicator size="small" color={accentColor} />
         ) : picked ? (
-          <View style={[styles.pickedBadge, { backgroundColor: `${accentColor}15` }]}>
-            <Ionicons name="checkmark" size={14} color={accentColor} />
-            <Text style={[styles.pickedBadgeText, { color: accentColor }]}>Called it</Text>
-          </View>
+          <>
+            <View style={[styles.pickedBadge, { backgroundColor: `${accentColor}15` }]}>
+              <Ionicons name="checkmark" size={14} color={accentColor} />
+              <Text style={[styles.pickedBadgeText, { color: accentColor }]}>Called it</Text>
+            </View>
+            {gameResult && onShareReceipt ? (
+              <Pressable
+                style={({ pressed }) => [styles.receiptShareBtn, pressed && { opacity: 0.7 }]}
+                onPress={onShareReceipt}
+                hitSlop={6}
+              >
+                <Ionicons name="share-outline" size={12} color={GREEN} />
+                <Text style={styles.receiptShareText}>Receipt</Text>
+              </Pressable>
+            ) : null}
+          </>
         ) : canPick ? (
           <Ionicons name="add-circle-outline" size={20} color={Colors.dark.textSecondary} />
         ) : (
@@ -356,7 +540,9 @@ function SpecialPicksSection({
   pickLimit,
   roundLocked,
   togglingId,
+  gameResults,
   onPick,
+  onShareReceipt,
 }: {
   roundId: string;
   pickType: "upset" | "blowout" | "high_scorer";
@@ -369,7 +555,9 @@ function SpecialPicksSection({
   pickLimit: number;
   roundLocked: boolean;
   togglingId: string | null;
+  gameResults: GameResult[];
   onPick: (matchup: RankedMatchup, isCurrentlyPicked: boolean) => void;
+  onShareReceipt: (pick: SpecialPick, matchup: RankedMatchup, result: GameResult) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -439,6 +627,15 @@ function SpecialPicksSection({
                 ? (picked || pickedCount < pickLimit)
                 : true
             );
+            const myPick = picked
+              ? picks.find((p) => p.pick_type === pickType && p.matchup_id === m.matchupId)
+              : undefined;
+            const result = gameResults.find((r) => r.matchup_id === m.matchupId);
+            const correct = picked && myPick && result && (
+              pickType === "upset"
+                ? result.was_upset && result.winner_name === myPick.picked_team
+                : true
+            );
             return (
               <MatchupCard
                 key={m.matchupId}
@@ -447,7 +644,12 @@ function SpecialPicksSection({
                 canPick={canPick}
                 isToggling={togglingId === `${pickType}:${m.matchupId}`}
                 pickType={pickType}
+                gameResult={correct && result ? result : undefined}
                 onPress={() => canPick && onPick(m, picked)}
+                onShareReceipt={correct && myPick && result
+                  ? () => onShareReceipt(myPick, m, result)
+                  : undefined
+                }
               />
             );
           })}
@@ -508,6 +710,13 @@ export default function PicksHub() {
 
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [nudgeGame, setNudgeGame] = useState<{ title: string } | null>(null);
+  const [receiptTarget, setReceiptTarget] = useState<ReceiptTarget | null>(null);
+
+  const { data: gameResults = [] } = useQuery<GameResult[]>({
+    queryKey: ["mm-game-results"],
+    queryFn: () => fetchGameResults(),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const pickMutation = useMutation({
     mutationFn: ({
@@ -553,12 +762,17 @@ export default function PicksHub() {
     });
   }
 
+  function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult) {
+    setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType });
+  }
+
   const topPadding = isWeb ? 67 : insets.top;
   const isLoading = takesLoading || picksLoading || matchupsLoading;
   const upsetLimit = UPSET_LIMITS[roundId] ?? 3;
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
+      <PickReceiptModal target={receiptTarget} onClose={() => setReceiptTarget(null)} />
       <View style={styles.header}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
@@ -684,7 +898,9 @@ export default function PicksHub() {
                 pickLimit={upsetLimit}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
+                gameResults={gameResults}
                 onPick={(m, isPicked) => handlePick("upset", m, isPicked)}
+                onShareReceipt={handleShareReceipt}
               />
 
               <SpecialPicksSection
@@ -699,7 +915,9 @@ export default function PicksHub() {
                 pickLimit={1}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
+                gameResults={gameResults}
                 onPick={(m, isPicked) => handlePick("blowout", m, isPicked)}
+                onShareReceipt={handleShareReceipt}
               />
 
               <SpecialPicksSection
@@ -714,7 +932,9 @@ export default function PicksHub() {
                 pickLimit={1}
                 roundLocked={roundLocked}
                 togglingId={togglingId}
+                gameResults={gameResults}
                 onPick={(m, isPicked) => handlePick("high_scorer", m, isPicked)}
+                onShareReceipt={handleShareReceipt}
               />
             </View>
 
@@ -1313,5 +1533,226 @@ const styles = StyleSheet.create({
   },
   nudgeDismiss: {
     padding: 2,
+  },
+  receiptShareBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+    backgroundColor: "rgba(34,197,94,0.12)",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.3)",
+  },
+  receiptShareText: {
+    fontSize: 10,
+    fontWeight: "600" as const,
+    color: "#22C55E",
+  },
+});
+
+// ─── Receipt Card Styles ───────────────────────────────────────────────────────
+
+const receiptStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalSheet: {
+    backgroundColor: "#111827",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 400,
+    alignItems: "center",
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modalClose: {
+    alignSelf: "flex-end",
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+    alignSelf: "flex-start",
+    marginTop: -8,
+  },
+  cardWrapper: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  card: {
+    width: CARD_W,
+    height: CARD_H,
+    backgroundColor: "#080C14",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+  },
+  accentBar: {
+    height: 5,
+    width: "100%",
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: 28,
+    paddingTop: 24,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  typeBadgeRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+  },
+  typeIcon: {
+    fontSize: 18,
+  },
+  typeLabel: {
+    fontSize: 12,
+    fontWeight: "800" as const,
+    letterSpacing: 1.5,
+  },
+  calledItRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+  },
+  checkmark: {
+    fontSize: 36,
+    color: "#22C55E",
+    fontWeight: "800" as const,
+    lineHeight: 44,
+  },
+  calledItText: {
+    fontSize: 36,
+    fontWeight: "900" as const,
+    color: "#FFFFFF",
+    letterSpacing: 1,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  gameBlock: {
+    gap: 6,
+  },
+  teamRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  seedBubble: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  seedText: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    color: "#9CA3AF",
+  },
+  winnerName: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "800" as const,
+    color: "#FFFFFF",
+  },
+  winnerSeedHint: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+  },
+  defLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    fontStyle: "italic" as const,
+    fontWeight: "500" as const,
+    marginLeft: 34,
+  },
+  loserName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "600" as const,
+    color: "#6B7280",
+  },
+  loserSeedHint: {
+    fontSize: 12,
+    fontWeight: "500" as const,
+    color: "#4B5563",
+  },
+  score: {
+    fontSize: 22,
+    fontWeight: "900" as const,
+    marginTop: 4,
+    marginLeft: 34,
+    letterSpacing: 0.5,
+  },
+  roundLabel: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    color: "#9CA3AF",
+  },
+  tournamentLabel: {
+    fontSize: 11,
+    color: "#4B5563",
+    fontWeight: "500" as const,
+    marginTop: -6,
+  },
+  brandingRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    paddingHorizontal: 28,
+    paddingBottom: 18,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.05)",
+  },
+  brandingText: {
+    fontSize: 14,
+    fontWeight: "800" as const,
+    color: "#E8590A",
+    letterSpacing: 0.5,
+  },
+  brandingSub: {
+    fontSize: 10,
+    color: "#4B5563",
+    fontStyle: "italic" as const,
+  },
+  shareBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    backgroundColor: "#E8590A",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignSelf: "stretch" as const,
+    justifyContent: "center" as const,
+  },
+  shareBtnText: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  shareHint: {
+    fontSize: 11,
+    color: "#6B7280",
+    textAlign: "center" as const,
+    lineHeight: 15,
   },
 });

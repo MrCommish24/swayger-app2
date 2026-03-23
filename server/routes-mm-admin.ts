@@ -741,4 +741,46 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });
+
+  // Manual game result insertion (for when Odds API quota runs out)
+  // Body: { round_id, matchup_id, winner_name, winner_seed, loser_name, loser_seed, winner_score?, loser_score?, was_upset }
+  app.post("/admin/mm/api/insert-result", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const {
+        round_id, matchup_id, winner_name, winner_seed,
+        loser_name, loser_seed, winner_score, loser_score, was_upset,
+      } = req.body;
+      if (!round_id || !matchup_id || !winner_name || !loser_name) {
+        res.status(400).json({ ok: false, error: "Missing required fields: round_id, matchup_id, winner_name, loser_name" });
+        return;
+      }
+      const supabase = getSupabase();
+      const { error } = await supabase.from("mm_game_results").upsert({
+        round_id,
+        matchup_id,
+        winner_name,
+        winner_seed: winner_seed ?? null,
+        loser_name,
+        loser_seed: loser_seed ?? null,
+        winner_score: winner_score ?? null,
+        loser_score: loser_score ?? null,
+        was_upset: was_upset ?? false,
+        resolved_at: new Date().toISOString(),
+      }, { onConflict: "round_id,matchup_id" });
+      if (error) {
+        res.status(500).json({ ok: false, error: error.message });
+        return;
+      }
+      console.log(`[mm-admin] Manual result inserted: ${round_id} / ${matchup_id} — ${winner_name} def. ${loser_name}`);
+      res.json({ ok: true, message: `Result recorded: ${winner_name} def. ${loser_name}` });
+    } catch (err) {
+      console.error("[mm-admin] insert-result error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
 }
