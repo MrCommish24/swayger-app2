@@ -48,3 +48,9 @@ id = "TP-e7D4K0p6YUuQRhzXKA"
 uri = "file://attached_assets/generated_images/swayger-r32-instagram-v3.png"
 type = "image"
 title = "Swayger — R32 Instagram (Trophy Style)"
+
+[[outputs]]
+id = "O1Qy0fkcWhdK299sF8Tn4"
+uri = "file://docs/swayger-wtp-experiments.md"
+type = "text"
+title = "Swayger — Willingness to Pay Experiments"
