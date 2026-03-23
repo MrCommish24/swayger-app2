@@ -273,11 +273,13 @@ function PickReceiptCard({
 function PickReceiptModal({
   target,
   onClose,
+  offScreenRef,
 }: {
   target: ReceiptTarget | null;
   onClose: () => void;
+  offScreenRef: React.RefObject<View>;
 }) {
-  const cardRef = useRef<View>(null);
+  const modalCardRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
 
   if (!target) return null;
@@ -292,38 +294,27 @@ function PickReceiptModal({
       const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
       const roundStr = roundLabel(pick.round_id);
 
-      if (Platform.OS === "web") {
-        // On web: capture the card as a PNG data URL and trigger a download.
-        // Falls back to a text snippet if capture isn't available.
-        try {
-          if (cardRef.current) {
-            const dataUrl = await captureRef(cardRef, { format: "png", quality: 1, result: "data-uri" });
-            const a = document.createElement("a");
-            a.href = dataUrl;
-            a.download = "swayger-pick-receipt.png";
-            a.click();
-            return;
-          }
-        } catch {
-          // capture failed — fall through to text share
+      // Use modal card ref first, fall back to offscreen ref (more reliable on web).
+      const captureTarget = modalCardRef.current || offScreenRef.current;
+
+      if (captureTarget) {
+        const uri = await captureRef(captureTarget, { format: "png", quality: 1, result: "tmpfile" });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
+        } else {
+          await Share.share({ message: `${cfg.icon} ${cfg.receiptHeadline} — ${result.winner_name} def. ${result.loser_name}${scoreStr} · ${roundStr} · Swayger` });
         }
-        const msg =
-          `${cfg.icon} ${cfg.label} — ${cfg.receiptHeadline}\n\n` +
-          `${result.winner_name} def. ${result.loser_name}${scoreStr}\n` +
-          `${roundStr} · 2026 March Madness\n\n` +
-          `⚡ Swayger — make it a Swayger`;
-        await Share.share({ message: msg });
         return;
       }
 
-      if (!cardRef.current) { setSharing(false); return; }
-      const uri = await captureRef(cardRef, { format: "png", quality: 1, result: "tmpfile" });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
-      } else {
-        await Share.share({ message: `${cfg.icon} ${cfg.receiptHeadline} — ${result.winner_name} def. ${result.loser_name}${scoreStr} · ${roundStr} · Swayger` });
-      }
+      // No capture target available — text fallback
+      const msg =
+        `${cfg.icon} ${cfg.label} — ${cfg.receiptHeadline}\n\n` +
+        `${result.winner_name} def. ${result.loser_name}${scoreStr}\n` +
+        `${roundStr} · 2026 March Madness\n\n` +
+        `⚡ Swayger — earn pts · make wagers · win`;
+      await Share.share({ message: msg });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!msg.toLowerCase().includes("cancel")) Alert.alert("Share failed", "Could not share receipt. Try again.");
@@ -341,7 +332,7 @@ function PickReceiptModal({
           </Pressable>
           <Text style={receiptStyles.modalTitle}>Your Pick Receipt</Text>
           <View style={receiptStyles.cardWrapper}>
-            <PickReceiptCard target={target} cardRef={cardRef} />
+            <PickReceiptCard target={target} cardRef={modalCardRef} />
           </View>
           <Pressable
             style={({ pressed }) => [receiptStyles.shareBtn, pressed && { opacity: 0.85 }]}
@@ -351,18 +342,12 @@ function PickReceiptModal({
             {sharing
               ? <ActivityIndicator size="small" color="#fff" />
               : <>
-                  <Ionicons name={Platform.OS === "web" ? "download-outline" : "share-outline"} size={18} color="#fff" />
-                  <Text style={receiptStyles.shareBtnText}>
-                    {Platform.OS === "web" ? "Download Image" : "Share to Instagram"}
-                  </Text>
+                  <Ionicons name="share-outline" size={18} color="#fff" />
+                  <Text style={receiptStyles.shareBtnText}>Share to Instagram</Text>
                 </>
             }
           </Pressable>
-          <Text style={receiptStyles.shareHint}>
-            {Platform.OS === "web"
-              ? "Downloads a PNG to your device — then share anywhere"
-              : "Saves image to share sheet · works with Instagram, iMessage, and more"}
-          </Text>
+          <Text style={receiptStyles.shareHint}>Saves image to share sheet · works with Instagram, iMessage, and more</Text>
         </View>
       </View>
     </Modal>
@@ -822,6 +807,7 @@ export default function PicksHub() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [nudgeGame, setNudgeGame] = useState<{ title: string } | null>(null);
   const [receiptTarget, setReceiptTarget] = useState<ReceiptTarget | null>(null);
+  const offScreenReceiptRef = useRef<View>(null);
 
   const { data: gameResults = [] } = useQuery<GameResult[]>({
     queryKey: ["mm-game-results"],
@@ -888,7 +874,13 @@ export default function PicksHub() {
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
-      <PickReceiptModal target={receiptTarget} onClose={() => setReceiptTarget(null)} />
+      <PickReceiptModal target={receiptTarget} onClose={() => setReceiptTarget(null)} offScreenRef={offScreenReceiptRef} />
+      {/* Offscreen receipt card — always in the React tree for reliable image capture */}
+      {receiptTarget && (
+        <View style={{ position: "absolute", left: -9999, top: -9999, opacity: 0 }} pointerEvents="none">
+          <PickReceiptCard target={receiptTarget} cardRef={offScreenReceiptRef} />
+        </View>
+      )}
       <View style={styles.header}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
