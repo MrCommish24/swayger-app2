@@ -294,21 +294,44 @@ function PickReceiptModal({
       const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
       const roundStr = roundLabel(pick.round_id);
 
-      // Use modal card ref first, fall back to offscreen ref (more reliable on web).
+      // Use modal card ref first, fall back to offscreen ref.
       const captureTarget = modalCardRef.current || offScreenRef.current;
 
-      if (captureTarget) {
-        const uri = await captureRef(captureTarget, { format: "png", quality: 1, result: "tmpfile" });
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
-        } else {
-          await Share.share({ message: `${cfg.icon} ${cfg.receiptHeadline} — ${result.winner_name} def. ${result.loser_name}${scoreStr} · ${roundStr} · Swayger` });
+      if (Platform.OS === "web") {
+        // On web, react-native-view-shot passes the ref object (not .current) to
+        // html2canvas internally, which causes a silent failure. Call html2canvas directly.
+        if (captureTarget) {
+          const { default: html2canvas } = await import("html2canvas");
+          const canvas = await html2canvas(captureTarget as unknown as HTMLElement, {
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: "#111827",
+            scale: 2,
+            logging: false,
+          });
+          const dataUrl = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = `swayger-pick-receipt.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          return;
         }
-        return;
+      } else {
+        if (captureTarget) {
+          const uri = await captureRef(captureTarget, { format: "png", quality: 1 });
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
+          } else {
+            await Share.share({ url: uri });
+          }
+          return;
+        }
       }
 
-      // No capture target available — text fallback
+      // No capture target — text fallback
       const msg =
         `${cfg.icon} ${cfg.label} — ${cfg.receiptHeadline}\n\n` +
         `${result.winner_name} def. ${result.loser_name}${scoreStr}\n` +
