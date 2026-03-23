@@ -266,7 +266,22 @@ export async function acceptSwayger(swaygerId: string, opponentPick: string, cal
     console.log("[swayger] Swayger accepted:", swaygerId);
     if (callerId) {
       const swayger = await fetchSwayger(swaygerId);
-      if (swayger) notifyEvent("swayger_accepted", swayger, callerId);
+      if (swayger) {
+        notifyEvent("swayger_accepted", swayger, callerId);
+
+        // If this is a March Madness featured matchup Swayger, attempt to unlock
+        // the referral reward for whoever referred the accepting user.
+        // Fire-and-forget — the backend RPC silently no-ops if:
+        //   • the user has no referrer (referred_by IS NULL)
+        //   • the reward was already granted (referral_reward_claimed = true)
+        if (swayger.category === "March Madness") {
+          fetch(new URL("/api/mm/unlock-referral-reward", getApiUrl()).toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: callerId }),
+          }).catch(() => {});
+        }
+      }
     }
   }
   return { error: result.error };

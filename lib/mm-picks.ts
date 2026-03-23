@@ -327,21 +327,6 @@ export const EMAIL_SCHEDULE: EmailScheduleEntry[] = [
   },
 ];
 
-export function isPicksLocked(): boolean {
-  return new Date() >= new Date(BRACKET_LOCK_DATE);
-}
-
-export function isRoundLocked(roundId: string): boolean {
-  const lockDate = ROUND_LOCK_DATES[roundId];
-  if (!lockDate) return true;
-  return new Date() >= new Date(lockDate);
-}
-
-export function getRoundLockDate(roundId: string): Date | null {
-  const lockDate = ROUND_LOCK_DATES[roundId];
-  return lockDate ? new Date(lockDate) : null;
-}
-
 // Round sequence for special picks (in tournament order)
 const PICKS_ROUND_ORDER = [
   "round-64", "round-32", "sweet-16", "elite-8", "final-four", "championship",
@@ -589,17 +574,6 @@ export async function saveSpecialPick(
     picked_team: pickedTeam,
     points_multiplier: multiplier,
   });
-
-  // Fire-and-forget: unlock referral reward for the referrer if conditions are met.
-  // The backend RPC guards against double-awarding and no-referrer cases.
-  if (!error) {
-    const baseUrl = getApiUrl();
-    fetch(new URL("/api/mm/unlock-referral-reward", baseUrl).toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    }).catch(() => {});
-  }
 
   return { error: error?.message ?? null };
 }
