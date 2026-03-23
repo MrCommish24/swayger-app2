@@ -47,7 +47,7 @@ const BLOWOUT_POINTS = 3;
 const HIGH_SCORER_POINTS = 3;
 
 // Set to true to pause automated score-update emails until scoring is verified.
-export const SCORE_EMAILS_PAUSED = false;
+export const SCORE_EMAILS_PAUSED = true;
 
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
@@ -447,16 +447,40 @@ export function registerMMAdminRoutes(app: Express): void {
         res.status(500).json({ ok: false, error });
         return;
       }
-      // Respond immediately, then blast score emails in background (when not paused)
-      const emailNote = SCORE_EMAILS_PAUSED ? " (score emails paused)" : " — sending score update emails";
-      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s)${emailNote}` });
-      if (!SCORE_EMAILS_PAUSED) {
-        sendScoreUpdateBlast(supabase).catch((e) =>
-          console.error("[mm-admin] score blast error:", e),
-        );
-      }
+      // Score computation only — NO automatic email blast.
+      // Use POST /admin/mm/api/score-and-email to intentionally send a score update email.
+      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s). Use /score-and-email to send the blast.` });
     } catch (err) {
       console.error("[mm-admin] score error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // Score + intentional email blast — only call this when you want emails to go out.
+  // Guarded by SCORE_EMAILS_PAUSED. Unlike /score, this is the explicit "send the blast" action.
+  app.post("/admin/mm/api/score-and-email", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    if (SCORE_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Score emails are paused (SCORE_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      return;
+    }
+    try {
+      const supabase = getSupabase();
+      const { scored, error } = await computeAndSaveScores(supabase);
+      if (error) {
+        res.status(500).json({ ok: false, error });
+        return;
+      }
+      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s) — sending score update emails now` });
+      sendScoreUpdateBlast(supabase).catch((e) =>
+        console.error("[mm-admin] score-and-email blast error:", e),
+      );
+    } catch (err) {
+      console.error("[mm-admin] score-and-email error:", err);
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });
