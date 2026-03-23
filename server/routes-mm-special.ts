@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
 import { FULL_BRACKET } from "../lib/march-madness";
+import { getActivePicksRoundId } from "../lib/mm-dates";
 
 // ─── Seed lookup from bracket data ───────────────────────────────────────────
 
@@ -986,6 +987,103 @@ export function registerMMSpecialRoutes(app: Express) {
 
     setCache(cacheKey, response);
     return res.json(response);
+  });
+
+  // ── Referral helpers ─────────────────────────────────────────────────────
+
+  function generateReferralCode(): string {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous 0/O/1/I
+    return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  }
+
+  // GET /api/mm/my-referral-code?userId=xxx&matchupId=xxx&roundId=xxx
+  // Returns the caller's referral code (generating one if needed) + the full shareable URL.
+  app.get("/api/mm/my-referral-code", async (req: Request, res: Response) => {
+    const { userId, matchupId, roundId } = req.query as Record<string, string>;
+    if (!userId || !matchupId || !roundId) return res.status(400).json({ error: "Missing params" });
+
+    const supabase = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("referral_code")
+      .eq("id", userId)
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    let code = profile?.referral_code as string | null;
+
+    if (!code) {
+      // Generate and save a unique code (retry on collision)
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = generateReferralCode();
+        const { error: updateErr } = await supabase
+          .from("profiles")
+          .update({ referral_code: candidate })
+          .eq("id", userId);
+        if (!updateErr) { code = candidate; break; }
+      }
+      if (!code) return res.status(500).json({ error: "Could not generate referral code" });
+    }
+
+    // Construct the shareable URL from the app domain
+    const rawDomain = (process.env.EXPO_PUBLIC_DOMAIN || "localhost:8081").replace(/:5000$/, "");
+    const shareUrl = `https://${rawDomain}/mm-pick/${encodeURIComponent(matchupId)}?ref=${code}&round_id=${encodeURIComponent(roundId)}`;
+
+    return res.json({ referralCode: code, shareUrl });
+  });
+
+  // GET /api/mm/referral-info?code=ABCD1234
+  // Returns public info about a referrer for the landing page (no sensitive data).
+  app.get("/api/mm/referral-info", async (req: Request, res: Response) => {
+    const { code } = req.query as { code?: string };
+    if (!code) return res.status(400).json({ error: "Missing code" });
+
+    const supabase = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("username, display_name")
+      .eq("referral_code", code.toUpperCase())
+      .single();
+
+    if (error || !data) return res.json({ found: false });
+    const name = (data.display_name as string | null) || `@${data.username}`;
+    return res.json({ found: true, name });
+  });
+
+  // POST /api/mm/unlock-referral-reward
+  // Fire-and-forget: called after a referred user's first special pick saves.
+  // Calls the unlock_referral_reward RPC which awards the referrer their 2X round.
+  app.post("/api/mm/unlock-referral-reward", async (req: Request, res: Response) => {
+    res.json({ ok: true }); // respond immediately
+    const { userId } = req.body ?? {};
+    if (!userId) return;
+
+    const nextRound = getActivePicksRoundId();
+    if (!nextRound) return;
+
+    try {
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      const { data, error } = await supabase.rpc("unlock_referral_reward", {
+        referred_user_id: userId,
+        reward_round: nextRound,
+      });
+      if (error) console.warn("[mm-referral] unlock_referral_reward error:", error.message);
+      else if (data?.reward_granted) console.log(`[mm-referral] Reward unlocked for referrer of ${userId.slice(0, 8)}… → round: ${nextRound}`);
+    } catch (e) {
+      console.warn("[mm-referral] Unexpected error:", e);
+    }
   });
 
   // ── POST /api/mm/log-share ────────────────────────────────────────────────

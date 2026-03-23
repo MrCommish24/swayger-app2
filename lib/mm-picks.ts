@@ -194,6 +194,21 @@ export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
 // Keep old export for bracket-take lock banners
 export const PICKS_LOCK_DATE = BRACKET_LOCK_DATE;
 
+export function isPicksLocked(): boolean {
+  return new Date() >= new Date(BRACKET_LOCK_DATE);
+}
+
+export function isRoundLocked(roundId: string): boolean {
+  const lockDate = ROUND_LOCK_DATES[roundId];
+  if (!lockDate) return true;
+  return new Date() >= new Date(lockDate);
+}
+
+export function getRoundLockDate(roundId: string): Date | null {
+  const lockDate = ROUND_LOCK_DATES[roundId];
+  return lockDate ? new Date(lockDate) : null;
+}
+
 // ─── Email Reminder Schedule ──────────────────────────────────────────────────
 // Full cadence of automated emails for the 2026 tournament.
 // "audience": who receives the email
@@ -342,7 +357,7 @@ const PICKS_ROUND_ORDER = [
 //   1. The current round's open date has passed (ROUND_PICKS_OPEN_DATES), AND
 //   2. The current round's picks are locked (ROUND_LOCK_DATES), AND
 //   3. The next round's open date has also passed.
-export function getActivePicksRoundId(_currentDateRoundId: string): string {
+export function getActivePicksRoundId(_currentDateRoundId?: string): string {
   const now = Date.now();
   let result = PICKS_ROUND_ORDER[0]; // fall-back: round-64
 
@@ -574,6 +589,18 @@ export async function saveSpecialPick(
     picked_team: pickedTeam,
     points_multiplier: multiplier,
   });
+
+  // Fire-and-forget: unlock referral reward for the referrer if conditions are met.
+  // The backend RPC guards against double-awarding and no-referrer cases.
+  if (!error) {
+    const baseUrl = getApiUrl();
+    fetch(new URL("/api/mm/unlock-referral-reward", baseUrl).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    }).catch(() => {});
+  }
+
   return { error: error?.message ?? null };
 }
 

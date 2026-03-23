@@ -9,19 +9,25 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { showError } from "@/lib/helpers";
 import { validateUsername } from "@/lib/helpers";
 import { Profile } from "@/types";
 import Colors from "@/constants/colors";
+import type { PendingReferral } from "@/app/mm-pick/[matchupId]";
+
+const PENDING_REFERRAL_KEY = "swayger_pending_referral";
 
 export default function UsernameSetupScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user, setProfile, setNeedsUsername, signOut } = useAuth();
+  const router = useRouter();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +68,29 @@ export default function UsernameSetupScreen() {
       } else if (data) {
         setProfile(data as Profile);
         setNeedsUsername(false);
+
+        // Check for a pending referral from a matchup share link
+        try {
+          const raw = await AsyncStorage.getItem(PENDING_REFERRAL_KEY);
+          if (raw && user) {
+            const pending = JSON.parse(raw) as PendingReferral;
+            await AsyncStorage.removeItem(PENDING_REFERRAL_KEY);
+            const { error: rpcErr } = await supabase.rpc("record_mm_referral", {
+              new_user_id: user.id,
+              referral_code_in: pending.referralCode,
+            });
+            if (!rpcErr) {
+              // Navigate to the picks screen for the referred round
+              router.replace({
+                pathname: "/march-madness/picks" as never,
+                params: { roundId: pending.roundId },
+              } as never);
+              return;
+            }
+          }
+        } catch {
+          // Non-blocking — continue to normal post-signup flow
+        }
       }
     } catch {
       showError("Something went wrong. Try again.");

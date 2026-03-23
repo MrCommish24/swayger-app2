@@ -6,6 +6,10 @@ export interface Profile {
   email: string | null;
   created_at: string;
   updated_at: string;
+  referral_code: string | null;
+  referred_by: string | null;
+  referral_reward_round: string | null;
+  referral_reward_claimed: boolean;
 }
 
 export type SwaygerStatus =

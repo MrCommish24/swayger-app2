@@ -51,8 +51,10 @@ function useProtectedRoute() {
     const inAuthGroup = segments[0] === "auth";
     const inUsernameSetup = segments[0] === "username-setup";
     const inAuthCallback = segments[0] === "auth-callback";
+    const inMMPickLanding = segments[0] === "mm-pick"; // Public referral landing page
 
     if (inAuthCallback) return;
+    if (inMMPickLanding) return; // Let landing page handle its own auth-aware rendering
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       router.replace("/auth");
@@ -103,6 +105,7 @@ function RootLayoutNav() {
         <Stack.Screen name="h2h/index" options={{ headerShown: false }} />
         <Stack.Screen name="h2h/[opponentId]" options={{ headerShown: false }} />
         <Stack.Screen name="march-madness/index" options={{ headerShown: false }} />
+        <Stack.Screen name="mm-pick/[matchupId]" options={{ headerShown: false }} />
       </Stack>
       <ToastContainer />
     </>

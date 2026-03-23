@@ -17,6 +17,7 @@ import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { getApiUrl } from "@/lib/query-client";
 import Colors from "@/constants/colors";
 import MarchMadnessShareCard from "@/components/MarchMadnessShareCard";
 import {
@@ -114,9 +115,13 @@ function RoundIndicator() {
 function MatchupCard({
   matchup,
   onPress,
+  onShare,
+  sharing = false,
 }: {
   matchup: MMMatchup;
   onPress: (m: MMMatchup) => void;
+  onShare?: (m: MMMatchup) => void;
+  sharing?: boolean;
 }) {
   const hasTBD = matchup.teamA.name === "TBD" || matchup.teamB.name === "TBD";
 
@@ -126,9 +131,25 @@ function MatchupCard({
         <View style={styles.regionBadge}>
           <Text style={styles.regionText}>{matchup.region.toUpperCase()}</Text>
         </View>
-        {matchup.gameDateLabel ? (
-          <Text style={styles.gameDateText}>{matchup.gameDateLabel}</Text>
-        ) : null}
+        <View style={styles.matchupTopRight}>
+          {matchup.gameDateLabel ? (
+            <Text style={styles.gameDateText}>{matchup.gameDateLabel}</Text>
+          ) : null}
+          {onShare && (
+            <Pressable
+              onPress={() => onShare(matchup)}
+              hitSlop={10}
+              disabled={sharing || hasTBD}
+              style={({ pressed }) => [styles.shareIconBtn, pressed && { opacity: 0.6 }]}
+            >
+              {sharing ? (
+                <ActivityIndicator size={14} color={ORANGE} />
+              ) : (
+                <Ionicons name="share-outline" size={16} color={ORANGE} />
+              )}
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <View style={styles.matchupTeams}>
@@ -193,6 +214,7 @@ export default function MarchMadnessHub() {
   const shareCardRef = useRef<View>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
+  const [sharingMatchupId, setSharingMatchupId] = useState<string | null>(null);
 
   const currentRound = getCurrentRound();
   const featuredMatchups = useMemo(() => getFeaturedMatchups(8), []);
@@ -212,6 +234,31 @@ export default function MarchMadnessHub() {
       pathname: "/(tabs)/create",
       params,
     });
+  }
+
+  async function handleShareMatchup(matchup: MMMatchup) {
+    if (!user) return;
+    setSharingMatchupId(matchup.id);
+    try {
+      const roundId = currentRound.id;
+      const url = new URL(
+        `/api/mm/my-referral-code?userId=${encodeURIComponent(user.id)}&matchupId=${encodeURIComponent(matchup.id)}&roundId=${encodeURIComponent(roundId)}`,
+        getApiUrl(),
+      );
+      const res = await fetch(url.toString());
+      const data = await res.json();
+      if (!data.shareUrl) throw new Error("Could not generate link");
+
+      const msg = `I'm picking ${matchup.teamA.name} vs ${matchup.teamB.name} in the ${currentRound.label} on Swayger. Can you call it?\n\n${data.shareUrl}`;
+      await Share.share({ message: msg, url: data.shareUrl });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      if (!msg.toLowerCase().includes("cancel")) {
+        Share.share({ message: `Join me on Swayger for March Madness picks!` }).catch(() => {});
+      }
+    } finally {
+      setSharingMatchupId(null);
+    }
   }
 
   async function handleShareCard() {
@@ -337,10 +384,47 @@ export default function MarchMadnessHub() {
 
           <View style={styles.matchupGrid}>
             {featuredMatchups.map((m) => (
-              <MatchupCard key={m.id} matchup={m} onPress={handleMatchupPress} />
+              <MatchupCard
+                key={m.id}
+                matchup={m}
+                onPress={handleMatchupPress}
+                onShare={user ? handleShareMatchup : undefined}
+                sharing={sharingMatchupId === m.id}
+              />
             ))}
           </View>
         </View>
+
+        {/* Referral Banner */}
+        {user && (
+          profile?.referral_reward_round ? (
+            <View style={styles.referralBannerActive}>
+              <Ionicons name="flash" size={18} color="#F5A623" />
+              <View style={styles.referralBannerText}>
+                <Text style={styles.referralBannerTitle}>2X Reward Active</Text>
+                <Text style={styles.referralBannerSub}>
+                  Your points are doubled for the{" "}
+                  {profile.referral_reward_round === "sweet-16" ? "Sweet 16"
+                   : profile.referral_reward_round === "elite-8" ? "Elite Eight"
+                   : profile.referral_reward_round === "final-four" ? "Final Four"
+                   : profile.referral_reward_round === "championship" ? "Championship"
+                   : profile.referral_reward_round}
+                  .
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.referralBanner}>
+              <View style={styles.referralBannerText}>
+                <Text style={styles.referralBannerTitle}>Challenge a friend, get 2X points</Text>
+                <Text style={styles.referralBannerSub}>
+                  Share any matchup above. If they join and make a pick, your next round is 2X.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={ORANGE} />
+            </View>
+          )
+        )}
 
         {/* My MM Stats */}
         <View style={styles.section}>
@@ -737,6 +821,56 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.dark.textSecondary,
     fontWeight: "500" as const,
+  },
+  matchupTopRight: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  shareIconBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  referralBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+    backgroundColor: `${ORANGE}0A`,
+    borderWidth: 1,
+    borderColor: `${ORANGE}28`,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 0,
+    marginBottom: 4,
+  },
+  referralBannerActive: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+    backgroundColor: "rgba(245,166,35,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.35)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  referralBannerText: {
+    flex: 1,
+    gap: 2,
+  },
+  referralBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  referralBannerSub: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    lineHeight: 17,
   },
   matchupTeams: {
     flexDirection: "row",

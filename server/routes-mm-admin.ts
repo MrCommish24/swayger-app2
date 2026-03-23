@@ -129,6 +129,18 @@ export async function computeAndSaveScores(
   const { data: specialPicksRaw } = await supabase.rpc("get_all_mm_special_picks");
   const specialPicks = (specialPicksRaw ?? []) as SpecialPickRow[];
 
+  // Fetch referral reward rounds — users who earned 2X for a specific round
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: referralProfilesRaw } = await supabase
+    .from("profiles")
+    .select("id, referral_reward_round")
+    .not("referral_reward_round", "is", null)
+    .eq("referral_reward_claimed", true);
+  const referralRewardMap = new Map<string, string>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((referralProfilesRaw ?? []) as any[]).map((p) => [p.id as string, p.referral_reward_round as string])
+  );
+
   // Fetch ranked matchups to know which matchup_id won each category per round
   const { data: rankedMatchupsRaw } = await supabase
     .from("mm_round_matchups")
@@ -182,8 +194,11 @@ export async function computeAndSaveScores(
   for (const pick of specialPicks) {
     if (!scores[pick.user_id]) scores[pick.user_id] = emptyScore();
 
-    const mult = pick.points_multiplier ?? 1;
-    if (mult < 1) scores[pick.user_id].is_second_chance = true;
+    const baseMult = pick.points_multiplier ?? 1;
+    if (baseMult < 1) scores[pick.user_id].is_second_chance = true;
+    // Apply referral round bonus (2X), capped so it never stacks beyond 2X total
+    const hasReferralBoost = referralRewardMap.get(pick.user_id) === pick.round_id;
+    const mult = hasReferralBoost ? Math.min(baseMult * 2, 2) : baseMult;
 
     if (pick.pick_type === "upset") {
       // Scope to the presented pool when pool data is available.
