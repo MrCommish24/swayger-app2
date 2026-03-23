@@ -172,12 +172,13 @@ type ReceiptTarget = {
   result: GameResult;
   pickType: SpecialPickType;
   username: string;
+  statLabel?: string; // e.g. "28 pt margin" (blowout) or "168 pts combined" (high scorer)
 };
 
 function pickTypeConfig(pickType: SpecialPickType) {
-  if (pickType === "upset")      return { label: "UPSET PICK",      icon: "💥", color: ORANGE };
-  if (pickType === "blowout")    return { label: "BLOWOUT PICK",    icon: "🎯", color: PURPLE };
-  return                                { label: "HIGH SCORER PICK", icon: "🏀", color: BLUE };
+  if (pickType === "upset")      return { label: "UPSET PICK",      icon: "💥", color: ORANGE, receiptHeadline: "CALLED IT" };
+  if (pickType === "blowout")    return { label: "BLOWOUT PICK",    icon: "🎯", color: PURPLE, receiptHeadline: "CALLED THE BLOWOUT" };
+  return                                { label: "HIGH SCORER PICK", icon: "🏀", color: BLUE,   receiptHeadline: "CALLED THE BARN BURNER" };
 }
 
 function PickReceiptCard({
@@ -204,7 +205,7 @@ function PickReceiptCard({
 
         <View style={receiptStyles.calledItRow}>
           <Text style={receiptStyles.checkmark}>✓</Text>
-          <Text style={receiptStyles.calledItText}>CALLED IT</Text>
+          <Text style={receiptStyles.calledItText}>{cfg.receiptHeadline}</Text>
         </View>
 
         <View style={receiptStyles.divider} />
@@ -229,6 +230,11 @@ function PickReceiptCard({
             <Text style={[receiptStyles.score, { color: cfg.color }]}>
               {result.winner_score} – {result.loser_score}
             </Text>
+          ) : null}
+          {target.statLabel ? (
+            <View style={[receiptStyles.statBadge, { backgroundColor: `${cfg.color}18`, borderColor: `${cfg.color}44` }]}>
+              <Text style={[receiptStyles.statBadgeText, { color: cfg.color }]}>{target.statLabel}</Text>
+            </View>
           ) : null}
         </View>
 
@@ -560,7 +566,7 @@ function SpecialPicksSection({
   togglingId: string | null;
   gameResults: GameResult[];
   onPick: (matchup: RankedMatchup, isCurrentlyPicked: boolean) => void;
-  onShareReceipt: (pick: SpecialPick, matchup: RankedMatchup, result: GameResult) => void;
+  onShareReceipt: (pick: SpecialPick, matchup: RankedMatchup, result: GameResult, statLabel?: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -571,6 +577,50 @@ function SpecialPicksSection({
 
   const lockDate = getRoundLockDate(roundId);
   const lockStr = lockDate ? formatLockDate(lockDate.toISOString()) : "";
+
+  // ── Section-level winner for blowout / high_scorer ─────────────────────────
+  // These are round-wide contests: the winner is determined only after ALL
+  // candidate games in the round finish. We must NOT show a receipt for a
+  // partial round — that would be premature and potentially wrong.
+  let sectionWinnerMatchupId: string | null = null;
+  let sectionWinnerStatLabel: string | undefined;
+
+  if (pickType !== "upset" && matchups.length > 0) {
+    // Collect results for every candidate matchup in this section
+    const candidateResults = matchups
+      .map((m) => gameResults.find((r) => r.matchup_id === m.matchupId))
+      .filter((r): r is GameResult => r !== undefined);
+
+    // Only proceed if every candidate game has a result (round complete for this type)
+    if (candidateResults.length === matchups.length) {
+      if (pickType === "blowout") {
+        let maxMargin = -1;
+        for (const r of candidateResults) {
+          if (r.winner_score != null && r.loser_score != null) {
+            const margin = r.winner_score - r.loser_score;
+            if (margin > maxMargin) {
+              maxMargin = margin;
+              sectionWinnerMatchupId = r.matchup_id;
+              sectionWinnerStatLabel = `${margin} pt margin`;
+            }
+          }
+        }
+      } else if (pickType === "high_scorer") {
+        let maxTotal = -1;
+        for (const r of candidateResults) {
+          if (r.winner_score != null && r.loser_score != null) {
+            const total = r.winner_score + r.loser_score;
+            if (total > maxTotal) {
+              maxTotal = total;
+              sectionWinnerMatchupId = r.matchup_id;
+              sectionWinnerStatLabel = `${total} pts combined`;
+            }
+          }
+        }
+      }
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -634,11 +684,17 @@ function SpecialPicksSection({
               ? picks.find((p) => p.pick_type === pickType && p.matchup_id === m.matchupId)
               : undefined;
             const result = gameResults.find((r) => r.matchup_id === m.matchupId);
+
+            // Correctness logic:
+            // - upset: game-specific — is this game's result an upset AND did user pick winner?
+            // - blowout/high_scorer: round-specific — only correct when ALL candidate games
+            //   in this section have finished AND this game is the round winner.
             const correct = picked && myPick && result && (
               pickType === "upset"
                 ? result.was_upset && result.winner_name === myPick.picked_team
-                : true
+                : m.matchupId === sectionWinnerMatchupId
             );
+
             return (
               <MatchupCard
                 key={m.matchupId}
@@ -650,7 +706,7 @@ function SpecialPicksSection({
                 gameResult={correct && result ? result : undefined}
                 onPress={() => canPick && onPick(m, picked)}
                 onShareReceipt={correct && myPick && result
-                  ? () => onShareReceipt(myPick, m, result)
+                  ? () => onShareReceipt(myPick, m, result, sectionWinnerStatLabel)
                   : undefined
                 }
               />
@@ -765,9 +821,9 @@ export default function PicksHub() {
     });
   }
 
-  function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult) {
+  function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult, statLabel?: string) {
     const name = myScore?.display_name || myScore?.username || user?.email?.split("@")[0] || "me";
-    setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType, username: name });
+    setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType, username: name, statLabel });
   }
 
   const topPadding = isWeb ? 67 : insets.top;
@@ -1722,6 +1778,19 @@ const receiptStyles = StyleSheet.create({
     color: "#4B5563",
     fontWeight: "500" as const,
     marginTop: -6,
+  },
+  statBadge: {
+    alignSelf: "center" as const,
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  statBadgeText: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+    letterSpacing: 0.5,
   },
   brandingRow: {
     flexDirection: "row" as const,
