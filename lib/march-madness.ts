@@ -585,9 +585,16 @@ export function getCurrentRound(): MMRound {
   const cdtDate = new Date(Date.now() - 5 * 60 * 60 * 1000);
   const today = cdtDate.toISOString().split("T")[0];
   let activeRound = MM_ROUNDS[1]; // Default: Round of 64
-  for (const round of MM_ROUNDS) {
+  for (let i = 0; i < MM_ROUNDS.length; i++) {
+    const round = MM_ROUNDS[i];
     if (round.startDate <= today) {
       activeRound = round;
+      // If today is past this round's end date, peek at the next round.
+      // Show the next round's featured matchups as "coming up" so users
+      // see upcoming games instead of completed ones during the gap between rounds.
+      if (round.endDate < today && i + 1 < MM_ROUNDS.length) {
+        activeRound = MM_ROUNDS[i + 1];
+      }
     }
   }
   return activeRound;
