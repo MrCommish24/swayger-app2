@@ -34,15 +34,96 @@ export function getActiveGameWindow(): GameWindow | null {
   return GAME_WINDOWS.find((w) => now >= w.startMs && now < w.endMs) ?? null;
 }
 
-// ─── Odds API types ───────────────────────────────────────────────────────────
+// ─── Internal game shape (shared between fetch strategies) ────────────────────
 
-interface OddsScoreGame {
+interface CompletedGame {
   id: string;
   commence_time: string;
-  completed: boolean;
   home_team: string;
   away_team: string;
-  scores: Array<{ name: string; score: string }> | null;
+  scores: Array<{ name: string; score: string }>;
+}
+
+// ─── ESPN API integration ─────────────────────────────────────────────────────
+// Uses the unofficial ESPN NCAAB scoreboard API — free, no API key, no quota.
+// Endpoint: https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard
+// groups=50 filters to the NCAA tournament bracket.
+
+interface ESPNCompetitor {
+  homeAway: "home" | "away";
+  team: { displayName: string };
+  score: string;
+}
+
+interface ESPNCompetition {
+  startDate: string;
+  competitors: ESPNCompetitor[];
+  status: { type: { completed: boolean } };
+}
+
+interface ESPNEvent {
+  id: string;
+  competitions: ESPNCompetition[];
+}
+
+function formatDateUTC(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
+// Fetch completed NCAA tournament games from ESPN for all dates covered by the window
+async function fetchESPNScoresForWindow(window: GameWindow): Promise<CompletedGame[]> {
+  // Derive the UTC dates spanned by this game window (e.g. round-32 spans Mar 21 and Mar 22)
+  const startDate = formatDateUTC(window.startMs);
+  const endDate   = formatDateUTC(window.endMs - 1); // -1ms so midnight doesn't push to next day
+  const datesToFetch = startDate === endDate ? [startDate] : [startDate, endDate];
+
+  const allGames: CompletedGame[] = [];
+
+  for (const date of datesToFetch) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&dates=${date}&limit=50`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`[auto-score] ESPN API error for ${date}: HTTP ${res.status}`);
+        continue;
+      }
+      const data = (await res.json()) as { events?: ESPNEvent[] };
+      const events = data.events ?? [];
+
+      for (const event of events) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        if (!comp.status?.type?.completed) continue;
+
+        const home = comp.competitors.find((c) => c.homeAway === "home");
+        const away = comp.competitors.find((c) => c.homeAway === "away");
+        if (!home || !away) continue;
+
+        // Only include games that commenced within our active window
+        const commenceMs = new Date(comp.startDate).getTime();
+        if (commenceMs < window.startMs || commenceMs >= window.endMs) continue;
+
+        allGames.push({
+          id: event.id,
+          commence_time: comp.startDate,
+          home_team: home.team.displayName,
+          away_team: away.team.displayName,
+          scores: [
+            { name: home.team.displayName, score: home.score },
+            { name: away.team.displayName, score: away.score },
+          ],
+        });
+      }
+    } catch (e) {
+      console.error(`[auto-score] ESPN API fetch failed for ${date}:`, e);
+    }
+  }
+
+  return allGames;
 }
 
 // ─── Team name fuzzy matching ─────────────────────────────────────────────────
@@ -79,38 +160,19 @@ function teamsMatch(apiName: string, ourName: string): boolean {
 // (e.g. "Louisville" not "Louisville Cardinals") so they match mm_locked_takes.teams.
 
 export async function checkAndAutoScore(): Promise<{ newResults: number; scored: number; skipped: string }> {
-  const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) {
-    return { newResults: 0, scored: 0, skipped: "no ODDS_API_KEY" };
-  }
-
   const window = getActiveGameWindow();
   if (!window) {
     return { newResults: 0, scored: 0, skipped: "not in active game window" };
   }
 
-  // ── Fetch completed scores from Odds API ──────────────────────────────────
-  const oddsUrl = `https://api.the-odds-api.com/v4/sports/basketball_ncaab/scores/?apiKey=${apiKey}&daysFrom=2`;
-  let allGames: OddsScoreGame[];
+  // ── Fetch completed scores from ESPN ─────────────────────────────────────
+  let completedGames: CompletedGame[];
   try {
-    const res = await fetch(oddsUrl);
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`[auto-score] Odds API error ${res.status}: ${body}`);
-      return { newResults: 0, scored: 0, skipped: `odds api ${res.status}` };
-    }
-    allGames = (await res.json()) as OddsScoreGame[];
+    completedGames = await fetchESPNScoresForWindow(window);
   } catch (e) {
-    console.error("[auto-score] Odds API fetch failed:", e);
+    console.error("[auto-score] ESPN fetch failed:", e);
     return { newResults: 0, scored: 0, skipped: "fetch error" };
   }
-
-  // Only process games that completed AND commenced within our active window
-  const completedGames = allGames.filter((g) => {
-    if (!g.completed || !g.scores || g.scores.length < 2) return false;
-    const commenceMs = new Date(g.commence_time).getTime();
-    return commenceMs >= window.startMs && commenceMs < window.endMs;
-  });
 
   if (!completedGames.length) {
     console.log(`[auto-score] No completed ${window.roundId} games found yet`);
@@ -151,7 +213,7 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
   let newResults = 0;
 
   for (const game of completedGames) {
-    const gameScores = game.scores!;
+    const gameScores = game.scores;
     const homeScoreStr = gameScores.find((s) => s.name === game.home_team)?.score ?? "0";
     const awayScoreStr = gameScores.find((s) => s.name === game.away_team)?.score ?? "0";
     const homeScore = parseInt(homeScoreStr, 10);
@@ -163,7 +225,6 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
     }
 
     const winnerApiName = homeScore > awayScore ? game.home_team : game.away_team;
-    const loserApiName  = homeScore > awayScore ? game.away_team : game.home_team;
     const winnerScore   = Math.max(homeScore, awayScore);
     const loserScore    = Math.min(homeScore, awayScore);
 
@@ -197,10 +258,10 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
       loserSeed  = winnerIsTeamA ? canonicalRow.seed_b : canonicalRow.seed_a;
       wasUpset   = (winnerSeed ?? 0) > (loserSeed ?? 0); // higher seed # = underdog
     } else {
-      // Game not in our picks system — use raw API names (won't match any picks,
+      // Game not in our picks system — use raw ESPN names (won't match any picks,
       // but winner_name still goes into winnersByRound for potential locked_takes)
       canonicalWinnerName = winnerApiName;
-      canonicalLoserName  = loserApiName;
+      canonicalLoserName  = homeScore > awayScore ? game.away_team : game.home_team;
     }
 
     // Collect all unique matchup_ids to insert results for
@@ -231,7 +292,7 @@ export async function checkAndAutoScore(): Promise<{ newResults: number; scored:
           loser_score:  loserScore,
           was_upset:    wasUpset,
           resolved_at:  new Date().toISOString(),
-          resolved_by:  "auto-odds-api",
+          resolved_by:  "auto-espn-api",
         },
         { onConflict: "round_id,matchup_id" },
       );
