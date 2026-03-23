@@ -201,7 +201,7 @@ function PickReceiptCard({
           <Text style={[receiptStyles.typeLabel, { color: cfg.color }]}>{cfg.label}</Text>
         </View>
 
-        <Text style={receiptStyles.username}>@{target.username}</Text>
+        <Text style={receiptStyles.username}>{target.username}</Text>
 
         <View style={receiptStyles.calledItRow}>
           <Text style={receiptStyles.checkmark}>✓</Text>
@@ -822,7 +822,11 @@ export default function PicksHub() {
   }
 
   function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult, statLabel?: string) {
-    const name = myScore?.display_name || myScore?.username || user?.email?.split("@")[0] || "me";
+    const name = myScore?.display_name
+      ? myScore.display_name
+      : myScore?.username
+        ? `@${myScore.username}`
+        : `@${user?.email?.split("@")[0] ?? "me"}`;
     setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType, username: name, statLabel });
   }
 
