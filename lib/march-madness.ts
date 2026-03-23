@@ -391,37 +391,104 @@ export const MM_ROUNDS: MMRound[] = [
     endDate: "2026-03-27",
     lockDate: "2026-03-27T12:00:00-05:00",
     featured: [
+      // ── MARCH 26 — 4 GAMES ──
+
+      // 6:10pm CDT — West
       {
-        id: "s16-east",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "East",
-        prompt: "East Sweet 16 — Washington, DC. Update with real teams.",
-        gameDateLabel: "Mar 26",
-      },
-      {
-        id: "s16-south",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "South",
-        prompt: "South Sweet 16 — Houston, TX. Update with real teams.",
-        gameDateLabel: "Mar 26",
-      },
-      {
-        id: "s16-west",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
+        id: "s16-west-purdue-texas",
+        teamA: { name: "Purdue", seed: 2 },
+        teamB: { name: "Texas", seed: 11 },
         region: "West",
-        prompt: "West Sweet 16 — San Jose, CA. Update with real teams.",
-        gameDateLabel: "Mar 27",
+        prompt: "Texas survived the First Four and knocked off two teams to get here as an #11 seed. Purdue's frontline is 4 inches taller on average. The Longhorns thrive in chaos — can they pull off one more miracle?",
+        gameDateLabel: "Mar 26",
+        site: "San Jose, CA",
+        keyStat: "Texas is 3-0 as double-digit underdogs this tournament",
       },
+
+      // 6:30pm CDT — South
       {
-        id: "s16-midwest",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "Midwest",
-        prompt: "Midwest Sweet 16 — Chicago, IL. Update with real teams.",
+        id: "s16-south-nebraska-iowa",
+        teamA: { name: "Nebraska", seed: 4 },
+        teamB: { name: "Iowa", seed: 9 },
+        region: "South",
+        prompt: "Iowa just stunned #1 Florida in the Round of 32. Nebraska has been waiting their whole program for a run like this. Big Ten rivals who know each other cold — one of them punches their first-ever Elite 8 ticket.",
+        gameDateLabel: "Mar 26",
+        site: "Houston, TX",
+        keyStat: "Iowa's 9-seed upset of Florida was the biggest of R32",
+      },
+
+      // 8:45pm CDT — West
+      {
+        id: "s16-west-arizona-arkansas",
+        teamA: { name: "Arizona", seed: 1 },
+        teamB: { name: "Arkansas", seed: 4 },
+        region: "West",
+        prompt: "Arizona leads the nation in 3-point percentage and is the last #1 seed standing in the West. Arkansas plays a suffocating switch-everything defense that has held opponents 8 points under their average. This could be the best game of the Sweet 16.",
+        gameDateLabel: "Mar 26",
+        site: "San Jose, CA",
+        keyStat: "Arkansas held their last two opponents to under 60 pts",
+      },
+
+      // 9:05pm CDT — South
+      {
+        id: "s16-south-houston-illinois",
+        teamA: { name: "Houston", seed: 2 },
+        teamB: { name: "Illinois", seed: 3 },
+        region: "South",
+        prompt: "Houston is playing at Toyota Center — their home arena — for the Sweet 16. The Cougars feed off the crowd. Illinois has the best point guard in the field in Ty Rodgers. Home crowd vs. best ball-handler — who wins?",
+        gameDateLabel: "Mar 26",
+        site: "Houston, TX",
+        keyStat: "Houston is 12-1 all-time at Toyota Center in tournament play",
+      },
+
+      // ── MARCH 27 — 4 GAMES ──
+
+      // 6:10pm CDT — East
+      {
+        id: "s16-east-duke-stjohns",
+        teamA: { name: "Duke", seed: 1 },
+        teamB: { name: "St. John's", seed: 5 },
+        region: "East",
+        prompt: "St. John's is in the Sweet 16 for the first time in over 25 years. Duke is the #1 overall seed and still a perfect 2-0 this tournament. The Johnnies have nothing to lose — Duke has everything to prove.",
         gameDateLabel: "Mar 27",
+        site: "Washington, DC",
+        keyStat: "St. John's first Sweet 16 since 2000 — 26-year drought ends here or continues",
+      },
+
+      // 6:35pm CDT — Midwest
+      {
+        id: "s16-midwest-michigan-alabama",
+        teamA: { name: "Michigan", seed: 1 },
+        teamB: { name: "Alabama", seed: 4 },
+        region: "Midwest",
+        prompt: "Michigan's dominant rim-protection defense — 7th nationally in block rate — meets Alabama's fast-break machine averaging 84 ppg. The Wolverines are 32-3 on the year. Alabama loves the open court. One of these styles will break.",
+        gameDateLabel: "Mar 27",
+        site: "Chicago, IL",
+        keyStat: "Alabama scores 20+ fastbreak pts per game — Michigan blocks 7 shots per game",
+      },
+
+      // 8:45pm CDT — East
+      {
+        id: "s16-east-uconn-michiganst",
+        teamA: { name: "UConn", seed: 2 },
+        teamB: { name: "Michigan St.", seed: 3 },
+        region: "East",
+        prompt: "UConn won the national championship two years ago and still has five players from that roster. Michigan State's Tom Izzo is a Sweet 16 regular — this is his 15th appearance. Two programs that know how to win in March.",
+        gameDateLabel: "Mar 27",
+        site: "Washington, DC",
+        keyStat: "UConn: 2x champ in 3 years | MSU: 15th Sweet 16 under Izzo",
+      },
+
+      // 9:10pm CDT — Midwest
+      {
+        id: "s16-midwest-iowast-tennessee",
+        teamA: { name: "Iowa St.", seed: 2 },
+        teamB: { name: "Tennessee", seed: 6 },
+        region: "Midwest",
+        prompt: "Iowa State's four-deep wing rotation is the most versatile in the field. Tennessee plays suffocating perimeter defense — ranked 3rd nationally in opponent 3P%. The Cyclones will live or die by the three-point line tonight.",
+        gameDateLabel: "Mar 27",
+        site: "Chicago, IL",
+        keyStat: "Tennessee holds opponents to 28% from 3 — Iowa St. shoots 39% from 3",
       },
     ],
   },

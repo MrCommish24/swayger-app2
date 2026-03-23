@@ -593,7 +593,38 @@ function buildSeedBasedMatchups(roundId: string): {
     };
   }
 
-  // ── For Sweet 16 and beyond: auto-build from whatever matchup data is available ──
+  // ── Sweet 16: curated list built from confirmed R32 results ──────────────────
+  if (roundId === "sweet-16") {
+    const counts = CANDIDATE_COUNTS["sweet-16"];
+    const s16All: RankedMatchup[] = [
+      // ordered by matchup intrigue / upset potential
+      { matchupId: "events-s16-west-purdue-texas",    teamA: "Purdue Boilermakers",    seedA: 2,  teamB: "Texas Longhorns",        seedB: 11, region: "West",    rank: 0, favoriteTeam: "Purdue Boilermakers",    favoriteSeed: 2,  underdogTeam: "Texas Longhorns",        underdogSeed: 11, upsetProbability: 0.22, spread: 16, overUnder: 152, underdogMoneyline: 620, gameDate: "Mar 26", site: "San Jose, CA",   oddsSource: "seed-based", keyStat: "Texas is 3-0 as double-digit underdog this tournament" },
+      { matchupId: "events-s16-south-nebraska-iowa",  teamA: "Nebraska Cornhuskers",   seedA: 4,  teamB: "Iowa Hawkeyes",           seedB: 9,  region: "South",   rank: 0, favoriteTeam: "Nebraska Cornhuskers",   favoriteSeed: 4,  underdogTeam: "Iowa Hawkeyes",           underdogSeed: 9,  upsetProbability: 0.38, spread: 6,  overUnder: 148, underdogMoneyline: 175, gameDate: "Mar 26", site: "Houston, TX",    oddsSource: "seed-based", keyStat: "Iowa stunned #1 Florida in R32 — biggest upset of the round" },
+      { matchupId: "events-s16-east-duke-stjohns",    teamA: "Duke Blue Devils",       seedA: 1,  teamB: "St. John's Red Storm",   seedB: 5,  region: "East",    rank: 0, favoriteTeam: "Duke Blue Devils",       favoriteSeed: 1,  underdogTeam: "St. John's Red Storm",   underdogSeed: 5,  upsetProbability: 0.30, spread: 9,  overUnder: 158, underdogMoneyline: 310, gameDate: "Mar 27", site: "Washington, DC", oddsSource: "seed-based", keyStat: "St. John's first Sweet 16 since 2000" },
+      { matchupId: "events-s16-midwest-iowast-tenn",  teamA: "Iowa State Cyclones",    seedA: 2,  teamB: "Tennessee Volunteers",   seedB: 6,  region: "Midwest", rank: 0, favoriteTeam: "Iowa State Cyclones",    favoriteSeed: 2,  underdogTeam: "Tennessee Volunteers",   underdogSeed: 6,  upsetProbability: 0.32, spread: 7,  overUnder: 145, underdogMoneyline: 245, gameDate: "Mar 27", site: "Chicago, IL",    oddsSource: "seed-based", keyStat: "Tennessee holds opponents to 28% from 3 — Iowa St. shoots 39%" },
+      { matchupId: "events-s16-midwest-mich-bama",    teamA: "Michigan Wolverines",    seedA: 1,  teamB: "Alabama Crimson Tide",   seedB: 4,  region: "Midwest", rank: 0, favoriteTeam: "Michigan Wolverines",    favoriteSeed: 1,  underdogTeam: "Alabama Crimson Tide",   underdogSeed: 4,  upsetProbability: 0.28, spread: 7,  overUnder: 162, underdogMoneyline: 245, gameDate: "Mar 27", site: "Chicago, IL",    oddsSource: "seed-based", keyStat: "Alabama averages 20+ fastbreak pts; Michigan blocks 7 per game" },
+      { matchupId: "events-s16-west-arizona-ark",     teamA: "Arizona Wildcats",       seedA: 1,  teamB: "Arkansas Razorbacks",    seedB: 4,  region: "West",    rank: 0, favoriteTeam: "Arizona Wildcats",       favoriteSeed: 1,  underdogTeam: "Arkansas Razorbacks",    underdogSeed: 4,  upsetProbability: 0.28, spread: 7,  overUnder: 144, underdogMoneyline: 245, gameDate: "Mar 26", site: "San Jose, CA",   oddsSource: "seed-based", keyStat: "Arkansas held last 2 opponents under 60 pts" },
+      { matchupId: "events-s16-east-uconn-msu",       teamA: "UConn Huskies",          seedA: 2,  teamB: "Michigan St Spartans",   seedB: 3,  region: "East",    rank: 0, favoriteTeam: "UConn Huskies",          favoriteSeed: 2,  underdogTeam: "Michigan St Spartans",   underdogSeed: 3,  upsetProbability: 0.44, spread: 3,  overUnder: 139, underdogMoneyline: 145, gameDate: "Mar 27", site: "Washington, DC", oddsSource: "seed-based", keyStat: "UConn 2x champ in 3 yrs | MSU: Izzo's 15th Sweet 16" },
+      { matchupId: "events-s16-south-houston-ill",    teamA: "Houston Cougars",        seedA: 2,  teamB: "Illinois Fighting Illini", seedB: 3, region: "South",  rank: 0, favoriteTeam: "Houston Cougars",        favoriteSeed: 2,  underdogTeam: "Illinois Fighting Illini", underdogSeed: 3, upsetProbability: 0.44, spread: 3,  overUnder: 140, underdogMoneyline: 145, gameDate: "Mar 26", site: "Houston, TX",    oddsSource: "seed-based", keyStat: "Houston playing at home (Toyota Center) — 12-1 in tournament there" },
+    ];
+
+    // Upset: sorted by seed differential desc (biggest underdog first = most dramatic story)
+    const upsetSorted = [...s16All].sort((a, b) =>
+      ((b.underdogSeed ?? 0) - (b.favoriteSeed ?? 0)) - ((a.underdogSeed ?? 0) - (a.favoriteSeed ?? 0))
+    );
+    // Blowout: sorted by spread desc (biggest expected margin)
+    const blowoutSorted = [...s16All].sort((a, b) => (b.spread ?? 0) - (a.spread ?? 0));
+    // High scorer: sorted by over/under desc
+    const highScorerSorted = [...s16All].sort((a, b) => (b.overUnder ?? 0) - (a.overUnder ?? 0));
+
+    return {
+      upset:      upsetSorted.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
+      blowout:    blowoutSorted.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
+      highScorer: highScorerSorted.slice(0, counts.high_scorer).map((m, i) => ({ ...m, rank: i + 1 })),
+    };
+  }
+
+  // ── For Elite 8 and beyond: auto-build from whatever matchup data is available ──
   if (roundId !== "round-64") {
     return { upset: [], blowout: [], highScorer: [] };
   }
