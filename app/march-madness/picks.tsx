@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/lib/supabase";
 import Colors from "@/constants/colors";
 import {
   TAKE_CONFIGS,
@@ -760,6 +761,20 @@ export default function PicksHub() {
     enabled: !!user,
   });
 
+  const { data: myProfile } = useQuery<{ display_name: string | null; username: string } | null>({
+    queryKey: ["my-profile", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("display_name, username")
+        .eq("id", user!.id)
+        .single();
+      return data ?? null;
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: isSecondChance = false } = useQuery<boolean>({
     queryKey: ["mm-second-chance", user?.id],
     queryFn: () => fetchSecondChanceStatus(user!.id),
@@ -822,10 +837,10 @@ export default function PicksHub() {
   }
 
   function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult, statLabel?: string) {
-    const name = myScore?.display_name
-      ? myScore.display_name
-      : myScore?.username
-        ? `@${myScore.username}`
+    const name = myProfile?.display_name
+      ? myProfile.display_name
+      : myProfile?.username
+        ? `@${myProfile.username}`
         : `@${user?.email?.split("@")[0] ?? "me"}`;
     setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType, username: name, statLabel });
   }
