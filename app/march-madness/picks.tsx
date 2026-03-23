@@ -855,7 +855,7 @@ export default function PicksHub() {
       <View style={styles.header}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
-          onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")}
+          onPress={() => router.replace("/march-madness")}
           hitSlop={12}
         >
           <Ionicons name="chevron-back" size={22} color={Colors.dark.text} />
