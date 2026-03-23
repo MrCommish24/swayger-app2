@@ -271,27 +271,43 @@ function PickReceiptModal({
     if (sharing) return;
     setSharing(true);
     try {
+      const { result, matchup, pick, pickType } = target!;
+      const cfg = pickTypeConfig(pickType);
+      const hasScore = result.winner_score != null && result.loser_score != null;
+      const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
+      const roundStr = roundLabel(pick.round_id);
+
       if (Platform.OS === "web") {
-        const { result, matchup, pickType } = target!;
-        const cfg = pickTypeConfig(pickType);
-        const hasScore = result.winner_score != null && result.loser_score != null;
-        const scoreStr = hasScore ? ` ${result.winner_score}–${result.loser_score}` : "";
+        // On web: capture the card as a PNG data URL and trigger a download.
+        // Falls back to a text snippet if capture isn't available.
+        try {
+          if (cardRef.current) {
+            const dataUrl = await captureRef(cardRef, { format: "png", quality: 1, result: "data-uri" });
+            const a = document.createElement("a");
+            a.href = dataUrl;
+            a.download = "swayger-pick-receipt.png";
+            a.click();
+            return;
+          }
+        } catch {
+          // capture failed — fall through to text share
+        }
         const msg =
-          `${cfg.icon} ${cfg.label} — CALLED IT\n\n` +
+          `${cfg.icon} ${cfg.label} — ${cfg.receiptHeadline}\n\n` +
           `${result.winner_name} def. ${result.loser_name}${scoreStr}\n` +
-          `${roundLabel(matchup.matchupId)}, 2026 March Madness\n\n` +
+          `${roundStr} · 2026 March Madness\n\n` +
           `⚡ Swayger — make it a Swayger`;
         await Share.share({ message: msg });
         return;
       }
+
       if (!cardRef.current) { setSharing(false); return; }
       const uri = await captureRef(cardRef, { format: "png", quality: 1, result: "tmpfile" });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share your pick receipt", UTI: "public.png" });
       } else {
-        const { result } = target!;
-        await Share.share({ message: `✓ Called it — ${result.winner_name} def. ${result.loser_name} · Swayger MM picks` });
+        await Share.share({ message: `${cfg.icon} ${cfg.receiptHeadline} — ${result.winner_name} def. ${result.loser_name}${scoreStr} · ${roundStr} · Swayger` });
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -320,12 +336,18 @@ function PickReceiptModal({
             {sharing
               ? <ActivityIndicator size="small" color="#fff" />
               : <>
-                  <Ionicons name="share-outline" size={18} color="#fff" />
-                  <Text style={receiptStyles.shareBtnText}>Share to Instagram</Text>
+                  <Ionicons name={Platform.OS === "web" ? "download-outline" : "share-outline"} size={18} color="#fff" />
+                  <Text style={receiptStyles.shareBtnText}>
+                    {Platform.OS === "web" ? "Download Image" : "Share to Instagram"}
+                  </Text>
                 </>
             }
           </Pressable>
-          <Text style={receiptStyles.shareHint}>Saves image to share sheet · works with Instagram, iMessage, and more</Text>
+          <Text style={receiptStyles.shareHint}>
+            {Platform.OS === "web"
+              ? "Downloads a PNG to your device — then share anywhere"
+              : "Saves image to share sheet · works with Instagram, iMessage, and more"}
+          </Text>
         </View>
       </View>
     </Modal>
