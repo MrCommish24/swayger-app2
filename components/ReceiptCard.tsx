@@ -14,23 +14,29 @@ export interface ReceiptCardProps {
   title: string;
   category: string;
   creatorUsername: string;
+  creatorDisplayName?: string | null;
   opponentUsername: string;
+  opponentDisplayName?: string | null;
   creatorPick: string;
   opponentPick: string;
   outcome: string;
   stakeUnits: number;
 }
 
+function displayLabel(displayName: string | null | undefined, username: string): string {
+  return displayName || `@${username}`;
+}
+
 function resolveWinner(
   outcome: string,
-  creatorUsername: string,
-  opponentUsername: string
+  creatorLabel: string,
+  opponentLabel: string
 ): { line: string; emoji: string; isGold: boolean } {
   switch (outcome) {
     case "creator":
-      return { line: `@${creatorUsername} wins`, emoji: "🏆", isGold: true };
+      return { line: `${creatorLabel} wins`, emoji: "🏆", isGold: true };
     case "opponent":
-      return { line: `@${opponentUsername} wins`, emoji: "🏆", isGold: true };
+      return { line: `${opponentLabel} wins`, emoji: "🏆", isGold: true };
     case "draw":
       return { line: "Draw", emoji: "🤝", isGold: false };
     case "no_contest":
@@ -44,13 +50,17 @@ export default function ReceiptCard({
   title,
   category,
   creatorUsername,
+  creatorDisplayName,
   opponentUsername,
+  opponentDisplayName,
   creatorPick,
   opponentPick,
   outcome,
   stakeUnits,
 }: ReceiptCardProps) {
-  const winner = resolveWinner(outcome, creatorUsername, opponentUsername);
+  const creatorLabel = displayLabel(creatorDisplayName, creatorUsername);
+  const opponentLabel = displayLabel(opponentDisplayName, opponentUsername);
+  const winner = resolveWinner(outcome, creatorLabel, opponentLabel);
 
   return (
     <View style={styles.card} collapsable={false}>
@@ -70,7 +80,7 @@ export default function ReceiptCard({
         <View style={styles.vsRow}>
           <View style={styles.playerCol}>
             <Text style={styles.username} numberOfLines={1}>
-              @{creatorUsername}
+              {creatorLabel}
             </Text>
             <View style={styles.pickBubble}>
               <Text style={styles.pickText} numberOfLines={3}>
@@ -85,7 +95,7 @@ export default function ReceiptCard({
 
           <View style={styles.playerCol}>
             <Text style={styles.username} numberOfLines={1}>
-              @{opponentUsername}
+              {opponentLabel}
             </Text>
             <View style={styles.pickBubble}>
               <Text style={styles.pickText} numberOfLines={3}>

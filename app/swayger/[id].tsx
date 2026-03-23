@@ -1358,7 +1358,9 @@ export default function SwaygerDetailScreen() {
                   title={swayger.title}
                   category={swayger.category || "Other"}
                   creatorUsername={profiles?.creator?.username || "Creator"}
+                  creatorDisplayName={profiles?.creator?.display_name || null}
                   opponentUsername={profiles?.opponent?.username || "Opponent"}
+                  opponentDisplayName={profiles?.opponent?.display_name || null}
                   creatorPick={swayger.creator_pick}
                   opponentPick={swayger.opponent_pick}
                   outcome={swayger.settled_outcome}

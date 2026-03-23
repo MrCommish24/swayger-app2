@@ -27,13 +27,13 @@ function catIcon(category: string): keyof typeof Ionicons.glyphMap {
   return CAT_ICONS[category] || "trophy-outline";
 }
 
-function leadLine(myWins: number, theirWins: number, draws: number, myName: string, theirName: string): string {
+function leadLine(myWins: number, theirWins: number, draws: number, myLabel: string, theirLabel: string): string {
   const total = myWins + theirWins + draws;
   if (total === 0) return "No settled Swaygers yet";
   if (myWins === theirWins) return "All tied up";
   const diff = Math.abs(myWins - theirWins);
-  if (myWins > theirWins) return `@${myName} leads by ${diff}`;
-  return `@${theirName} leads by ${diff}`;
+  if (myWins > theirWins) return `${myLabel} leads by ${diff}`;
+  return `${theirLabel} leads by ${diff}`;
 }
 
 function winPct(wins: number, total: number): string {
@@ -62,7 +62,9 @@ export default function H2HReceiptCard({
   overall,
   byCategory,
 }: H2HReceiptCardProps) {
-  const lead = leadLine(overall.myWins, overall.theirWins, overall.draws, myUsername, opponentUsername);
+  const myLabel = myDisplayName || `@${myUsername}`;
+  const theirLabel = opponentDisplayName || `@${opponentUsername}`;
+  const lead = leadLine(overall.myWins, overall.theirWins, overall.draws, myLabel, theirLabel);
   const decided = overall.myWins + overall.theirWins;
   const myPct = winPct(overall.myWins, decided);
   const theirPct = winPct(overall.theirWins, decided);
@@ -84,7 +86,7 @@ export default function H2HReceiptCard({
             <Text style={styles.avatarInitial}>{myInitial}</Text>
           </View>
           <Text style={[styles.playerName, { color: BLUE }]} numberOfLines={1}>
-            @{myUsername}
+            {myLabel}
           </Text>
           <Text style={[styles.bigScore, { color: BLUE }]}>{overall.myWins}</Text>
           <Text style={[styles.pctLabel, { color: BLUE }]}>{myPct}</Text>
@@ -104,7 +106,7 @@ export default function H2HReceiptCard({
             <Text style={styles.avatarInitial}>{theirInitial}</Text>
           </View>
           <Text style={[styles.playerName, { color: GOLD }]} numberOfLines={1}>
-            @{opponentUsername}
+            {theirLabel}
           </Text>
           <Text style={[styles.bigScore, { color: GOLD }]}>{overall.theirWins}</Text>
           <Text style={[styles.pctLabel, { color: GOLD }]}>{theirPct}</Text>
