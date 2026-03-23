@@ -343,11 +343,10 @@ function PickReceiptModal({
               ? <ActivityIndicator size="small" color="#fff" />
               : <>
                   <Ionicons name="share-outline" size={18} color="#fff" />
-                  <Text style={receiptStyles.shareBtnText}>Share to Instagram</Text>
+                  <Text style={receiptStyles.shareBtnText}>Share Receipt</Text>
                 </>
             }
           </Pressable>
-          <Text style={receiptStyles.shareHint}>Saves image to share sheet · works with Instagram, iMessage, and more</Text>
         </View>
       </View>
     </Modal>
@@ -1906,11 +1905,5 @@ const receiptStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700" as const,
     color: "#FFFFFF",
-  },
-  shareHint: {
-    fontSize: 11,
-    color: "#6B7280",
-    textAlign: "center" as const,
-    lineHeight: 15,
   },
 });
