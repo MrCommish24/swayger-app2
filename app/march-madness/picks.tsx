@@ -171,6 +171,7 @@ type ReceiptTarget = {
   matchup: RankedMatchup;
   result: GameResult;
   pickType: SpecialPickType;
+  username: string;
 };
 
 function pickTypeConfig(pickType: SpecialPickType) {
@@ -198,6 +199,8 @@ function PickReceiptCard({
           <Text style={receiptStyles.typeIcon}>{cfg.icon}</Text>
           <Text style={[receiptStyles.typeLabel, { color: cfg.color }]}>{cfg.label}</Text>
         </View>
+
+        <Text style={receiptStyles.username}>@{target.username}</Text>
 
         <View style={receiptStyles.calledItRow}>
           <Text style={receiptStyles.checkmark}>✓</Text>
@@ -763,7 +766,8 @@ export default function PicksHub() {
   }
 
   function handleShareReceipt(pick: SpecialPick, matchup: RankedMatchup, result: GameResult) {
-    setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType });
+    const name = myScore?.display_name || myScore?.username || user?.email?.split("@")[0] || "me";
+    setReceiptTarget({ pick, matchup, result, pickType: pick.pick_type as SpecialPickType, username: name });
   }
 
   const topPadding = isWeb ? 67 : insets.top;
@@ -1623,6 +1627,13 @@ const receiptStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800" as const,
     letterSpacing: 1.5,
+  },
+  username: {
+    fontSize: 22,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+    marginTop: -4,
   },
   calledItRow: {
     flexDirection: "row" as const,
