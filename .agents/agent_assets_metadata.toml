@@ -54,3 +54,9 @@ id = "O1Qy0fkcWhdK299sF8Tn4"
 uri = "file://docs/swayger-wtp-experiments.md"
 type = "text"
 title = "Swayger — Willingness to Pay Experiments"
+
+[[outputs]]
+id = "M_ovpPp1leXTDtZ9WsEEi"
+uri = "file://docs/swayger-referral-system.md"
+type = "text"
+title = "Swayger — Referral System Design"
