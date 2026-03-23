@@ -1737,9 +1737,9 @@ const receiptStyles = StyleSheet.create({
   body: {
     flex: 1,
     paddingHorizontal: 28,
-    paddingTop: 24,
-    paddingBottom: 12,
-    gap: 12,
+    paddingTop: 20,
+    paddingBottom: 10,
+    gap: 9,
   },
   typeBadgeRow: {
     flexDirection: "row" as const,
@@ -1767,16 +1767,17 @@ const receiptStyles = StyleSheet.create({
     gap: 10,
   },
   checkmark: {
-    fontSize: 36,
+    fontSize: 26,
     color: "#22C55E",
     fontWeight: "800" as const,
-    lineHeight: 44,
+    lineHeight: 32,
   },
   calledItText: {
-    fontSize: 36,
+    flex: 1,
+    fontSize: 24,
     fontWeight: "900" as const,
     color: "#FFFFFF",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   divider: {
     height: 1,
