@@ -1161,7 +1161,8 @@ export function registerMMSpecialRoutes(app: Express) {
   // POST /api/mm/boost-checkout
   // Creates a Stripe Checkout session for the $5 Elite 8 2X boost.
   const ELITE8_BOOST_LOCK = new Date("2026-03-28T12:00:00-05:00");
-  const ELITE8_PRICE_ID = "price_1TEMg9DSwgnODc03LvGJ1Yih";
+  // Live price (prod_UCmny7MuXBUbsh / $5 one-time). Test price was price_1TEMg9DSwgnODc03LvGJ1Yih.
+  const ELITE8_PRICE_ID = "price_1TENDw3fMFuGw9AQgaji65TN";
 
   app.post("/api/mm/boost-checkout", async (req: Request, res: Response) => {
     const { userId } = req.body ?? {};

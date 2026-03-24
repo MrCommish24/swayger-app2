@@ -1,6 +1,16 @@
 import Stripe from 'stripe';
 
+// If a live secret key is set directly, use it (bypasses Replit connector which is test-mode only).
+// Falls back to the Replit connector for dev/sandbox use.
 async function getCredentials() {
+  const liveKey = process.env.STRIPE_SECRET_KEY_LIVE;
+  if (liveKey) {
+    return {
+      publishableKey: '', // publishable key not needed for server-side calls
+      secretKey: liveKey,
+    };
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
