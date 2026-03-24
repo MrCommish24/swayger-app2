@@ -8,7 +8,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
   "first-four":   "2026-03-17T12:00:00-05:00",
   "round-64":     "2026-03-19T11:00:00-05:00",
   "round-32":     "2026-03-21T12:00:00-05:00",
-  "sweet-16":     "2026-03-27T12:00:00-05:00",
+  "sweet-16":     "2026-03-27T18:00:00-04:00",  // 6pm ET (EDT)
   "elite-8":      "2026-03-28T12:00:00-05:00",
   "final-four":   "2026-04-04T18:00:00-05:00",
 };
@@ -17,7 +17,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
 export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
   "round-64":      "2026-03-19T11:00:00-05:00",
   "round-32":      "2026-03-21T00:00:00-05:00",
-  "sweet-16":      "2026-03-26T00:00:00-05:00",
+  "sweet-16":      "2026-03-24T00:00:00-04:00",  // open now (Mar 24)
   "elite-8":       "2026-03-27T00:00:00-05:00",
   "final-four":    "2026-04-03T00:00:00-05:00",
   "championship":  "2026-04-05T00:00:00-05:00",

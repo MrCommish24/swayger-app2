@@ -174,7 +174,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
   "first-four":   "2026-03-17T12:00:00-05:00",
   "round-64":     "2026-03-19T11:00:00-05:00",  // 11am CDT, first games tip 11:15am CDT
   "round-32":     "2026-03-21T12:00:00-05:00",  // noon CDT, R32 starts Mar 21
-  "sweet-16":     "2026-03-27T12:00:00-05:00",  // noon CDT
+  "sweet-16":     "2026-03-27T18:00:00-04:00",  // 6pm ET (EDT)
   "elite-8":      "2026-03-28T12:00:00-05:00",  // noon CDT
   "final-four":   "2026-04-04T18:00:00-05:00",  // 6 PM CDT, games start ~7 PM CDT
 };
@@ -185,7 +185,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
 export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
   "round-64":      "2026-03-19T11:00:00-05:00",  // same as lock (always open from start)
   "round-32":      "2026-03-21T00:00:00-05:00",  // midnight CDT — after R64 games end Mar 20
-  "sweet-16":      "2026-03-26T00:00:00-05:00",  // midnight CDT — after R32 games end Mar 23
+  "sweet-16":      "2026-03-24T00:00:00-04:00",  // open now (Mar 24)
   "elite-8":       "2026-03-27T00:00:00-05:00",  // midnight CDT — after S16 games end Mar 28 (same day open/lock is fine)
   "final-four":    "2026-04-03T00:00:00-05:00",  // midnight CDT — after E8 games end Mar 30
   "championship":  "2026-04-05T00:00:00-05:00",  // midnight CDT — after FF games end Apr 5
@@ -388,7 +388,7 @@ export const UPSET_LIMITS: Record<string, number> = {
 export const CANDIDATE_COUNTS: Record<string, Record<SpecialPickType, number>> = {
   "round-64":   { upset: 5, blowout: 5, high_scorer: 5 },
   "round-32":   { upset: 5, blowout: 4, high_scorer: 4 },
-  "sweet-16":   { upset: 4, blowout: 4, high_scorer: 4 },
+  "sweet-16":   { upset: 5, blowout: 5, high_scorer: 5 },
   "elite-8":    { upset: 3, blowout: 4, high_scorer: 4 },
   "final-four": { upset: 2, blowout: 2, high_scorer: 2 },
 };

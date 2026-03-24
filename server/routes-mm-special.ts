@@ -119,7 +119,7 @@ const ROUND_DATE_RANGES: Record<string, { start: string; end: string }> = {
 const CANDIDATE_COUNTS: Record<string, Record<string, number>> = {
   "round-64":   { upset: 15, blowout: 5, high_scorer: 5 },
   "round-32":   { upset: 5, blowout: 5, high_scorer: 5 },
-  "sweet-16":   { upset: 4, blowout: 5, high_scorer: 5 },
+  "sweet-16":   { upset: 5, blowout: 5, high_scorer: 5 },
   "elite-8":    { upset: 3, blowout: 5, high_scorer: 5 },
   "final-four": { upset: 2, blowout: 2, high_scorer: 2 },
   "championship": { upset: 0, blowout: 0, high_scorer: 0 },
