@@ -395,7 +395,7 @@ export default function MarchMadnessHub() {
               <View style={styles.referralBannerText}>
                 <Text style={styles.referralBannerTitle}>Get 2X points next round</Text>
                 <Text style={styles.referralBannerSub}>
-                  Share a featured matchup. If they join and accept a Swayger, your next round is 2X.
+                  Share a matchup with someone new to Swayger. If they sign up and accept a Swayger, your picks score double.
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color="#FF8C00" />
