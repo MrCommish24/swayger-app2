@@ -348,6 +348,28 @@ export default function DashboardScreen() {
         <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
       )}
 
+      {user && MARCH_MADNESS_ACTIVE && (
+        profile?.referral_reward_round ? (
+          <Pressable style={styles.mmReferralBannerActive} onPress={() => router.push("/march-madness")}>
+            <Ionicons name="flash" size={18} color="#FF8C00" />
+            <View style={styles.mmReferralBannerText}>
+              <Text style={styles.mmReferralBannerTitle}>2X Reward Active 🔥</Text>
+              <Text style={styles.mmReferralBannerSub}>Your March Madness picks score double this round.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color="#FF8C00" />
+          </Pressable>
+        ) : (
+          <Pressable style={styles.mmReferralBanner} onPress={() => router.push("/march-madness")}>
+            <Ionicons name="gift-outline" size={18} color="#FF8C00" />
+            <View style={styles.mmReferralBannerText}>
+              <Text style={styles.mmReferralBannerTitle}>Get 2X points next round</Text>
+              <Text style={styles.mmReferralBannerSub}>Share a MM featured matchup — if they join and accept a Swayger, your next round is 2X.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color="#FF8C00" />
+          </Pressable>
+        )
+      )}
+
       {!isLoading && !bannerDismissed && (
         <PendingBanner
           challengeCount={challengeCount}
@@ -656,6 +678,43 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(232,89,10,0.35)",
+  },
+  mmReferralBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 24,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: "rgba(255,140,0,0.13)",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,140,0,0.45)",
+  },
+  mmReferralBannerActive: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 24,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: "rgba(255,140,0,0.20)",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,140,0,0.60)",
+  },
+  mmReferralBannerText: { flex: 1, gap: 2 },
+  mmReferralBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#FF8C00",
+  },
+  mmReferralBannerSub: {
+    fontSize: 12,
+    color: "#D4884A",
+    lineHeight: 17,
   },
   mmBannerLeft: {
     flexDirection: "row" as const,

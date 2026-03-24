@@ -371,6 +371,38 @@ export default function MarchMadnessHub() {
           </View>
         </Pressable>
 
+        {/* Referral Banner */}
+        {user && (
+          profile?.referral_reward_round ? (
+            <View style={styles.referralBannerActive}>
+              <Ionicons name="flash" size={20} color="#FF8C00" />
+              <View style={styles.referralBannerText}>
+                <Text style={styles.referralBannerTitle}>2X Reward Active 🔥</Text>
+                <Text style={styles.referralBannerSub}>
+                  Your picks score double for the{" "}
+                  {profile.referral_reward_round === "sweet-16" ? "Sweet 16"
+                   : profile.referral_reward_round === "elite-8" ? "Elite Eight"
+                   : profile.referral_reward_round === "final-four" ? "Final Four"
+                   : profile.referral_reward_round === "championship" ? "Championship"
+                   : profile.referral_reward_round}
+                  .
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.referralBanner}>
+              <Ionicons name="gift-outline" size={20} color="#FF8C00" />
+              <View style={styles.referralBannerText}>
+                <Text style={styles.referralBannerTitle}>Get 2X points next round</Text>
+                <Text style={styles.referralBannerSub}>
+                  Share a featured matchup. If they join and accept a Swayger, your next round is 2X.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#FF8C00" />
+            </View>
+          )
+        )}
+
         {/* Featured Matchups */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -394,37 +426,6 @@ export default function MarchMadnessHub() {
             ))}
           </View>
         </View>
-
-        {/* Referral Banner */}
-        {user && (
-          profile?.referral_reward_round ? (
-            <View style={styles.referralBannerActive}>
-              <Ionicons name="flash" size={18} color="#F5A623" />
-              <View style={styles.referralBannerText}>
-                <Text style={styles.referralBannerTitle}>2X Reward Active</Text>
-                <Text style={styles.referralBannerSub}>
-                  Your points are doubled for the{" "}
-                  {profile.referral_reward_round === "sweet-16" ? "Sweet 16"
-                   : profile.referral_reward_round === "elite-8" ? "Elite Eight"
-                   : profile.referral_reward_round === "final-four" ? "Final Four"
-                   : profile.referral_reward_round === "championship" ? "Championship"
-                   : profile.referral_reward_round}
-                  .
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.referralBanner}>
-              <View style={styles.referralBannerText}>
-                <Text style={styles.referralBannerTitle}>Challenge a friend, get 2X points</Text>
-                <Text style={styles.referralBannerSub}>
-                  Share any matchup above. If they join and accept a Swayger, your next round is 2X.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={ORANGE} />
-            </View>
-          )
-        )}
 
         {/* My MM Stats */}
         <View style={styles.section}>
@@ -837,26 +838,26 @@ const styles = StyleSheet.create({
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 12,
-    backgroundColor: `${ORANGE}0A`,
-    borderWidth: 1,
-    borderColor: `${ORANGE}28`,
+    backgroundColor: "rgba(255,140,0,0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,140,0,0.50)",
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     marginHorizontal: 0,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   referralBannerActive: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 12,
-    backgroundColor: "rgba(245,166,35,0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(245,166,35,0.35)",
+    backgroundColor: "rgba(255,140,0,0.20)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,140,0,0.60)",
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 4,
+    paddingVertical: 13,
+    marginBottom: 6,
   },
   referralBannerText: {
     flex: 1,
@@ -865,11 +866,11 @@ const styles = StyleSheet.create({
   referralBannerTitle: {
     fontSize: 13,
     fontWeight: "700" as const,
-    color: Colors.dark.text,
+    color: "#FF8C00",
   },
   referralBannerSub: {
     fontSize: 12,
-    color: Colors.dark.textSecondary,
+    color: "#D4884A",
     lineHeight: 17,
   },
   matchupTeams: {
