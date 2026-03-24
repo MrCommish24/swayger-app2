@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   LayoutAnimation,
   Modal,
   Share,
+  Linking,
+  AppState,
 } from "react-native";
 import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
@@ -823,6 +825,16 @@ export default function PicksHub() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Refresh profile when returning from Stripe checkout (native app-state change)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        queryClient.invalidateQueries({ queryKey: ["my-profile"] });
+      }
+    });
+    return () => sub.remove();
+  }, [queryClient]);
+
   const currentRound = getCurrentRound();
   const roundId = getActivePicksRoundId(currentRound.id);
   const roundLocked = isRoundLocked(roundId);
@@ -958,14 +970,14 @@ export default function PicksHub() {
           Alert.alert("Already Active", "You already have 2X for the Elite 8.");
         } else if (data.code === "lock_passed") {
           Alert.alert("Boost Expired", "The Elite 8 boost window has closed.");
-        } else if (data.code === "stripe_not_configured") {
-          Alert.alert("Coming Soon", "Elite 8 boost payments are being set up — check back soon!");
         } else {
           Alert.alert("Error", data.error || "Something went wrong. Try again.");
         }
         return;
       }
-      // When Stripe is wired: await WebBrowser.openBrowserAsync(data.checkoutUrl)
+      if (data.checkoutUrl) {
+        await Linking.openURL(data.checkoutUrl);
+      }
     } catch {
       Alert.alert("Error", "Could not connect. Try again.");
     }

@@ -8,11 +8,13 @@ import {
   ActivityIndicator,
   Share,
   Alert,
+  Linking,
+  AppState,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
@@ -212,11 +214,21 @@ export default function MarchMadnessHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user, profile } = useAuth();
+  const { user, profile, retryProfileFetch } = useAuth();
   const shareCardRef = useRef<View>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
   const [sharingMatchupId, setSharingMatchupId] = useState<string | null>(null);
+
+  // Refresh profile when returning from Stripe checkout (native app-state change)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        retryProfileFetch();
+      }
+    });
+    return () => sub.remove();
+  }, [retryProfileFetch]);
 
   const currentRound = getCurrentRound();
   const featuredMatchups = useMemo(() => getFeaturedMatchups(8), []);
@@ -323,14 +335,14 @@ export default function MarchMadnessHub() {
           Alert.alert("Already Active", "You already have 2X for the Elite 8.");
         } else if (data.code === "lock_passed") {
           Alert.alert("Boost Expired", "The Elite 8 boost window has closed.");
-        } else if (data.code === "stripe_not_configured") {
-          Alert.alert("Coming Soon", "Elite 8 boost payments are being set up — check back soon!");
         } else {
           Alert.alert("Error", data.error || "Something went wrong. Try again.");
         }
         return;
       }
-      // When Stripe is wired: await WebBrowser.openBrowserAsync(data.checkoutUrl)
+      if (data.checkoutUrl) {
+        await Linking.openURL(data.checkoutUrl);
+      }
     } catch {
       Alert.alert("Error", "Could not connect. Try again.");
     }

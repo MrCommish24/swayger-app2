@@ -625,7 +625,78 @@ function buildSeedBasedMatchups(roundId: string): {
     };
   }
 
-  // ── For Elite 8 and beyond: auto-build from whatever matchup data is available ──
+  // ── Elite 8: curated from confirmed S16 results (Mar 28-30, 2026) ────────────
+  if (roundId === "elite-8") {
+    const counts = CANDIDATE_COUNTS["elite-8"];
+
+    // All 4 regional final matchups
+    const e8All: RankedMatchup[] = [
+      {
+        matchupId: "e8-east-duke-uconn",
+        teamA: "Duke Blue Devils", seedA: 1,
+        teamB: "UConn Huskies",    seedB: 2,
+        region: "East", rank: 0,
+        favoriteTeam: "Duke Blue Devils", favoriteSeed: 1,
+        underdogTeam: "UConn Huskies",    underdogSeed: 2,
+        upsetProbability: 0.40,
+        spread: 2.5, overUnder: 148, underdogMoneyline: 155,
+        gameDate: "Mar 28", site: "Washington, DC",
+        oddsSource: "seed-based",
+        keyStat: "UConn is the 2-time defending champion — this is the only 1v2 matchup in the East",
+      },
+      {
+        matchupId: "e8-midwest-michigan-iowast",
+        teamA: "Michigan Wolverines",  seedA: 1,
+        teamB: "Iowa State Cyclones",  seedB: 2,
+        region: "Midwest", rank: 0,
+        favoriteTeam: "Michigan Wolverines", favoriteSeed: 1,
+        underdogTeam: "Iowa State Cyclones",  underdogSeed: 2,
+        upsetProbability: 0.38,
+        spread: 3.0, overUnder: 143, underdogMoneyline: 165,
+        gameDate: "Mar 28", site: "Chicago, IL",
+        oddsSource: "seed-based",
+        keyStat: "Iowa State is 11-1 in their last 12 games — Michigan hasn't lost since January",
+      },
+      {
+        matchupId: "e8-west-arizona-purdue",
+        teamA: "Arizona Wildcats",     seedA: 1,
+        teamB: "Purdue Boilermakers",  seedB: 2,
+        region: "West", rank: 0,
+        favoriteTeam: "Arizona Wildcats",    favoriteSeed: 1,
+        underdogTeam: "Purdue Boilermakers", underdogSeed: 2,
+        upsetProbability: 0.35,
+        spread: 4.0, overUnder: 150, underdogMoneyline: 175,
+        gameDate: "Mar 30", site: "San Jose, CA",
+        oddsSource: "seed-based",
+        keyStat: "Arizona averages 84 ppg but Purdue allows only 66 — something has to give",
+      },
+      {
+        matchupId: "e8-south-houston-iowa",
+        teamA: "Houston Cougars", seedA: 2,
+        teamB: "Iowa Hawkeyes",   seedB: 9,
+        region: "South", rank: 0,
+        favoriteTeam: "Houston Cougars", favoriteSeed: 2,
+        underdogTeam: "Iowa Hawkeyes",   underdogSeed: 9,
+        upsetProbability: 0.30,
+        spread: 5.5, overUnder: 138, underdogMoneyline: 220,
+        gameDate: "Mar 30", site: "Houston, TX",
+        oddsSource: "seed-based",
+        keyStat: "Iowa already upset #1 Florida and #4 Nebraska — playing at Houston's home court",
+      },
+    ];
+
+    const upsetSorted     = [...e8All].sort((a, b) => (b.upsetProbability ?? 0) - (a.upsetProbability ?? 0));
+    const blowoutSorted   = [...e8All].sort((a, b) => (b.spread ?? 0) - (a.spread ?? 0));
+    const highScorerSorted = [...e8All].sort((a, b) => (b.overUnder ?? 0) - (a.overUnder ?? 0));
+
+    return {
+      upset:      upsetSorted.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
+      blowout:    blowoutSorted.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
+      highScorer: highScorerSorted.slice(0, counts.high_scorer).map((m, i) => ({ ...m, rank: i + 1 })),
+    };
+  }
+
+  // ── For Final Four and beyond: return empty (admin enters results manually) ──
   if (roundId !== "round-64") {
     return { upset: [], blowout: [], highScorer: [] };
   }
@@ -1089,13 +1160,8 @@ export function registerMMSpecialRoutes(app: Express) {
   // ── Elite 8 Paid 2X Boost ────────────────────────────────────────────────
   // POST /api/mm/boost-checkout
   // Creates a Stripe Checkout session for the $5 Elite 8 2X boost.
-  // Stub: returns "stripe_not_configured" until Stripe integration is wired.
-  // When Stripe is connected, replace the stub body with:
-  //   1. Create stripe.checkout.sessions.create({ ... metadata: { userId, type: "elite8_boost" } })
-  //   2. Return { ok: true, checkoutUrl: session.url }
-  //   Webhook: on checkout.session.completed + metadata.type === "elite8_boost",
-  //   set profiles.paid_2x_round = 'elite-8' where id = metadata.userId
   const ELITE8_BOOST_LOCK = new Date("2026-03-28T12:00:00-05:00");
+  const ELITE8_PRICE_ID = "price_1TEMg9DSwgnODc03LvGJ1Yih";
 
   app.post("/api/mm/boost-checkout", async (req: Request, res: Response) => {
     const { userId } = req.body ?? {};
@@ -1126,15 +1192,124 @@ export function registerMMSpecialRoutes(app: Express) {
         res.json({ ok: false, error: "You already have 2X active for the Elite 8", code: "already_boosted" });
         return;
       }
-      // Stripe not connected yet — return stub response
-      res.json({
-        ok: false,
-        error: "Stripe payments coming soon",
-        code: "stripe_not_configured",
+
+      // Build app base URL for redirect
+      const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
+      const appDomain = domains[0]?.trim() || process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
+      const baseUrl = appDomain.startsWith("http") ? appDomain : `https://${appDomain}`;
+
+      const successUrl = `${baseUrl}/api/mm/boost-success?session_id={CHECKOUT_SESSION_ID}&user_id=${encodeURIComponent(userId)}`;
+      const cancelUrl  = `${baseUrl}/march-madness/picks`;
+
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [{ price: ELITE8_PRICE_ID, quantity: 1 }],
+        mode: "payment",
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        client_reference_id: userId,
+        metadata: { type: "elite8_boost", userId, round: "elite-8" },
       });
+
+      console.log(`[mm-boost] Checkout session created for ${userId.slice(0, 8)}… → ${session.id}`);
+      res.json({ ok: true, checkoutUrl: session.url });
     } catch (err) {
       console.error("[mm-boost] checkout error:", err);
       res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // GET /api/mm/boost-success?session_id=XXX&user_id=YYY
+  // Called by Stripe's redirect after a successful payment.
+  // Verifies the session, grants the boost, and serves a success page.
+  app.get("/api/mm/boost-success", async (req: Request, res: Response) => {
+    const { session_id, user_id } = req.query as Record<string, string>;
+
+    const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
+    const appDomain = domains[0]?.trim() || "swayger-app.replit.app";
+    const baseUrl = appDomain.startsWith("http") ? appDomain : `https://${appDomain}`;
+
+    if (!session_id || !user_id) {
+      return res.redirect(`${baseUrl}/march-madness/picks`);
+    }
+
+    try {
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+
+      if (
+        session.payment_status !== "paid" ||
+        session.metadata?.type !== "elite8_boost" ||
+        session.metadata?.userId !== user_id
+      ) {
+        console.warn(`[mm-boost] Session ${session_id} invalid — payment_status=${session.payment_status}`);
+        return res.redirect(`${baseUrl}/march-madness/picks`);
+      }
+
+      // Grant the boost
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      const { error } = await supabase
+        .from("profiles")
+        .update({ paid_2x_round: "elite-8" })
+        .eq("id", user_id)
+        .is("paid_2x_round", null);
+
+      if (error) {
+        console.error("[mm-boost] Failed to grant boost:", error.message);
+      } else {
+        console.log(`[mm-boost] Boost granted to ${user_id.slice(0, 8)}…`);
+      }
+
+      // Serve success HTML with deep link back
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boost Activated — Swayger</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111827; color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }
+    .card { background: #1F2937; border-radius: 16px; padding: 40px 32px; max-width: 400px; width: 100%; border: 1px solid #374151; }
+    .icon { font-size: 64px; margin-bottom: 16px; }
+    h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; color: #F5A623; }
+    p { color: #9CA3AF; font-size: 15px; line-height: 1.5; margin-bottom: 24px; }
+    .badge { background: #F5A62322; border: 1px solid #F5A62344; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; }
+    .badge-text { color: #F5A623; font-size: 15px; font-weight: 600; }
+    a.btn { display: block; background: #F5A623; color: #111827; font-weight: 700; font-size: 16px; padding: 14px; border-radius: 10px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔥</div>
+    <h1>2X Boost Activated!</h1>
+    <p>Your Elite 8 picks now score double. Head back to the app to make your special picks before games tip off.</p>
+    <div class="badge">
+      <div class="badge-text">Elite 8 · 2X Points Active</div>
+    </div>
+    <a href="${baseUrl}/march-madness/picks" class="btn">Back to Picks</a>
+  </div>
+  <script>
+    // Auto-redirect after 4 seconds
+    setTimeout(function() {
+      window.location.href = '${baseUrl}/march-madness/picks';
+    }, 4000);
+  </script>
+</body>
+</html>`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.status(200).send(html);
+
+    } catch (err) {
+      console.error("[mm-boost] Success handler error:", err);
+      res.redirect(`${baseUrl}/march-madness/picks`);
     }
   });
 
