@@ -783,6 +783,40 @@ export function registerMMAdminRoutes(app: Express): void {
 
   // Manual game result insertion (for when Odds API quota runs out)
   // Body: { round_id, matchup_id, winner_name, winner_seed, loser_name, loser_seed, winner_score?, loser_score?, was_upset }
+  app.get("/admin/mm/api/debug-locked-takes", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    const supabase = getSupabase();
+    const { data, error } = await supabase.from("mm_locked_takes").select("user_id, take_type, is_submitted, is_second_chance").eq("is_submitted", true);
+    res.json({ ok: true, count: (data??[]).length, error: error?.message ?? null, sample: (data??[]).slice(0, 5) });
+  });
+
+  app.post("/admin/mm/api/delete-result", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const { id } = req.body;
+      if (!id) {
+        res.status(400).json({ ok: false, error: "Missing required field: id" });
+        return;
+      }
+      const supabase = getSupabase();
+      const { error } = await supabase.from("mm_game_results").delete().eq("id", id);
+      if (error) {
+        res.status(500).json({ ok: false, error: error.message });
+        return;
+      }
+      console.log(`[mm-admin] Result deleted: id=${id}`);
+      res.json({ ok: true, message: `Result ${id} deleted` });
+    } catch (err) {
+      console.error("[mm-admin] delete-result error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   app.post("/admin/mm/api/insert-result", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
     if (!isAdminToken(token)) {
