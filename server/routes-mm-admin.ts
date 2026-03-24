@@ -100,11 +100,9 @@ export async function computeAndSaveScores(
     };
   }
 
-  // Score locked takes
-  const { data: takesRaw } = await supabase
-    .from("mm_locked_takes")
-    .select("*")
-    .eq("is_submitted", true);
+  // Score locked takes — direct select is blocked by RLS (anon key has no JWT).
+  // Use the SECURITY DEFINER RPC to read all submitted takes regardless of auth context.
+  const { data: takesRaw } = await supabase.rpc("get_all_mm_locked_takes");
   const takes = (takesRaw ?? []) as LockedTakeRow[];
 
   for (const take of takes) {
@@ -787,8 +785,9 @@ export function registerMMAdminRoutes(app: Express): void {
     const token = req.query.token as string | undefined;
     if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
     const supabase = getSupabase();
-    const { data, error } = await supabase.from("mm_locked_takes").select("user_id, take_type, is_submitted, is_second_chance").eq("is_submitted", true);
-    res.json({ ok: true, count: (data??[]).length, error: error?.message ?? null, sample: (data??[]).slice(0, 5) });
+    const { data: rpcData, error: rpcErr } = await supabase.rpc("get_all_mm_locked_takes");
+    const { data: directData, error: directErr } = await supabase.from("mm_locked_takes").select("user_id, take_type, teams, is_submitted").eq("is_submitted", true).limit(5);
+    res.json({ ok: true, rpcCount: (rpcData??[]).length, rpcError: rpcErr?.message??null, rpcSample: (rpcData??[]).slice(0,3), directCount: (directData??[]).length, directError: directErr?.message??null });
   });
 
   app.post("/admin/mm/api/delete-result", async (req: Request, res: Response) => {
