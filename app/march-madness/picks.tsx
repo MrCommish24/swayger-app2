@@ -36,6 +36,7 @@ import {
   isPicksLocked,
   isRoundLocked,
   getRoundLockDate,
+  isSecondChanceTakeLocked,
   fetchMyLockedTakes,
   fetchMySpecialPicks,
   fetchSecondChanceStatus,
@@ -407,17 +408,40 @@ function TakeCard({
   const locked = isPicksLocked();
   const submitted = take?.is_submitted === true;
   const teams = take?.teams ?? [];
-  const canInteract = !locked || submitted || isSecondChance;
 
-  const statusColor = submitted ? GREEN : (locked && !isSecondChance) ? "#6B7280" : GOLD;
-  const statusIcon = submitted ? "checkmark-circle" : (locked && !isSecondChance) ? "lock-closed" : "radio-button-off";
-  const statusText = submitted
-    ? `${teams.length}/${cfg.count} locked in`
-    : locked && !isSecondChance
-    ? "No pick made"
-    : isSecondChance
-    ? `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""} (½ pts)`
-    : `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""}`;
+  // For second-chance users: per-take lock rules (sweet_sixteen always closed;
+  // others close at Sweet 16 tip-off March 27 6pm ET)
+  const sc2Locked = isSecondChance && isSecondChanceTakeLocked(takeType) && !submitted;
+  const canInteract = submitted || (!sc2Locked && (!locked || isSecondChance));
+
+  let statusColor: string;
+  let statusIcon: string;
+  let statusText: string;
+
+  if (submitted) {
+    statusColor = GREEN;
+    statusIcon = "checkmark-circle";
+    statusText = `${teams.length}/${cfg.count} locked in`;
+  } else if (sc2Locked) {
+    statusColor = "#6B7280";
+    statusIcon = "lock-closed";
+    statusText = takeType === "sweet_sixteen"
+      ? "Teams are set — unavailable"
+      : `Locked · tips off Mar 27`;
+  } else if (locked && !isSecondChance) {
+    statusColor = "#6B7280";
+    statusIcon = "lock-closed";
+    statusText = "No pick made";
+  } else if (isSecondChance) {
+    statusColor = GOLD;
+    statusIcon = "radio-button-off";
+    statusText = `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""} (½ pts)`;
+  } else {
+    statusColor = GOLD;
+    statusIcon = "radio-button-off";
+    statusText = `Open · pick ${cfg.count} team${cfg.count > 1 ? "s" : ""}`;
+  }
+
   const preview =
     submitted && teams.length > 0
       ? teams.slice(0, 3).join(", ") + (teams.length > 3 ? ` +${teams.length - 3}` : "")
@@ -427,18 +451,26 @@ function TakeCard({
     <Pressable
       style={({ pressed }) => [
         styles.takeCard,
-        { borderColor: submitted ? "rgba(34,197,94,0.3)" : isSecondChance ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.08)" },
+        {
+          borderColor: submitted
+            ? "rgba(34,197,94,0.3)"
+            : sc2Locked
+            ? "rgba(255,255,255,0.05)"
+            : isSecondChance
+            ? "rgba(245,158,11,0.25)"
+            : "rgba(255,255,255,0.08)",
+        },
         pressed && styles.cardPressed,
         !canInteract && styles.cardDimmed,
       ]}
       onPress={onPress}
       disabled={!canInteract}
     >
-      <View style={[styles.takeIconBadge, { backgroundColor: `${cfg.color}18` }]}>
-        <Text style={styles.takeEmoji}>{cfg.emoji}</Text>
+      <View style={[styles.takeIconBadge, { backgroundColor: sc2Locked ? "rgba(255,255,255,0.05)" : `${cfg.color}18` }]}>
+        <Text style={[styles.takeEmoji, sc2Locked && { opacity: 0.4 }]}>{cfg.emoji}</Text>
       </View>
       <View style={styles.takeInfo}>
-        <Text style={styles.takeName}>{cfg.label}</Text>
+        <Text style={[styles.takeName, sc2Locked && { color: "#6B7280" }]}>{cfg.label}</Text>
         <View style={styles.takeStatusRow}>
           <Ionicons name={statusIcon as any} size={12} color={statusColor} />
           <Text style={[styles.takeStatus, { color: statusColor }]}>{statusText}</Text>
@@ -448,7 +480,9 @@ function TakeCard({
         ) : null}
       </View>
       <View style={styles.takeMeta}>
-        <Text style={styles.takePoints}>+{cfg.pointsEach * cfg.count}</Text>
+        <Text style={[styles.takePoints, sc2Locked && { color: "#4B5563" }]}>
+          +{cfg.pointsEach * cfg.count}
+        </Text>
         <Text style={styles.takePointsLabel}>{isSecondChance && !submitted ? "½ pts" : "pts max"}</Text>
         {canInteract ? (
           <Ionicons

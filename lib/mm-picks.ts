@@ -198,6 +198,20 @@ export function isPicksLocked(): boolean {
   return new Date() >= new Date(BRACKET_LOCK_DATE);
 }
 
+// Second-chance takes have tighter per-type deadlines:
+// - sweet_sixteen: permanently closed — all 16 teams are already known
+// - elite_eight / final_four / champion: lock at Sweet 16 tip-off (March 27 6pm ET)
+const SECOND_CHANCE_TAKES_LOCK_DATE = "2026-03-27T18:00:00-04:00";
+
+export function isSecondChanceTakeLocked(takeType: TakeType): boolean {
+  if (takeType === "sweet_sixteen") return true;
+  return new Date() >= new Date(SECOND_CHANCE_TAKES_LOCK_DATE);
+}
+
+export function getSecondChanceTakesLockDate(): Date {
+  return new Date(SECOND_CHANCE_TAKES_LOCK_DATE);
+}
+
 export function isRoundLocked(roundId: string): boolean {
   const lockDate = ROUND_LOCK_DATES[roundId];
   if (!lockDate) return true;
@@ -459,6 +473,12 @@ export async function saveTake(
 ): Promise<{ error: string | null }> {
   if (isPicksLocked() && !isSecondChance) {
     return { error: "The tournament has started — picks are locked." };
+  }
+  if (isSecondChance && isSecondChanceTakeLocked(takeType)) {
+    if (takeType === "sweet_sixteen") {
+      return { error: "Sweet 16 teams are already set — this take is no longer available." };
+    }
+    return { error: "Second-chance takes are now locked for this round." };
   }
   const expected = TAKE_CONFIGS[takeType].count;
   if (teams.length !== expected) {
