@@ -185,7 +185,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
 export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
   "round-64":      "2026-03-19T11:00:00-05:00",  // same as lock (always open from start)
   "round-32":      "2026-03-21T00:00:00-05:00",  // midnight CDT — after R64 games end Mar 20
-  "sweet-16":      "2026-03-24T00:00:00-04:00",  // open now (Mar 24)
+  "sweet-16":      "2026-03-22T00:00:00-05:00",  // open now (backdated so it's definitely past)
   "elite-8":       "2026-03-27T00:00:00-05:00",  // midnight CDT — after S16 games end Mar 28 (same day open/lock is fine)
   "final-four":    "2026-04-03T00:00:00-05:00",  // midnight CDT — after E8 games end Mar 30
   "championship":  "2026-04-05T00:00:00-05:00",  // midnight CDT — after FF games end Apr 5
