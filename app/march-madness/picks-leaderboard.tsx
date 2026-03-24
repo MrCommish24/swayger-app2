@@ -218,6 +218,12 @@ export default function PicksLeaderboard() {
             ))}
           </View>
         )}
+
+        <View style={styles.referralNote}>
+          <Text style={styles.referralNoteText}>
+            Referral bonus: users who invited a new player to a March Madness Swayger earn 2X points for one round
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -460,6 +466,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700" as const,
     color: Colors.dark.text,
+  },
+  referralNote: {
+    marginHorizontal: 16,
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(245,166,35,0.07)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.18)",
+  },
+  referralNoteText: {
+    fontSize: 12,
+    color: "#C8A84B",
+    lineHeight: 18,
+    textAlign: "center" as const,
   },
   emptySub: {
     fontSize: 14,

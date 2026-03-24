@@ -819,12 +819,12 @@ export default function PicksHub() {
     enabled: !!user,
   });
 
-  const { data: myProfile } = useQuery<{ display_name: string | null; username: string } | null>({
+  const { data: myProfile } = useQuery<{ display_name: string | null; username: string; referral_reward_round: string | null } | null>({
     queryKey: ["my-profile", user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("display_name, username")
+        .select("display_name, username, referral_reward_round")
         .eq("id", user!.id)
         .single();
       return data ?? null;
@@ -942,6 +942,16 @@ export default function PicksHub() {
           { paddingBottom: isWeb ? 34 + 100 : insets.bottom + 100 },
         ]}
       >
+        {myProfile?.referral_reward_round === roundId && (
+          <View style={styles.twoxBanner}>
+            <Ionicons name="flash" size={16} color="#F5A623" />
+            <View style={styles.twoxBannerText}>
+              <Text style={styles.twoxBannerTitle}>2X Active This Round</Text>
+              <Text style={styles.twoxBannerSub}>You invited a new player — your picks score double</Text>
+            </View>
+          </View>
+        )}
+
         <BracketLockBanner isSecondChance={isSecondChance} />
 
         {/* Prize strip */}
@@ -1608,6 +1618,30 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     color: Colors.dark.text,
     flex: 1,
+  },
+  twoxBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: "rgba(245,166,35,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.35)",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  twoxBannerText: { flex: 1 },
+  twoxBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#F5A623",
+  },
+  twoxBannerSub: {
+    fontSize: 12,
+    color: "#C8A84B",
+    marginTop: 2,
   },
   prizeStrip: {
     flexDirection: "row" as const,

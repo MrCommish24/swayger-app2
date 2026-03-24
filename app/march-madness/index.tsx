@@ -418,7 +418,7 @@ export default function MarchMadnessHub() {
               <View style={styles.referralBannerText}>
                 <Text style={styles.referralBannerTitle}>Challenge a friend, get 2X points</Text>
                 <Text style={styles.referralBannerSub}>
-                  Share any matchup above. If they join and make a pick, your next round is 2X.
+                  Share any matchup above. If they join and accept a Swayger, your next round is 2X.
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={ORANGE} />

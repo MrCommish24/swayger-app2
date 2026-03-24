@@ -273,6 +273,26 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* 2X Referral Reward badge */}
+        {profile?.referral_reward_round && (
+          <View style={styles.rewardBadge}>
+            <Ionicons name="flash" size={18} color="#F5A623" />
+            <View style={styles.rewardBadgeText}>
+              <Text style={styles.rewardBadgeTitle}>2X Referral Reward Earned</Text>
+              <Text style={styles.rewardBadgeSub}>
+                {(() => {
+                  const labels: Record<string, string> = {
+                    "round-64": "Round of 64", "round-32": "Round of 32",
+                    "sweet-16": "Sweet 16", "elite-8": "Elite Eight",
+                    "final-four": "Final Four", "championship": "Championship",
+                  };
+                  return `Applied to your ${labels[profile.referral_reward_round] ?? profile.referral_reward_round} picks`;
+                })()}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Account section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -516,6 +536,30 @@ const styles = StyleSheet.create({
   bankruptcyUsedText: {
     fontSize: 11,
     color: Colors.dark.tabIconDefault,
+  },
+  rewardBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    backgroundColor: "rgba(245,166,35,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(245,166,35,0.30)",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  rewardBadgeText: { flex: 1 },
+  rewardBadgeTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#F5A623",
+  },
+  rewardBadgeSub: {
+    fontSize: 12,
+    color: "#C8A84B",
+    marginTop: 2,
   },
   section: { paddingHorizontal: 24, paddingTop: 8, gap: 12 },
   sectionTitle: {

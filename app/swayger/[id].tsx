@@ -111,7 +111,7 @@ function buildShareMessage(
   return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
 }
 
-function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swaygerName: string }) {
+function InviteSection({ inviteCode, swaygerName, isMarchMadness }: { inviteCode: string; swaygerName: string; isMarchMadness?: boolean }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
@@ -176,6 +176,15 @@ function InviteSection({ inviteCode, swaygerName }: { inviteCode: string; swayge
             <Text style={styles.inviteShareText}>Share Invite</Text>
           </Pressable>
         </View>
+
+        {isMarchMadness && (
+          <View style={styles.mmReferralHint}>
+            <Ionicons name="flash" size={13} color="#F5A623" />
+            <Text style={styles.mmReferralHintText}>
+              Invite a new user — if they accept, you earn 2X points this round
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -662,7 +671,13 @@ export default function SwaygerDetailScreen() {
       if (result.error) { showError(result.error); return; }
       setOpponentPick("");
       invalidateAll();
-      showMessage("Accepted!", "The Swayger is now active. Good luck!");
+      const isMM = swayger?.category === "March Madness";
+      showMessage(
+        "Accepted!",
+        isMM
+          ? "The Swayger is now active. Your referrer may have just earned their 2X bonus. Good luck!"
+          : "The Swayger is now active. Good luck!"
+      );
       if (swayger) {
         sendPushNotification(
           swayger.creator_id,
@@ -1272,7 +1287,7 @@ export default function SwaygerDetailScreen() {
           </View>
         </View>
       ) : status === "pending_invite" && isCreator && invite?.invite_code ? (
-        <InviteSection inviteCode={invite.invite_code} swaygerName={swayger.title} />
+        <InviteSection inviteCode={invite.invite_code} swaygerName={swayger.title} isMarchMadness={swayger.category === "March Madness"} />
       ) : null}
 
       <View style={styles.section}>
@@ -1628,6 +1643,13 @@ const styles = StyleSheet.create({
   },
   qrHint: { fontSize: 12, color: Colors.dark.tabIconDefault },
   inviteButtons: { flexDirection: "row" as const, gap: 12, width: "100%" as const },
+  mmReferralHint: {
+    flexDirection: "row" as const, alignItems: "center" as const, gap: 6,
+    backgroundColor: "rgba(245,166,35,0.10)", borderRadius: 8,
+    borderWidth: 1, borderColor: "rgba(245,166,35,0.25)",
+    paddingVertical: 8, paddingHorizontal: 12, width: "100%" as const,
+  },
+  mmReferralHintText: { flex: 1, fontSize: 12, color: "#C8A84B", lineHeight: 16 },
   inviteActionBtn: {
     flex: 1, flexDirection: "row" as const, alignItems: "center" as const,
     justifyContent: "center" as const, gap: 6, paddingVertical: 14, borderRadius: 10,
