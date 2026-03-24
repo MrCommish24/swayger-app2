@@ -363,7 +363,7 @@ export default function DashboardScreen() {
             <Ionicons name="gift-outline" size={18} color="#FF8C00" />
             <View style={styles.mmReferralBannerText}>
               <Text style={styles.mmReferralBannerTitle}>Get 2X points next round</Text>
-              <Text style={styles.mmReferralBannerSub}>Share a matchup with someone new to Swayger. If they sign up and accept a Swayger, your picks score double.</Text>
+              <Text style={styles.mmReferralBannerSub}>Share a March Madness featured matchup with a new user → they sign up & accept a Swayger → your picks score double.</Text>
             </View>
             <Ionicons name="chevron-forward" size={15} color="#FF8C00" />
           </Pressable>
