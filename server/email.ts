@@ -932,3 +932,120 @@ export async function sendQuickPickReminderEmail(opts: {
     html: buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl),
   });
 }
+
+// ─── Sweet 16 Launch Blast (two variants) ────────────────────────────────────
+//
+// Variant A (hasLockedTakes=true):  Sweet 16 Picks + 2X Referral
+// Variant B (hasLockedTakes=false): Sweet 16 Picks + Second Chance + 2X Referral
+
+export function buildS16LaunchEmailHtml(
+  displayName = "there",
+  hasLockedTakes = true,
+): string {
+  const picksUrl  = `${APP_URL}/march-madness/picks`;
+  const hubUrl    = `${APP_URL}/march-madness?utm_source=email&utm_campaign=s16-launch`;
+  const subject   = "🏀 Sweet 16 picks are OPEN — lock yours before Thursday";
+  const headline  = "The Sweet 16 is set. Make your picks.";
+
+  // ── Shared section 1: Sweet 16 Quick Picks ─────────────────────────────────
+  const quickPicksSection = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 18px;color:#E2E8F0;font-size:15px;line-height:1.6">
+      Sweet 16 Quick Picks are <strong style="color:#FFFFFF;">open right now</strong>. Three picks, three chances to earn points — picks lock <strong style="color:#FFFFFF;">Thursday March 27 at 6pm ET</strong> when the games tip off.
+    </p>
+
+    <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Your 3 picks this round</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #F59E0B;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🚨 Upset Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Texas survived the First Four as an #11 seed. Can they stun #2 Purdue? Iowa (#9) beat #1 Florida — do they keep rolling against Nebraska? Pick the upset.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #3B82F6;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">💥 Blowout Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Michigan is -10.5 over Alabama. Duke is at home against St. John's. Arkansas vs Arizona in a rematch neither team forgot. Pick the game that ends as a rout.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #10B981;">
+          <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#FFFFFF;">🔥 High Scorer Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;line-height:1.4">Houston vs Illinois was the highest-scoring R32 game on the board. Iowa vs Nebraska O/U is 148.5. UConn vs Michigan St. could go either way. Pick the game that puts up the most points combined.</p>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background:linear-gradient(135deg,#0d1a2a 0%,#0a1020 100%);border:1px solid rgba(108,99,255,0.35);border-radius:12px;padding:14px 18px;margin-bottom:24px;">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#A78BFA;text-transform:uppercase;">Sweet 16 matchups</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Texas (11) vs Purdue (2)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Iowa (9) vs Nebraska (4)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">St. John's (5) vs Duke (1)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Tennessee (6) vs Iowa St. (2)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Alabama (4) vs Michigan (1)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Arkansas (4) vs Arizona (1)</span></td></tr>
+        <tr><td style="padding:6px 0;border-bottom:1px solid #1e2030;"><span style="font-size:13px;color:#D1D5DB;">Michigan St. (3) vs UConn (2)</span></td></tr>
+        <tr><td style="padding:6px 0;"><span style="font-size:13px;color:#D1D5DB;">Illinois (3) vs Houston (2)</span></td></tr>
+      </table>
+    </div>
+  `;
+
+  // ── Variant B only: Second Chance section ─────────────────────────────────
+  const secondChanceSection = !hasLockedTakes ? `
+    <div style="background:linear-gradient(135deg,#12001a 0%,#1e0030 100%);border:1px solid rgba(108,99,255,0.4);border-radius:12px;padding:18px 20px;margin-bottom:24px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#A78BFA;text-transform:uppercase;">🔒 Second Chance Picks — Still Open</p>
+      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">You missed the bracket deadline — but you can still lock Elite 8, Final Four, and Champion picks.</p>
+      <p style="margin:0 0 14px;font-size:13px;color:#C4B5FD;line-height:1.5">Late entries earn <strong style="color:#FFFFFF;">half the normal points</strong>. Sweet 16 teams are already set so that take is closed — but the rest are still up for grabs.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(0,0,0,0.25);border-radius:8px;padding:4px 14px;">
+        <tr><td style="padding:8px 0;border-bottom:1px solid rgba(167,139,250,0.15);"><span style="font-size:13px;color:#C4B5FD;">Elite 8 picks</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">1.5 pts each</span></td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid rgba(167,139,250,0.15);"><span style="font-size:13px;color:#C4B5FD;">Final Four picks</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">2.5 pts each</span></td></tr>
+        <tr><td style="padding:8px 0;"><span style="font-size:13px;color:#C4B5FD;">Champion pick</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">5 pts</span></td></tr>
+      </table>
+      <p style="margin:12px 0 0;font-size:12px;color:#7C3AED;text-align:center;">All second-chance picks lock Thursday March 27 at 6pm ET.</p>
+    </div>
+  ` : "";
+
+  // ── Shared section: 2X Referral ───────────────────────────────────────────
+  const referralSection = `
+    <div style="background:linear-gradient(135deg,#1a0e00 0%,#2a1800 100%);border:1px solid rgba(255,140,0,0.35);border-radius:12px;padding:18px 20px;margin-bottom:16px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#FF8C00;text-transform:uppercase;">🔥 2X Points — Referral Bonus</p>
+      <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">Share a featured matchup. If your friend joins and accepts a Swayger, your Sweet 16 picks score <strong style="color:#FF8C00;">double</strong>.</p>
+      <p style="margin:0 0 16px;font-size:13px;color:#FCD34D;line-height:1.5">Open the app → tap any Sweet 16 matchup card → hit the share button. Your referral link is automatically attached.</p>
+      <div style="text-align:center;">
+        <a href="${hubUrl}" style="display:inline-block;background:#FF8C00;color:#000000;font-weight:700;font-size:14px;text-decoration:none;padding:12px 28px;border-radius:8px;letter-spacing:0.3px;">Go Share a Matchup →</a>
+      </div>
+    </div>
+    <p style="margin:0 0 24px;font-size:12px;color:#6B7280;text-align:center;">One referral = 2X on all your Sweet 16 special picks this round.</p>
+  `;
+
+  const body = quickPicksSection + secondChanceSection + referralSection;
+
+  return buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl);
+}
+
+export async function sendS16LaunchEmail(opts: {
+  to: string;
+  displayName: string;
+  hasLockedTakes: boolean;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "🏀 Sweet 16 picks are OPEN — lock yours before Thursday",
+    html: buildS16LaunchEmailHtml(opts.displayName, opts.hasLockedTakes),
+  });
+}

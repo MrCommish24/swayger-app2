@@ -721,6 +721,82 @@ export function registerMMAdminRoutes(app: Express): void {
     res.send(buildMMR32PicksEmailHtml("Swayger User"));
   });
 
+  // Preview S16 launch email — variant A (has locked takes)
+  app.get("/admin/mm/email-preview/s16-launch-a", (_req: Request, res: Response) => {
+    const { buildS16LaunchEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildS16LaunchEmailHtml("Swayger User", true));
+  });
+
+  // Preview S16 launch email — variant B (no locked takes / second chance)
+  app.get("/admin/mm/email-preview/s16-launch-b", (_req: Request, res: Response) => {
+    const { buildS16LaunchEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildS16LaunchEmailHtml("Swayger User", false));
+  });
+
+  // Blast S16 launch email to all users (manual trigger only)
+  // Users with locked takes → Variant A; users without → Variant B (includes second-chance section)
+  app.post("/admin/mm/api/blast-s16-launch", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const { sendS16LaunchEmail } = await import("./email");
+      const supabase = getSupabase();
+
+      // Get all profiles with notification emails
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const eligible = (allProfiles ?? []).filter(
+        (p: { notification_email?: string }) => p.notification_email,
+      );
+
+      // Get set of user IDs who have submitted locked takes (for variant routing)
+      const { data: lockedTakesRows } = await supabase
+        .from("mm_locked_takes")
+        .select("user_id")
+        .eq("is_submitted", true)
+        .eq("is_second_chance", false);
+      const usersWithLockedTakes = new Set(
+        (lockedTakesRows ?? []).map((r: { user_id: string }) => r.user_id),
+      );
+
+      let sentA = 0;
+      let sentB = 0;
+      let failed = 0;
+
+      for (const profile of eligible) {
+        try {
+          const hasLockedTakes = usersWithLockedTakes.has(profile.id);
+          await sendS16LaunchEmail({
+            to: profile.notification_email as string,
+            displayName: profile.display_name || `@${profile.username}`,
+            hasLockedTakes,
+          });
+          if (hasLockedTakes) sentA++;
+          else sentB++;
+        } catch (e) {
+          console.error("[mm-admin] s16-launch blast failed for", profile.id, e);
+          failed++;
+        }
+      }
+
+      console.log(`[mm-admin] S16 launch blast: variantA=${sentA} variantB=${sentB} failed=${failed}`);
+      res.json({
+        ok: true,
+        message: `S16 launch blast sent: ${sentA} variant A (has picks), ${sentB} variant B (second chance)${failed > 0 ? `, ${failed} failed` : ""}`,
+        sentA,
+        sentB,
+        failed,
+      });
+    } catch (err) {
+      console.error("[mm-admin] s16-launch blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Blast R32 quick picks open email to all users
   app.post("/admin/mm/api/blast-r32-picks", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
