@@ -10,6 +10,8 @@ export interface Profile {
   referred_by: string | null;
   referral_reward_round: string | null;
   referral_reward_claimed: boolean;
+  paid_2x_round: string | null;
+  stripe_customer_id: string | null;
 }
 
 export type SwaygerStatus =

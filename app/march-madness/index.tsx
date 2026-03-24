@@ -7,6 +7,7 @@ import {
   Platform,
   ActivityIndicator,
   Share,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +29,7 @@ import {
   MM_ROUNDS,
   type MMMatchup,
 } from "@/lib/march-madness";
+import { isRoundLocked } from "@/lib/mm-picks";
 
 const ORANGE = "#E8590A";
 const ORANGE_DIM = "rgba(232,89,10,0.12)";
@@ -304,6 +306,35 @@ export default function MarchMadnessHub() {
   }
 
   const topPadding = isWeb ? 67 : insets.top;
+  const has2xBoost = profile?.referral_reward_round === "elite-8" || profile?.paid_2x_round === "elite-8";
+  const e8LockPassed = isRoundLocked("elite-8");
+
+  async function handleBoostCheckout() {
+    if (!user) { router.push("/auth"); return; }
+    try {
+      const res = await fetch(new URL("/api/mm/boost-checkout", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (data.code === "already_boosted") {
+          Alert.alert("Already Active", "You already have 2X for the Elite 8.");
+        } else if (data.code === "lock_passed") {
+          Alert.alert("Boost Expired", "The Elite 8 boost window has closed.");
+        } else if (data.code === "stripe_not_configured") {
+          Alert.alert("Coming Soon", "Elite 8 boost payments are being set up — check back soon!");
+        } else {
+          Alert.alert("Error", data.error || "Something went wrong. Try again.");
+        }
+        return;
+      }
+      // When Stripe is wired: await WebBrowser.openBrowserAsync(data.checkoutUrl)
+    } catch {
+      Alert.alert("Error", "Could not connect. Try again.");
+    }
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -401,6 +432,39 @@ export default function MarchMadnessHub() {
               <Ionicons name="chevron-forward" size={16} color="#FF8C00" />
             </View>
           )
+        )}
+
+        {/* Elite 8 Boost Card — shown to all users until E8 lock */}
+        {user && !e8LockPassed && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.boostCard,
+              has2xBoost && styles.boostCardActive,
+              pressed && { opacity: 0.88 },
+            ]}
+            onPress={has2xBoost ? undefined : handleBoostCheckout}
+          >
+            {has2xBoost ? (
+              <>
+                <Ionicons name="flash" size={20} color={GOLD} />
+                <View style={styles.boostCardText}>
+                  <Text style={styles.boostCardTitle}>2X Active — Elite 8</Text>
+                  <Text style={styles.boostCardSub}>Your Elite 8 special picks score double</Text>
+                </View>
+                <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+              </>
+            ) : (
+              <>
+                <View style={styles.boostCardText}>
+                  <Text style={styles.boostCardTitle}>Boost Your Elite 8 Picks — $5</Text>
+                  <Text style={styles.boostCardSub}>Pay once to double every special pick point you earn in the Elite 8</Text>
+                </View>
+                <View style={styles.boostCardBtn}>
+                  <Text style={styles.boostCardBtnText}>$5 →</Text>
+                </View>
+              </>
+            )}
+          </Pressable>
         )}
 
         {/* Featured Matchups */}
@@ -872,6 +936,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#D4884A",
     lineHeight: 17,
+  },
+  boostCard: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: "rgba(232,89,10,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.30)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  boostCardActive: {
+    backgroundColor: "rgba(245,166,35,0.10)",
+    borderColor: "rgba(245,166,35,0.40)",
+  },
+  boostCardText: { flex: 1 },
+  boostCardTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#F5A623",
+    marginBottom: 2,
+  },
+  boostCardSub: {
+    fontSize: 12,
+    color: "#A0896A",
+    lineHeight: 16,
+  },
+  boostCardBtn: {
+    backgroundColor: "#E8590A",
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+  },
+  boostCardBtnText: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
   },
   matchupTeams: {
     flexDirection: "row",

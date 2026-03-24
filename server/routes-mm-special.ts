@@ -1086,7 +1086,58 @@ export function registerMMSpecialRoutes(app: Express) {
     }
   });
 
-  // ── POST /api/mm/log-share ────────────────────────────────────────────────
+  // ── Elite 8 Paid 2X Boost ────────────────────────────────────────────────
+  // POST /api/mm/boost-checkout
+  // Creates a Stripe Checkout session for the $5 Elite 8 2X boost.
+  // Stub: returns "stripe_not_configured" until Stripe integration is wired.
+  // When Stripe is connected, replace the stub body with:
+  //   1. Create stripe.checkout.sessions.create({ ... metadata: { userId, type: "elite8_boost" } })
+  //   2. Return { ok: true, checkoutUrl: session.url }
+  //   Webhook: on checkout.session.completed + metadata.type === "elite8_boost",
+  //   set profiles.paid_2x_round = 'elite-8' where id = metadata.userId
+  const ELITE8_BOOST_LOCK = new Date("2026-03-28T12:00:00-05:00");
+
+  app.post("/api/mm/boost-checkout", async (req: Request, res: Response) => {
+    const { userId } = req.body ?? {};
+    if (!userId) {
+      res.status(400).json({ ok: false, error: "userId required" });
+      return;
+    }
+    try {
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      // Check lock date
+      if (new Date() >= ELITE8_BOOST_LOCK) {
+        res.json({ ok: false, error: "Elite 8 boost is no longer available", code: "lock_passed" });
+        return;
+      }
+      // Check if user already has 2X (referral or paid)
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("referral_reward_round, paid_2x_round")
+        .eq("id", userId)
+        .single();
+      if (
+        profile?.referral_reward_round === "elite-8" ||
+        profile?.paid_2x_round === "elite-8"
+      ) {
+        res.json({ ok: false, error: "You already have 2X active for the Elite 8", code: "already_boosted" });
+        return;
+      }
+      // Stripe not connected yet — return stub response
+      res.json({
+        ok: false,
+        error: "Stripe payments coming soon",
+        code: "stripe_not_configured",
+      });
+    } catch (err) {
+      console.error("[mm-boost] checkout error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Fire-and-forget analytics: called whenever a user taps "Share Receipt".
   // Inserts into mm_share_events (see docs/migrations/mm_share_events.sql).
   // Always returns { ok: true } — never blocks the share flow on the client.

@@ -853,12 +853,12 @@ export default function PicksHub() {
     enabled: !!user,
   });
 
-  const { data: myProfile } = useQuery<{ display_name: string | null; username: string; referral_reward_round: string | null } | null>({
+  const { data: myProfile } = useQuery<{ display_name: string | null; username: string; referral_reward_round: string | null; paid_2x_round: string | null } | null>({
     queryKey: ["my-profile", user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("display_name, username, referral_reward_round")
+        .select("display_name, username, referral_reward_round, paid_2x_round")
         .eq("id", user!.id)
         .single();
       return data ?? null;
@@ -941,6 +941,35 @@ export default function PicksHub() {
   const topPadding = isWeb ? 67 : insets.top;
   const isLoading = takesLoading || picksLoading || matchupsLoading;
   const upsetLimit = UPSET_LIMITS[roundId] ?? 3;
+  const has2xBoost = myProfile?.referral_reward_round === "elite-8" || myProfile?.paid_2x_round === "elite-8";
+  const e8LockPassed = isRoundLocked("elite-8");
+
+  async function handleBoostCheckout() {
+    if (!user) { router.replace("/auth"); return; }
+    try {
+      const res = await fetch(new URL("/api/mm/boost-checkout", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (data.code === "already_boosted") {
+          Alert.alert("Already Active", "You already have 2X for the Elite 8.");
+        } else if (data.code === "lock_passed") {
+          Alert.alert("Boost Expired", "The Elite 8 boost window has closed.");
+        } else if (data.code === "stripe_not_configured") {
+          Alert.alert("Coming Soon", "Elite 8 boost payments are being set up — check back soon!");
+        } else {
+          Alert.alert("Error", data.error || "Something went wrong. Try again.");
+        }
+        return;
+      }
+      // When Stripe is wired: await WebBrowser.openBrowserAsync(data.checkoutUrl)
+    } catch {
+      Alert.alert("Error", "Could not connect. Try again.");
+    }
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
@@ -1004,6 +1033,35 @@ export default function PicksHub() {
           <Text style={styles.leaderboardBtnText}>Picks Leaderboard</Text>
           <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
         </Pressable>
+
+        {/* Elite 8 Boost Card — hidden after E8 lock */}
+        {!e8LockPassed && (
+          <View style={[styles.boostCard, has2xBoost && styles.boostCardActive]}>
+            {has2xBoost ? (
+              <>
+                <Ionicons name="flash" size={20} color={GOLD} />
+                <View style={styles.boostCardText}>
+                  <Text style={styles.boostCardTitle}>2X Active — Elite 8</Text>
+                  <Text style={styles.boostCardSub}>Your Elite 8 special picks score double</Text>
+                </View>
+                <Ionicons name="checkmark-circle" size={20} color={GREEN} />
+              </>
+            ) : (
+              <>
+                <View style={styles.boostCardText}>
+                  <Text style={styles.boostCardTitle}>Boost Your Elite 8 Picks</Text>
+                  <Text style={styles.boostCardSub}>Pay $5 once to double every special pick point you earn in the Elite 8</Text>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.boostCardBtn, pressed && { opacity: 0.8 }]}
+                  onPress={handleBoostCheckout}
+                >
+                  <Text style={styles.boostCardBtnText}>$5 →</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
 
         <ScoringGuide />
 
@@ -1676,6 +1734,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#C8A84B",
     marginTop: 2,
+  },
+  boostCard: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: "rgba(232,89,10,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(232,89,10,0.30)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  boostCardActive: {
+    backgroundColor: "rgba(245,166,35,0.10)",
+    borderColor: "rgba(245,166,35,0.40)",
+  },
+  boostCardText: { flex: 1 },
+  boostCardTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#F5A623",
+    marginBottom: 2,
+  },
+  boostCardSub: {
+    fontSize: 12,
+    color: "#A0896A",
+    lineHeight: 16,
+  },
+  boostCardBtn: {
+    backgroundColor: "#E8590A",
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+  },
+  boostCardBtnText: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
   },
   prizeStrip: {
     flexDirection: "row" as const,

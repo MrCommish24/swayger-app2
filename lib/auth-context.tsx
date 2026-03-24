@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
       const queryPromise = supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, email, created_at, updated_at, referral_code, referred_by, referral_reward_round, referral_reward_claimed")
+        .select("id, username, display_name, avatar_url, email, created_at, updated_at, referral_code, referred_by, referral_reward_round, referral_reward_claimed, paid_2x_round, stripe_customer_id")
         .eq("id", userId)
         .single();
       const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>;
