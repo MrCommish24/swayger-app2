@@ -66,11 +66,65 @@ export async function computeAndSaveScores(
   if (resultsErr) return { scored: 0, error: resultsErr.message };
   const results = (resultsRaw ?? []) as GameResultRow[];
 
-  // Build winners by round
+  // Map full mascot names → FULL_BRACKET short names used in mm_locked_takes.teams
+  // Both formats must be in the set so either way a user's pick resolves correctly.
+  const TEAM_NAME_MAP: Record<string, string[]> = {
+    "Duke Blue Devils":        ["Duke"],
+    "UConn Huskies":           ["UConn"],
+    "Michigan St Spartans":    ["Michigan St.", "Michigan State"],
+    "Michigan St. Spartans":   ["Michigan St.", "Michigan State"],
+    "Michigan State Spartans": ["Michigan St.", "Michigan State"],
+    "St. John's Red Storm":    ["St. John's"],
+    "Iowa Hawkeyes":           ["Iowa"],
+    "Iowa State Cyclones":     ["Iowa State", "Iowa St."],
+    "Iowa St. Cyclones":       ["Iowa State", "Iowa St."],
+    "Arizona Wildcats":        ["Arizona"],
+    "Alabama Crimson Tide":    ["Alabama"],
+    "Purdue Boilermakers":     ["Purdue"],
+    "Arkansas Razorbacks":     ["Arkansas"],
+    "Nebraska Cornhuskers":    ["Nebraska"],
+    "Illinois Fighting Illini": ["Illinois"],
+    "Texas Longhorns":         ["Texas"],
+    "Houston Cougars":         ["Houston"],
+    "Michigan Wolverines":     ["Michigan"],
+    "Tennessee Volunteers":    ["Tennessee"],
+    "Florida Gators":          ["Florida"],
+    "Kansas Jayhawks":         ["Kansas"],
+    "Virginia Cavaliers":      ["Virginia"],
+    "UCLA Bruins":             ["UCLA"],
+    "TCU Horned Frogs":        ["TCU"],
+    "Louisville Cardinals":    ["Louisville"],
+    "VCU Rams":                ["VCU"],
+    "Gonzaga Bulldogs":        ["Gonzaga"],
+    "Utah State Aggies":       ["Utah State"],
+    "Texas Tech Red Raiders":  ["Texas Tech"],
+    "Vanderbilt Commodores":   ["Vanderbilt"],
+    "High Point Panthers":     ["High Point"],
+    "Miami Hurricanes":        ["Miami (FL)", "Miami FL"],
+    "Miami (FL) Hurricanes":   ["Miami (FL)", "Miami FL"],
+    "Saint Louis Billikens":   ["Saint Louis"],
+    "Kentucky Wildcats":       ["Kentucky"],
+    "Texas A&M Aggies":        ["Texas A&M"],
+    "North Carolina Tar Heels": ["North Carolina", "UNC"],
+    "Ohio State Buckeyes":     ["Ohio St."],
+    "Ohio St. Buckeyes":       ["Ohio St."],
+    "Oklahoma State Cowboys":  ["Oklahoma St."],
+    "Wisconsin Badgers":       ["Wisconsin"],
+    "Dayton Flyers":           ["Dayton"],
+    "Nevada Wolf Pack":        ["Nevada"],
+    "Minnesota Golden Gophers": ["Minnesota"],
+    "Creighton Bluejays":      ["Creighton"],
+    "Baylor Bears":            ["Baylor"],
+  };
+
+  // Build winners by round — add both the raw name AND all bracket-format aliases
   const winnersByRound: Record<string, Set<string>> = {};
   for (const r of results) {
     if (!winnersByRound[r.round_id]) winnersByRound[r.round_id] = new Set();
-    if (r.winner_name) winnersByRound[r.round_id].add(r.winner_name);
+    if (!r.winner_name) continue;
+    winnersByRound[r.round_id].add(r.winner_name);
+    const aliases = TEAM_NAME_MAP[r.winner_name] ?? [];
+    for (const alias of aliases) winnersByRound[r.round_id].add(alias);
   }
 
   const scores: Record<
