@@ -503,17 +503,19 @@ export async function fetchMySpecialPicks(
 }
 
 // Returns whether a user is on "second chance" mode:
-// - R64 must be locked (past deadline)
-// - User must have zero full-price picks (never picked before the deadline)
-// Users with even a single full-price pick are ineligible.
+// - Bracket lock must have passed (R64 deadline)
+// - User must have zero submitted locked takes (they never locked before the deadline)
+// Eligibility is based on mm_locked_takes, NOT mm_special_picks, so Sweet 16
+// picks at full price don't incorrectly disqualify late-joining users.
 export async function fetchSecondChanceStatus(userId: string): Promise<boolean> {
-  if (!isRoundLocked("round-64")) return false;
+  if (!isPicksLocked()) return false;
 
   const { count } = await supabase
-    .from("mm_special_picks")
+    .from("mm_locked_takes")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
-    .gte("points_multiplier", 1.0);
+    .eq("is_submitted", true)
+    .eq("is_second_chance", false);
 
   return (count ?? 0) === 0;
 }
