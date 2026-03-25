@@ -49,6 +49,10 @@ const HIGH_SCORER_POINTS = 3;
 // Set to true to pause automated score-update emails until scoring is verified.
 export const SCORE_EMAILS_PAUSED = true;
 
+// Set to true to pause all bulk blast emails (S16 launch, R32 picks, leaderboard,
+// reminders). Transactional wager notification emails are NOT affected.
+export const BLAST_EMAILS_PAUSED = true;
+
 // ─── Scoring computation ─────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -749,6 +753,10 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      return;
+    }
     try {
       const { sendS16LaunchEmail } = await import("./email");
       const supabase = getSupabase();
@@ -810,6 +818,10 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      return;
+    }
     try {
       const { sendMMR32PicksEmail } = await import("./email");
       const supabase = getSupabase();
@@ -846,6 +858,10 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      return;
+    }
     try {
       const { sendLeaderboardBlast } = await import("./email");
       const supabase = getSupabase();
@@ -880,6 +896,10 @@ export function registerMMAdminRoutes(app: Express): void {
     const token = req.headers["x-admin-token"] as string | undefined;
     if (!isAdminToken(token)) {
       res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {

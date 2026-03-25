@@ -389,7 +389,7 @@ export const MM_ROUNDS: MMRound[] = [
     shortLabel: "S16",
     startDate: "2026-03-26",
     endDate: "2026-03-27",
-    lockDate: "2026-03-27T12:00:00-05:00",
+    lockDate: "2026-03-26T18:00:00-05:00",  // 6pm CDT Mar 26 — first tip is 6:10pm CDT
     featured: [
       // ── MARCH 26 — 4 GAMES ──
 

@@ -953,7 +953,7 @@ export function buildS16LaunchEmailHtml(
       Hey ${displayName},
     </p>
     <p style="margin:0 0 18px;color:#E2E8F0;font-size:15px;line-height:1.6">
-      Sweet 16 Quick Picks are <strong style="color:#FFFFFF;">open right now</strong>. Three picks, three chances to earn points — picks lock <strong style="color:#FFFFFF;">Thursday March 27 at 6pm ET</strong> when the games tip off.
+      Sweet 16 Quick Picks are <strong style="color:#FFFFFF;">open right now</strong>. Three picks, three chances to earn points — picks lock <strong style="color:#FFFFFF;">Thursday March 26 at 6pm CDT</strong> when the games tip off.
     </p>
 
     <p style="margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Your 3 picks this round</p>
@@ -1011,7 +1011,7 @@ export function buildS16LaunchEmailHtml(
         <tr><td style="padding:8px 0;border-bottom:1px solid rgba(167,139,250,0.15);"><span style="font-size:13px;color:#C4B5FD;">Final Four picks</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">2.5 pts each</span></td></tr>
         <tr><td style="padding:8px 0;"><span style="font-size:13px;color:#C4B5FD;">Champion pick</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">5 pts</span></td></tr>
       </table>
-      <p style="margin:12px 0 0;font-size:12px;color:#7C3AED;text-align:center;">All second-chance picks lock Thursday March 27 at 6pm ET.</p>
+      <p style="margin:12px 0 0;font-size:12px;color:#7C3AED;text-align:center;">All second-chance picks lock Thursday March 26 at 6pm CDT.</p>
     </div>
   ` : "";
 

@@ -174,7 +174,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
   "first-four":   "2026-03-17T12:00:00-05:00",
   "round-64":     "2026-03-19T11:00:00-05:00",  // 11am CDT, first games tip 11:15am CDT
   "round-32":     "2026-03-21T12:00:00-05:00",  // noon CDT, R32 starts Mar 21
-  "sweet-16":     "2026-03-27T18:00:00-04:00",  // 6pm ET (EDT)
+  "sweet-16":     "2026-03-26T18:00:00-05:00",  // 6pm CDT Mar 26, first tip 6:10pm CDT
   "elite-8":      "2026-03-28T12:00:00-05:00",  // noon CDT
   "final-four":   "2026-04-04T18:00:00-05:00",  // 6 PM CDT, games start ~7 PM CDT
 };
@@ -200,8 +200,8 @@ export function isPicksLocked(): boolean {
 
 // Second-chance takes have tighter per-type deadlines:
 // - sweet_sixteen: permanently closed — all 16 teams are already known
-// - elite_eight / final_four / champion: lock at Sweet 16 tip-off (March 27 6pm ET)
-const SECOND_CHANCE_TAKES_LOCK_DATE = "2026-03-27T18:00:00-04:00";
+// - elite_eight / final_four / champion: lock at Sweet 16 tip-off (March 26 6pm CDT)
+const SECOND_CHANCE_TAKES_LOCK_DATE = "2026-03-26T18:00:00-05:00";
 
 export function isSecondChanceTakeLocked(takeType: TakeType): boolean {
   if (takeType === "sweet_sixteen") return true;
