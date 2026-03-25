@@ -144,6 +144,7 @@ export interface PickScore {
   is_second_chance?: boolean;
   username?: string;
   display_name?: string | null;
+  has_2x_active?: boolean;
 }
 
 export interface BracketTeam {
@@ -640,11 +641,24 @@ export async function fetchPicksLeaderboard(): Promise<PickScore[]> {
     .select("id, username, display_name")
     .in("id", userIds);
 
+  const { data: profiles2x } = await supabase
+    .from("profiles")
+    .select("id, referral_reward_round, paid_2x_round")
+    .in("id", userIds);
+
+  const boost2xMap = new Map(
+    (profiles2x ?? []).map((p) => [
+      p.id as string,
+      (p.referral_reward_round != null || p.paid_2x_round != null) as boolean,
+    ]),
+  );
+
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
   return scores.map((s) => ({
     ...(s as PickScore),
     username: profileMap.get(s.user_id)?.username ?? "—",
     display_name: profileMap.get(s.user_id)?.display_name ?? null,
+    has_2x_active: boost2xMap.get(s.user_id) ?? false,
   }));
 }
 

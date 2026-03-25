@@ -85,6 +85,11 @@ function LeaderboardRow({
               <Text style={styles.meBadgeText}>You</Text>
             </View>
           ) : null}
+          {entry.has_2x_active ? (
+            <View style={styles.boostBadge}>
+              <Text style={styles.boostBadgeText}>🔥 2X</Text>
+            </View>
+          ) : null}
           {entry.is_second_chance ? (
             <View style={styles.secondChanceBadge}>
               <Text style={styles.secondChanceBadgeText}>½ pts</Text>
@@ -221,7 +226,7 @@ export default function PicksLeaderboard() {
 
         <View style={styles.referralNote}>
           <Text style={styles.referralNoteText}>
-            Referral bonus: users who invited a new player to a March Madness Swayger earn 2X points for one round
+            🔥 2X badge = active points multiplier. Invite a new player to a Swayger to earn 2X for a round — or grab the Elite 8 boost for $5.
           </Text>
         </View>
       </ScrollView>
@@ -398,6 +403,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700" as const,
     color: Colors.dark.tint,
+  },
+  boostBadge: {
+    backgroundColor: "rgba(251,146,60,0.18)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "rgba(251,146,60,0.35)",
+  },
+  boostBadgeText: {
+    fontSize: 10,
+    fontWeight: "800" as const,
+    color: "#FB923C",
+    letterSpacing: 0.2,
   },
   secondChanceBadge: {
     backgroundColor: "rgba(245, 158, 11, 0.15)",
