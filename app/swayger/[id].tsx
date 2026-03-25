@@ -24,6 +24,7 @@ import QRCode from "react-native-qrcode-svg";
 import ReceiptCard from "@/components/ReceiptCard";
 import StreakCelebrationModal from "@/components/StreakCelebrationModal";
 import FightCardModal, { FightCardType } from "@/components/FightCardModal";
+import FeedbackNudge from "@/components/FeedbackNudge";
 import {
   fetchSwayger,
   fetchSwaygerInvite,
@@ -410,7 +411,7 @@ function SettlementSection({
 const shownFightCardIds = new Set<string>();
 
 export default function SwaygerDetailScreen() {
-  const { id, justAccepted } = useLocalSearchParams<{ id: string; justAccepted?: string }>();
+  const { id, justAccepted, feedback } = useLocalSearchParams<{ id: string; justAccepted?: string; feedback?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
@@ -428,7 +429,15 @@ export default function SwaygerDetailScreen() {
   const [rematchSheetType, setRematchSheetType] = useState<"run_it_back" | "double_or_nothing" | null>(null);
   const [linkShared, setLinkShared] = useState(false);
   const [pokeSent, setPokeSent] = useState(false);
+  const [showFeedbackNudge, setShowFeedbackNudge] = useState(false);
   const pendingStreakRef = useRef(0);
+
+  useEffect(() => {
+    if (feedback === "1") {
+      const t = setTimeout(() => setShowFeedbackNudge(true), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [feedback]);
 
   async function pokeSwayger() {
     if (!swayger || !id) return;
@@ -751,6 +760,7 @@ export default function SwaygerDetailScreen() {
       invalidateAll();
       if (result.settled) {
         showMessage("Settled!", "This Swayger has been settled.");
+        setTimeout(() => setShowFeedbackNudge(true), 1200);
         // Check if the current user won and has a streak worth celebrating
         const proposal = proposals.find((p) => p.id === proposalId);
         const userWon = proposal && (
@@ -1412,6 +1422,12 @@ export default function SwaygerDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <FeedbackNudge
+        visible={showFeedbackNudge}
+        onDismiss={() => setShowFeedbackNudge(false)}
+        trigger={feedback === "1" ? "swayger_created" : "swayger_settled"}
+      />
 
       <StreakCelebrationModal
         visible={showStreakCelebration}

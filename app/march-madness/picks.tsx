@@ -50,6 +50,7 @@ import {
 } from "@/lib/mm-picks";
 import { getCurrentRound } from "@/lib/march-madness";
 import { getApiUrl } from "@/lib/query-client";
+import FeedbackNudge from "@/components/FeedbackNudge";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
@@ -889,6 +890,8 @@ export default function PicksHub() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [nudgeGame, setNudgeGame] = useState<{ title: string } | null>(null);
   const [receiptTarget, setReceiptTarget] = useState<ReceiptTarget | null>(null);
+  const [showFeedbackNudge, setShowFeedbackNudge] = useState(false);
+  const feedbackShownRef = useRef(false);
   const offScreenReceiptRef = useRef<View>(null);
 
   const { data: gameResults = [] } = useQuery<GameResult[]>({
@@ -914,6 +917,10 @@ export default function PicksHub() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["mm-special-picks"] });
+      if (!feedbackShownRef.current) {
+        feedbackShownRef.current = true;
+        setTimeout(() => setShowFeedbackNudge(true), 1000);
+      }
     },
     onError: () => setTogglingId(null),
   });
@@ -986,6 +993,11 @@ export default function PicksHub() {
   return (
     <View style={[styles.container, { paddingTop: topPadding }]}>
       <PickReceiptModal target={receiptTarget} onClose={() => setReceiptTarget(null)} offScreenRef={offScreenReceiptRef} />
+      <FeedbackNudge
+        visible={showFeedbackNudge}
+        onDismiss={() => setShowFeedbackNudge(false)}
+        trigger="mm_picks"
+      />
       {/* Offscreen receipt card — always in the React tree for reliable image capture */}
       {receiptTarget && (
         <View style={{ position: "absolute", left: -9999, top: -9999, opacity: 0 }} pointerEvents="none">

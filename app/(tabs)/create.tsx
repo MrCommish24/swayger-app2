@@ -112,7 +112,7 @@ export default function CreateSwaygerScreen() {
       setStakeNote("");
       setCreatorPick("");
       if (result.swayger) {
-        router.push(`/swayger/${result.swayger.id}`);
+        router.push(`/swayger/${result.swayger.id}?feedback=1`);
       } else {
         router.push("/(tabs)");
       }

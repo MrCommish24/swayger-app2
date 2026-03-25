@@ -22,6 +22,7 @@ import Colors from "@/constants/colors";
 import type { Profile } from "@/types";
 import { verifyGameplaySchema } from "@/lib/verify-schema";
 import { fetchMyBalance, claimBankruptcy } from "@/lib/swayger";
+import FeedbackSheet from "@/components/FeedbackSheet";
 
 interface SchemaCheck {
   name: string;
@@ -45,6 +46,7 @@ export default function ProfileScreen() {
   const [devLoading, setDevLoading] = useState(false);
   const [claimingBankruptcy, setClaimingBankruptcy] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
 
   const INVITE_MESSAGE =
     "March Madness is here.\nI'm testing a new app where you can lock your champion, call upsets, and make friendly wagers with friends.\n\nNo real money — just bragging rights.\n\nCome make your picks: https://swayger-app.replit.app";
@@ -376,6 +378,21 @@ export default function ProfileScreen() {
           <View style={styles.menuDivider} />
 
           <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+            onPress={() => setShowFeedbackSheet(true)}
+            testID="profile-feedback"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={20} color={Colors.dark.text} />
+            <View style={styles.menuItemBody}>
+              <Text style={styles.menuItemText}>Send Feedback</Text>
+              <Text style={styles.menuItemSub}>Tell us what's working or what should change</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
+          </Pressable>
+
+          <View style={styles.menuDivider} />
+
+          <Pressable
             style={({ pressed }) => [styles.inviteRow, pressed && styles.menuItemPressed]}
             onPress={handleInvite}
             testID="profile-invite-friends"
@@ -456,6 +473,12 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      <FeedbackSheet
+        visible={showFeedbackSheet}
+        onClose={() => setShowFeedbackSheet(false)}
+        trigger="profile"
+      />
     </View>
   );
 }
