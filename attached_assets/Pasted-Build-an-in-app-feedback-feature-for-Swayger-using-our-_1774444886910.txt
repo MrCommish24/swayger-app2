@@ -1,0 +1,60 @@
+Build an in-app feedback feature for Swayger using our existing Expo React Native frontend, Express backend, and Supabase setup.
+
+Goal:
+Create a lightweight, easy-to-use feedback flow so logged-in users can submit product feedback without leaving the app.
+
+Requirements:
+
+Add a new “Send Feedback” row to the Profile screen.
+Place it in the Account or Support section
+Tapping it should open a dedicated Feedback screen or modal
+Keep the UI clean and consistent with the current Swayger design system
+Build a feedback form with these fields:
+Category selector with options:
+Bug
+Confusing
+Feature request
+General feedback
+Message text area
+Submit button
+UX requirements:
+Title: “Send Feedback”
+Helper text: “What’s working, what’s confusing, or what should we add?”
+Message field should support multiline input
+Show loading state while submitting
+Show success confirmation after submit: “Thanks, we got it.”
+Clear the form after successful submission
+Add basic validation so message cannot be empty
+Backend requirements:
+Create a Supabase table called feedback_submissions
+Suggested columns:
+id
+user_id
+email
+category
+message
+current_screen
+created_at
+When a logged-in user submits feedback, save:
+their authenticated user ID
+their email if available
+selected category
+message
+current route or screen name
+timestamp
+Integration requirements:
+Use the existing auth/session context so feedback is tied to the logged-in user
+Keep the implementation production-safe and simple
+Follow current TypeScript patterns and app architecture
+Add error handling and show a user-friendly error if submission fails
+Optional enhancement if easy:
+After a user completes their first swayger creation or submits March Madness picks, show a small dismissible prompt:
+“Got feedback? Tell us what worked or what felt off.”
+with a button to open the same feedback form
+Deliverables:
+frontend UI for feedback entry
+Supabase SQL for the new feedback table
+any backend endpoint changes if needed
+concise notes on where files were added or changed
+
+Prioritize speed, clean UX, and low friction. Do not overbuild.
