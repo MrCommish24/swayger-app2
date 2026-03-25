@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "swayger-v1",
+  "private_key_id": "10538a225cb2d7928442279897b4a2759251fd55",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDBbNv1GG4Aq7Dg\ndUlcqH0+OIeVVGa7gNCr+kOe1p/WCPN1GhUT8eSgSlJrtz/L3me9/ChaUZcuLet3\nWnh6t+n+9/clDrA3H9guFEP+4eaymVRzvkt+jrjn3Ka03h0N2RSuVxPHN3lzPa55\nPl1q6ickdyQqLOhNHk49S1B2z3Dj2jRiLoV/VUYr6Kuzjuph51Q+HrsQYeWoohcE\njpyATh1o5uJQ8DGSQoCZdWy+oj64FRjb/RD9BzuUwS0LpL5ZAGQKXQX01mezPLP2\njH7z4W2dS8H7KcEumT7Zq2d/Uamt1h0Mj4VrI8eZ9jmVc/o+uuG72hhFCiYGkxv9\nm9qwwVjLAgMBAAECggEAK7DeuGy1wFIH6JOlqBfo/mp/ecQwVm9A82/a4WCihxLL\nh2qGU1SC65AOMQWaE/9fWKNCLDCc4RH/S5z0dOfhI7Y4Lbc1J6Z6SuJJ/6NgXHxU\n/rX/0I0FiF4ni9hWIMAls0G5FnlZ5iWLKRjkuhc9EzgUQ7CUIoNTcfX2rXerDNRj\nE3qyaCmq76mPvv3dJjWWE7jNzCmcKzSJ9zK0R+xL3Yt4MM27sKts2thj2ctdSEO7\nQeSZrbYXPPwlN+CC7z861etNy/kedHqhWZmPcHJsrRkclx8Uz7C471Cnj8G53RTV\n9GgFTojj+IIAum8PwSuDW50LqzJ0RdfU9m4weLsOGQKBgQDgXBTflkZMDl4VhIvM\nzKc7Tkf9+Rkee4q/8ApLHOC9XPYq1mxqbbY3Lioja5JoTe6cR0157k7QQ3TBxrMy\npFi59gMGzpkYmoIP9B01XAimeWa6/mv9mfgRpQer6xWswHSCNf8NnEEHyRzkoRxL\nAaFNOXQfDqI16q2KuFqSuxPRkwKBgQDcs/hTd6poGmcV1SD6fmtViRxPEnhANLJT\n3AjIxRSlu3yLpyHu27lr8Lln+2zArMN3IZxXa/gneZozSnKMM+VAsS5lkn8VvfJn\n0z48D6OiPHIuCjocqW7IMgJsf60nFTIH1UJVZwCE+jkxUqnOhKDu/m9/Rh+XobxY\nBE7HtvI+6QKBgAH8TqL77XtW1TZTifkyBnjb5H826SX/6eZw9WZcxxBl9jfC1grL\nFcW/Ptg5Z35M0kPHzcO6fDATqMDeRU+5bJ+YscYppek11NjXTDrgqaLviB03izUf\nW7asQzkeR37T5TQRzkQMkfbDrOHJGzr+tLK+Q2zS8FSR0x9bKlIKHc7JAoGBANrn\nmrfXKmslPPf3tEUgnP9zBmQbcrBkVDg/N2tDpw4XXxn5RPvwbgJ0+sD7LUwST7Ha\n4YIIclNdFqgnAGS1mH7I/rb6ThjXlRaL/N9/t5LUF4A43pjNKTdh+ut429q2+C+y\nw5+HkYlT0uRsFEblX+aM8TQw7mbsoa4/X5BRkgb5AoGBALh6R6znnLZAaUhMandU\n9Kz2B1Haz8fbwEJ/P0JOe+a/hD8sWGnn6P3+qiB5TLRwLTISqnnJ/C9uwX/xn4ZH\nxvnAJGP3AWKG3JlkAKkHTySnMGeBa4E7X37STOSuwaKYB4lr8YGXwckS0esGz1Bo\ntOL8C6Xoek9s7HPIgQkenUPG\n-----END PRIVATE KEY-----\n",
+  "client_email": "eas-submit-swayger@swayger-v1.iam.gserviceaccount.com",
+  "client_id": "111330045576947844133",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/eas-submit-swayger%40swayger-v1.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
