@@ -44,7 +44,9 @@ CREATE POLICY "Anon key can write round matchups"
 -- ────────────────────────────────────────────────────────────────────────────
 -- D. get_all_mm_special_picks — SECURITY DEFINER so the backend's anon-key
 --    Supabase client can read every user's picks for scoring (RLS bypassed).
+--    Drop first in case it was created without points_multiplier.
 -- ────────────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS get_all_mm_special_picks();
 CREATE OR REPLACE FUNCTION get_all_mm_special_picks()
 RETURNS TABLE (
   user_id           uuid,
@@ -75,7 +77,9 @@ GRANT EXECUTE ON FUNCTION get_all_mm_special_picks() TO anon, authenticated;
 -- ────────────────────────────────────────────────────────────────────────────
 -- E. get_all_mm_locked_takes — SECURITY DEFINER so the backend can read all
 --    submitted bracket takes for scoring without a user JWT.
+--    Must DROP first because the return type changed (added is_second_chance).
 -- ────────────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS get_all_mm_locked_takes();
 CREATE OR REPLACE FUNCTION get_all_mm_locked_takes()
 RETURNS TABLE (
   user_id          uuid,

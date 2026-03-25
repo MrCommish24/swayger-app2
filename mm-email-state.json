@@ -23,7 +23,7 @@
     "mar21": true
   },
   "quick_pick_reminders": {
-    "s16_mar25": false,
+    "s16_mar25": true,
     "s16_mar27_last_chance": false,
     "e8_mar27": false,
     "e8_mar28_last_chance": false,
