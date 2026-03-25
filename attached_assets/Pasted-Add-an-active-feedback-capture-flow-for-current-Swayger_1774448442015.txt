@@ -1,0 +1,63 @@
+Add an active feedback capture flow for current Swayger users so we can collect feedback from people who have already used the app and may not go to the Profile page.
+
+Goal:
+Create a lightweight feedback prompt that appears for existing users when they open the app, with an option to leave quick feedback or open the full feedback form.
+
+Requirements:
+
+Show a dismissible modal or bottom sheet on app open for existing users only.
+Target users who:
+have already created at least one swayger, or
+have already submitted March Madness picks, or
+were created before today
+Do not show this prompt to brand new users on first open
+Do not show repeatedly in an annoying way
+Show once per user for now unless easy to configure
+Prompt copy:
+Title: “Help us improve Swayger”
+Body: “You’ve been one of our early users. What’s working, what’s confusing, or what should we improve?”
+
+Buttons/options:
+
+Good
+Confusing
+Had an issue
+Share feedback
+Not now
+Behavior:
+If user taps Good, Confusing, or Had an issue:
+save that quick response to the feedback system with user ID, current screen, and timestamp
+then optionally show a follow-up prompt: “Want to tell us more?” with buttons:
+Yes
+No thanks
+If user taps Share feedback or Yes on follow-up:
+open the full feedback form
+If user taps Not now:
+dismiss the prompt
+Also add a small dismissible feedback banner on these screens:
+March Madness hub
+Leaderboard
+Profile
+
+Banner copy:
+“Early user feedback helps a lot. Tell us what’s working or what feels off.”
+
+Button:
+“Give Feedback”
+
+Save all responses in Supabase and tie them to the authenticated user.
+
+Suggested fields:
+
+user_id
+email if available
+quick_feedback_response
+message
+current_screen
+trigger_event = app_open_feedback_prompt or feedback_banner
+created_at
+Keep the UX clean, lightweight, and not disruptive.
+Follow existing Expo React Native, TypeScript, Express, and Supabase patterns.
+Add clear comments explaining where the prompt logic lives and how to adjust frequency later.
+
+Prioritize speed, clean UX, and maximum response rate from current users.
