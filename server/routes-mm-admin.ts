@@ -858,6 +858,49 @@ export function registerMMAdminRoutes(app: Express): void {
     }
   });
 
+  // Send S16 tipoff alert to all users except excluded usernames
+  app.post("/admin/mm/api/blast-s16-tipoff", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused." });
+      return;
+    }
+    const excludeUsernames: string[] = (req.body?.exclude_usernames ?? []).map((u: string) => u.toLowerCase());
+    try {
+      const { sendS16TipoffAlertEmail } = await import("./email");
+      const supabase = getSupabase();
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const eligible = (allProfiles ?? []).filter(
+        (p: { notification_email?: string; username?: string }) =>
+          p.notification_email &&
+          !excludeUsernames.includes((p.username ?? "").toLowerCase()),
+      );
+      let sent = 0;
+      let failed = 0;
+      for (const profile of eligible) {
+        try {
+          await sendS16TipoffAlertEmail({
+            to: profile.notification_email as string,
+            displayName: profile.display_name || `@${profile.username}`,
+          });
+          sent++;
+        } catch (e) {
+          console.error("[mm-admin] s16-tipoff blast failed for", profile.id, e);
+          failed++;
+        }
+      }
+      console.log(`[mm-admin] S16 tipoff blast: sent=${sent} failed=${failed}`);
+      res.json({ ok: true, message: `S16 tipoff alert sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}`, sent, failed });
+    } catch (err) {
+      console.error("[mm-admin] s16-tipoff blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // Send leaderboard blast to all registered users
   app.post("/admin/mm/api/blast-leaderboard", async (req: Request, res: Response) => {
     const token = req.headers["x-admin-token"] as string | undefined;
