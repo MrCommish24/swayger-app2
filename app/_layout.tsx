@@ -123,9 +123,9 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ErrorBoundary onError={(err, stack) => console.error("[ErrorBoundary]", err.message, stack)}>
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
+    <SafeAreaProvider>
+      <ErrorBoundary onError={(err, stack) => console.error("[ErrorBoundary]", err.message, stack)}>
+        <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView>
             <KeyboardProvider>
               <AuthProvider>
@@ -133,8 +133,8 @@ export default function RootLayout() {
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
-        </SafeAreaProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </SafeAreaProvider>
   );
 }
