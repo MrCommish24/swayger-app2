@@ -1075,6 +1075,17 @@ export function buildS16TipoffAlertEmailHtml(displayName = "there"): string {
       </tr>
     </table>
 
+    <div style="background:linear-gradient(135deg,#12001a 0%,#1e0030 100%);border:1px solid rgba(108,99,255,0.4);border-radius:12px;padding:18px 20px;margin-bottom:24px;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#A78BFA;text-transform:uppercase;">🔒 Second Chance — Still Active</p>
+      <p style="margin:0 0 12px;font-size:15px;font-weight:700;color:#FFFFFF;line-height:1.3;">Missed the bracket deadline? You can still lock Elite 8, Final Four, and Championship picks.</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(0,0,0,0.25);border-radius:8px;padding:4px 14px;margin-bottom:12px;">
+        <tr><td style="padding:8px 0;border-bottom:1px solid rgba(167,139,250,0.15);"><span style="font-size:13px;color:#C4B5FD;">Elite 8 picks</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">1.5 pts each</span></td></tr>
+        <tr><td style="padding:8px 0;border-bottom:1px solid rgba(167,139,250,0.15);"><span style="font-size:13px;color:#C4B5FD;">Final Four picks</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">2.5 pts each</span></td></tr>
+        <tr><td style="padding:8px 0;"><span style="font-size:13px;color:#C4B5FD;">Championship pick</span><span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">5 pts</span></td></tr>
+      </table>
+      <p style="margin:0;font-size:12px;color:#A78BFA;text-align:center;">Half points on locked takes — still worth locking in before tip.</p>
+    </div>
+
     <p style="margin:0 0 6px;font-size:13px;color:#6B7280;text-align:center;">Picks lock at 6pm CDT. After that the window is closed.</p>
   `;
 
