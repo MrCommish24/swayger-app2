@@ -20,6 +20,11 @@
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "swayger-app.replit.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://vlxvoienyxzhyaiimccp.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "PASTE_YOUR_ANON_KEY_HERE"
       }
     }
   },
