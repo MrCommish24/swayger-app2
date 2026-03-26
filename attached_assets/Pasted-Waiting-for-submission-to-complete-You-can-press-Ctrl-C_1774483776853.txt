@@ -1,0 +1,52 @@
+Waiting for submission to complete. You can press Ctrl+C to exit.
+× Something went wrong when submitting your app to Google Play Store.
+
+Fastlane supply failed
+We couldn't figure out what went wrong. See logs to learn more.
+
+[logs] Start phase: SPIN_UP_SUBMISSION_WORKER
+[logs] Creating new worker instance
+[logs] End phase: SPIN_UP_SUBMISSION_WORKER
+
+[logs] Start phase: SUBMIT_TO_PLAY_STORE
+[logs] Starting the submit process
+[logs] Downloading archive
+[logs] Preparing artifact
+[logs] Submitting Android app to Play Store...
+[logs] Submitting the app with fastlane supply
+[logs] +-------------------------------------------------------------------------------------------------------------------------------------------------+
+[logs] |                                                           Summary for supply 2.220.0                                                            |
+[logs] +------------------------------------+------------------------------------------------------------------------------------------------------------+
+[logs] | aab                                | /tmp/submissions/f0358523-2f94-4d8a-b7ad-ac790fa9aa5c/application_c69b6e17_0888_4d5c_bfc5_333107dcb4b5.aab |
+[logs] | track                              | internal                                                                                                   |
+[logs] | json_key                           | /tmp/submissions/f0358523-2f94-4d8a-b7ad-ac790fa9aa5c/service-account.json                                 |
+[logs] | package_name                       | com.swayger                                                                                                |
+[logs] | changes_not_sent_for_review        | false                                                                                                      |
+[logs] | release_status                     | completed                                                                                                  |
+[logs] | skip_upload_apk                    | false                                                                                                      |
+[logs] | skip_upload_aab                    | false                                                                                                      |
+[logs] | skip_upload_metadata               | false                                                                                                      |
+[logs] | skip_upload_changelogs             | false                                                                                                      |
+[logs] | skip_upload_images                 | false                                                                                                      |
+[logs] | skip_upload_screenshots            | false                                                                                                      |
+[logs] | sync_image_upload                  | false                                                                                                      |
+[logs] | track_promote_release_status       | completed                                                                                                  |
+[logs] | validate_only                      | false                                                                                                      |
+[logs] | check_superseded_tracks            | false                                                                                                      |
+[logs] | timeout                            | 300                                                                                                        |
+[logs] | deactivate_on_promote              | true                                                                                                       |
+[logs] | rescue_changes_not_sent_for_review | true                                                                                                       |
+[logs] | ack_bundle_installation_warning    | false                                                                                                      |
+[logs] +------------------------------------+------------------------------------------------------------------------------------------------------------+
+[logs]
+[logs] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Retrying...
+[logs] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Retrying...
+[logs] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Retrying...
+[logs] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Retrying...
+[logs] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Retrying...
+[logs] [!] Google Api Error: PERMISSION_DENIED: Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry. - Google Play Android Developer API has not been used in project 1069627053123 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/androidpublisher.googleapis.com/overview?project=1069627053123 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
+[logs] Fastlane supply failed
+[logs] Failed to submit the app to the store
+[logs] End phase: SUBMIT_TO_PLAY_STORE
+
+C:\Users\dariu\Dropbox\League Play Idea\Swayger Build\swayger-app (1)\swayger-app>
