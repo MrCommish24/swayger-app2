@@ -2,12 +2,12 @@
   "expo": {
     "name": "Swayger",
     "slug": "swayger",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "swayger",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.swayger",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#0B1120",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -45,8 +45,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     }
   }
 }
