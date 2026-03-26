@@ -2,7 +2,7 @@
   "expo": {
     "name": "Swayger",
     "slug": "swayger",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "swayger",
@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.swayger",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#0B1120",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
