@@ -731,6 +731,13 @@ export function registerMMAdminRoutes(app: Express): void {
     res.send(buildMMR32PicksEmailHtml("Swayger User"));
   });
 
+  // Preview S16 tipoff alert email (1-hour warning)
+  app.get("/admin/mm/email-preview/s16-tipoff", (_req: Request, res: Response) => {
+    const { buildS16TipoffAlertEmailHtml } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildS16TipoffAlertEmailHtml("Swayger User"));
+  });
+
   // Preview S16 launch email — variant A (has locked takes)
   app.get("/admin/mm/email-preview/s16-launch-a", (_req: Request, res: Response) => {
     const { buildS16LaunchEmailHtml } = require("./email");

@@ -1033,6 +1033,70 @@ export function buildS16LaunchEmailHtml(
   return buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl);
 }
 
+// ─── Sweet 16 Tipoff Alert (1-hour warning) ──────────────────────────────────
+
+export function buildS16TipoffAlertEmailHtml(displayName = "there"): string {
+  const picksUrl = `${APP_URL}/march-madness/picks`;
+  const subject  = "⏰ Sweet 16 tips in 1 hour — picks close NOW";
+  const headline = "Last call. Picks lock at 6pm CDT.";
+
+  const body = `
+    <p style="margin:0 0 16px;color:#E2E8F0;font-size:16px;line-height:1.5">
+      Hey ${displayName},
+    </p>
+    <p style="margin:0 0 20px;color:#E2E8F0;font-size:16px;line-height:1.6">
+      The Sweet 16 tips off <strong style="color:#FFFFFF;">tonight</strong>. Picks lock at <strong style="color:#FF4444;">6pm CDT — in about an hour.</strong> If you haven't made yours yet, now's the moment.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #F59E0B;">
+          <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#FFFFFF;">🚨 Upset Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;">Pick a lower seed to knock out a higher seed tonight.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #3B82F6;">
+          <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#FFFFFF;">💥 Blowout Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;">Pick the game that ends as a rout — not even close.</p>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td style="background:#13131D;border-radius:10px;padding:14px 16px;border-left:3px solid #10B981;">
+          <p style="margin:0 0 2px;font-size:14px;font-weight:700;color:#FFFFFF;">🔥 High Scorer Pick — 3 pts</p>
+          <p style="margin:0;font-size:13px;color:#8B95A5;">Pick the game that puts up the most combined points.</p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 6px;font-size:13px;color:#6B7280;text-align:center;">Picks lock at 6pm CDT. After that the window is closed.</p>
+  `;
+
+  return buildEmailHtml(subject, headline, body, "Make My Picks Now →", picksUrl);
+}
+
+export async function sendS16TipoffAlertEmail(opts: {
+  to: string;
+  displayName: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "⏰ Sweet 16 tips in 1 hour — picks close NOW",
+    html: buildS16TipoffAlertEmailHtml(opts.displayName),
+  });
+}
+
 export async function sendS16LaunchEmail(opts: {
   to: string;
   displayName: string;
