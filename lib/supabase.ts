@@ -44,9 +44,12 @@ if (supabaseUrl && !supabaseUrl.startsWith("http") && supabaseAnonKey.startsWith
 }
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Missing Supabase credentials. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your EAS environment variables before building."
+  console.error(
+    "[Supabase] Missing credentials — EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY must be set as EAS secrets before building."
   );
+  // Use placeholder values so the module loads; auth will fail gracefully rather than crashing at startup
+  supabaseUrl = supabaseUrl || "https://placeholder.supabase.co";
+  supabaseAnonKey = supabaseAnonKey || "placeholder-anon-key";
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
