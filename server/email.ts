@@ -1,10 +1,34 @@
 import { Resend } from "resend";
+import { createHmac } from "crypto";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM =
   process.env.RESEND_FROM_EMAIL || "Swayger <onboarding@resend.dev>";
 const APP_URL =
   process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
+
+// ─── Unsubscribe helpers ──────────────────────────────────────────────────────
+
+const UNSUB_SECRET = `swayger-unsub-v1-${process.env.RESEND_API_KEY ?? "dev"}`;
+
+export function generateUnsubscribeUrl(userId: string): string {
+  const sig = createHmac("sha256", UNSUB_SECRET).update(userId).digest("hex").slice(0, 32);
+  return `${APP_URL}/unsubscribe?uid=${encodeURIComponent(userId)}&sig=${sig}`;
+}
+
+export function verifyUnsubscribeToken(userId: string, sig: string): boolean {
+  const expected = createHmac("sha256", UNSUB_SECRET).update(userId).digest("hex").slice(0, 32);
+  return sig === expected;
+}
+
+function addUnsubFooter(html: string, unsubscribeUrl: string): string {
+  const footer =
+    `<div style="text-align:center;padding:10px 20px 20px;font-size:11px;color:#3A3A4A;">` +
+    `You're receiving this because you have a Swayger account. &middot; ` +
+    `<a href="${unsubscribeUrl}" style="color:#4A4A5A;text-decoration:underline;">Unsubscribe</a>` +
+    `</div>`;
+  return html.replace("</body>", `${footer}\n</body>`);
+}
 
 export type EmailEvent =
   | "invite_created"
@@ -353,9 +377,11 @@ export async function sendMMScoreUpdateEmail({
 export async function sendMMReminderEmail({
   to,
   displayName,
+  userId,
 }: {
   to: string;
   displayName: string;
+  userId?: string;
 }): Promise<void> {
   const subject = "🏀 Your March Madness Picks Aren't Locked Yet";
   const headline = "Lock In Your Picks Before Tip-Off";
@@ -371,12 +397,9 @@ export async function sendMMReminderEmail({
       Picks lock at 11am CDT on March 19. Once it's locked, it's locked.
     </p>
   `;
-  await resend.emails.send({
-    from: FROM,
-    to,
-    subject,
-    html: buildEmailHtml(subject, headline, body, "Lock My Picks", `${APP_URL}/march-madness/picks`),
-  });
+  let html = buildEmailHtml(subject, headline, body, "Lock My Picks", `${APP_URL}/march-madness/picks`);
+  if (userId) html = addUnsubFooter(html, generateUnsubscribeUrl(userId));
+  await resend.emails.send({ from: FROM, to, subject, html });
 }
 
 // ─── Leaderboard Blast ────────────────────────────────────────────────────────
@@ -468,32 +491,28 @@ export function buildLeaderboardBlastHtml(): string {
 export async function sendLeaderboardBlast(opts: {
   to: string;
   displayName: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "🏀 Race Up the Leaderboard — Win a $100 Amazon Gift Card",
-    html: buildLeaderboardBlastHtml(),
-  });
+  let html = buildLeaderboardBlastHtml();
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "🏀 Race Up the Leaderboard — Win a $100 Amazon Gift Card", html });
 }
 
 export async function sendLeaderboardReminderBlast(opts: {
   to: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "The winner walks away with something good",
-    html: buildLeaderboardBlastHtml(),
-  });
+  let html = buildLeaderboardBlastHtml();
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "The winner walks away with something good", html });
 }
 
 // ─── Last-Chance Leaderboard Blast (Mar 19 9am — 2hrs before lock) ───────────
@@ -580,17 +599,15 @@ export function buildLastChanceBlastHtml(): string {
 
 export async function sendLastChanceBlast(opts: {
   to: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "First place on the leaderboard walks away with something good. Picks close at 11am.",
-    html: buildLastChanceBlastHtml(),
-  });
+  let html = buildLastChanceBlastHtml();
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "First place on the leaderboard walks away with something good. Picks close at 11am.", html });
 }
 
 // ─── Second Shot Email ────────────────────────────────────────────────────────
@@ -652,17 +669,15 @@ export function buildSecondShotEmailHtml(displayName = "there"): string {
 export async function sendSecondShotEmail(opts: {
   to: string;
   displayName: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "You missed the opening round deadline — but you still have a shot",
-    html: buildSecondShotEmailHtml(opts.displayName),
-  });
+  let html = buildSecondShotEmailHtml(opts.displayName);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "You missed the opening round deadline — but you still have a shot", html });
 }
 
 // ─── R32 Quick Picks Launch Blast ────────────────────────────────────────────
@@ -754,17 +769,15 @@ export function buildMMR32PicksEmailHtml(displayName = "there"): string {
 export async function sendMMR32PicksEmail(opts: {
   to: string;
   displayName: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "🏀 Round of 32 Quick Picks are OPEN — Games start at 11am",
-    html: buildMMR32PicksEmailHtml(opts.displayName),
-  });
+  let html = buildMMR32PicksEmailHtml(opts.displayName);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "🏀 Round of 32 Quick Picks are OPEN — Games start at 11am", html });
 }
 
 // ─── R32 Wrapup Blast (Mar 23 8am CDT — after R32 Day 2, Sweet 16 push) ─────
@@ -855,14 +868,12 @@ export async function sendR32WrapupEmail(opts: {
   correctHighScorers: number;
   rank: number;
   totalPlayers: number;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "🏀 R32 wrapped — Sweet 16 starts Thursday. Here's your score.",
-    html: buildR32WrapupEmailHtml(opts),
-  });
+  let html = buildR32WrapupEmailHtml(opts);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "🏀 R32 wrapped — Sweet 16 starts Thursday. Here's your score.", html });
 }
 
 // ─── Per-Round Quick Pick Reminder ───────────────────────────────────────────
@@ -873,6 +884,7 @@ export async function sendQuickPickReminderEmail(opts: {
   roundLabel: string;
   lockDateLabel: string;
   isLastChance?: boolean;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
@@ -925,12 +937,9 @@ export async function sendQuickPickReminderEmail(opts: {
 
     ${opts.isLastChance ? `<p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks close at ${opts.lockDateLabel}. After that the round is locked.</p>` : `<p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks close at ${opts.lockDateLabel}. Scores update after games complete.</p>`}
   `;
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject,
-    html: buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl),
-  });
+  let html = buildEmailHtml(subject, headline, body, "Make My Picks →", picksUrl);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
 }
 
 // ─── Sweet 16 Launch Blast (two variants) ────────────────────────────────────
@@ -1095,32 +1104,28 @@ export function buildS16TipoffAlertEmailHtml(displayName = "there"): string {
 export async function sendS16TipoffAlertEmail(opts: {
   to: string;
   displayName: string;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "⏰ Sweet 16 tips in 1 hour — picks close NOW",
-    html: buildS16TipoffAlertEmailHtml(opts.displayName),
-  });
+  let html = buildS16TipoffAlertEmailHtml(opts.displayName);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "⏰ Sweet 16 tips in 1 hour — picks close NOW", html });
 }
 
 export async function sendS16LaunchEmail(opts: {
   to: string;
   displayName: string;
   hasLockedTakes: boolean;
+  userId?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     console.log("[email] RESEND_API_KEY not set — skipping");
     return;
   }
-  await resend.emails.send({
-    from: FROM,
-    to: opts.to,
-    subject: "🏀 Sweet 16 picks are OPEN — lock yours before Thursday",
-    html: buildS16LaunchEmailHtml(opts.displayName, opts.hasLockedTakes),
-  });
+  let html = buildS16LaunchEmailHtml(opts.displayName, opts.hasLockedTakes);
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "🏀 Sweet 16 picks are OPEN — lock yours before Thursday", html });
 }

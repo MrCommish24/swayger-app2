@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { startMMScheduler } from "./mm-scheduler";
+import { registerUnsubscribeRoutes } from "./routes-unsubscribe";
 import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
@@ -179,6 +180,8 @@ function configureExpoAndLanding(app: express.Application) {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.status(200).send(privacyPolicyHtml);
   });
+
+  registerUnsubscribeRoutes(app);
 
   log("Serving static Expo files with dynamic manifest routing");
 

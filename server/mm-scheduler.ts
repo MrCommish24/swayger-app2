@@ -163,8 +163,8 @@ async function sendReminderBlast(label: string): Promise<void> {
       (takes ?? []).map((t: { user_id: string }) => t.user_id),
     );
     const eligible = (allProfiles ?? []).filter(
-      (p: { id: string; notification_email?: string | null }) =>
-        !usersWithTakes.has(p.id) && p.notification_email,
+      (p: { id: string; notification_email?: string | null; email_unsubscribed?: boolean }) =>
+        !usersWithTakes.has(p.id) && p.notification_email && !p.email_unsubscribed,
     );
     let sent = 0;
     for (const profile of eligible) {
@@ -172,6 +172,7 @@ async function sendReminderBlast(label: string): Promise<void> {
         await sendMMReminderEmail({
           to: profile.notification_email as string,
           displayName: profile.display_name || `@${profile.username}`,
+          userId: profile.id,
         });
         sent++;
       } catch (e) {
@@ -192,12 +193,13 @@ async function sendLastChanceBlastAll(label: string): Promise<void> {
     const supabase = getSupabase();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
     const eligible = (allProfiles ?? []).filter(
-      (p: { notification_email?: string | null }) => p.notification_email,
+      (p: { id: string; notification_email?: string | null; email_unsubscribed?: boolean }) =>
+        p.notification_email && !p.email_unsubscribed,
     );
     let sent = 0;
     for (const profile of eligible) {
       try {
-        await sendLastChanceBlast({ to: profile.notification_email as string });
+        await sendLastChanceBlast({ to: profile.notification_email as string, userId: profile.id });
         sent++;
       } catch (e) {
         console.error("[mm-scheduler] Last-chance blast failed for", profile.id, e);
@@ -217,12 +219,13 @@ async function sendLeaderboardReminderBlastAll(label: string): Promise<void> {
     const supabase = getSupabase();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
     const eligible = (allProfiles ?? []).filter(
-      (p: { notification_email?: string | null }) => p.notification_email,
+      (p: { id: string; notification_email?: string | null; email_unsubscribed?: boolean }) =>
+        p.notification_email && !p.email_unsubscribed,
     );
     let sent = 0;
     for (const profile of eligible) {
       try {
-        await sendLeaderboardReminderBlast({ to: profile.notification_email as string });
+        await sendLeaderboardReminderBlast({ to: profile.notification_email as string, userId: profile.id });
         sent++;
       } catch (e) {
         console.error("[mm-scheduler] Leaderboard reminder failed for", profile.id, e);
@@ -263,8 +266,8 @@ async function sendSecondShotBlast(label: string): Promise<void> {
     );
     // Target: everyone who has NOT submitted locked takes
     const eligible = (allProfiles ?? []).filter(
-      (p: { id: string; notification_email?: string | null }) =>
-        !usersWithTakes.has(p.id) && p.notification_email,
+      (p: { id: string; notification_email?: string | null; email_unsubscribed?: boolean }) =>
+        !usersWithTakes.has(p.id) && p.notification_email && !p.email_unsubscribed,
     );
     let sent = 0;
     for (const profile of eligible) {
@@ -272,6 +275,7 @@ async function sendSecondShotBlast(label: string): Promise<void> {
         await sendSecondShotEmail({
           to: profile.notification_email as string,
           displayName: profile.display_name || `@${profile.username}`,
+          userId: profile.id,
         });
         sent++;
       } catch (e) {
@@ -297,7 +301,8 @@ async function sendQuickPickReminderBlast(
     const supabase = getSupabase();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
     const eligible = (allProfiles ?? []).filter(
-      (p: { notification_email?: string | null }) => p.notification_email,
+      (p: { id: string; notification_email?: string | null; email_unsubscribed?: boolean }) =>
+        p.notification_email && !p.email_unsubscribed,
     );
     let sent = 0;
     for (const profile of eligible) {
@@ -308,6 +313,7 @@ async function sendQuickPickReminderBlast(
           roundLabel,
           lockDateLabel,
           isLastChance,
+          userId: profile.id,
         });
         sent++;
       } catch (e) {

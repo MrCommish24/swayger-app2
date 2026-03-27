@@ -187,22 +187,30 @@ $$;
 -- get_all_notification_profiles
 -- Returns profiles that have a notification email set.
 -- Used by the email blast system to find who to notify.
+-- email_unsubscribed: true = user opted out via /unsubscribe link; blast functions skip them.
 CREATE OR REPLACE FUNCTION get_all_notification_profiles()
 RETURNS TABLE (
-  id                 uuid,
-  username           text,
-  display_name       text,
-  notification_email text
+  id                  uuid,
+  username            text,
+  display_name        text,
+  notification_email  text,
+  email_unsubscribed  boolean
 )
 LANGUAGE sql
 SECURITY DEFINER
 AS $$
-  SELECT id, username, display_name, notification_email
+  SELECT id, username, display_name, notification_email,
+         COALESCE(email_unsubscribed, false) AS email_unsubscribed
   FROM profiles
   WHERE notification_email IS NOT NULL AND notification_email != '';
 $$;
 
--- ─── 8. Add blowout_pts / high_scorer_pts to mm_pick_scores if upgrading ────
+-- ─── 8. email_unsubscribed column on profiles ────────────────────────────────
+-- Allows users to opt out of all Swayger email blasts via the /unsubscribe link.
+-- Safe to run even if the column already exists.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email_unsubscribed boolean DEFAULT false;
+
+-- ─── 9. Add blowout_pts / high_scorer_pts to mm_pick_scores if upgrading ────
 -- Safe to run even if columns already exist (ALTER TABLE IF NOT EXISTS).
 DO $$
 BEGIN

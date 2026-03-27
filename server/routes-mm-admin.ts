@@ -358,7 +358,7 @@ export async function sendScoreUpdateBlast(
   // Use SECURITY DEFINER RPC to bypass RLS on profiles table
   const { data: profiles } = await supabase.rpc("get_all_notification_profiles");
 
-  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string };
+  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string; email_unsubscribed?: boolean };
   const profileMap = new Map<string, ProfileRow>(
     ((profiles ?? []) as ProfileRow[]).map((p) => [p.id, p]),
   );
@@ -367,7 +367,7 @@ export async function sendScoreUpdateBlast(
   for (let i = 0; i < allScores.length; i++) {
     const s = allScores[i];
     const profile = profileMap.get(s.user_id);
-    if (!profile?.notification_email) continue;
+    if (!profile?.notification_email || profile.email_unsubscribed) continue;
     try {
       await sendMMScoreUpdateEmail({
         to: profile.notification_email as string,
@@ -419,7 +419,7 @@ export async function sendR32WrapupBlast(supabase: any): Promise<void> {
 
   const totalPlayers = allScores.length;
   const { data: profiles } = await supabase.rpc("get_all_notification_profiles");
-  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string };
+  type ProfileRow = { id: string; notification_email?: string | null; display_name?: string | null; username: string; email_unsubscribed?: boolean };
   const profileMap = new Map<string, ProfileRow>(
     ((profiles ?? []) as ProfileRow[]).map((p: ProfileRow) => [p.id, p]),
   );
@@ -428,7 +428,7 @@ export async function sendR32WrapupBlast(supabase: any): Promise<void> {
   for (let i = 0; i < allScores.length; i++) {
     const s = allScores[i];
     const profile = profileMap.get(s.user_id);
-    if (!profile?.notification_email) continue;
+    if (!profile?.notification_email || profile.email_unsubscribed) continue;
     try {
       await sendR32WrapupEmail({
         to: profile.notification_email as string,
@@ -442,6 +442,7 @@ export async function sendR32WrapupBlast(supabase: any): Promise<void> {
         correctHighScorers: s.correct_high_scorers ?? 0,
         rank: i + 1,
         totalPlayers,
+        userId: profile.id,
       });
       sent++;
     } catch (e) {
@@ -771,7 +772,8 @@ export function registerMMAdminRoutes(app: Express): void {
       // Get all profiles with notification emails
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const eligible = (allProfiles ?? []).filter(
-        (p: { notification_email?: string }) => p.notification_email,
+        (p: { notification_email?: string; email_unsubscribed?: boolean }) =>
+          p.notification_email && !p.email_unsubscribed,
       );
 
       // Get set of user IDs who have submitted locked takes (for variant routing)
@@ -795,6 +797,7 @@ export function registerMMAdminRoutes(app: Express): void {
             to: profile.notification_email as string,
             displayName: profile.display_name || `@${profile.username}`,
             hasLockedTakes,
+            userId: profile.id,
           });
           if (hasLockedTakes) sentA++;
           else sentB++;
@@ -834,7 +837,8 @@ export function registerMMAdminRoutes(app: Express): void {
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const eligible = (allProfiles ?? []).filter(
-        (p: { notification_email?: string }) => p.notification_email,
+        (p: { notification_email?: string; email_unsubscribed?: boolean }) =>
+          p.notification_email && !p.email_unsubscribed,
       );
       let sent = 0;
       let failed = 0;
@@ -843,6 +847,7 @@ export function registerMMAdminRoutes(app: Express): void {
           await sendMMR32PicksEmail({
             to: profile.notification_email as string,
             displayName: profile.display_name || `@${profile.username}`,
+            userId: profile.id,
           });
           sent++;
         } catch (e) {
@@ -875,8 +880,9 @@ export function registerMMAdminRoutes(app: Express): void {
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const eligible = (allProfiles ?? []).filter(
-        (p: { notification_email?: string; username?: string }) =>
+        (p: { notification_email?: string; username?: string; email_unsubscribed?: boolean }) =>
           p.notification_email &&
+          !p.email_unsubscribed &&
           !excludeUsernames.includes((p.username ?? "").toLowerCase()),
       );
       let sent = 0;
@@ -886,6 +892,7 @@ export function registerMMAdminRoutes(app: Express): void {
           await sendS16TipoffAlertEmail({
             to: profile.notification_email as string,
             displayName: profile.display_name || `@${profile.username}`,
+            userId: profile.id,
           });
           sent++;
         } catch (e) {
@@ -917,7 +924,8 @@ export function registerMMAdminRoutes(app: Express): void {
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const eligible = (allProfiles ?? []).filter(
-        (p: { notification_email?: string }) => p.notification_email,
+        (p: { notification_email?: string; email_unsubscribed?: boolean }) =>
+          p.notification_email && !p.email_unsubscribed,
       );
       let sent = 0;
       let failed = 0;
@@ -926,6 +934,7 @@ export function registerMMAdminRoutes(app: Express): void {
           await sendLeaderboardBlast({
             to: profile.notification_email as string,
             displayName: profile.display_name || `@${profile.username}`,
+            userId: profile.id,
           });
           sent++;
         } catch (e) {
