@@ -18,7 +18,7 @@ export const ROUND_PICKS_OPEN_DATES: Record<string, string> = {
   "round-64":      "2026-03-19T11:00:00-05:00",
   "round-32":      "2026-03-21T00:00:00-05:00",
   "sweet-16":      "2026-03-22T00:00:00-05:00",  // open now (backdated so it's definitely past)
-  "elite-8":       "2026-03-27T00:00:00-05:00",
+  "elite-8":       "2026-03-28T06:00:00-05:00",
   "final-four":    "2026-04-03T00:00:00-05:00",
   "championship":  "2026-04-05T00:00:00-05:00",
 };
