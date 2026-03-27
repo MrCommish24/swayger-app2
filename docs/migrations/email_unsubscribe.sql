@@ -10,10 +10,10 @@
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email_unsubscribed boolean DEFAULT false;
 
 -- ─── 2. Update get_all_notification_profiles RPC ─────────────────────────────
--- This function is used by all email blast endpoints to fetch recipients.
--- It must return email_unsubscribed so the blast functions can skip opted-out users.
--- If this RPC doesn't exist yet, it will be created. If it already exists, it is
--- replaced safely (CREATE OR REPLACE).
+-- Must drop first because Postgres won't let you change a function's return type
+-- in-place with CREATE OR REPLACE when the column list has changed.
+DROP FUNCTION IF EXISTS get_all_notification_profiles();
+
 CREATE OR REPLACE FUNCTION get_all_notification_profiles()
 RETURNS TABLE (
   id                  uuid,
