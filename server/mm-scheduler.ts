@@ -9,7 +9,7 @@ import {
   sendQuickPickReminderEmail,
 } from "./email";
 import { checkAndAutoScore, getActiveGameWindow } from "./mm-auto-score";
-import { sendScoreUpdateBlast, sendR32WrapupBlast, SCORE_EMAILS_PAUSED } from "./routes-mm-admin";
+import { sendScoreUpdateBlast, sendR32WrapupBlast, SCORE_EMAILS_PAUSED, BLAST_EMAILS_PAUSED } from "./routes-mm-admin";
 
 // ─── State file (persists across restarts) ────────────────────────────────────
 
@@ -484,15 +484,22 @@ async function tick(): Promise<void> {
     if (state.pre_lock[w.key]) continue;
     const elapsed = now - w.targetMs;
     if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
-      if (w.type === "last_chance") {
+      if (BLAST_EMAILS_PAUSED) {
+        console.log(`[mm-scheduler] Blast emails paused — skipping pre-lock blast: ${w.label}`);
+        // Do NOT mark as sent — will fire once BLAST_EMAILS_PAUSED is set to false
+      } else if (w.type === "last_chance") {
         await sendLastChanceBlastAll(w.label);
+        state.pre_lock[w.key] = true;
+        saveState(state);
       } else if (w.type === "leaderboard_reminder") {
         await sendLeaderboardReminderBlastAll(w.label);
+        state.pre_lock[w.key] = true;
+        saveState(state);
       } else {
         await sendReminderBlast(w.label);
+        state.pre_lock[w.key] = true;
+        saveState(state);
       }
-      state.pre_lock[w.key] = true;
-      saveState(state);
     }
   }
 
@@ -527,9 +534,13 @@ async function tick(): Promise<void> {
   if (!state.second_shot.mar21) {
     const elapsed = now - SECOND_SHOT_TARGET_MS;
     if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
-      await sendSecondShotBlast("Mar 21 9am CDT — second shot email");
-      state.second_shot.mar21 = true;
-      saveState(state);
+      if (BLAST_EMAILS_PAUSED) {
+        console.log("[mm-scheduler] Blast emails paused — skipping second-shot blast");
+      } else {
+        await sendSecondShotBlast("Mar 21 9am CDT — second shot email");
+        state.second_shot.mar21 = true;
+        saveState(state);
+      }
     }
   }
 
@@ -538,9 +549,14 @@ async function tick(): Promise<void> {
     if (state.quick_pick_reminders[w.key]) continue;
     const elapsed = now - w.targetMs;
     if (elapsed >= 0 && elapsed < FIRE_WINDOW_MS) {
-      await sendQuickPickReminderBlast(w.label, w.roundLabel, w.lockDateLabel, w.isLastChance);
-      state.quick_pick_reminders[w.key] = true;
-      saveState(state);
+      if (BLAST_EMAILS_PAUSED) {
+        console.log(`[mm-scheduler] Blast emails paused — skipping quick pick reminder: ${w.label}`);
+        // Do NOT mark as sent — will fire once BLAST_EMAILS_PAUSED is set to false
+      } else {
+        await sendQuickPickReminderBlast(w.label, w.roundLabel, w.lockDateLabel, w.isLastChance);
+        state.quick_pick_reminders[w.key] = true;
+        saveState(state);
+      }
     }
   }
 
