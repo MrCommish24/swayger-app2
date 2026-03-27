@@ -10,7 +10,9 @@ config.resolver = {
   ...config.resolver,
   blockList: [
     /\/.local\/state\/.*/,
-    /\/.local\/skills\/.old-.*/,
+    /\/.local\/skills\/\.old-.*/,
+    /\/.local\/skills\/\.tmp-.*/,
+    /\/.local\/secondary_skills\/\.tmp-.*/,
     /\/\.git\/.*/,
   ],
 };
