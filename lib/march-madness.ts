@@ -512,10 +512,10 @@ export const MM_ROUNDS: MMRound[] = [
       },
       {
         id: "e8-south",
-        teamA: { name: "Houston", seed: 2 },
+        teamA: { name: "Illinois", seed: 3 },
         teamB: { name: "Iowa", seed: 9 },
         region: "South",
-        prompt: "South Regional Final — Houston, TX. Iowa's Cinderella run meets #2 Houston on their home court.",
+        prompt: "South Regional Final — Houston, TX. Two Big Ten rivals — Iowa's Cinderella run vs. Illinois.",
         gameDateLabel: "Mar 28",
       },
       {
