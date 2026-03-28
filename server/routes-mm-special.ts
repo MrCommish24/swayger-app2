@@ -645,17 +645,17 @@ function buildSeedBasedMatchups(roundId: string): {
         keyStat: "UConn is the 2-time defending champion — this is the only 1v2 matchup in the East",
       },
       {
-        matchupId: "e8-midwest-michigan-iowast",
+        matchupId: "e8-midwest-michigan-alabama",
         teamA: "Michigan Wolverines",  seedA: 1,
-        teamB: "Iowa State Cyclones",  seedB: 2,
+        teamB: "Alabama Crimson Tide", seedB: 4,
         region: "Midwest", rank: 0,
-        favoriteTeam: "Michigan Wolverines", favoriteSeed: 1,
-        underdogTeam: "Iowa State Cyclones",  underdogSeed: 2,
+        favoriteTeam: "Michigan Wolverines",  favoriteSeed: 1,
+        underdogTeam: "Alabama Crimson Tide", underdogSeed: 4,
         upsetProbability: 0.38,
-        spread: 3.0, overUnder: 143, underdogMoneyline: 165,
-        gameDate: "Mar 28", site: "Chicago, IL",
+        spread: 3.0, overUnder: 145, underdogMoneyline: 170,
+        gameDate: "Mar 29", site: "Chicago, IL",
         oddsSource: "seed-based",
-        keyStat: "Iowa State is 11-1 in their last 12 games — Michigan hasn't lost since January",
+        keyStat: "Alabama knocked out Texas Tech — Michigan is unbeaten but hasn't faced this kind of athleticism",
       },
       {
         matchupId: "e8-west-arizona-purdue",
@@ -666,9 +666,9 @@ function buildSeedBasedMatchups(roundId: string): {
         underdogTeam: "Purdue Boilermakers", underdogSeed: 2,
         upsetProbability: 0.35,
         spread: 4.0, overUnder: 150, underdogMoneyline: 175,
-        gameDate: "Mar 30", site: "San Jose, CA",
+        gameDate: "Mar 29", site: "San Jose, CA",
         oddsSource: "seed-based",
-        keyStat: "Arizona averages 84 ppg but Purdue allows only 66 — something has to give",
+        keyStat: "Arizona dropped 109 on Arkansas — Purdue's defense will be tested like never before",
       },
       {
         matchupId: "e8-south-houston-iowa",
@@ -679,9 +679,9 @@ function buildSeedBasedMatchups(roundId: string): {
         underdogTeam: "Iowa Hawkeyes",   underdogSeed: 9,
         upsetProbability: 0.30,
         spread: 5.5, overUnder: 138, underdogMoneyline: 220,
-        gameDate: "Mar 30", site: "Houston, TX",
+        gameDate: "Mar 28", site: "Houston, TX",
         oddsSource: "seed-based",
-        keyStat: "Iowa already upset #1 Florida and #4 Nebraska — playing at Houston's home court",
+        keyStat: "Iowa upset #1 Florida and #4 Nebraska to get here — can they do it again on Houston's home court?",
       },
     ];
 
@@ -914,7 +914,7 @@ async function persistRankedMatchups(
     "round-64":     "2026-03-19T11:00:00-05:00",
     "round-32":     "2026-03-21T12:00:00-05:00",
     "sweet-16":     "2026-03-26T18:00:00-05:00",  // 6pm CDT Mar 26, first tip 6:10pm CDT
-    "elite-8":      "2026-03-28T12:00:00-05:00",
+    "elite-8":      "2026-03-28T17:00:00-05:00",
     "final-four":   "2026-04-04T18:00:00-05:00",
   };
   const lockAt = lockDatesForPersist[roundId];
@@ -953,7 +953,7 @@ export function registerMMSpecialRoutes(app: Express) {
       "round-64":     "2026-03-19T11:00:00-05:00",
       "round-32":     "2026-03-21T12:00:00-05:00",
       "sweet-16":     "2026-03-26T18:00:00-05:00",  // 6pm CDT Mar 26, first tip 6:10pm CDT
-      "elite-8":      "2026-03-28T12:00:00-05:00",
+      "elite-8":      "2026-03-28T17:00:00-05:00",
       "final-four":   "2026-04-04T18:00:00-05:00",
     };
     const lockDate = lockDates[roundId] ?? "2026-03-19T11:00:00-05:00";
@@ -1160,7 +1160,7 @@ export function registerMMSpecialRoutes(app: Express) {
   // ── Elite 8 Paid 2X Boost ────────────────────────────────────────────────
   // POST /api/mm/boost-checkout
   // Creates a Stripe Checkout session for the $5 Elite 8 2X boost.
-  const ELITE8_BOOST_LOCK = new Date("2026-03-28T12:00:00-05:00");
+  const ELITE8_BOOST_LOCK = new Date("2026-03-28T17:00:00-05:00");
   // Live price (prod_UCmny7MuXBUbsh / $5 one-time). Test price was price_1TEMg9DSwgnODc03LvGJ1Yih.
   const ELITE8_PRICE_ID = "price_1TENDw3fMFuGw9AQgaji65TN";
 

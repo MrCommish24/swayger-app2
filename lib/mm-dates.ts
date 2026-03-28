@@ -9,7 +9,7 @@ export const ROUND_LOCK_DATES: Record<string, string> = {
   "round-64":     "2026-03-19T11:00:00-05:00",
   "round-32":     "2026-03-21T12:00:00-05:00",
   "sweet-16":     "2026-03-26T18:00:00-05:00",  // 6pm CDT Mar 26, first tip 6:10pm CDT
-  "elite-8":      "2026-03-28T12:00:00-05:00",
+  "elite-8":      "2026-03-28T17:00:00-05:00",
   "final-four":   "2026-04-04T18:00:00-05:00",
 };
 

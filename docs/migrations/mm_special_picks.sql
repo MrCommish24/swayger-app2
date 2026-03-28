@@ -212,8 +212,24 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email_unsubscribed boolean DEFAULT
 
 -- ─── 9. Add blowout_pts / high_scorer_pts to mm_pick_scores if upgrading ────
 -- Safe to run even if columns already exist (ALTER TABLE IF NOT EXISTS).
+-- Also converts integer pts columns to numeric to support 0.5× second-chance multiplier.
 DO $$
 BEGIN
+  -- ── Add missing special-picks columns ──────────────────────────────────────
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'upset_pts'
+  ) THEN
+    ALTER TABLE mm_pick_scores ADD COLUMN upset_pts numeric NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'correct_upsets'
+  ) THEN
+    ALTER TABLE mm_pick_scores ADD COLUMN correct_upsets integer NOT NULL DEFAULT 0;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'mm_pick_scores' AND column_name = 'blowout_pts'
@@ -240,5 +256,49 @@ BEGIN
     WHERE table_name = 'mm_pick_scores' AND column_name = 'correct_high_scorers'
   ) THEN
     ALTER TABLE mm_pick_scores ADD COLUMN correct_high_scorers integer NOT NULL DEFAULT 0;
+  END IF;
+
+  -- ── Convert pts columns from integer → numeric if needed ───────────────────
+  -- Required so 0.5× second-chance multiplier can produce fractional totals.
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'total_points'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN total_points TYPE numeric USING total_points::numeric;
+  END IF;
+
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'sweet_sixteen_pts'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN sweet_sixteen_pts TYPE numeric USING sweet_sixteen_pts::numeric;
+  END IF;
+
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'elite_eight_pts'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN elite_eight_pts TYPE numeric USING elite_eight_pts::numeric;
+  END IF;
+
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'final_four_pts'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN final_four_pts TYPE numeric USING final_four_pts::numeric;
+  END IF;
+
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'champion_pts'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN champion_pts TYPE numeric USING champion_pts::numeric;
+  END IF;
+
+  IF (
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'mm_pick_scores' AND column_name = 'upset_pts'
+  ) = 'integer' THEN
+    ALTER TABLE mm_pick_scores ALTER COLUMN upset_pts TYPE numeric USING upset_pts::numeric;
   END IF;
 END $$;
