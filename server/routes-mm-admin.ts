@@ -185,12 +185,11 @@ export async function computeAndSaveScores(
   const { data: specialPicksRaw } = await supabase.rpc("get_all_mm_special_picks");
   const specialPicks = (specialPicksRaw ?? []) as SpecialPickRow[];
 
-  // Fetch referral reward rounds — users who earned 2X for a specific round (via referral)
+  // Fetch users with 2X boosts via SECURITY DEFINER RPC (bypasses profiles RLS).
+  // Direct anon-key queries on profiles are blocked by RLS, so we use this RPC.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: referralProfilesRaw } = await supabase
-    .from("profiles")
-    .select("id, referral_reward_round, paid_2x_round")
-    .or("referral_reward_round.not.is.null,paid_2x_round.not.is.null");
+  const { data: referralProfilesRaw, error: boostErr } = await supabase.rpc("get_mm_boost_users");
+  if (boostErr) console.warn("[score] get_mm_boost_users error:", boostErr.message);
   const referralRewardMap = new Map<string, string>(
     ((referralProfilesRaw ?? []) as any[])  // eslint-disable-line @typescript-eslint/no-explicit-any
       .filter((p) => p.referral_reward_round != null)
@@ -201,6 +200,7 @@ export async function computeAndSaveScores(
       .filter((p) => p.paid_2x_round != null)
       .map((p) => [p.id as string, p.paid_2x_round as string])
   );
+  console.log(`[score] boost users: ${referralProfilesRaw?.length ?? 0} found (referral=${referralRewardMap.size}, paid=${paidBoostMap.size})`);
 
   // Fetch ranked matchups to know which matchup_id won each category per round
   const { data: rankedMatchupsRaw } = await supabase
@@ -672,12 +672,11 @@ export function registerMMAdminRoutes(app: Express): void {
         return;
       }
       const userIds = scores.map((s: { user_id: string }) => s.user_id);
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, display_name")
-        .in("id", userIds);
+      // Use SECURITY DEFINER RPC to bypass profiles RLS (anon key can't SELECT profiles)
+      const { data: profiles } = await supabase.rpc("get_mm_profile_data", { user_ids: userIds });
       const profileMap = new Map(
-        (profiles ?? []).map((p: { id: string; username: string; display_name: string | null }) => [p.id, p]),
+        ((profiles ?? []) as Array<{ id: string; username: string; display_name: string | null }>)
+          .map((p) => [p.id, p]),
       );
       const entries = scores.map((s: { user_id: string; total_points: number }) => ({
         ...s,
