@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -823,8 +823,9 @@ export default function PicksHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
-  const { user } = useAuth();
+  const { user, session: authSession } = useAuth();
   const queryClient = useQueryClient();
+  const { boostSession } = useLocalSearchParams<{ boostSession?: string }>();
 
   // Refresh profile when returning from Stripe checkout (native app-state change)
   useEffect(() => {
@@ -835,6 +836,34 @@ export default function PicksHub() {
     });
     return () => sub.remove();
   }, [queryClient]);
+
+  // When Stripe redirects back to the app with ?boostSession=..., claim the boost
+  useEffect(() => {
+    if (!boostSession || !user) return;
+    (async () => {
+      try {
+        const jwt = authSession?.access_token;
+        if (!jwt) return;
+        const res = await fetch(new URL("/api/mm/boost-claim", getApiUrl()).toString(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${jwt}`,
+          },
+          body: JSON.stringify({ session_id: boostSession }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          queryClient.invalidateQueries({ queryKey: ["my-profile"] });
+          Alert.alert("2X Active!", "Your Elite 8 picks now score double.");
+        } else {
+          console.warn("[boost-claim] Failed:", data.error);
+        }
+      } catch (e) {
+        console.warn("[boost-claim] Error:", e);
+      }
+    })();
+  }, [boostSession, user]);
 
   const currentRound = getCurrentRound();
   const roundId = getActivePicksRoundId(currentRound.id);

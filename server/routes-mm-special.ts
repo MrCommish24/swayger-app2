@@ -1158,6 +1158,11 @@ export function registerMMSpecialRoutes(app: Express) {
   });
 
   // ── Elite 8 Paid 2X Boost ────────────────────────────────────────────────
+  // In-memory store for Stripe-verified boost sessions.
+  // Key = Stripe session_id, value = { userId, expiresAt }
+  // Consumed on first successful claim (prevents replay).
+  const verifiedBoostSessions = new Map<string, { userId: string; expiresAt: number }>();
+
   // POST /api/mm/boost-checkout
   // Creates a Stripe Checkout session for the $5 Elite 8 2X boost.
   const ELITE8_BOOST_LOCK = new Date("2026-03-28T17:00:00-05:00");
@@ -1225,7 +1230,11 @@ export function registerMMSpecialRoutes(app: Express) {
 
   // GET /api/mm/boost-success?session_id=XXX&user_id=YYY
   // Called by Stripe's redirect after a successful payment.
-  // Verifies the session, grants the boost, and serves a success page.
+  // Verifies the Stripe session, stores it in the trusted map, then serves a
+  // success page whose "Back to Picks" link carries ?boostSession=… so the
+  // authenticated app can call /api/mm/boost-claim to actually update the DB.
+  // (We cannot update profiles here because we have no user JWT — the anon key
+  // is blocked by Supabase RLS silently.)
   app.get("/api/mm/boost-success", async (req: Request, res: Response) => {
     const { session_id, user_id } = req.query as Record<string, string>;
 
@@ -1251,24 +1260,16 @@ export function registerMMSpecialRoutes(app: Express) {
         return res.redirect(`${baseUrl}/march-madness/picks`);
       }
 
-      // Grant the boost
-      const supabase = createClient(
-        process.env.EXPO_PUBLIC_SUPABASE_URL!,
-        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
-      );
-      const { error } = await supabase
-        .from("profiles")
-        .update({ paid_2x_round: "elite-8" })
-        .eq("id", user_id)
-        .is("paid_2x_round", null);
+      // Store the verified session so boost-claim can consume it
+      verifiedBoostSessions.set(session_id, {
+        userId: user_id,
+        expiresAt: Date.now() + 15 * 60 * 1000, // 15-min TTL
+      });
+      console.log(`[mm-boost] Payment verified for ${user_id.slice(0, 8)}… — awaiting claim`);
 
-      if (error) {
-        console.error("[mm-boost] Failed to grant boost:", error.message);
-      } else {
-        console.log(`[mm-boost] Boost granted to ${user_id.slice(0, 8)}…`);
-      }
+      // Deep link back into the app carrying the session id so the app can claim
+      const returnUrl = `${baseUrl}/march-madness/picks?boostSession=${encodeURIComponent(session_id)}`;
 
-      // Serve success HTML with deep link back
       const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1295,12 +1296,11 @@ export function registerMMSpecialRoutes(app: Express) {
     <div class="badge">
       <div class="badge-text">Elite 8 · 2X Points Active</div>
     </div>
-    <a href="${baseUrl}/march-madness/picks" class="btn">Back to Picks</a>
+    <a href="${returnUrl}" class="btn">Back to Picks</a>
   </div>
   <script>
-    // Auto-redirect after 4 seconds
     setTimeout(function() {
-      window.location.href = '${baseUrl}/march-madness/picks';
+      window.location.href = '${returnUrl}';
     }, 4000);
   </script>
 </body>
@@ -1311,6 +1311,99 @@ export function registerMMSpecialRoutes(app: Express) {
     } catch (err) {
       console.error("[mm-boost] Success handler error:", err);
       res.redirect(`${baseUrl}/march-madness/picks`);
+    }
+  });
+
+  // POST /api/mm/boost-claim
+  // Called by the app (with the user's auth JWT) after returning from the Stripe
+  // success page. Creates a Supabase client authenticated as the user so that
+  // RLS is satisfied, then updates paid_2x_round.
+  app.post("/api/mm/boost-claim", async (req: Request, res: Response) => {
+    const { session_id } = req.body ?? {};
+    const authHeader = (req.headers.authorization ?? "") as string;
+    const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    if (!session_id || !jwt) {
+      res.status(400).json({ ok: false, error: "session_id and Authorization required" });
+      return;
+    }
+
+    // Clean up expired sessions opportunistically
+    const now = Date.now();
+    verifiedBoostSessions.forEach((v, k) => { if (v.expiresAt < now) verifiedBoostSessions.delete(k); });
+
+    const entry = verifiedBoostSessions.get(session_id);
+    if (!entry || entry.expiresAt < now) {
+      res.status(400).json({ ok: false, error: "Session not found or expired. Contact support." });
+      return;
+    }
+
+    try {
+      // Use the user's JWT so auth.uid() = entry.userId → RLS passes
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${jwt}` } } },
+      );
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ paid_2x_round: "elite-8" })
+        .eq("id", entry.userId)
+        .is("paid_2x_round", null);
+
+      if (error) {
+        console.error("[mm-boost] boost-claim DB error:", error.message);
+        res.status(500).json({ ok: false, error: "Failed to activate boost. Please try again." });
+        return;
+      }
+
+      verifiedBoostSessions.delete(session_id); // consume — prevent replay
+      console.log(`[mm-boost] Boost claimed and granted to ${entry.userId.slice(0, 8)}…`);
+      res.json({ ok: true, message: "2X boost activated for Elite 8" });
+    } catch (err) {
+      console.error("[mm-boost] boost-claim error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // POST /api/mm/boost-admin-grant
+  // Emergency: manually grant the 2X boost to a user by their Supabase user ID.
+  // Requires the admin JWT (user must be logged in as an admin-level user and
+  // pass their session token) because we rely on the user's own row-level auth.
+  // For server-side admin grant without user JWT, run SQL directly in Supabase:
+  //   UPDATE profiles SET paid_2x_round = 'elite-8' WHERE username = '<name>';
+  app.post("/api/mm/boost-admin-grant", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string;
+    const { userId, userJwt } = req.body ?? {};
+    const adminToken = process.env.MM_ADMIN_TOKEN ?? "MySwayger24!!";
+    if (!token || token !== adminToken) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    if (!userId || !userJwt) {
+      res.status(400).json({ ok: false, error: "userId and userJwt required" });
+      return;
+    }
+    try {
+      const supabase = createClient(
+        process.env.EXPO_PUBLIC_SUPABASE_URL!,
+        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${userJwt}` } } },
+      );
+      const { error } = await supabase
+        .from("profiles")
+        .update({ paid_2x_round: "elite-8" })
+        .eq("id", userId);
+      if (error) {
+        res.status(500).json({ ok: false, error: error.message });
+        return;
+      }
+      console.log(`[mm-boost] Admin granted boost to ${userId.slice(0, 8)}…`);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[mm-boost] admin-grant error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
     }
   });
 
