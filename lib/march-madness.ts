@@ -529,9 +529,9 @@ export const MM_ROUNDS: MMRound[] = [
       {
         id: "e8-midwest",
         teamA: { name: "Michigan", seed: 1 },
-        teamB: { name: "Alabama", seed: 4 },
+        teamB: { name: "Tennessee", seed: 2 },
         region: "Midwest",
-        prompt: "Midwest Regional Final — Chicago, IL. Michigan's unbeaten run vs. Alabama's upset-ready squad.",
+        prompt: "Midwest Regional Final — Chicago, IL. Michigan vs. Tennessee — two elite programs collide Sunday.",
         gameDateLabel: "Mar 29",
       },
     ],
