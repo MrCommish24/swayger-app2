@@ -1058,12 +1058,17 @@ export default function PicksHub() {
           { paddingBottom: isWeb ? 34 + 100 : insets.bottom + 100 },
         ]}
       >
-        {myProfile?.referral_reward_round === roundId && (
+        {/* 2X Active banner — show for both referral and paid boost */}
+        {(myProfile?.referral_reward_round === roundId || myProfile?.paid_2x_round === roundId) && (
           <View style={styles.twoxBanner}>
             <Ionicons name="flash" size={16} color="#F5A623" />
             <View style={styles.twoxBannerText}>
               <Text style={styles.twoxBannerTitle}>2X Active This Round</Text>
-              <Text style={styles.twoxBannerSub}>You invited a new player — your picks score double</Text>
+              <Text style={styles.twoxBannerSub}>
+                {myProfile?.paid_2x_round === roundId
+                  ? "You activated the 2X boost — your special picks score double"
+                  : "You invited a new player — your picks score double"}
+              </Text>
             </View>
           </View>
         )}
@@ -1087,8 +1092,10 @@ export default function PicksHub() {
           <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
         </Pressable>
 
-        {/* Elite 8 Boost Card — hidden after E8 lock */}
-        {!e8LockPassed && (
+        {/* Elite 8 Boost Card:
+            - Always show in active state if user has the boost (even after lock — they paid!)
+            - Only show the $5 CTA if E8 hasn't locked yet and user has no boost */}
+        {(has2xBoost || !e8LockPassed) && (
           <View style={[styles.boostCard, has2xBoost && styles.boostCardActive]}>
             {has2xBoost ? (
               <>
