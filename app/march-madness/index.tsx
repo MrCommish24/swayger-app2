@@ -414,69 +414,57 @@ export default function MarchMadnessHub() {
           </View>
         </Pressable>
 
-        {/* Referral Banner */}
+        {/* 2X Status Banner — unified for both paid and referral boost.
+            Active state replaces "Get 2X" CTA so there's no duplication.
+            The separate boost card only appears when the user has no boost and
+            the E8 purchase window is still open. */}
         {user && (
-          profile?.referral_reward_round ? (
+          has2xBoost ? (
             <View style={styles.referralBannerActive}>
               <Ionicons name="flash" size={20} color="#FF8C00" />
               <View style={styles.referralBannerText}>
-                <Text style={styles.referralBannerTitle}>2X Reward Active 🔥</Text>
+                <Text style={styles.referralBannerTitle}>2X Boost Active 🔥</Text>
                 <Text style={styles.referralBannerSub}>
-                  Your picks score double for the{" "}
-                  {profile.referral_reward_round === "sweet-16" ? "Sweet 16"
-                   : profile.referral_reward_round === "elite-8" ? "Elite Eight"
-                   : profile.referral_reward_round === "final-four" ? "Final Four"
-                   : profile.referral_reward_round === "championship" ? "Championship"
-                   : profile.referral_reward_round}
-                  .
+                  {profile?.paid_2x_round === "elite-8"
+                    ? "You activated the 2X boost — your Elite 8 special picks score double."
+                    : `Your picks score double for the ${
+                        profile?.referral_reward_round === "sweet-16" ? "Sweet 16"
+                        : profile?.referral_reward_round === "elite-8" ? "Elite Eight"
+                        : profile?.referral_reward_round === "final-four" ? "Final Four"
+                        : profile?.referral_reward_round === "championship" ? "Championship"
+                        : profile?.referral_reward_round ?? "this round"}.`}
                 </Text>
               </View>
             </View>
           ) : (
-            <View style={styles.referralBanner}>
-              <Ionicons name="gift-outline" size={20} color="#FF8C00" />
-              <View style={styles.referralBannerText}>
-                <Text style={styles.referralBannerTitle}>Get 2X points next round</Text>
-                <Text style={styles.referralBannerSub}>
-                  Share a March Madness featured matchup with a new user → they sign up & accept a Swayger → your picks score double next round.
-                </Text>
+            <>
+              <View style={styles.referralBanner}>
+                <Ionicons name="gift-outline" size={20} color="#FF8C00" />
+                <View style={styles.referralBannerText}>
+                  <Text style={styles.referralBannerTitle}>Get 2X points next round</Text>
+                  <Text style={styles.referralBannerSub}>
+                    Share a March Madness featured matchup with a new user → they sign up & accept a Swayger → your picks score double next round.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#FF8C00" />
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#FF8C00" />
-            </View>
-          )
-        )}
 
-        {/* Elite 8 Boost Card — shown to all users until E8 lock */}
-        {user && !e8LockPassed && (
-          <Pressable
-            style={({ pressed }) => [
-              styles.boostCard,
-              has2xBoost && styles.boostCardActive,
-              pressed && { opacity: 0.88 },
-            ]}
-            onPress={has2xBoost ? undefined : handleBoostCheckout}
-          >
-            {has2xBoost ? (
-              <>
-                <Ionicons name="flash" size={20} color={GOLD} />
-                <View style={styles.boostCardText}>
-                  <Text style={styles.boostCardTitle}>2X Active — Elite 8</Text>
-                  <Text style={styles.boostCardSub}>Your Elite 8 special picks score double</Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
-              </>
-            ) : (
-              <>
-                <View style={styles.boostCardText}>
-                  <Text style={styles.boostCardTitle}>Boost Your Elite 8 Picks — $5</Text>
-                  <Text style={styles.boostCardSub}>Pay once to double every special pick point you earn in the Elite 8</Text>
-                </View>
-                <View style={styles.boostCardBtn}>
-                  <Text style={styles.boostCardBtnText}>$5 →</Text>
-                </View>
-              </>
-            )}
-          </Pressable>
+              {!e8LockPassed && (
+                <Pressable
+                  style={({ pressed }) => [styles.boostCard, pressed && { opacity: 0.88 }]}
+                  onPress={handleBoostCheckout}
+                >
+                  <View style={styles.boostCardText}>
+                    <Text style={styles.boostCardTitle}>Boost Your Elite 8 Picks — $5</Text>
+                    <Text style={styles.boostCardSub}>Pay once to double every special pick point you earn in the Elite 8</Text>
+                  </View>
+                  <View style={styles.boostCardBtn}>
+                    <Text style={styles.boostCardBtnText}>$5 →</Text>
+                  </View>
+                </Pressable>
+              )}
+            </>
+          )
         )}
 
         {/* Featured Matchups */}
