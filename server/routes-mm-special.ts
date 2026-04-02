@@ -696,7 +696,52 @@ function buildSeedBasedMatchups(roundId: string): {
     };
   }
 
-  // ── For Final Four and beyond: return empty (admin enters results manually) ──
+  // ── Final Four: curated from confirmed E8 results + live odds (Apr 2, 2026) ──
+  // SF1 (South/East):    Illinois (3) vs UConn (2)    — Illinois -2.5, O/U 139.5
+  // SF2 (Midwest/West):  Michigan (1) vs Arizona (1)  — Michigan -1.5, O/U 157.5
+  if (roundId === "final-four") {
+    const counts = CANDIDATE_COUNTS["final-four"];
+    const ffAll: RankedMatchup[] = [
+      {
+        matchupId: "ff-sf1-illinois-uconn",
+        teamA: "Illinois Fighting Illini", seedA: 3,
+        teamB: "UConn Huskies",           seedB: 2,
+        region: "South vs East", rank: 0,
+        favoriteTeam: "Illinois Fighting Illini", favoriteSeed: 3,
+        underdogTeam: "UConn Huskies",            underdogSeed: 2,
+        upsetProbability: 0.42,
+        spread: 2.5, overUnder: 139.5, underdogMoneyline: 108,
+        gameDate: "Apr 4", site: "Lucas Oil Stadium, Indianapolis, IN",
+        oddsSource: "draftkings",
+        keyStat: "Illinois -2.5 | O/U 139.5 — UConn seeks a 3rd title in 3 years; lowest-scoring FF game",
+      },
+      {
+        matchupId: "ff-sf2-michigan-arizona",
+        teamA: "Michigan Wolverines", seedA: 1,
+        teamB: "Arizona Wildcats",   seedB: 1,
+        region: "Midwest vs West", rank: 0,
+        favoriteTeam: "Michigan Wolverines", favoriteSeed: 1,
+        underdogTeam: "Arizona Wildcats",   underdogSeed: 1,
+        upsetProbability: 0.47,
+        spread: 1.5, overUnder: 157.5, underdogMoneyline: 102,
+        gameDate: "Apr 4", site: "Lucas Oil Stadium, Indianapolis, IN",
+        oddsSource: "draftkings",
+        keyStat: "Michigan -1.5 | O/U 157.5 — Two #1 seeds, essentially a pick 'em; highest O/U of the Final Four",
+      },
+    ];
+
+    const upsetSorted      = [...ffAll].sort((a, b) => (b.upsetProbability ?? 0) - (a.upsetProbability ?? 0));
+    const blowoutSorted    = [...ffAll].sort((a, b) => (b.spread ?? 0) - (a.spread ?? 0));
+    const highScorerSorted = [...ffAll].sort((a, b) => (b.overUnder ?? 0) - (a.overUnder ?? 0));
+
+    return {
+      upset:      upsetSorted.slice(0, counts.upset).map((m, i) => ({ ...m, rank: i + 1 })),
+      blowout:    blowoutSorted.slice(0, counts.blowout).map((m, i) => ({ ...m, rank: i + 1 })),
+      highScorer: highScorerSorted.slice(0, counts.high_scorer).map((m, i) => ({ ...m, rank: i + 1 })),
+    };
+  }
+
+  // ── Championship and beyond: return empty ────────────────────────────────────
   if (roundId !== "round-64") {
     return { upset: [], blowout: [], highScorer: [] };
   }
@@ -837,9 +882,17 @@ async function buildOddsBasedMatchups(roundId: string): Promise<{
     // Sort: upset by underdog moneyline desc (+800 > +300 = bigger underdog)
     // Cap at +900: above that the underdog has <10% chance — not a meaningful pick.
     // Lower cutoff at +120: anything below is essentially a pick 'em, not an upset.
-    const upsetSorted = [...tournamentMatchups]
+    // Fallback: if no matchups pass the threshold (e.g. FF where both teams are near even
+    // money), include all tournament matchups sorted by underdog moneyline desc so users
+    // always have something to pick.
+    let upsetSorted = [...tournamentMatchups]
       .filter((m) => m.underdogMoneyline !== undefined && m.underdogMoneyline > 120 && m.underdogMoneyline <= 900)
       .sort((a, b) => (b.underdogMoneyline ?? 0) - (a.underdogMoneyline ?? 0));
+    if (upsetSorted.length === 0 && tournamentMatchups.length > 0) {
+      upsetSorted = [...tournamentMatchups].sort(
+        (a, b) => ((b.underdogMoneyline ?? 0) - (a.underdogMoneyline ?? 0)) || ((b.seedB ?? 0) - (a.seedB ?? 0)),
+      );
+    }
 
     // Sort: blowout by spread desc (bigger spread = expected bigger margin)
     const blowoutSorted = [...tournamentMatchups]

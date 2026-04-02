@@ -24,7 +24,13 @@ export interface MMMatchup {
   prompt: string;
   gameDateLabel?: string;
   site?: string;
-  keyStat?: string; // short reason why this is an intriguing upset pick
+  keyStat?: string;
+  // Optional odds data — populated for later rounds when known
+  spread?: number;
+  overUnder?: number;
+  favoriteTeam?: string;
+  underdogTeam?: string;
+  underdogMoneyline?: number;
 }
 
 export interface MMRound {
@@ -538,31 +544,44 @@ export const MM_ROUNDS: MMRound[] = [
   },
 
   // ── FINAL FOUR ────────────────────────────────────────────
+  // Teams confirmed from Odds API (Apr 2, 2026).
+  // SF1 (South vs East): Illinois (3) vs UConn (2) — Illinois -2.5, O/U 139.5
+  // SF2 (Midwest vs West): Michigan (1) vs Arizona (1) — Michigan -1.5, O/U 157.5
   {
     id: "final-four",
     label: "Final Four",
     shortLabel: "FF",
     startDate: "2026-04-04",
     endDate: "2026-04-04",
-    lockDate: "2026-04-04T18:00:00-05:00",
+    lockDate: "2026-04-04T17:00:00-05:00",
     featured: [
       {
         id: "ff-sf1",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "Semifinal 1",
-        prompt: "Final Four — Semifinal 1. Indianapolis, IN. Who plays for the title?",
-        gameDateLabel: "Apr 4",
-        site: "Indianapolis, IN",
+        teamA: { name: "Illinois Fighting Illini", seed: 3 },
+        teamB: { name: "UConn Huskies", seed: 2 },
+        region: "South vs East",
+        prompt: "Final Four — Illinois (3) vs UConn (2). Lucas Oil Stadium, Indianapolis. UConn chasing a 3rd title in 3 years — Illinois is the hottest team left. Who plays for the championship?",
+        gameDateLabel: "Apr 4 · 6:09 PM ET",
+        site: "Lucas Oil Stadium, Indianapolis, IN",
+        spread: -2.5,
+        overUnder: 139.5,
+        favoriteTeam: "Illinois Fighting Illini",
+        underdogTeam: "UConn Huskies",
+        underdogMoneyline: 108,
       },
       {
         id: "ff-sf2",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
-        region: "Semifinal 2",
-        prompt: "Final Four — Semifinal 2. Indianapolis, IN. The other side of the bracket.",
-        gameDateLabel: "Apr 4",
-        site: "Indianapolis, IN",
+        teamA: { name: "Michigan Wolverines", seed: 1 },
+        teamB: { name: "Arizona Wildcats", seed: 1 },
+        region: "Midwest vs West",
+        prompt: "Final Four — Michigan (1) vs Arizona (1). Lucas Oil Stadium, Indianapolis. Two #1 seeds, one title shot. The highest-scoring matchup of the Final Four.",
+        gameDateLabel: "Apr 4 · 8:49 PM ET",
+        site: "Lucas Oil Stadium, Indianapolis, IN",
+        spread: -1.5,
+        overUnder: 157.5,
+        favoriteTeam: "Michigan Wolverines",
+        underdogTeam: "Arizona Wildcats",
+        underdogMoneyline: 102,
       },
     ],
   },
