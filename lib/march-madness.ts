@@ -43,6 +43,8 @@ export interface MMRound {
   // Bracket takes use a separate BRACKET_LOCK_DATE.
   lockDate: string;
   featured: MMMatchup[];
+  // winner: set after the round concludes (e.g. championship winner name)
+  winner?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -587,22 +589,26 @@ export const MM_ROUNDS: MMRound[] = [
   },
 
   // ── CHAMPIONSHIP ──────────────────────────────────────────
+  // FINAL RESULT: Michigan Wolverines def. UConn Huskies — Apr 6, 2026
   {
     id: "championship",
     label: "Championship",
     shortLabel: "🏆",
     startDate: "2026-04-06",
     endDate: "2026-04-06",
-    lockDate: "2026-04-06T20:00:00-05:00",
+    lockDate: "2026-04-06T18:00:00-05:00",
+    winner: "Michigan Wolverines",
     featured: [
       {
         id: "champ-2026",
-        teamA: { name: "TBD", seed: 0 },
-        teamB: { name: "TBD", seed: 0 },
+        teamA: { name: "Michigan Wolverines", seed: 1 },
+        teamB: { name: "UConn Huskies", seed: 2 },
         region: "National Championship",
-        prompt: "Who wins the 2026 NCAA Championship? Indianapolis, IN. Put your reputation on it.",
-        gameDateLabel: "Apr 6",
-        site: "Indianapolis, IN",
+        prompt: "2026 NCAA Championship — Michigan (1) vs UConn (2). Lucas Oil Stadium, Indianapolis. Michigan made the title game for the first time in 30+ years. UConn chasing a 3rd title in 3 years. Who is crowned champion?",
+        gameDateLabel: "Apr 6 · 9:20 PM ET",
+        site: "Lucas Oil Stadium, Indianapolis, IN",
+        favoriteTeam: "Michigan Wolverines",
+        underdogTeam: "UConn Huskies",
       },
     ],
   },
