@@ -1069,4 +1069,141 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });
+
+  // ── Thank-you blast preview ───────────────────────────────────────────────
+  app.get("/admin/mm/email-preview/thankyou", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).send("Unauthorized");
+      return;
+    }
+    try {
+      const { buildThankyouEmailPreview } = await import("./email");
+      res.setHeader("Content-Type", "text/html");
+      res.send(buildThankyouEmailPreview());
+    } catch (err) {
+      console.error("[mm-admin] thankyou preview error:", err);
+      res.status(500).send("Preview error");
+    }
+  });
+
+  // ── Send thank-you blast to all participants ──────────────────────────────
+  app.post("/admin/mm/api/blast-thankyou", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      return;
+    }
+    try {
+      const { sendThankyouEmail } = await import("./email");
+      const supabase = getSupabase();
+
+      // Fetch ranked scores
+      const { data: scores } = await supabase
+        .from("mm_pick_scores")
+        .select("*")
+        .order("total_points", { ascending: false });
+
+      if (!scores?.length) {
+        res.status(400).json({ ok: false, error: "No scores found — run scoring first" });
+        return;
+      }
+
+      const totalPlayers = scores.length;
+      const userIds = scores.map((s: { user_id: string }) => s.user_id);
+
+      // get_mm_profile_data: gives username + display_name for all scored users
+      const { data: profileData } = await supabase.rpc("get_mm_profile_data", { user_ids: userIds });
+      const nameMap = new Map(
+        ((profileData ?? []) as Array<{ id: string; username: string; display_name: string | null }>)
+          .map((p) => [p.id, p]),
+      );
+
+      // get_all_notification_profiles: gives email + unsubscribed status (only users who have set an email)
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const emailMap = new Map(
+        ((emailProfiles ?? []) as Array<{ id: string; notification_email: string; email_unsubscribed: boolean }>)
+          .map((p) => [p.id, p]),
+      );
+
+      // Merge for profileMap (used for both leaderboard names and email routing)
+      const profileMap = new Map(
+        userIds.map((uid: string) => {
+          const names = nameMap.get(uid) ?? { id: uid, username: "?", display_name: null };
+          const emailInfo = emailMap.get(uid) ?? { notification_email: null, email_unsubscribed: true };
+          return [uid, { ...names, ...emailInfo }];
+        }),
+      );
+
+      // Build typed leaderboard for the email template
+      const leaderboard = scores.map((s: { user_id: string; total_points: number }, i: number) => {
+        const p = profileMap.get(s.user_id);
+        return {
+          rank: i + 1,
+          username: p?.username ?? "?",
+          displayName: p?.display_name ?? null,
+          totalPoints: s.total_points,
+        };
+      });
+
+      let sent = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (let i = 0; i < scores.length; i++) {
+        const score = scores[i] as { user_id: string; total_points: number };
+        const profile = profileMap.get(score.user_id);
+        if (!profile?.notification_email || profile.email_unsubscribed) {
+          skipped++;
+          continue;
+        }
+        try {
+          await sendThankyouEmail({
+            to: profile.notification_email,
+            displayName: profile.display_name || `@${profile.username}`,
+            rank: i + 1,
+            totalPoints: score.total_points,
+            totalPlayers,
+            leaderboard,
+            userId: score.user_id,
+          });
+          sent++;
+        } catch (e) {
+          console.error("[mm-admin] thankyou blast failed for", score.user_id, e);
+          failed++;
+        }
+      }
+
+      console.log(`[mm-admin] Thank-you blast: sent=${sent} skipped=${skipped} failed=${failed}`);
+      res.json({ ok: true, message: `Thank-you blast sent to ${sent} user(s)${skipped > 0 ? `, ${skipped} skipped (no email/unsubscribed)` : ""}${failed > 0 ? `, ${failed} failed` : ""}` });
+    } catch (err) {
+      console.error("[mm-admin] thankyou blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Read feedback submissions (admin-only) ────────────────────────────────
+  app.get("/admin/mm/api/feedback", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      // Use service role or anon key — feedback rows are INSERT-only for anon;
+      // the admin reads via the admin route which uses the same anon key but
+      // the SELECT policy blocks this. A workaround: query via RPC or return
+      // instructions for the user to read directly from the Supabase dashboard.
+      res.json({
+        ok: true,
+        note: "Feedback is INSERT-only via anon key (RLS blocks SELECT). Read responses at: https://supabase.com/dashboard → Table Editor → mm_feedback",
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
 }

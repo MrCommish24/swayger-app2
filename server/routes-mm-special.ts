@@ -1,5 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
+import * as fs from "fs";
+import * as path from "path";
 import { FULL_BRACKET } from "../lib/march-madness";
 import { getActivePicksRoundId } from "../lib/mm-dates";
 
@@ -1488,5 +1490,46 @@ export function registerMMSpecialRoutes(app: Express) {
     } catch (e) {
       console.warn("[mm-share] Unexpected error:", e);
     }
+  });
+
+  // ── Feedback page ─────────────────────────────────────────────────────────
+  // GET /feedback?uid=xxx  — serve the static feedback HTML form
+  app.get("/feedback", (_req: Request, res: Response) => {
+    const filePath = path.join(__dirname, "templates", "mm-feedback.html");
+    if (!fs.existsSync(filePath)) {
+      res.status(404).send("Feedback page not found");
+      return;
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    res.send(fs.readFileSync(filePath, "utf8"));
+  });
+
+  // POST /api/mm/feedback  — persist feedback responses
+  app.post("/api/mm/feedback", async (req: Request, res: Response) => {
+    const { user_id, q1_ux, q2_next_use, q3_friction, q4_priority, open_text } = req.body ?? {};
+
+    const supabase = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+    );
+
+    const { error } = await supabase.from("mm_feedback").insert({
+      user_id: user_id ?? null,
+      q1_ux:        q1_ux        ?? null,
+      q2_next_use:  q2_next_use  ?? null,
+      q3_friction:  q3_friction  ?? null,
+      q4_priority:  q4_priority  ?? null,
+      open_text:    open_text    ? String(open_text).slice(0, 280) : null,
+    });
+
+    if (error) {
+      console.error("[mm-feedback] insert error:", error.message);
+      res.status(500).json({ ok: false, error: "Could not save feedback" });
+      return;
+    }
+
+    console.log(`[mm-feedback] Saved: uid=${user_id ?? "anon"} q1=${q1_ux} q2=${q2_next_use} q3=${q3_friction} q4=${q4_priority}`);
+    res.json({ ok: true });
   });
 }

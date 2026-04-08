@@ -1129,3 +1129,157 @@ export async function sendS16LaunchEmail(opts: {
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
   await resend.emails.send({ from: FROM, to: opts.to, subject: "🏀 Sweet 16 picks are OPEN — lock yours before Thursday", html });
 }
+
+// ─── Tournament Wrap-Up / Thank-You Email ─────────────────────────────────────
+
+export interface LeaderboardEntry {
+  rank: number;
+  username: string;
+  displayName?: string | null;
+  totalPoints: number;
+}
+
+function buildThankyouEmailHtml(opts: {
+  displayName: string;
+  rank: number;
+  totalPoints: number;
+  totalPlayers: number;
+  leaderboard: LeaderboardEntry[];
+  feedbackUrl: string;
+}): string {
+  const { displayName, rank, totalPoints, totalPlayers, leaderboard, feedbackUrl } = opts;
+
+  const rankEmoji = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
+  const rankLabel = rank === 1 ? "You won the whole thing." : rank <= 3 ? `Top 3 out of ${totalPlayers}.` : `${rank} of ${totalPlayers} players.`;
+
+  const leaderboardRows = leaderboard.slice(0, 5).map((e) => {
+    const isUser = e.username === opts.displayName || e.rank === rank;
+    const rowStyle = isUser
+      ? `background:#0D1E33;border-radius:8px;padding:10px 12px;margin-bottom:6px;border-left:3px solid #1DA1F2;`
+      : `padding:10px 12px;margin-bottom:6px;border-bottom:1px solid #2A2A3A;`;
+    const nameColor = isUser ? "#1DA1F2" : "#E2E8F0";
+    const ptColor = isUser ? "#FFFFFF" : "#9CA3AF";
+    const medal = e.rank === 1 ? "🥇 " : e.rank === 2 ? "🥈 " : e.rank === 3 ? "🥉 " : `${e.rank}. `;
+    return `<div style="${rowStyle}">
+      <span style="font-size:14px;color:${nameColor};font-weight:${isUser ? "700" : "500"};">${medal}${e.displayName || e.username}</span>
+      <span style="float:right;font-size:14px;font-weight:700;color:${ptColor};">${e.totalPoints} pts</span>
+    </div>`;
+  }).join("");
+
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      Michigan beat UConn 69–63. The bracket is done. You survived the whole thing.
+    </p>
+
+    <!-- Personal score card -->
+    <div style="background:linear-gradient(135deg,#0d1a2e 0%,#0a1422 100%);border:1px solid rgba(29,161,242,0.3);border-radius:12px;padding:18px 20px;margin-bottom:24px;text-align:center;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#1DA1F2;text-transform:uppercase;">Your Final Score</p>
+      <p style="margin:0 0 6px;font-size:34px;font-weight:800;color:#FFFFFF;line-height:1.1;">${totalPoints} pts</p>
+      <p style="margin:0;font-size:14px;color:#8B95A5;">${rankEmoji} &nbsp; ${rankLabel}</p>
+    </div>
+
+    <!-- Final leaderboard -->
+    <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:1px;color:#6B7280;text-transform:uppercase;">Final Leaderboard</p>
+    <div style="margin-bottom:24px;">${leaderboardRows}</div>
+
+    <!-- Winner callout -->
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #F5A623;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">🏆 2026 Champion</p>
+      <p style="margin:0 0 2px;font-size:16px;font-weight:800;color:#FFFFFF;">${leaderboard[0]?.displayName || leaderboard[0]?.username || "—"}</p>
+      <p style="margin:0;font-size:13px;color:#8B95A5;">${leaderboard[0]?.totalPoints ?? 0} points &middot; March Madness 2026</p>
+    </div>
+
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      We're building more of this. Before we do, we want to know what actually worked and what didn't — from people who played.
+    </p>
+    <p style="margin:0 0 6px;font-size:14px;color:#8B95A5;">4 quick picks. Takes under 60 seconds.</p>
+  `;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>March Madness 2026 — Wrapped</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">March Madness 2026 is a wrap. 🏆</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${feedbackUrl}"
+                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Share Your Take →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  return html;
+}
+
+export async function sendThankyouEmail(opts: {
+  to: string;
+  displayName: string;
+  rank: number;
+  totalPoints: number;
+  totalPlayers: number;
+  leaderboard: LeaderboardEntry[];
+  userId?: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/feedback?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildThankyouEmailHtml({ ...opts, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `${opts.displayName}, March Madness is over — here's how you finished 🏆`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}
+
+// Preview helper — renders a sample thank-you email (used by admin preview route)
+export function buildThankyouEmailPreview(): string {
+  const sampleLeaderboard: LeaderboardEntry[] = [
+    { rank: 1, username: "dgrand2",    displayName: "D Grand",   totalPoints: 83 },
+    { rank: 2, username: "leon50g",    displayName: "Leon G",    totalPoints: 50 },
+    { rank: 3, username: "jayask78",   displayName: "Jay Ask",   totalPoints: 48 },
+    { rank: 4, username: "belt_2_ass", displayName: null,        totalPoints: 47 },
+    { rank: 5, username: "test2",      displayName: null,        totalPoints: 47 },
+  ];
+  const feedbackUrl = `${APP_URL}/feedback?uid=PREVIEW_USER`;
+  return buildThankyouEmailHtml({
+    displayName: "dgrand2",
+    rank: 1,
+    totalPoints: 83,
+    totalPlayers: 19,
+    leaderboard: sampleLeaderboard,
+    feedbackUrl,
+  });
+}
