@@ -1153,7 +1153,7 @@ function buildThankyouEmailHtml(opts: {
   const rankLabel = rank === 1 ? "You won the whole thing." : rank <= 3 ? `Top 3 out of ${totalPlayers}.` : `${rank} of ${totalPlayers} players.`;
 
   const leaderboardRows = leaderboard.slice(0, 5).map((e) => {
-    const isUser = e.username === opts.displayName || e.rank === rank;
+    const isUser = e.rank === rank;
     const rowStyle = isUser
       ? `background:#0D1E33;border-radius:8px;padding:10px 12px;margin-bottom:6px;border-left:3px solid #1DA1F2;`
       : `padding:10px 12px;margin-bottom:6px;border-bottom:1px solid #2A2A3A;`;

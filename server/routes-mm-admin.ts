@@ -794,7 +794,7 @@ export function registerMMAdminRoutes(app: Express): void {
           const hasLockedTakes = usersWithLockedTakes.has(profile.id);
           await sendS16LaunchEmail({
             to: profile.notification_email as string,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
             hasLockedTakes,
             userId: profile.id,
           });
@@ -845,7 +845,7 @@ export function registerMMAdminRoutes(app: Express): void {
         try {
           await sendMMR32PicksEmail({
             to: profile.notification_email as string,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
             userId: profile.id,
           });
           sent++;
@@ -890,7 +890,7 @@ export function registerMMAdminRoutes(app: Express): void {
         try {
           await sendS16TipoffAlertEmail({
             to: profile.notification_email as string,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
             userId: profile.id,
           });
           sent++;
@@ -932,7 +932,7 @@ export function registerMMAdminRoutes(app: Express): void {
         try {
           await sendLeaderboardBlast({
             to: profile.notification_email as string,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
             userId: profile.id,
           });
           sent++;
@@ -979,7 +979,7 @@ export function registerMMAdminRoutes(app: Express): void {
         try {
           await sendMMReminderEmail({
             to: profile.notification_email as string,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
           });
           sent++;
         } catch (e) {
@@ -1164,7 +1164,7 @@ export function registerMMAdminRoutes(app: Express): void {
         try {
           await sendThankyouEmail({
             to: profile.notification_email,
-            displayName: profile.display_name || `@${profile.username}`,
+            displayName: profile.display_name || profile.username,
             rank: i + 1,
             totalPoints: score.total_points,
             totalPlayers,
