@@ -34,7 +34,9 @@ $$;
 GRANT EXECUTE ON FUNCTION get_all_notification_profiles() TO anon;
 
 -- Also update get_mm_profile_data to include the resolved email for dry-run accuracy
-CREATE OR REPLACE FUNCTION get_mm_profile_data(user_ids uuid[])
+-- Must DROP first because the return type is changing (new columns added)
+DROP FUNCTION IF EXISTS get_mm_profile_data(uuid[]);
+CREATE FUNCTION get_mm_profile_data(user_ids uuid[])
 RETURNS TABLE(
   id                    uuid,
   username              text,
