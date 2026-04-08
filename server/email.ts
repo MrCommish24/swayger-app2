@@ -1264,7 +1264,172 @@ export async function sendThankyouEmail(opts: {
   await resend.emails.send({ from: FROM, to: opts.to, subject, html });
 }
 
-// Preview helper — renders a sample thank-you email (used by admin preview route)
+// ─── Outreach Email: Segment A (no swayger placed) ───────────────────────────
+
+function buildOutreachAEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
+  const { displayName, feedbackUrl } = opts;
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      You signed up for Swayger a while back. You haven't placed a swayger yet — and we genuinely want to know why.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      Was it confusing? Nothing to bet on? Nobody to play with? We're not guessing — we're asking.
+    </p>
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">4 quick picks</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">No signup required. Takes under 60 seconds. Your answers go directly into what we build next.</p>
+    </div>
+    <p style="margin:0 0 6px;font-size:13px;color:#6B7280;">What stopped you? What would bring you in? Tell us.</p>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick question from Swayger</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">We noticed you haven't placed a swayger yet.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${feedbackUrl}"
+                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Share My Take →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendOutreachAEmail(opts: { to: string; displayName: string; userId?: string }): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/outreach-feedback-a?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildOutreachAEmailHtml({ displayName: opts.displayName, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `Quick question, ${opts.displayName} — what stopped you?`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}
+
+export function buildOutreachAEmailPreview(): string {
+  const feedbackUrl = `${APP_URL}/outreach-feedback-a?uid=PREVIEW_USER`;
+  return buildOutreachAEmailHtml({ displayName: "Alex", feedbackUrl });
+}
+
+// ─── Outreach Email: Segment B (placed swayger, skipped MM) ──────────────────
+
+function buildOutreachBEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
+  const { displayName, feedbackUrl } = opts;
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      You placed a swayger. You're one of the OGs. We ran a March Madness challenge this year and missed you in it — Michigan won, for the record.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      Before we build what's next, we want to hear from people who've actually used the product. That's you.
+    </p>
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #F5A623;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">4 quick picks</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">How was your experience? What would bring you back? Your answers shape the roadmap.</p>
+    </div>
+    <p style="margin:0 0 6px;font-size:13px;color:#6B7280;">Real talk only. Takes under 60 seconds.</p>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick question from Swayger</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">You've been with us from the start. We want to hear from you.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${feedbackUrl}"
+                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Give Real Feedback →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendOutreachBEmail(opts: { to: string; displayName: string; userId?: string }): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/outreach-feedback-b?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildOutreachBEmailHtml({ displayName: opts.displayName, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `${opts.displayName}, real talk — what did you think of Swayger?`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}
+
+export function buildOutreachBEmailPreview(): string {
+  const feedbackUrl = `${APP_URL}/outreach-feedback-b?uid=PREVIEW_USER`;
+  return buildOutreachBEmailHtml({ displayName: "Jordan", feedbackUrl });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function buildThankyouEmailPreview(): string {
   const sampleLeaderboard: LeaderboardEntry[] = [
     { rank: 1, username: "dgrand2",    displayName: "Mr Roarke",  totalPoints: 83 },

@@ -1250,15 +1250,247 @@ export function registerMMAdminRoutes(app: Express): void {
       return;
     }
     try {
-      // Use service role or anon key — feedback rows are INSERT-only for anon;
-      // the admin reads via the admin route which uses the same anon key but
-      // the SELECT policy blocks this. A workaround: query via RPC or return
-      // instructions for the user to read directly from the Supabase dashboard.
       res.json({
         ok: true,
         note: "Feedback is INSERT-only via anon key (RLS blocks SELECT). Read responses at: https://supabase.com/dashboard → Table Editor → mm_feedback",
       });
     } catch (err) {
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GENERAL USER OUTREACH — two segments (no_swayger, swayger_no_mm)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Serve feedback pages ──────────────────────────────────────────────────
+  app.get("/outreach-feedback-a", (_req: Request, res: Response) => {
+    const fs = require("fs");
+    const path = require("path");
+    const html = fs.readFileSync(path.join(__dirname, "templates", "outreach-feedback-a.html"), "utf-8");
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  });
+
+  app.get("/outreach-feedback-b", (_req: Request, res: Response) => {
+    const fs = require("fs");
+    const path = require("path");
+    const html = fs.readFileSync(path.join(__dirname, "templates", "outreach-feedback-b.html"), "utf-8");
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  });
+
+  // ── Save outreach feedback ────────────────────────────────────────────────
+  app.post("/api/outreach/feedback", async (req: Request, res: Response) => {
+    try {
+      const { user_id, segment, q1, q2, q3, q4, open_text } = req.body ?? {};
+      if (!segment || !["no_swayger", "swayger_no_mm"].includes(segment)) {
+        res.status(400).json({ ok: false, error: "Invalid segment" });
+        return;
+      }
+      const supabase = getSupabase();
+      const { error } = await supabase.from("outreach_feedback").insert({
+        user_id: user_id ?? null,
+        segment,
+        q1: q1 ?? null,
+        q2: q2 ?? null,
+        q3: q3 ?? null,
+        q4: q4 ?? null,
+        open_text: open_text ?? null,
+      });
+      if (error) {
+        console.error("[outreach] feedback insert error:", error);
+        res.status(500).json({ ok: false, error: "Failed to save" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[outreach] feedback error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Email previews ────────────────────────────────────────────────────────
+  app.get("/admin/mm/email-preview/outreach-a", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
+    const { buildOutreachAEmailPreview } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildOutreachAEmailPreview());
+  });
+
+  app.get("/admin/mm/email-preview/outreach-b", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
+    const { buildOutreachBEmailPreview } = require("./email");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildOutreachBEmailPreview());
+  });
+
+  // ── Segmentation helper ───────────────────────────────────────────────────
+  async function getOutreachSegments(): Promise<{
+    segmentA: Array<{ id: string; resolved_name: string; email: string; email_unsubscribed: boolean }>;
+    segmentB: Array<{ id: string; resolved_name: string; email: string; email_unsubscribed: boolean }>;
+    mmUserIds: Set<string>;
+    swaygerUserIds: Set<string>;
+  }> {
+    const supabase = getSupabase();
+
+    // All users with a resolvable email
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+    const profiles = (allProfiles ?? []) as Array<{
+      id: string; username: string; display_name: string | null;
+      notification_email: string; email_unsubscribed: boolean;
+    }>;
+
+    // MM participants (anyone with a score row)
+    const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
+    const mmUserIds = new Set<string>((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+    // Users who have placed at least one swayger (as creator or opponent)
+    const { data: swaygerCreators } = await supabase
+      .from("swaygers")
+      .select("creator_id")
+      .not("creator_id", "is", null);
+    const { data: swaygerOpponents } = await supabase
+      .from("swaygers")
+      .select("opponent_id")
+      .not("opponent_id", "is", null);
+
+    const swaygerUserIds = new Set<string>([
+      ...((swaygerCreators ?? []).map((s: { creator_id: string }) => s.creator_id)),
+      ...((swaygerOpponents ?? []).map((s: { opponent_id: string }) => s.opponent_id)),
+    ]);
+
+    // Segment A: has email + NOT in MM + NOT in swaygers
+    const segmentA = profiles
+      .filter((p) => !mmUserIds.has(p.id) && !swaygerUserIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        resolved_name: p.display_name || p.username,
+        email: p.notification_email,
+        email_unsubscribed: p.email_unsubscribed,
+      }));
+
+    // Segment B: has email + NOT in MM + IS in swaygers
+    const segmentB = profiles
+      .filter((p) => !mmUserIds.has(p.id) && swaygerUserIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        resolved_name: p.display_name || p.username,
+        email: p.notification_email,
+        email_unsubscribed: p.email_unsubscribed,
+      }));
+
+    return { segmentA, segmentB, mmUserIds, swaygerUserIds };
+  }
+
+  // ── Dry-run: Segment A ────────────────────────────────────────────────────
+  app.get("/admin/mm/api/blast-outreach-a/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const { segmentA, mmUserIds, swaygerUserIds } = await getOutreachSegments();
+      const recipients = segmentA.map((u) => ({
+        user_id: u.id,
+        resolved_name: u.resolved_name,
+        email: u.email,
+        email_unsubscribed: u.email_unsubscribed,
+        would_receive: !u.email_unsubscribed,
+        in_mm: mmUserIds.has(u.id),
+        has_swayger: swaygerUserIds.has(u.id),
+      }));
+      res.json({ ok: true, segment: "no_swayger", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[outreach] dry-run A error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Dry-run: Segment B ────────────────────────────────────────────────────
+  app.get("/admin/mm/api/blast-outreach-b/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const { segmentB, mmUserIds, swaygerUserIds } = await getOutreachSegments();
+      const recipients = segmentB.map((u) => ({
+        user_id: u.id,
+        resolved_name: u.resolved_name,
+        email: u.email,
+        email_unsubscribed: u.email_unsubscribed,
+        would_receive: !u.email_unsubscribed,
+        in_mm: mmUserIds.has(u.id),
+        has_swayger: swaygerUserIds.has(u.id),
+      }));
+      res.json({ ok: true, segment: "swayger_no_mm", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[outreach] dry-run B error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Blast: Segment A ──────────────────────────────────────────────────────
+  app.post("/admin/mm/api/blast-outreach-a", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      return;
+    }
+    try {
+      const { sendOutreachAEmail } = await import("./email");
+      const { segmentA } = await getOutreachSegments();
+      const eligible = segmentA.filter((u) => !u.email_unsubscribed);
+
+      let sent = 0;
+      let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendOutreachAEmail({ to: user.email, displayName: user.resolved_name, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[outreach-a] failed to send to ${user.email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[outreach-a] blast complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, segment: "no_swayger", sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[outreach] blast A error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Blast: Segment B ──────────────────────────────────────────────────────
+  app.post("/admin/mm/api/blast-outreach-b", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      return;
+    }
+    try {
+      const { sendOutreachBEmail } = await import("./email");
+      const { segmentB } = await getOutreachSegments();
+      const eligible = segmentB.filter((u) => !u.email_unsubscribed);
+
+      let sent = 0;
+      let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendOutreachBEmail({ to: user.email, displayName: user.resolved_name, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[outreach-b] failed to send to ${user.email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[outreach-b] blast complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, segment: "swayger_no_mm", sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[outreach] blast B error:", err);
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });

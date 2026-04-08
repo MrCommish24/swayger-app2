@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swayger — Quick Feedback</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0B1120;
+      color: #E2E8F0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      min-height: 100vh;
+      padding: 40px 16px 60px;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; }
+    .logo {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.5px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: #1C1C26;
+      border-radius: 16px;
+      padding: 28px 24px 32px;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(29,161,242,0.12);
+      border: 1px solid rgba(29,161,242,0.35);
+      color: #1DA1F2;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      border-radius: 20px;
+      padding: 4px 14px;
+      margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.3;
+      margin-bottom: 10px;
+    }
+    .hero p {
+      font-size: 14px;
+      color: #8B95A5;
+      line-height: 1.6;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #2A2A3A;
+      margin: 24px 0;
+    }
+    .q-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #6B7280;
+      margin-bottom: 6px;
+    }
+    .q-text {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+    .options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+    .opt {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #13131D;
+      border: 1.5px solid #2A2A3A;
+      border-radius: 12px;
+      padding: 13px 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .opt:hover { border-color: #3A3A5A; background: #16162A; }
+    .opt.selected {
+      border-color: #1DA1F2;
+      background: rgba(29,161,242,0.1);
+    }
+    .opt-radio {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #3A3A4A;
+      flex-shrink: 0;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .opt.selected .opt-radio {
+      border-color: #1DA1F2;
+      background: #1DA1F2;
+    }
+    .opt.selected .opt-radio::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%,-50%);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #fff;
+    }
+    .opt-text {
+      font-size: 14px;
+      color: #C9D3E0;
+      line-height: 1.4;
+    }
+    .opt.selected .opt-text { color: #fff; font-weight: 600; }
+    .open-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #8B95A5;
+      margin-bottom: 8px;
+    }
+    textarea {
+      width: 100%;
+      background: #13131D;
+      border: 1.5px solid #2A2A3A;
+      border-radius: 12px;
+      color: #E2E8F0;
+      font-size: 14px;
+      font-family: inherit;
+      padding: 12px 14px;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: #1DA1F2; }
+    textarea::placeholder { color: #4A5568; }
+    .char-count {
+      text-align: right;
+      font-size: 11px;
+      color: #4A5568;
+      margin-top: 4px;
+      margin-bottom: 24px;
+    }
+    .submit-btn {
+      display: block;
+      width: 100%;
+      background: #1DA1F2;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 800;
+      padding: 15px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: opacity 0.2s;
+    }
+    .submit-btn:hover { opacity: 0.88; }
+    .submit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .error-msg {
+      text-align: center;
+      font-size: 13px;
+      color: #F87171;
+      margin-top: 12px;
+      display: none;
+    }
+    .success-screen {
+      display: none;
+      text-align: center;
+      padding: 16px 0;
+    }
+    .success-icon { font-size: 48px; margin-bottom: 16px; }
+    .success-screen h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+    .success-screen p {
+      font-size: 15px;
+      color: #8B95A5;
+      line-height: 1.6;
+    }
+    .footer {
+      text-align: center;
+      font-size: 11px;
+      color: #3A3A4A;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">SWAYGER</div>
+
+    <div class="card">
+
+      <div class="success-screen" id="success">
+        <div class="success-icon">🙏</div>
+        <h2>Appreciate it.</h2>
+        <p>This is exactly what we needed to hear.<br>We're working on making Swayger more intuitive and we'll put this to use.</p>
+      </div>
+
+      <div id="form-wrap">
+        <div class="hero">
+          <div class="hero-badge">Early User Feedback</div>
+          <h1>You signed up. You haven't placed a swayger yet. We want to know why.</h1>
+          <p>4 quick picks. No fluff. Takes under 60 seconds.</p>
+        </div>
+
+        <hr class="divider">
+
+        <!-- Q1 -->
+        <p class="q-label">Question 1 of 4</p>
+        <p class="q-text">Which best describes how you found Swayger?</p>
+        <div class="options" data-q="q1">
+          <div class="opt" data-val="friend_showed">
+            <div class="opt-radio"></div>
+            <span class="opt-text">A friend showed me or invited me</span>
+          </div>
+          <div class="opt" data-val="social_media">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Saw it on social media</span>
+          </div>
+          <div class="opt" data-val="just_browsing">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Just browsing / stumbled across it</span>
+          </div>
+          <div class="opt" data-val="other">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Some other way</span>
+          </div>
+        </div>
+
+        <!-- Q2 -->
+        <p class="q-label">Question 2 of 4</p>
+        <p class="q-text">What stopped you from placing your first swayger?</p>
+        <div class="options" data-q="q2">
+          <div class="opt" data-val="no_one_to_bet">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Didn't have anyone to bet with</span>
+          </div>
+          <div class="opt" data-val="confusing">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Wasn't sure how it works</span>
+          </div>
+          <div class="opt" data-val="nothing_to_bet">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Didn't see a bet I actually wanted to make</span>
+          </div>
+          <div class="opt" data-val="forgot">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Just forgot to come back</span>
+          </div>
+        </div>
+
+        <!-- Q3 -->
+        <p class="q-label">Question 3 of 4</p>
+        <p class="q-text">What kind of bets interest you most?</p>
+        <div class="options" data-q="q3">
+          <div class="opt" data-val="sports">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Sports predictions — games, scores, player stats</span>
+          </div>
+          <div class="opt" data-val="friend_challenges">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Personal challenges between friends (anything goes)</span>
+          </div>
+          <div class="opt" data-val="pop_culture">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Pop culture — movies, TV, awards, reality shows</span>
+          </div>
+          <div class="opt" data-val="all_of_above">
+            <div class="opt-radio"></div>
+            <span class="opt-text">All of the above, honestly</span>
+          </div>
+        </div>
+
+        <!-- Q4 -->
+        <p class="q-label">Question 4 of 4</p>
+        <p class="q-text">What would actually get you to place your first swayger?</p>
+        <div class="options" data-q="q4">
+          <div class="opt" data-val="friend_invite">
+            <div class="opt-radio"></div>
+            <span class="opt-text">A friend challenging me directly</span>
+          </div>
+          <div class="opt" data-val="more_contests">
+            <div class="opt-radio"></div>
+            <span class="opt-text">A contest or group challenge I could join</span>
+          </div>
+          <div class="opt" data-val="see_examples">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Seeing real examples of how others use it</span>
+          </div>
+          <div class="opt" data-val="low_stakes">
+            <div class="opt-radio"></div>
+            <span class="opt-text">Knowing there's nothing real on the line (just points/fun)</span>
+          </div>
+        </div>
+
+        <p class="open-label">Anything else? <span style="font-weight:400;color:#4A5568;">(optional)</span></p>
+        <textarea id="open-text" rows="3" maxlength="280" placeholder="Good, bad, or a feature you wish existed."></textarea>
+        <div class="char-count"><span id="char-num">0</span>/280</div>
+
+        <button class="submit-btn" id="submit-btn" disabled>Submit My Feedback →</button>
+        <p class="error-msg" id="error-msg">Something went wrong. Try again.</p>
+      </div>
+    </div>
+
+    <p class="footer">Swayger &middot; Social wager contracts, for fun</p>
+  </div>
+
+  <script>
+    const selections = { q1: null, q2: null, q3: null, q4: null };
+    const params = new URLSearchParams(window.location.search);
+    const uid = params.get('uid') || null;
+
+    document.querySelectorAll('.options').forEach(function(group) {
+      const q = group.dataset.q;
+      group.querySelectorAll('.opt').forEach(function(opt) {
+        opt.addEventListener('click', function() {
+          group.querySelectorAll('.opt').forEach(function(o) { o.classList.remove('selected'); });
+          opt.classList.add('selected');
+          selections[q] = opt.dataset.val;
+          checkReady();
+        });
+      });
+    });
+
+    const ta = document.getElementById('open-text');
+    ta.addEventListener('input', function() {
+      document.getElementById('char-num').textContent = ta.value.length;
+    });
+
+    function checkReady() {
+      const allAnswered = selections.q1 && selections.q2 && selections.q3 && selections.q4;
+      document.getElementById('submit-btn').disabled = !allAnswered;
+    }
+
+    document.getElementById('submit-btn').addEventListener('click', async function() {
+      const btn = document.getElementById('submit-btn');
+      const errEl = document.getElementById('error-msg');
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+      errEl.style.display = 'none';
+
+      try {
+        const resp = await fetch('/api/outreach/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: uid,
+            segment: 'no_swayger',
+            q1: selections.q1,
+            q2: selections.q2,
+            q3: selections.q3,
+            q4: selections.q4,
+            open_text: ta.value.trim() || null,
+          }),
+        });
+        if (!resp.ok) throw new Error('bad response');
+        document.getElementById('form-wrap').style.display = 'none';
+        document.getElementById('success').style.display = 'block';
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Submit My Feedback →';
+        errEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
