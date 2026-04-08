@@ -371,7 +371,7 @@ export async function sendScoreUpdateBlast(
     try {
       await sendMMScoreUpdateEmail({
         to: profile.notification_email as string,
-        displayName: profile.display_name || `@${profile.username}`,
+        displayName: profile.display_name || profile.username,
         totalPoints: s.total_points ?? 0,
         sweetSixteenPts: s.sweet_sixteen_pts ?? 0,
         eliteEightPts: s.elite_eight_pts ?? 0,
@@ -432,7 +432,7 @@ export async function sendR32WrapupBlast(supabase: any): Promise<void> {
     try {
       await sendR32WrapupEmail({
         to: profile.notification_email as string,
-        displayName: profile.display_name || `@${profile.username}`,
+        displayName: profile.display_name || profile.username,
         totalPoints: s.total_points ?? 0,
         upsetPts: s.upset_pts ?? 0,
         correctUpsets: s.correct_upsets ?? 0,
@@ -1084,6 +1084,62 @@ export function registerMMAdminRoutes(app: Express): void {
     } catch (err) {
       console.error("[mm-admin] thankyou preview error:", err);
       res.status(500).send("Preview error");
+    }
+  });
+
+  // ── Dry-run: preview who would receive the thank-you blast and with what name ─
+  app.get("/admin/mm/api/blast-thankyou/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) {
+      res.status(401).json({ ok: false, error: "Unauthorized" });
+      return;
+    }
+    try {
+      const supabase = getSupabase();
+      const { data: scores } = await supabase
+        .from("mm_pick_scores")
+        .select("*")
+        .order("total_points", { ascending: false });
+
+      if (!scores?.length) {
+        res.json({ ok: true, recipients: [], note: "No scores found" });
+        return;
+      }
+
+      const userIds = scores.map((s: { user_id: string }) => s.user_id);
+      const { data: profileData } = await supabase.rpc("get_mm_profile_data", { user_ids: userIds });
+      const nameMap = new Map(
+        ((profileData ?? []) as Array<{ id: string; username: string; display_name: string | null }>)
+          .map((p) => [p.id, p]),
+      );
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const emailMap = new Map(
+        ((emailProfiles ?? []) as Array<{ id: string; notification_email: string; email_unsubscribed: boolean }>)
+          .map((p) => [p.id, p]),
+      );
+
+      const recipients = scores.map((s: { user_id: string; total_points: number }, i: number) => {
+        const names = nameMap.get(s.user_id);
+        const emailInfo = emailMap.get(s.user_id);
+        const resolvedName = names?.display_name || names?.username || "?";
+        return {
+          rank: i + 1,
+          user_id: s.user_id,
+          username: names?.username ?? "?",
+          display_name: names?.display_name ?? null,
+          resolved_name: resolvedName,
+          total_points: s.total_points,
+          email: emailInfo?.notification_email ?? null,
+          email_unsubscribed: emailInfo?.email_unsubscribed ?? false,
+          would_receive: !!(emailInfo?.notification_email && !emailInfo?.email_unsubscribed),
+        };
+      });
+
+      const willSend = recipients.filter((r: { would_receive: boolean }) => r.would_receive).length;
+      res.json({ ok: true, total_scored: scores.length, will_send: willSend, recipients });
+    } catch (err) {
+      console.error("[mm-admin] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
     }
   });
 

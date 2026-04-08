@@ -1267,15 +1267,15 @@ export async function sendThankyouEmail(opts: {
 // Preview helper — renders a sample thank-you email (used by admin preview route)
 export function buildThankyouEmailPreview(): string {
   const sampleLeaderboard: LeaderboardEntry[] = [
-    { rank: 1, username: "dgrand2",    displayName: "D Grand",   totalPoints: 83 },
-    { rank: 2, username: "leon50g",    displayName: "Leon G",    totalPoints: 50 },
-    { rank: 3, username: "jayask78",   displayName: "Jay Ask",   totalPoints: 48 },
-    { rank: 4, username: "belt_2_ass", displayName: null,        totalPoints: 47 },
-    { rank: 5, username: "test2",      displayName: null,        totalPoints: 47 },
+    { rank: 1, username: "dgrand2",    displayName: "Mr Roarke",  totalPoints: 83 },
+    { rank: 2, username: "leon50g",    displayName: null,         totalPoints: 50 },
+    { rank: 3, username: "jayask78",   displayName: null,         totalPoints: 48 },
+    { rank: 4, username: "belt_2_ass", displayName: null,         totalPoints: 47 },
+    { rank: 5, username: "test2",      displayName: null,         totalPoints: 47 },
   ];
   const feedbackUrl = `${APP_URL}/feedback?uid=PREVIEW_USER`;
   return buildThankyouEmailHtml({
-    displayName: "dgrand2",
+    displayName: "Mr Roarke",
     rank: 1,
     totalPoints: 83,
     totalPlayers: 19,
