@@ -176,6 +176,7 @@ CREATE POLICY "service_write_share_events" ON mm_share_events
 -- get_all_mm_special_picks
 -- Returns all special picks (bypasses RLS) so the scoring endpoint
 -- can aggregate across all users using the anon key.
+DROP FUNCTION IF EXISTS get_all_mm_special_picks();
 CREATE OR REPLACE FUNCTION get_all_mm_special_picks()
 RETURNS SETOF mm_special_picks
 LANGUAGE sql
@@ -188,6 +189,7 @@ $$;
 -- Returns profiles that have a notification email set.
 -- Used by the email blast system to find who to notify.
 -- email_unsubscribed: true = user opted out via /unsubscribe link; blast functions skip them.
+DROP FUNCTION IF EXISTS get_all_notification_profiles();
 CREATE OR REPLACE FUNCTION get_all_notification_profiles()
 RETURNS TABLE (
   id                  uuid,
