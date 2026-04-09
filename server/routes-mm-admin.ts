@@ -1494,4 +1494,67 @@ export function registerMMAdminRoutes(app: Express): void {
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });
+
+  // ── Test: send all email templates to a single address ────────────────────
+  // GET /admin/mm/api/send-test-emails?token=...&to=someone@example.com&template=all|outreach-a|outreach-b|thankyou
+  app.get("/admin/mm/api/send-test-emails", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+
+    const to = req.query.to as string | undefined;
+    if (!to) { res.status(400).json({ ok: false, error: "Missing ?to= address" }); return; }
+
+    const template = (req.query.template as string | undefined) ?? "all";
+
+    try {
+      const { sendOutreachAEmail, sendOutreachBEmail, sendThankyouEmail } = await import("./email");
+      const results: Record<string, string> = {};
+
+      if (template === "all" || template === "outreach-a") {
+        try {
+          await sendOutreachAEmail({ to, displayName: "You", userId: undefined });
+          results["outreach-a"] = "sent";
+        } catch (e) {
+          results["outreach-a"] = `error: ${e}`;
+        }
+      }
+
+      if (template === "all" || template === "outreach-b") {
+        try {
+          await sendOutreachBEmail({ to, displayName: "You", userId: undefined });
+          results["outreach-b"] = "sent";
+        } catch (e) {
+          results["outreach-b"] = `error: ${e}`;
+        }
+      }
+
+      if (template === "all" || template === "thankyou") {
+        try {
+          await sendThankyouEmail({
+            to,
+            displayName: "You",
+            rank: 1,
+            totalPoints: 83,
+            totalPlayers: 19,
+            leaderboard: [
+              { rank: 1, username: "dgrand2",    displayName: "Mr Roarke", totalPoints: 83 },
+              { rank: 2, username: "leon50g",    displayName: null,        totalPoints: 50 },
+              { rank: 3, username: "JayA78",     displayName: null,        totalPoints: 48 },
+              { rank: 4, username: "Belt_2_Ass", displayName: null,        totalPoints: 47 },
+              { rank: 5, username: "Big Boss",   displayName: null,        totalPoints: 47 },
+            ],
+            userId: undefined,
+          });
+          results["thankyou"] = "sent";
+        } catch (e) {
+          results["thankyou"] = `error: ${e}`;
+        }
+      }
+
+      res.json({ ok: true, to, results });
+    } catch (err) {
+      console.error("[test-emails] error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
 }
