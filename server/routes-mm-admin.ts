@@ -2,6 +2,18 @@ import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  buildLeaderboardBlastHtml,
+  buildLastChanceBlastHtml,
+  buildSecondShotEmailHtml,
+  buildR32WrapupEmailHtml,
+  buildMMR32PicksEmailHtml,
+  buildS16TipoffAlertEmailHtml,
+  buildS16LaunchEmailHtml,
+  buildOutreachAEmailPreview,
+  buildOutreachBEmailPreview,
+  buildThankyouEmailPreview,
+} from "./email";
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
 
@@ -691,28 +703,24 @@ export function registerMMAdminRoutes(app: Express): void {
 
   // Preview leaderboard blast email (no auth — just renders HTML)
   app.get("/admin/mm/email-preview/leaderboard-blast", (_req: Request, res: Response) => {
-    const { buildLeaderboardBlastHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildLeaderboardBlastHtml());
   });
 
   // Preview last-chance blast email
   app.get("/admin/mm/email-preview/last-chance", (_req: Request, res: Response) => {
-    const { buildLastChanceBlastHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildLastChanceBlastHtml());
   });
 
   // Preview second-shot email
   app.get("/admin/mm/email-preview/second-shot", (_req: Request, res: Response) => {
-    const { buildSecondShotEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildSecondShotEmailHtml("Swayger User"));
   });
 
   // Preview R32 wrapup email (personalized score + Sweet 16 push)
   app.get("/admin/mm/email-preview/r32-wrapup", (_req: Request, res: Response) => {
-    const { buildR32WrapupEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildR32WrapupEmailHtml({
       displayName: "Swayger User",
@@ -726,28 +734,24 @@ export function registerMMAdminRoutes(app: Express): void {
 
   // Preview R32 quick picks launch email
   app.get("/admin/mm/email-preview/r32-picks", (_req: Request, res: Response) => {
-    const { buildMMR32PicksEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildMMR32PicksEmailHtml("Swayger User"));
   });
 
   // Preview S16 tipoff alert email (1-hour warning)
   app.get("/admin/mm/email-preview/s16-tipoff", (_req: Request, res: Response) => {
-    const { buildS16TipoffAlertEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildS16TipoffAlertEmailHtml("Swayger User"));
   });
 
   // Preview S16 launch email — variant A (has locked takes)
   app.get("/admin/mm/email-preview/s16-launch-a", (_req: Request, res: Response) => {
-    const { buildS16LaunchEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildS16LaunchEmailHtml("Swayger User", true));
   });
 
   // Preview S16 launch email — variant B (no locked takes / second chance)
   app.get("/admin/mm/email-preview/s16-launch-b", (_req: Request, res: Response) => {
-    const { buildS16LaunchEmailHtml } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildS16LaunchEmailHtml("Swayger User", false));
   });
@@ -1071,20 +1075,14 @@ export function registerMMAdminRoutes(app: Express): void {
   });
 
   // ── Thank-you blast preview ───────────────────────────────────────────────
-  app.get("/admin/mm/email-preview/thankyou", async (req: Request, res: Response) => {
+  app.get("/admin/mm/email-preview/thankyou", (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;
     if (!isAdminToken(token)) {
       res.status(401).send("Unauthorized");
       return;
     }
-    try {
-      const { buildThankyouEmailPreview } = await import("./email");
-      res.setHeader("Content-Type", "text/html");
-      res.send(buildThankyouEmailPreview());
-    } catch (err) {
-      console.error("[mm-admin] thankyou preview error:", err);
-      res.status(500).send("Preview error");
-    }
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildThankyouEmailPreview());
   });
 
   // ── Dry-run: preview who would receive the thank-you blast and with what name ─
@@ -1265,17 +1263,13 @@ export function registerMMAdminRoutes(app: Express): void {
 
   // ── Serve feedback pages ──────────────────────────────────────────────────
   app.get("/outreach-feedback-a", (_req: Request, res: Response) => {
-    const fs = require("fs");
-    const path = require("path");
-    const html = fs.readFileSync(path.join(__dirname, "templates", "outreach-feedback-a.html"), "utf-8");
+    const html = fs.readFileSync(path.join(process.cwd(), "server", "templates", "outreach-feedback-a.html"), "utf-8");
     res.setHeader("Content-Type", "text/html");
     res.send(html);
   });
 
   app.get("/outreach-feedback-b", (_req: Request, res: Response) => {
-    const fs = require("fs");
-    const path = require("path");
-    const html = fs.readFileSync(path.join(__dirname, "templates", "outreach-feedback-b.html"), "utf-8");
+    const html = fs.readFileSync(path.join(process.cwd(), "server", "templates", "outreach-feedback-b.html"), "utf-8");
     res.setHeader("Content-Type", "text/html");
     res.send(html);
   });
@@ -1314,7 +1308,6 @@ export function registerMMAdminRoutes(app: Express): void {
   app.get("/admin/mm/email-preview/outreach-a", (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;
     if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
-    const { buildOutreachAEmailPreview } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildOutreachAEmailPreview());
   });
@@ -1322,7 +1315,6 @@ export function registerMMAdminRoutes(app: Express): void {
   app.get("/admin/mm/email-preview/outreach-b", (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;
     if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
-    const { buildOutreachBEmailPreview } = require("./email");
     res.setHeader("Content-Type", "text/html");
     res.send(buildOutreachBEmailPreview());
   });

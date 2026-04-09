@@ -1495,7 +1495,7 @@ export function registerMMSpecialRoutes(app: Express) {
   // ── Feedback page ─────────────────────────────────────────────────────────
   // GET /feedback?uid=xxx  — serve the static feedback HTML form
   app.get("/feedback", (_req: Request, res: Response) => {
-    const filePath = path.join(__dirname, "templates", "mm-feedback.html");
+    const filePath = path.join(process.cwd(), "server", "templates", "mm-feedback.html");
     if (!fs.existsSync(filePath)) {
       res.status(404).send("Feedback page not found");
       return;
