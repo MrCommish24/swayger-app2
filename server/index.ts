@@ -220,8 +220,10 @@ function configureExpoAndLanding(app: express.Application) {
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
   // SPA fallback — deep links like /invite/ABC123 all return index.html
+  // Excludes server-rendered routes so they aren't swallowed by the Expo app.
+  const SERVER_PATHS = ["/api", "/assets", "/admin", "/feedback", "/outreach-feedback", "/unsubscribe"];
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/assets")) {
+    if (SERVER_PATHS.some((p) => req.path.startsWith(p))) {
       return next();
     }
     const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
