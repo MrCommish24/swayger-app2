@@ -1240,6 +1240,186 @@ export function registerMMAdminRoutes(app: Express): void {
     }
   });
 
+  // ── Catch-up blast: MM thank-you — auth-email-only users (missed by first send) ──
+  // Only sends to MM participants who have NO explicit notification_email set.
+  // Their email comes purely from auth.users. These users were skipped by the
+  // original blast because get_all_notification_profiles() didn't include them.
+  // Requires: add_auth_only_profiles_rpc.sql run in Supabase first.
+
+  app.get("/admin/mm/api/blast-thankyou-catchup/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const supabase = getSupabase();
+      const { data: scores } = await supabase.from("mm_pick_scores").select("user_id, total_points").order("total_points", { ascending: false });
+      if (!scores?.length) { res.json({ ok: true, note: "No scores found — run scoring first", recipients: [] }); return; }
+      const mmUserIds = new Set((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+      const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
+      if (rpcErr) { res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` }); return; }
+
+      type AuthProfile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const missedMM = ((authProfiles ?? []) as AuthProfile[]).filter((p) => mmUserIds.has(p.id));
+
+      const recipients = missedMM.map((p) => ({
+        user_id: p.id,
+        username: p.username,
+        display_name: p.display_name,
+        email: p.notification_email,
+        email_unsubscribed: p.email_unsubscribed,
+        would_receive: !p.email_unsubscribed,
+      }));
+      res.json({ ok: true, total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[catchup-thankyou] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  app.post("/admin/mm/api/blast-thankyou-catchup", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) { res.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." }); return; }
+    try {
+      const { sendThankyouEmail } = await import("./email");
+      const supabase = getSupabase();
+
+      const { data: scores } = await supabase.from("mm_pick_scores").select("*").order("total_points", { ascending: false });
+      if (!scores?.length) { res.status(400).json({ ok: false, error: "No scores found — run scoring first" }); return; }
+
+      const totalPlayers = scores.length;
+      const userIds = scores.map((s: { user_id: string }) => s.user_id);
+      const scoreRankMap = new Map(scores.map((s: { user_id: string; total_points: number }, i: number) => [s.user_id, { rank: i + 1, total_points: s.total_points }]));
+
+      const { data: profileData } = await supabase.rpc("get_mm_profile_data", { user_ids: userIds });
+      const nameMap = new Map(((profileData ?? []) as Array<{ id: string; username: string; display_name: string | null }>).map((p) => [p.id, p]));
+
+      const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
+      if (rpcErr) { res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` }); return; }
+
+      type AuthProfile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const mmUserIdSet = new Set(userIds);
+      const missedMM = ((authProfiles ?? []) as AuthProfile[]).filter((p) => mmUserIdSet.has(p.id) && !p.email_unsubscribed);
+
+      let sent = 0, skipped = 0, failed = 0;
+      for (const profile of missedMM) {
+        const rankInfo = scoreRankMap.get(profile.id);
+        if (!rankInfo) { skipped++; continue; }
+        const nameInfo = nameMap.get(profile.id);
+        const displayName = nameInfo?.display_name || nameInfo?.username || profile.username || "there";
+        const leaderboard = scores.map((s: { user_id: string; total_points: number }, i: number) => ({
+          rank: i + 1,
+          username: nameMap.get(s.user_id)?.username ?? "—",
+          display_name: nameMap.get(s.user_id)?.display_name ?? null,
+          total_points: s.total_points,
+          is_me: s.user_id === profile.id,
+        }));
+        try {
+          await sendThankyouEmail({
+            to: profile.notification_email,
+            displayName,
+            rank: rankInfo.rank,
+            totalPoints: rankInfo.total_points,
+            totalPlayers,
+            leaderboard,
+            userId: profile.id,
+          });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error("[catchup-thankyou] send failed for", profile.id, e);
+          failed++;
+        }
+      }
+      console.log(`[catchup-thankyou] sent=${sent} skipped=${skipped} failed=${failed}`);
+      res.json({ ok: true, sent, skipped, failed, note: "Catch-up blast — only auth-email users (not already reached)" });
+    } catch (err) {
+      console.error("[catchup-thankyou] blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Catch-up blast: Outreach A — auth-email-only users (Segment A, missed) ─
+
+  app.get("/admin/mm/api/blast-outreach-a-catchup/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const supabase = getSupabase();
+      const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
+      if (rpcErr) { res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` }); return; }
+
+      const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
+      const mmUserIds = new Set((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+      const { data: swaygerCreators } = await supabase.from("swaygers").select("creator_id").not("creator_id", "is", null);
+      const { data: swaygerOpponents } = await supabase.from("swaygers").select("opponent_id").not("opponent_id", "is", null);
+      const swaygerIds = new Set([
+        ...((swaygerCreators ?? []).map((s: { creator_id: string }) => s.creator_id)),
+        ...((swaygerOpponents ?? []).map((s: { opponent_id: string }) => s.opponent_id)),
+      ]);
+
+      type AuthProfile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const segA = ((authProfiles ?? []) as AuthProfile[]).filter((p) => !mmUserIds.has(p.id) && !swaygerIds.has(p.id));
+      const recipients = segA.map((p) => ({
+        user_id: p.id,
+        resolved_name: p.display_name || p.username,
+        email: p.notification_email,
+        email_unsubscribed: p.email_unsubscribed,
+        would_receive: !p.email_unsubscribed,
+        in_mm: mmUserIds.has(p.id),
+        has_swayger: swaygerIds.has(p.id),
+      }));
+      res.json({ ok: true, segment: "no_swayger_catchup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[catchup-outreach-a] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  app.post("/admin/mm/api/blast-outreach-a-catchup", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) { res.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." }); return; }
+    try {
+      const { sendOutreachAEmail } = await import("./email");
+      const supabase = getSupabase();
+
+      const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
+      if (rpcErr) { res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` }); return; }
+
+      const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
+      const mmUserIds = new Set((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+      const { data: swaygerCreators } = await supabase.from("swaygers").select("creator_id").not("creator_id", "is", null);
+      const { data: swaygerOpponents } = await supabase.from("swaygers").select("opponent_id").not("opponent_id", "is", null);
+      const swaygerIds = new Set([
+        ...((swaygerCreators ?? []).map((s: { creator_id: string }) => s.creator_id)),
+        ...((swaygerOpponents ?? []).map((s: { opponent_id: string }) => s.opponent_id)),
+      ]);
+
+      type AuthProfile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const eligible = ((authProfiles ?? []) as AuthProfile[]).filter((p) => !mmUserIds.has(p.id) && !swaygerIds.has(p.id) && !p.email_unsubscribed);
+
+      let sent = 0, failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendOutreachAEmail({ to: user.notification_email, displayName: user.display_name || user.username, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[catchup-outreach-a] failed to send to ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[catchup-outreach-a] sent=${sent} failed=${failed}`);
+      res.json({ ok: true, segment: "no_swayger_catchup", sent, failed, note: "Catch-up blast — only auth-email users not already reached" });
+    } catch (err) {
+      console.error("[catchup-outreach-a] blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
   // ── Read feedback submissions (admin-only) ────────────────────────────────
   app.get("/admin/mm/api/feedback", async (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;

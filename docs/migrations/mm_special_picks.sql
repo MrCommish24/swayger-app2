@@ -189,6 +189,7 @@ $$;
 -- Returns profiles that have a notification email set.
 -- Used by the email blast system to find who to notify.
 -- email_unsubscribed: true = user opted out via /unsubscribe link; blast functions skip them.
+-- Falls back to auth.users.email when profiles.notification_email is not set.
 DROP FUNCTION IF EXISTS get_all_notification_profiles();
 CREATE OR REPLACE FUNCTION get_all_notification_profiles()
 RETURNS TABLE (
@@ -200,12 +201,20 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, auth
 AS $$
-  SELECT id, username, display_name, notification_email,
-         COALESCE(email_unsubscribed, false) AS email_unsubscribed
-  FROM profiles
-  WHERE notification_email IS NOT NULL AND notification_email != '';
+  SELECT
+    p.id,
+    p.username::text,
+    p.display_name::text,
+    COALESCE(NULLIF(p.notification_email, ''), u.email::text) AS notification_email,
+    COALESCE(p.email_unsubscribed, false) AS email_unsubscribed
+  FROM public.profiles p
+  JOIN auth.users u ON u.id = p.id
+  WHERE COALESCE(NULLIF(p.notification_email, ''), u.email) IS NOT NULL;
 $$;
+
+GRANT EXECUTE ON FUNCTION get_all_notification_profiles() TO anon;
 
 -- ─── 8. email_unsubscribed column on profiles ────────────────────────────────
 -- Allows users to opt out of all Swayger email blasts via the /unsubscribe link.
