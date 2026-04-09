@@ -1260,8 +1260,21 @@ export async function sendThankyouEmail(opts: {
   const feedbackUrl = `${APP_URL}/feedback?uid=${encodeURIComponent(opts.userId ?? "")}`;
   let html = buildThankyouEmailHtml({ ...opts, feedbackUrl });
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
-  const subject = `${opts.displayName}, March Madness is over — here's how you finished 🏆`;
-  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+  const subject = `${opts.displayName}, March Madness 2026 is a wrap — here's how you finished`;
+  const rankLabel = opts.rank === 1 ? "You won it." : `You finished #${opts.rank} of ${opts.totalPlayers}.`;
+  const text = `Hey ${opts.displayName},
+
+Michigan beat UConn 69–63. The bracket is done.
+
+Your final score: ${opts.totalPoints} pts. ${rankLabel}
+
+We're building more of this and want to know what actually worked and what didn't — from people who played.
+
+Share your take (4 quick picks, under 60 seconds):
+${feedbackUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
 }
 
 // ─── Outreach Email: Segment A (no swayger placed) ───────────────────────────
@@ -1338,7 +1351,17 @@ export async function sendOutreachAEmail(opts: { to: string; displayName: string
   let html = buildOutreachAEmailHtml({ displayName: opts.displayName, feedbackUrl });
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
   const subject = `Quick question, ${opts.displayName} — what stopped you?`;
-  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+  const text = `Hey ${opts.displayName},
+
+You signed up for Swayger but haven't placed a swayger yet. We genuinely want to know why.
+
+Was it confusing? Nothing to bet on? Nobody to play with? We're not guessing — we're asking.
+
+4 quick picks, under 60 seconds:
+${feedbackUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
 }
 
 export function buildOutreachAEmailPreview(): string {
@@ -1420,7 +1443,17 @@ export async function sendOutreachBEmail(opts: { to: string; displayName: string
   let html = buildOutreachBEmailHtml({ displayName: opts.displayName, feedbackUrl });
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
   const subject = `${opts.displayName}, real talk — what did you think of Swayger?`;
-  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+  const text = `Hey ${opts.displayName},
+
+You placed a swayger. You're one of the OGs. We ran a March Madness challenge this year and missed you in it.
+
+Before we build what's next, we want to hear from people who've actually used the product. That's you.
+
+4 quick picks, under 60 seconds:
+${feedbackUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
 }
 
 export function buildOutreachBEmailPreview(): string {
