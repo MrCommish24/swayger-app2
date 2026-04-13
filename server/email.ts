@@ -1439,65 +1439,40 @@ export function buildOutreachBEmailPreview(): string {
 function buildMMFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
   const { displayName, feedbackUrl } = opts;
   const appUrl = APP_URL;
-  const body = `
-    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
-      Hey ${displayName} —
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      You played March Madness with us. Before we launch the Draft challenge, we're making one final ask to the people who were actually in it.
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      What worked? What didn't? 4 questions, under 60 seconds. After this we're heads-down building.
-    </p>
-    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">Last ask</p>
-      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Your answers go directly into what we build for the Draft and beyond. This is the last time we'll ask.</p>
-    </div>
-  `;
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>One more ask from Swayger</title>
 </head>
-<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">The Draft challenge is almost here. One last ask.</p>
-            ${body}
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-              <tr>
-                <td align="center">
-                  <a href="${feedbackUrl}"
-                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
-                    Take the Survey →
-                  </a>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
-              NFL Draft challenge dropping April 23rd. &middot; <a href="${appUrl}" style="color:#1DA1F2;text-decoration:none;">Jump back into Swayger →</a>
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:48px 24px;">
+
+    <p style="margin:0 0 32px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#aaa;text-transform:uppercase;">Swayger</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#111;line-height:1.7">Hey ${displayName} —</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      You played March Madness with us. Before we launch the Draft challenge, we're making one final ask to the people who were actually in it.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      What worked? What didn't? 4 questions, under 60 seconds. After this we're heads-down building — this is the last time we'll ask.
+    </p>
+
+    <p style="margin:32px 0;">
+      <a href="${feedbackUrl}" style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Take the survey →</a>
+    </p>
+
+    <p style="margin:0 0 8px;font-size:15px;color:#555;line-height:1.7">
+      NFL Draft challenge dropping April 23rd. <a href="${appUrl}" style="color:#111;font-weight:600;">Jump back into Swayger</a>
+    </p>
+
+    <p style="margin:40px 0 0;font-size:15px;color:#333;line-height:1.7">— Darius<br>
+    <span style="font-size:13px;color:#999;">Swayger</span></p>
+
+  </div>
 </body>
 </html>`;
 }
@@ -1535,62 +1510,40 @@ export function buildMMFollowupEmailPreview(): string {
 
 function buildOutreachAFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
   const { displayName, feedbackUrl } = opts;
-  const body = `
-    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
-      Hey ${displayName} —
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      We sent you an email a while back asking what stopped you from placing a swayger. Maybe it got buried. We're following up because your answer is actually the one we need most.
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      People who signed up and didn't come back have information we can't get anywhere else. Was it confusing? Nothing to bet on? No one to play with? We're genuinely asking — not guessing.
-    </p>
-    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">4 questions</p>
-      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Under 60 seconds. Your answers go directly into what we fix next. This is the last time we'll ask.</p>
-    </div>
-  `;
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Still listening — Swayger</title>
 </head>
-<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Your perspective is the one we're missing.</p>
-            ${body}
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-              <tr>
-                <td align="center">
-                  <a href="${feedbackUrl}"
-                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
-                    Share My Take →
-                  </a>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:48px 24px;">
+
+    <p style="margin:0 0 32px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#aaa;text-transform:uppercase;">Swayger</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#111;line-height:1.7">Hey ${displayName} —</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      We sent you an email a while back asking what stopped you from placing a swayger. Maybe it got buried. We're following up because your answer is actually the one we need most.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      People who signed up and didn't come back have information we can't get anywhere else. Was it confusing? Nothing to bet on? No one to play with? We're genuinely asking — not guessing.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      4 questions, under 60 seconds. This is the last time we'll ask.
+    </p>
+
+    <p style="margin:32px 0;">
+      <a href="${feedbackUrl}" style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Share my take →</a>
+    </p>
+
+    <p style="margin:40px 0 0;font-size:15px;color:#333;line-height:1.7">— Darius<br>
+    <span style="font-size:13px;color:#999;">Swayger</span></p>
+
+  </div>
 </body>
 </html>`;
 }
@@ -1626,62 +1579,40 @@ export function buildOutreachAFollowupEmailPreview(): string {
 
 function buildOutreachBFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
   const { displayName, feedbackUrl } = opts;
-  const body = `
-    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
-      Hey ${displayName} —
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      You placed a swayger. That means you know what the product actually feels like — you went through the whole thing. We sent you an email asking for your take and didn't hear back.
-    </p>
-    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      We're still listening. What brought you in? What pulled you away? People who've actually used the product are the only ones who can answer that.
-    </p>
-    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #F5A623;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">4 questions</p>
-      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Under 60 seconds. Your answers go directly into what we build next. Last ask — we mean it.</p>
-    </div>
-  `;
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Still listening — Swayger</title>
 </head>
-<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">You were here at the start. What pulled you away?</p>
-            ${body}
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
-              <tr>
-                <td align="center">
-                  <a href="${feedbackUrl}"
-                     style="display:inline-block;background:#F5A623;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
-                    Give Real Feedback →
-                  </a>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:48px 24px;">
+
+    <p style="margin:0 0 32px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#aaa;text-transform:uppercase;">Swayger</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#111;line-height:1.7">Hey ${displayName} —</p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      You placed a swayger. That means you know what the product actually feels like — you went through the whole thing. We sent you an email asking for your take and didn't hear back.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      We're still listening. What brought you in? What pulled you away? People who've actually used the product are the only ones who can answer that.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:16px;color:#333;line-height:1.7">
+      4 questions, under 60 seconds. Last ask — we mean it.
+    </p>
+
+    <p style="margin:32px 0;">
+      <a href="${feedbackUrl}" style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:600;padding:12px 28px;border-radius:8px;text-decoration:none;">Give real feedback →</a>
+    </p>
+
+    <p style="margin:40px 0 0;font-size:15px;color:#333;line-height:1.7">— Darius<br>
+    <span style="font-size:13px;color:#999;">Swayger</span></p>
+
+  </div>
 </body>
 </html>`;
 }
