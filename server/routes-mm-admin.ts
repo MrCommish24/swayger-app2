@@ -13,6 +13,9 @@ import {
   buildOutreachAEmailPreview,
   buildOutreachBEmailPreview,
   buildThankyouEmailPreview,
+  buildMMFollowupEmailPreview,
+  buildOutreachAFollowupEmailPreview,
+  buildOutreachBFollowupEmailPreview,
 } from "./email";
 
 // ─── Supabase client ──────────────────────────────────────────────────────────
@@ -1663,6 +1666,214 @@ export function registerMMAdminRoutes(app: Express): void {
       res.json({ ok: true, segment: "swayger_no_mm", sent, failed, total_eligible: eligible.length });
     } catch (err) {
       console.error("[outreach] blast B error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Follow-up email previews ───────────────────────────────────────────────
+  app.get("/admin/mm/email-preview/mm-followup", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildMMFollowupEmailPreview());
+  });
+
+  app.get("/admin/mm/email-preview/outreach-a-followup", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildOutreachAFollowupEmailPreview());
+  });
+
+  app.get("/admin/mm/email-preview/outreach-b-followup", (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).send("Unauthorized"); return; }
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildOutreachBFollowupEmailPreview());
+  });
+
+  // ── Dry-run: MM follow-up ─────────────────────────────────────────────────
+  app.get("/admin/mm/api/blast-mm-followup/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const supabase = getSupabase();
+      const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
+      const mmUserIds = new Set<string>((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Array<{ id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean }>),
+        ...((authProfiles ?? []) as Array<{ id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean }>),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+
+      const recipients = deduped
+        .filter((p) => mmUserIds.has(p.id))
+        .map((p) => ({
+          user_id: p.id,
+          resolved_name: p.display_name || p.username,
+          email: p.notification_email,
+          email_unsubscribed: p.email_unsubscribed,
+          would_receive: !p.email_unsubscribed,
+        }));
+
+      res.json({ ok: true, segment: "mm_participants", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[mm-followup] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Blast: MM follow-up ───────────────────────────────────────────────────
+  app.post("/admin/mm/api/blast-mm-followup", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      return;
+    }
+    try {
+      const { sendMMFollowupEmail } = await import("./email");
+      const supabase = getSupabase();
+
+      const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
+      const mmUserIds = new Set<string>((scores ?? []).map((s: { user_id: string }) => s.user_id));
+
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Array<{ id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean }>),
+        ...((authProfiles ?? []) as Array<{ id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean }>),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+
+      const eligible = deduped.filter((p) => mmUserIds.has(p.id) && !p.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendMMFollowupEmail({ to: user.notification_email, displayName: user.display_name || user.username, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[mm-followup] failed to send to ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[mm-followup] blast complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, segment: "mm_participants", sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[mm-followup] blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Dry-run: Outreach A follow-up ─────────────────────────────────────────
+  app.get("/admin/mm/api/blast-outreach-a-followup/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const { segmentA } = await getOutreachSegments();
+      const recipients = segmentA.map((u) => ({
+        user_id: u.id,
+        resolved_name: u.resolved_name,
+        email: u.email,
+        email_unsubscribed: u.email_unsubscribed,
+        would_receive: !u.email_unsubscribed,
+      }));
+      res.json({ ok: true, segment: "no_swayger_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[outreach-a-followup] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Blast: Outreach A follow-up ───────────────────────────────────────────
+  app.post("/admin/mm/api/blast-outreach-a-followup", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      return;
+    }
+    try {
+      const { sendOutreachAFollowupEmail } = await import("./email");
+      const { segmentA } = await getOutreachSegments();
+      const eligible = segmentA.filter((u) => !u.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendOutreachAFollowupEmail({ to: user.email, displayName: user.resolved_name, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[outreach-a-followup] failed to send to ${user.email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[outreach-a-followup] blast complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, segment: "no_swayger_followup", sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[outreach-a-followup] blast error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Dry-run: Outreach B follow-up ─────────────────────────────────────────
+  app.get("/admin/mm/api/blast-outreach-b-followup/dry-run", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    try {
+      const { segmentB } = await getOutreachSegments();
+      const recipients = segmentB.map((u) => ({
+        user_id: u.id,
+        resolved_name: u.resolved_name,
+        email: u.email,
+        email_unsubscribed: u.email_unsubscribed,
+        would_receive: !u.email_unsubscribed,
+      }));
+      res.json({ ok: true, segment: "swayger_no_mm_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+    } catch (err) {
+      console.error("[outreach-b-followup] dry-run error:", err);
+      res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  // ── Blast: Outreach B follow-up ───────────────────────────────────────────
+  app.post("/admin/mm/api/blast-outreach-b-followup", async (req: Request, res: Response) => {
+    const token = req.headers["x-admin-token"] as string | undefined;
+    if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      return;
+    }
+    try {
+      const { sendOutreachBFollowupEmail } = await import("./email");
+      const { segmentB } = await getOutreachSegments();
+      const eligible = segmentB.filter((u) => !u.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendOutreachBFollowupEmail({ to: user.email, displayName: user.resolved_name, userId: user.id });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[outreach-b-followup] failed to send to ${user.email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[outreach-b-followup] blast complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, segment: "swayger_no_mm_followup", sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[outreach-b-followup] blast error:", err);
       res.status(500).json({ ok: false, error: "Server error" });
     }
   });

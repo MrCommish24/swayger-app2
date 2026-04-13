@@ -1434,6 +1434,297 @@ export function buildOutreachBEmailPreview(): string {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Follow-up Email: MM Participants ────────────────────────────────────────
+
+function buildMMFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
+  const { displayName, feedbackUrl } = opts;
+  const appUrl = APP_URL;
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      You played March Madness with us. Before we launch the Draft challenge, we're making one final ask to the people who were actually in it.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      What worked? What didn't? 4 questions, under 60 seconds. After this we're heads-down building.
+    </p>
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">Last ask</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Your answers go directly into what we build for the Draft and beyond. This is the last time we'll ask.</p>
+    </div>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>One more ask from Swayger</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">The Draft challenge is almost here. One last ask.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${feedbackUrl}"
+                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Take the Survey →
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
+              NFL Draft challenge dropping April 23rd. &middot; <a href="${appUrl}" style="color:#1DA1F2;text-decoration:none;">Jump back into Swayger →</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendMMFollowupEmail(opts: { to: string; displayName: string; userId?: string }): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/feedback?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildMMFollowupEmailHtml({ displayName: opts.displayName, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `${opts.displayName}, one more ask before we launch the Draft challenge`;
+  const text = `Hey ${opts.displayName},
+
+You played March Madness with us. Before we launch the Draft challenge, we're making one final ask to the people who were actually in it.
+
+What worked? What didn't? 4 questions, under 60 seconds. After this we're heads-down building.
+
+Take the survey:
+${feedbackUrl}
+
+NFL Draft challenge dropping April 23rd. Jump back in: ${APP_URL}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
+}
+
+export function buildMMFollowupEmailPreview(): string {
+  const feedbackUrl = `${APP_URL}/feedback?uid=PREVIEW_USER`;
+  return buildMMFollowupEmailHtml({ displayName: "Mr Roarke", feedbackUrl });
+}
+
+// ─── Follow-up Email: Outreach A (signed up, never placed a swayger) ─────────
+
+function buildOutreachAFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
+  const { displayName, feedbackUrl } = opts;
+  const appUrl = APP_URL;
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      We emailed you a while back asking what stopped you from placing a swayger. Maybe it got buried. Either way — the NFL Draft is April 23rd and we're running a pick challenge around it.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      You're already signed up. This is the easiest entry point we've built. No pressure, just picks.
+    </p>
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">Draft Challenge</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Make your picks, wager against a friend, see who calls it. April 23rd.</p>
+    </div>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draft season from Swayger</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Draft season is almost here. Here's your way in.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${appUrl}"
+                     style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Jump Into Swayger →
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
+              Still want to tell us what stopped you? <a href="${feedbackUrl}" style="color:#1DA1F2;text-decoration:none;">60 seconds here →</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendOutreachAFollowupEmail(opts: { to: string; displayName: string; userId?: string }): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/outreach-feedback-a?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildOutreachAFollowupEmailHtml({ displayName: opts.displayName, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `${opts.displayName} — Draft season is almost here. Here's your way in.`;
+  const text = `Hey ${opts.displayName},
+
+We emailed you a while back asking what stopped you from placing a swayger. Maybe it got buried. Either way — the NFL Draft is April 23rd and we're running a pick challenge around it.
+
+You're already signed up. This is the easiest entry point we've built.
+
+Jump into Swayger: ${APP_URL}
+
+Still want to tell us what stopped you? 60 seconds: ${feedbackUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
+}
+
+export function buildOutreachAFollowupEmailPreview(): string {
+  const feedbackUrl = `${APP_URL}/outreach-feedback-a?uid=PREVIEW_USER`;
+  return buildOutreachAFollowupEmailHtml({ displayName: "Alex", feedbackUrl });
+}
+
+// ─── Follow-up Email: Outreach B (placed swayger, skipped MM) ────────────────
+
+function buildOutreachBFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
+  const { displayName, feedbackUrl } = opts;
+  const appUrl = APP_URL;
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
+      Hey ${displayName} —
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      You placed a swayger. You know how this works. NFL Draft is April 23rd — we're running a pick challenge around it.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
+      We ran March Madness without you. We're not letting that happen again.
+    </p>
+    <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #F5A623;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">Draft Challenge</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Who goes where. Who surprises everyone. Someone's going to be very right — and someone's going to owe dinner.</p>
+    </div>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draft season from Swayger</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Draft season. You've done this before.</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
+              <tr>
+                <td align="center">
+                  <a href="${appUrl}"
+                     style="display:inline-block;background:#F5A623;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Jump Back In →
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
+              Want to tell us what brought you in (or pulled you away)? <a href="${feedbackUrl}" style="color:#F5A623;text-decoration:none;">60 seconds here →</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendOutreachBFollowupEmail(opts: { to: string; displayName: string; userId?: string }): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const feedbackUrl = `${APP_URL}/outreach-feedback-b?uid=${encodeURIComponent(opts.userId ?? "")}`;
+  let html = buildOutreachBFollowupEmailHtml({ displayName: opts.displayName, feedbackUrl });
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  const subject = `Draft season, ${opts.displayName}. You've done this before.`;
+  const text = `Hey ${opts.displayName},
+
+You placed a swayger. You know how this works. NFL Draft is April 23rd — we're running a pick challenge around it.
+
+We ran March Madness without you. We're not letting that happen again.
+
+Jump back into Swayger: ${APP_URL}
+
+Want to tell us what brought you in (or pulled you away)? 60 seconds: ${feedbackUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
+}
+
+export function buildOutreachBFollowupEmailPreview(): string {
+  const feedbackUrl = `${APP_URL}/outreach-feedback-b?uid=PREVIEW_USER`;
+  return buildOutreachBFollowupEmailHtml({ displayName: "Jordan", feedbackUrl });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function buildThankyouEmailPreview(): string {
   const sampleLeaderboard: LeaderboardEntry[] = [
     { rank: 1, username: "dgrand2",    displayName: "Mr Roarke",  totalPoints: 83 },
