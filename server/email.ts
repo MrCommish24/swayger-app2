@@ -1535,20 +1535,19 @@ export function buildMMFollowupEmailPreview(): string {
 
 function buildOutreachAFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
   const { displayName, feedbackUrl } = opts;
-  const appUrl = APP_URL;
   const body = `
     <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
       Hey ${displayName} —
     </p>
     <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      We emailed you a while back asking what stopped you from placing a swayger. Maybe it got buried. Either way — the NFL Draft is April 23rd and we're running a pick challenge around it.
+      We sent you an email a while back asking what stopped you from placing a swayger. Maybe it got buried. We're following up because your answer is actually the one we need most.
     </p>
     <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      You're already signed up. This is the easiest entry point we've built. No pressure, just picks.
+      People who signed up and didn't come back have information we can't get anywhere else. Was it confusing? Nothing to bet on? No one to play with? We're genuinely asking — not guessing.
     </p>
     <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #1DA1F2;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">Draft Challenge</p>
-      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Make your picks, wager against a friend, see who calls it. April 23rd.</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#1DA1F2;text-transform:uppercase;">4 questions</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Under 60 seconds. Your answers go directly into what we fix next. This is the last time we'll ask.</p>
     </div>
   `;
 
@@ -1557,7 +1556,7 @@ function buildOutreachAFollowupEmailHtml(opts: { displayName: string; feedbackUr
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Draft season from Swayger</title>
+  <title>Still listening — Swayger</title>
 </head>
 <body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
@@ -1570,21 +1569,18 @@ function buildOutreachAFollowupEmailHtml(opts: { displayName: string; feedbackUr
         </tr>
         <tr>
           <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Draft season is almost here. Here's your way in.</p>
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Your perspective is the one we're missing.</p>
             ${body}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
               <tr>
                 <td align="center">
-                  <a href="${appUrl}"
+                  <a href="${feedbackUrl}"
                      style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
-                    Jump Into Swayger →
+                    Share My Take →
                   </a>
                 </td>
               </tr>
             </table>
-            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
-              Still want to tell us what stopped you? <a href="${feedbackUrl}" style="color:#1DA1F2;text-decoration:none;">60 seconds here →</a>
-            </p>
           </td>
         </tr>
         <tr>
@@ -1607,16 +1603,15 @@ export async function sendOutreachAFollowupEmail(opts: { to: string; displayName
   const feedbackUrl = `${APP_URL}/outreach-feedback-a?uid=${encodeURIComponent(opts.userId ?? "")}`;
   let html = buildOutreachAFollowupEmailHtml({ displayName: opts.displayName, feedbackUrl });
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
-  const subject = `${opts.displayName} — Draft season is almost here. Here's your way in.`;
+  const subject = `${opts.displayName}, your perspective is the one we're missing`;
   const text = `Hey ${opts.displayName},
 
-We emailed you a while back asking what stopped you from placing a swayger. Maybe it got buried. Either way — the NFL Draft is April 23rd and we're running a pick challenge around it.
+We sent you an email a while back asking what stopped you from placing a swayger. Maybe it got buried.
 
-You're already signed up. This is the easiest entry point we've built.
+People who signed up and didn't come back have information we can't get anywhere else. Was it confusing? Nothing to bet on? No one to play with? We're genuinely asking — not guessing.
 
-Jump into Swayger: ${APP_URL}
-
-Still want to tell us what stopped you? 60 seconds: ${feedbackUrl}
+4 questions, under 60 seconds. This is the last time we'll ask:
+${feedbackUrl}
 
 — The Swayger team`;
   await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
@@ -1631,20 +1626,19 @@ export function buildOutreachAFollowupEmailPreview(): string {
 
 function buildOutreachBFollowupEmailHtml(opts: { displayName: string; feedbackUrl: string }): string {
   const { displayName, feedbackUrl } = opts;
-  const appUrl = APP_URL;
   const body = `
     <p style="margin:0 0 16px;font-size:15px;color:#E2E8F0;line-height:1.6">
       Hey ${displayName} —
     </p>
     <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      You placed a swayger. You know how this works. NFL Draft is April 23rd — we're running a pick challenge around it.
+      You placed a swayger. That means you know what the product actually feels like — you went through the whole thing. We sent you an email asking for your take and didn't hear back.
     </p>
     <p style="margin:0 0 20px;font-size:15px;color:#8B95A5;line-height:1.6">
-      We ran March Madness without you. We're not letting that happen again.
+      We're still listening. What brought you in? What pulled you away? People who've actually used the product are the only ones who can answer that.
     </p>
     <div style="background:#13131D;border-radius:12px;padding:16px 18px;margin-bottom:24px;border-left:3px solid #F5A623;">
-      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">Draft Challenge</p>
-      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Who goes where. Who surprises everyone. Someone's going to be very right — and someone's going to owe dinner.</p>
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1px;color:#F5A623;text-transform:uppercase;">4 questions</p>
+      <p style="margin:0;font-size:14px;color:#C9D3E0;line-height:1.5;">Under 60 seconds. Your answers go directly into what we build next. Last ask — we mean it.</p>
     </div>
   `;
 
@@ -1653,7 +1647,7 @@ function buildOutreachBFollowupEmailHtml(opts: { displayName: string; feedbackUr
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Draft season from Swayger</title>
+  <title>Still listening — Swayger</title>
 </head>
 <body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
@@ -1666,21 +1660,18 @@ function buildOutreachBFollowupEmailHtml(opts: { displayName: string; feedbackUr
         </tr>
         <tr>
           <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">Draft season. You've done this before.</p>
+            <p style="margin:0 0 20px;font-size:19px;font-weight:800;color:#FFFFFF;line-height:1.3;">You were here at the start. What pulled you away?</p>
             ${body}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">
               <tr>
                 <td align="center">
-                  <a href="${appUrl}"
+                  <a href="${feedbackUrl}"
                      style="display:inline-block;background:#F5A623;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
-                    Jump Back In →
+                    Give Real Feedback →
                   </a>
                 </td>
               </tr>
             </table>
-            <p style="margin:24px 0 0;font-size:13px;color:#6B7280;text-align:center;">
-              Want to tell us what brought you in (or pulled you away)? <a href="${feedbackUrl}" style="color:#F5A623;text-decoration:none;">60 seconds here →</a>
-            </p>
           </td>
         </tr>
         <tr>
@@ -1703,16 +1694,15 @@ export async function sendOutreachBFollowupEmail(opts: { to: string; displayName
   const feedbackUrl = `${APP_URL}/outreach-feedback-b?uid=${encodeURIComponent(opts.userId ?? "")}`;
   let html = buildOutreachBFollowupEmailHtml({ displayName: opts.displayName, feedbackUrl });
   if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
-  const subject = `Draft season, ${opts.displayName}. You've done this before.`;
+  const subject = `${opts.displayName}, you were here at the start. What pulled you away?`;
   const text = `Hey ${opts.displayName},
 
-You placed a swayger. You know how this works. NFL Draft is April 23rd — we're running a pick challenge around it.
+You placed a swayger. That means you know what the product actually feels like. We sent you an email asking for your take and didn't hear back.
 
-We ran March Madness without you. We're not letting that happen again.
+We're still listening. What brought you in? What pulled you away? People who've actually used the product are the only ones who can answer that.
 
-Jump back into Swayger: ${APP_URL}
-
-Want to tell us what brought you in (or pulled you away)? 60 seconds: ${feedbackUrl}
+4 questions, under 60 seconds. Last ask — we mean it:
+${feedbackUrl}
 
 — The Swayger team`;
   await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
