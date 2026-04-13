@@ -1879,7 +1879,8 @@ export function registerMMAdminRoutes(app: Express): void {
   });
 
   // ── Test: send all email templates to a single address ────────────────────
-  // GET /admin/mm/api/send-test-emails?token=...&to=someone@example.com&template=all|outreach-a|outreach-b|thankyou
+  // GET /admin/mm/api/send-test-emails?token=...&to=someone@example.com
+  //   &template=all|outreach-a|outreach-b|thankyou|mm-followup|outreach-a-followup|outreach-b-followup
   app.get("/admin/mm/api/send-test-emails", async (req: Request, res: Response) => {
     const token = req.query.token as string | undefined;
     if (!isAdminToken(token)) { res.status(401).json({ ok: false, error: "Unauthorized" }); return; }
@@ -1890,25 +1891,24 @@ export function registerMMAdminRoutes(app: Express): void {
     const template = (req.query.template as string | undefined) ?? "all";
 
     try {
-      const { sendOutreachAEmail, sendOutreachBEmail, sendThankyouEmail } = await import("./email");
+      const {
+        sendOutreachAEmail, sendOutreachBEmail, sendThankyouEmail,
+        sendMMFollowupEmail, sendOutreachAFollowupEmail, sendOutreachBFollowupEmail,
+      } = await import("./email");
       const results: Record<string, string> = {};
 
       if (template === "all" || template === "outreach-a") {
         try {
           await sendOutreachAEmail({ to, displayName: "You", userId: undefined });
           results["outreach-a"] = "sent";
-        } catch (e) {
-          results["outreach-a"] = `error: ${e}`;
-        }
+        } catch (e) { results["outreach-a"] = `error: ${e}`; }
       }
 
       if (template === "all" || template === "outreach-b") {
         try {
           await sendOutreachBEmail({ to, displayName: "You", userId: undefined });
           results["outreach-b"] = "sent";
-        } catch (e) {
-          results["outreach-b"] = `error: ${e}`;
-        }
+        } catch (e) { results["outreach-b"] = `error: ${e}`; }
       }
 
       if (template === "all" || template === "thankyou") {
@@ -1929,9 +1929,28 @@ export function registerMMAdminRoutes(app: Express): void {
             userId: undefined,
           });
           results["thankyou"] = "sent";
-        } catch (e) {
-          results["thankyou"] = `error: ${e}`;
-        }
+        } catch (e) { results["thankyou"] = `error: ${e}`; }
+      }
+
+      if (template === "all" || template === "mm-followup") {
+        try {
+          await sendMMFollowupEmail({ to, displayName: "You", userId: undefined });
+          results["mm-followup"] = "sent";
+        } catch (e) { results["mm-followup"] = `error: ${e}`; }
+      }
+
+      if (template === "all" || template === "outreach-a-followup") {
+        try {
+          await sendOutreachAFollowupEmail({ to, displayName: "You", userId: undefined });
+          results["outreach-a-followup"] = "sent";
+        } catch (e) { results["outreach-a-followup"] = `error: ${e}`; }
+      }
+
+      if (template === "all" || template === "outreach-b-followup") {
+        try {
+          await sendOutreachBFollowupEmail({ to, displayName: "You", userId: undefined });
+          results["outreach-b-followup"] = "sent";
+        } catch (e) { results["outreach-b-followup"] = `error: ${e}`; }
       }
 
       res.json({ ok: true, to, results });
