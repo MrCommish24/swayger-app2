@@ -4,6 +4,7 @@ import * as path from "path";
 import { sendNotificationEmail, type NotifyPayload } from "./email";
 import { registerMMAdminRoutes } from "./routes-mm-admin";
 import { registerMMSpecialRoutes } from "./routes-mm-special";
+import { registerNBARoutes } from "./routes-nba";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/promo", (_req: Request, res: Response) => {
@@ -35,6 +36,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   registerMMAdminRoutes(app);
   registerMMSpecialRoutes(app);
+  registerNBARoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

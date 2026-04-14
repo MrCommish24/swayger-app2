@@ -22,31 +22,33 @@ import {
   displayStatus,
   categoryIcon,
 } from "@/lib/swayger";
-import { MARCH_MADNESS_ACTIVE, getCurrentRound } from "@/lib/march-madness";
+import { MARCH_MADNESS_ACTIVE } from "@/lib/march-madness";
+import { NBA_PLAYOFFS_ACTIVE } from "@/lib/nba-playoffs";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
 
 const MM_ORANGE = "#E8590A";
+const NBA_BLUE = "#1D428A";
+const NBA_GOLD = "#FFC72C";
 
-function MarchMadnessBanner({ onPress }: { onPress: () => void }) {
-  if (!MARCH_MADNESS_ACTIVE) return null;
-  const round = getCurrentRound();
+function PlayoffsBanner({ onPress }: { onPress: () => void }) {
+  if (!NBA_PLAYOFFS_ACTIVE) return null;
   return (
     <Pressable
-      style={({ pressed }) => [styles.mmBanner, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [styles.playoffsBanner, pressed && { opacity: 0.88 }]}
       onPress={onPress}
     >
       <View style={styles.mmBannerLeft}>
         <Text style={styles.mmBannerEmoji}>🏀</Text>
         <View style={styles.mmBannerText}>
-          <Text style={styles.mmBannerTitle}>Leaderboard Challenge 🏆</Text>
-          <Text style={styles.mmBannerSub}>
-            Win a $100 gift card · Make your picks
+          <Text style={styles.playoffsBannerTitle}>NBA Playoffs Challenge 🏆</Text>
+          <Text style={styles.playoffsBannerSub}>
+            Pick series winners · Win $100 · Race the leaderboard
           </Text>
         </View>
       </View>
       <View style={styles.mmBannerArrow}>
-        <Ionicons name="chevron-forward" size={16} color={MM_ORANGE} />
+        <Ionicons name="chevron-forward" size={16} color={NBA_GOLD} />
       </View>
     </Pressable>
   );
@@ -348,27 +350,6 @@ export default function DashboardScreen() {
         <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
       )}
 
-      {user && MARCH_MADNESS_ACTIVE && (
-        profile?.referral_reward_round ? (
-          <Pressable style={styles.mmReferralBannerActive} onPress={() => router.push("/march-madness")}>
-            <Ionicons name="flash" size={18} color="#FF8C00" />
-            <View style={styles.mmReferralBannerText}>
-              <Text style={styles.mmReferralBannerTitle}>2X Reward Active 🔥</Text>
-              <Text style={styles.mmReferralBannerSub}>Your March Madness picks score double this round.</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={15} color="#FF8C00" />
-          </Pressable>
-        ) : (
-          <Pressable style={styles.mmReferralBanner} onPress={() => router.push("/march-madness")}>
-            <Ionicons name="gift-outline" size={18} color="#FF8C00" />
-            <View style={styles.mmReferralBannerText}>
-              <Text style={styles.mmReferralBannerTitle}>Get 2X points next round</Text>
-              <Text style={styles.mmReferralBannerSub}>Share a March Madness featured matchup with a new user → they sign up & accept a Swayger → your picks score double.</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={15} color="#FF8C00" />
-          </Pressable>
-        )
-      )}
 
       {!isLoading && !bannerDismissed && (
         <PendingBanner
@@ -380,7 +361,7 @@ export default function DashboardScreen() {
         />
       )}
 
-      <MarchMadnessBanner onPress={() => router.push("/march-madness")} />
+      <PlayoffsBanner onPress={() => router.push("/playoffs")} />
 
       <View style={styles.actions}>
         <Pressable
@@ -746,6 +727,31 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(232,89,10,0.15)",
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  playoffsBanner: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 24,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    backgroundColor: "rgba(29,66,138,0.18)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(29,66,138,0.50)",
+  },
+  playoffsBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  playoffsBannerSub: {
+    fontSize: 12,
+    color: "#FFC72C",
+    fontWeight: "500" as const,
+    marginTop: 1,
   },
 
   actions: { flexDirection: "row", gap: 12, paddingHorizontal: 24, marginBottom: 12 },

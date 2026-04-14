@@ -9,7 +9,7 @@
 // To disable after the season: set MARCH_MADNESS_ACTIVE = false
 // ─────────────────────────────────────────────────────────────
 
-export const MARCH_MADNESS_ACTIVE = true;
+export const MARCH_MADNESS_ACTIVE = false;
 
 export interface MMTeam {
   name: string;

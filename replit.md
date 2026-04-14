@@ -38,8 +38,13 @@ app/
   h2h/
     index.tsx          # H2H opponents list — all opponents + aggregate records
     [opponentId].tsx   # Detailed H2H receipt (scoreboard, category breakdown, game log, share)
+  playoffs/
+    _layout.tsx        # NBA Playoffs stack layout
+    index.tsx          # NBA Playoffs hub (hero, bracket CTA, live games w/ odds, leaderboard snippet, prizes)
+    bracket.tsx        # Bracket picks UI — pick series winner + games per round (locks per round)
+    leaderboard.tsx    # NBA Playoffs points race leaderboard with per-round breakdown
   march-madness/
-    index.tsx          # March Madness hub (hero, round progress, featured matchups, MM stats, share card, leaderboard link)
+    index.tsx          # March Madness hub (INACTIVE — MARCH_MADNESS_ACTIVE=false)
   join.tsx             # Join Swayger screen — enter code or scan QR
 components/
   ErrorBoundary.tsx    # Error boundary + fallback with dev error details modal
