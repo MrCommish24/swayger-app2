@@ -335,9 +335,12 @@ export function registerNBARoutes(app: Express): void {
 
       if (error) throw error;
       res.json({ ok: true });
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "message" in err
+        ? (err as { message: string }).message
+        : String(err);
       console.error("[nba/admin/series]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res.status(500).json({ ok: false, error: msg });
     }
   });
 
@@ -360,13 +363,18 @@ export function registerNBARoutes(app: Express): void {
         return;
       }
 
-      const { error: updateError } = await supabase
+      const { data: updateData, error: updateError } = await supabase
         .from("nba_playoff_series")
         .update({ winner, games, updated_at: new Date().toISOString() })
         .eq("id", id)
-        .eq("season", "2026");
+        .eq("season", "2026")
+        .select();
 
       if (updateError) throw updateError;
+      if (!updateData || updateData.length === 0) {
+        res.status(403).json({ ok: false, error: `Series '${id}' not found or write blocked by DB policy. Run the RLS fix SQL in Supabase.` });
+        return;
+      }
 
       // Recompute all scores
       await recomputeScores(supabase);
