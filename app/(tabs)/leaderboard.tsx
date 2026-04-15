@@ -260,7 +260,15 @@ function RecentSection({ rows, profileMap }: RecentSectionProps) {
             </View>
             <View style={styles.recentRight}>
               {!isDraw && !isNoContest && (
-                <Text style={styles.recentUnits}>{s.stake_units} SP</Text>
+                <Text style={styles.recentUnits}>
+                  {s.stake_units === 10
+                    ? "Gut Feeling"
+                    : s.stake_units === 25
+                    ? "Pretty Sure"
+                    : s.stake_units === 50
+                    ? "No Doubt"
+                    : `${s.stake_units} SP`}
+                </Text>
               )}
               <Text style={styles.recentDate}>{formatDate(s.updated_at)}</Text>
             </View>
