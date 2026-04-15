@@ -279,6 +279,68 @@ function RecentSection({ rows, profileMap }: RecentSectionProps) {
   );
 }
 
+function MyStandingCard({
+  entries,
+  userId,
+  balanceMap,
+  onPress,
+}: {
+  entries: LeaderboardEntry[];
+  userId: string | undefined;
+  balanceMap: Map<string, number>;
+  onPress: () => void;
+}) {
+  const rankIndex = userId ? entries.findIndex((e) => e.userId === userId) : -1;
+  const entry = rankIndex >= 0 ? entries[rankIndex] : null;
+  const rank = rankIndex + 1;
+  const sp = userId ? (balanceMap.get(userId) ?? 0) : 0;
+  const hasGames = entry && (entry.wins + entry.losses + entry.draws) > 0;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.myStandingCard, pressed && styles.entryRowPressed]}
+      onPress={onPress}
+    >
+      <View style={styles.myStandingLeft}>
+        <View style={styles.myStandingIcon}>
+          <Ionicons name="person" size={16} color={Colors.dark.tint} />
+        </View>
+        <View>
+          <Text style={styles.myStandingLabel}>Your Standing</Text>
+          {!hasGames ? (
+            <Text style={styles.myStandingEmpty}>No games settled yet — your spot is waiting</Text>
+          ) : (
+            <View style={styles.myStandingStats}>
+              <Text style={styles.myStandingRecord}>
+                {entry!.wins}–{entry!.losses}{entry!.draws > 0 ? `–${entry!.draws}` : ""}
+              </Text>
+              {entry!.currentStreak >= 2 && (
+                <View style={styles.streakBadge}>
+                  <Text style={styles.streakText}>🔥 {entry!.currentStreak}W</Text>
+                </View>
+              )}
+              <Text style={styles.myStandingSP}>{sp.toLocaleString()} SP</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      <View style={styles.myStandingRight}>
+        {rank > 0 ? (
+          <>
+            <Text style={styles.myRankNum}>#{rank}</Text>
+            {rank > 100 && (
+              <Text style={styles.myRankSub}>of {entries.length}</Text>
+            )}
+          </>
+        ) : (
+          <Text style={styles.myRankDash}>—</Text>
+        )}
+        <Ionicons name="chevron-forward" size={14} color={Colors.dark.tabIconDefault} />
+      </View>
+    </Pressable>
+  );
+}
+
 export default function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
@@ -319,6 +381,9 @@ export default function LeaderboardScreen() {
     () => computeLeaderboard(filteredRows, profileMap, balanceMap),
     [filteredRows, profileMap, balanceMap]
   );
+
+  // Cap displayed list at 100 — full entries used for accurate ranking in MyStandingCard
+  const displayEntries = useMemo(() => entries.slice(0, 100), [entries]);
 
   function renderEntry({ item, index }: { item: LeaderboardEntry; index: number }) {
     const decided = item.wins + item.losses;
@@ -425,7 +490,7 @@ export default function LeaderboardScreen() {
         </View>
       ) : showList ? (
         <FlatList
-          data={entries}
+          data={displayEntries}
           keyExtractor={(item) => item.userId}
           renderItem={renderEntry}
           contentContainerStyle={[
@@ -433,13 +498,21 @@ export default function LeaderboardScreen() {
             { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 },
           ]}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={!!entries.length}
+          scrollEnabled={!!displayEntries.length}
           ListHeaderComponent={
-            <View style={styles.columnHeaders}>
-              <View style={styles.rankCol} />
-              <Text style={[styles.colLabel, { flex: 1 }]}>Player</Text>
-              <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  Swayger Pts  Win%</Text>
-            </View>
+            <>
+              <MyStandingCard
+                entries={entries}
+                userId={user?.id}
+                balanceMap={balanceMap}
+                onPress={() => router.push("/h2h")}
+              />
+              <View style={styles.columnHeaders}>
+                <View style={styles.rankCol} />
+                <Text style={[styles.colLabel, { flex: 1 }]}>Player</Text>
+                <Text style={[styles.colLabel, styles.colLabelRight]}>W–L  Swayger Pts  Win%</Text>
+              </View>
+            </>
           }
           ListFooterComponent={
             <RecentSection rows={filteredRows} profileMap={profileMap} />
@@ -532,6 +605,76 @@ const styles = StyleSheet.create({
   spPillTextMe: { color: Colors.dark.tint },
   winPct: { fontSize: 12, color: Colors.dark.tabIconDefault, fontWeight: "500" as const },
 
+  myStandingCard: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    backgroundColor: "rgba(99, 102, 241, 0.08)",
+    borderWidth: 1.5,
+    borderColor: Colors.dark.tint,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  myStandingLeft: {
+    flex: 1,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+  },
+  myStandingIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  myStandingLabel: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    color: Colors.dark.tint,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  myStandingEmpty: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+  },
+  myStandingStats: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  myStandingRecord: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  myStandingSP: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: Colors.dark.accentGold,
+  },
+  myStandingRight: {
+    alignItems: "flex-end" as const,
+    gap: 2,
+  },
+  myRankNum: {
+    fontSize: 20,
+    fontWeight: "800" as const,
+    color: Colors.dark.tint,
+  },
+  myRankSub: {
+    fontSize: 10,
+    color: Colors.dark.tabIconDefault,
+  },
+  myRankDash: {
+    fontSize: 20,
+    fontWeight: "700" as const,
+    color: Colors.dark.tabIconDefault,
+  },
   recentSection: {
     marginTop: 24, paddingTop: 20,
     borderTopWidth: 1, borderTopColor: Colors.dark.border, gap: 8,
