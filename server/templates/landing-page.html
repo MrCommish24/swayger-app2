@@ -5,510 +5,524 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        margin: 0;
-        padding: 32px 20px;
-        text-align: center;
-        background: #fff;
-        color: #222;
-        line-height: 1.5;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+        background: #0d1117;
+        color: #f0f6fc;
         min-height: 100vh;
+        line-height: 1.5;
       }
-      .wrapper {
-        max-width: 480px;
-        margin: 0 auto;
-      }
-      h1 {
-        font-size: 26px;
-        font-weight: 600;
-        margin: 0;
-        color: #111;
-      }
-      .subtitle {
-        font-size: 15px;
-        color: #666;
-        margin-top: 8px;
-        margin-bottom: 32px;
-      }
+
+      /* ── Loading spinner ── */
       .loading {
         display: none;
-        margin: 60px 0;
+        position: fixed;
+        inset: 0;
+        background: #0d1117;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 16px;
       }
       .spinner {
-        border: 2px solid #ddd;
-        border-top-color: #333;
+        border: 2px solid #1e2d44;
+        border-top-color: #1da1f2;
         border-radius: 50%;
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
         animation: spin 0.8s linear infinite;
-        margin: 20px auto;
       }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-      .loading-text {
-        font-size: 16px;
-        color: #444;
-      }
-      .content {
-        display: block;
-      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .loading-text { font-size: 16px; color: #8b9ab3; }
 
-      .steps-container {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-      }
+      /* ── Page content ── */
+      .page { display: block; }
 
-      .step {
-        padding: 24px;
-        border: 1px solid #ddd;
-        border-radius: 12px;
+      /* ── Header ── */
+      .site-header {
         text-align: center;
-        background: #fafafa;
+        padding: 52px 24px 48px;
       }
-      .step-header {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        margin-bottom: 12px;
-      }
-      .step-number {
-        width: 28px;
-        height: 28px;
-        border: 1px solid #999;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 14px;
-        flex-shrink: 0;
-        color: #555;
-      }
-      .step-title {
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0;
-        color: #222;
-      }
-      .step-description {
-        font-size: 14px;
-        margin-bottom: 16px;
-        color: #666;
-      }
-
-      .store-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        justify-content: center;
-        flex-wrap: wrap;
-      }
-      .store-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 12px 20px;
-        font-size: 14px;
-        font-weight: 500;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        text-decoration: none;
-        color: #333;
-        background: #fff;
-        transition: all 0.15s;
-      }
-      .store-button:hover {
-        background: #f5f5f5;
-        border-color: #999;
-      }
-      .store-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 8px 0;
-        font-size: 13px;
-        font-weight: 400;
-        text-decoration: underline;
-        text-underline-offset: 2px;
-        color: #666;
-        background: none;
-        border: none;
-        transition: color 0.15s;
-      }
-      .store-link:hover {
-        color: #333;
-      }
-      .store-link .store-icon {
-        width: 14px;
-        height: 14px;
-      }
-      .store-icon {
-        width: 18px;
-        height: 18px;
-      }
-
-      .qr-section {
-        background: #333;
-        color: #fff;
-        border-color: #333;
-      }
-      .qr-section .step-number {
-        border-color: rgba(255, 255, 255, 0.5);
-        color: #fff;
-      }
-      .qr-section .step-title {
-        color: #fff;
-      }
-      .qr-section .step-description {
-        color: rgba(255, 255, 255, 0.7);
-      }
-      .qr-code {
-        width: 180px;
-        height: 180px;
-        margin: 0 auto 16px;
-        background: #fff;
-        border-radius: 8px;
-        padding: 12px;
-      }
-      .qr-code canvas {
-        width: 100%;
-        height: 100%;
-      }
-      .open-button {
-        display: inline-block;
-        padding: 12px 24px;
-        font-size: 14px;
-        font-weight: 500;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 8px;
-        text-decoration: none;
-        color: #333;
-        background: #fff;
-        transition: opacity 0.15s;
-      }
-      .open-button:hover {
-        opacity: 0.9;
-      }
-
-      /* Desktop styles */
-      @media (min-width: 768px) {
-        body {
-          padding: 48px 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .wrapper {
-          max-width: 720px;
-        }
-        h1 {
-          font-size: 32px;
-          margin-bottom: 10px;
-        }
-        .subtitle {
-          font-size: 16px;
-          margin-bottom: 40px;
-        }
-        .steps-container {
-          flex-direction: row;
-          gap: 20px;
-          align-items: stretch;
-        }
-        .step {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          padding: 28px;
-        }
-        .step-description {
-          flex-grow: 1;
-        }
-        .store-buttons {
-          flex-direction: column;
-          gap: 10px;
-        }
-        .qr-code {
-          width: 200px;
-          height: 200px;
-        }
-      }
-
-      /* Large desktop */
-      @media (min-width: 1024px) {
-        .wrapper {
-          max-width: 800px;
-        }
-        h1 {
-          font-size: 36px;
-        }
-        .steps-container {
-          gap: 28px;
-        }
-        .step {
-          padding: 32px;
-        }
-      }
-
-      /* How It Works section */
-      .hiw-section {
-        margin-bottom: 48px;
-      }
-      .hiw-label {
+      .brand-label {
         font-size: 11px;
         font-weight: 700;
-        letter-spacing: 2px;
-        text-transform: uppercase;
+        letter-spacing: 3px;
         color: #1da1f2;
-        margin-bottom: 10px;
+        text-transform: uppercase;
+        margin-bottom: 14px;
       }
-      .hiw-title {
-        font-size: 26px;
+      .site-header h1 {
+        font-size: 38px;
         font-weight: 800;
-        color: #111;
-        margin: 0 0 6px;
-        line-height: 1.2;
+        color: #f0f6fc;
+        line-height: 1.1;
+        margin-bottom: 12px;
       }
-      .hiw-subtitle {
-        font-size: 15px;
-        color: #666;
-        margin: 0 0 28px;
+      .site-header p {
+        font-size: 17px;
+        color: #8b9ab3;
       }
-      .hiw-steps {
+
+      /* ── Phone mockup section ── */
+      .hiw-section {
+        padding: 0 24px 56px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+
+      .phones-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+
+      @media (min-width: 900px) {
+        .phones-grid {
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+          align-items: start;
+        }
+        .site-header h1 { font-size: 46px; }
+      }
+
+      .phone-step {
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        align-items: center;
+        gap: 24px;
       }
-      .hiw-step {
+
+      /* Phone frame */
+      .phone {
+        width: 100%;
+        max-width: 280px;
+        background: #0d1117;
+        border-radius: 42px;
+        border: 2px solid #2a3444;
+        box-shadow:
+          0 0 0 1px #1a2232,
+          0 32px 64px rgba(0,0,0,0.7),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        overflow: hidden;
+      }
+
+      .status-bar {
         display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        background: #f8fafc;
-        border: 1px solid #e8edf2;
-        border-radius: 14px;
-        padding: 18px 20px;
-        text-align: left;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px 8px;
       }
-      .hiw-num {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        background: #1da1f2;
-        color: #fff;
-        font-size: 15px;
-        font-weight: 800;
+      .status-time { font-size: 12px; font-weight: 700; color: #f0f6fc; }
+      .status-icons { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #f0f6fc; font-weight: 600; }
+
+      .screen { background: #0d1117; }
+
+      /* Screen 1 — Feed */
+      .feed-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px 12px; }
+      .feed-title { font-size: 20px; font-weight: 800; color: #f0f6fc; }
+      .bell-icon { font-size: 18px; }
+
+      .challenge-banner {
+        margin: 0 12px 12px;
+        background: linear-gradient(135deg, #1a2d50 0%, #0f1e38 100%);
+        border: 1px solid rgba(29,161,242,0.25);
+        border-radius: 12px;
+        padding: 10px 12px;
         display: flex;
         align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        margin-top: 1px;
+        gap: 8px;
       }
-      .hiw-text { flex: 1; }
-      .hiw-step-title {
-        font-size: 16px;
-        font-weight: 700;
-        color: #111;
-        margin: 0 0 4px;
-      }
-      .hiw-step-desc {
-        font-size: 13px;
-        color: #666;
-        margin: 0;
-        line-height: 1.5;
-      }
-      .hiw-divider {
+      .banner-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #f97316, #ea580c); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+      .banner-text { flex: 1; }
+      .banner-text .bt { font-size: 12px; font-weight: 700; color: #f0f6fc; }
+      .banner-text .bs { font-size: 10px; color: #8b9ab3; margin-top: 1px; }
+      .banner-arrow { color: #1da1f2; font-size: 14px; }
+
+      .card { margin: 0 12px 9px; background: #131c2e; border: 1px solid #1e2d44; border-radius: 12px; padding: 10px 12px; }
+      .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+      .card-title { font-size: 13px; font-weight: 700; color: #f0f6fc; line-height: 1.3; flex: 1; margin-right: 6px; }
+      .badge { font-size: 8px; font-weight: 700; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 5px; flex-shrink: 0; text-transform: uppercase; }
+      .badge-active { background: #0f3d1e; color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
+      .badge-pending { background: #2d1f0f; color: #f97316; border: 1px solid rgba(249,115,22,0.25); }
+      .card-meta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #8b9ab3; }
+      .sp-pill { display: flex; align-items: center; gap: 2px; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2); border-radius: 5px; padding: 2px 5px; font-size: 10px; font-weight: 700; color: #22c55e; }
+      .picks-row { display: flex; gap: 5px; margin-top: 7px; }
+      .pick-box { flex: 1; background: #0d1117; border: 1px solid #1e2d44; border-radius: 7px; padding: 5px 7px; }
+      .pick-label { font-size: 8px; color: #8b9ab3; text-transform: uppercase; letter-spacing: 0.5px; }
+      .pick-val { font-size: 11px; font-weight: 600; color: #f0f6fc; margin-top: 1px; }
+
+      /* Screen 2 — Create */
+      .create-header { padding: 8px 16px 10px; }
+      .create-title { font-size: 20px; font-weight: 800; color: #f0f6fc; }
+      .create-sub { font-size: 12px; color: #8b9ab3; margin-top: 2px; }
+
+      .form-section { padding: 0 12px 10px; }
+      .form-label { font-size: 9px; font-weight: 700; color: #8b9ab3; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 5px; }
+      .form-input { background: #131c2e; border: 1px solid #1e2d44; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #f0f6fc; width: 100%; }
+      .form-hint { font-size: 9px; color: #4a5a72; margin-top: 3px; }
+
+      .category-row { display: flex; gap: 5px; flex-wrap: wrap; }
+      .cat-chip { display: flex; align-items: center; gap: 3px; background: #131c2e; border: 1px solid #1e2d44; border-radius: 7px; padding: 5px 8px; font-size: 10px; color: #8b9ab3; }
+      .cat-chip.active { border-color: #1da1f2; background: rgba(29,161,242,0.08); color: #1da1f2; }
+
+      .stake-area { padding: 0 12px 10px; }
+      .stake-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+      .balance-pill { display: flex; align-items: center; gap: 2px; background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3); border-radius: 20px; padding: 2px 7px; font-size: 9px; font-weight: 700; color: #eab308; }
+      .stake-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+      .stake-btn { width: 32px; height: 32px; border-radius: 16px; background: #131c2e; border: 1px solid #1e2d44; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #f0f6fc; }
+      .stake-val { font-size: 26px; font-weight: 800; color: #1da1f2; min-width: 44px; text-align: center; }
+      .quick-row { display: flex; gap: 4px; flex-wrap: wrap; }
+      .quick-chip { background: rgba(29,161,242,0.08); border: 1px solid rgba(29,161,242,0.25); border-radius: 6px; padding: 4px 8px; font-size: 10px; font-weight: 700; color: #1da1f2; }
+      .quick-chip.reset { background: transparent; border-color: #1e2d44; color: #4a5a72; }
+
+      .stake-note-area { padding: 0 12px 10px; }
+      .note-input { background: #131c2e; border: 1px solid rgba(249,115,22,0.2); border-radius: 9px; padding: 8px 10px; font-size: 11px; color: #f97316; width: 100%; font-style: italic; }
+
+      .create-btn { margin: 4px 12px 14px; background: linear-gradient(135deg, #1da1f2, #0e8bd8); border-radius: 11px; padding: 11px; display: flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 4px 14px rgba(29,161,242,0.35); }
+      .create-btn span { font-size: 14px; font-weight: 700; color: #fff; }
+
+      /* Screen 3 — Share */
+      .share-nav { padding: 6px 12px; display: flex; align-items: center; gap: 5px; }
+      .back-text { font-size: 10px; color: #1da1f2; }
+
+      .swayger-detail { padding: 2px 12px 12px; }
+      .swayger-dtitle { font-size: 14px; font-weight: 800; color: #f0f6fc; line-height: 1.3; margin-bottom: 7px; }
+      .detail-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
+      .dchip { display: flex; align-items: center; gap: 3px; background: #131c2e; border: 1px solid #1e2d44; border-radius: 7px; padding: 3px 7px; font-size: 10px; color: #8b9ab3; }
+      .dchip.sp { background: rgba(29,161,242,0.08); border-color: rgba(29,161,242,0.25); color: #1da1f2; font-weight: 700; }
+      .dchip.pending { background: #2d1f0f; border-color: rgba(249,115,22,0.25); color: #f97316; font-weight: 700; }
+
+      .share-box { background: #131c2e; border: 2px dashed #1e2d44; border-radius: 12px; padding: 14px; text-align: center; margin-bottom: 9px; }
+      .share-box-label { font-size: 9px; font-weight: 700; color: #8b9ab3; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 9px; }
+      .share-code { font-size: 24px; font-weight: 900; color: #f0f6fc; letter-spacing: 5px; }
+
+      .share-btn { background: linear-gradient(135deg, #1da1f2, #0e8bd8); border-radius: 9px; padding: 10px; text-align: center; font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 7px; box-shadow: 0 4px 10px rgba(29,161,242,0.3); }
+      .copy-btn { background: #131c2e; border: 1px solid #1e2d44; border-radius: 9px; padding: 8px; text-align: center; font-size: 12px; color: #8b9ab3; margin-bottom: 8px; }
+      .waiting-text { font-size: 10px; color: #4a5a72; text-align: center; margin-bottom: 12px; }
+
+      .your-pick-box { background: #131c2e; border: 1px solid #1e2d44; border-radius: 11px; padding: 10px; }
+      .yp-label { font-size: 9px; font-weight: 700; color: #8b9ab3; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+      .yp-val { font-size: 13px; font-weight: 700; color: #f0f6fc; }
+      .stake-note-display { display: flex; align-items: center; gap: 4px; margin-top: 5px; }
+      .snd-label { font-size: 9px; color: #4a5a72; }
+      .snd-val { font-size: 10px; font-weight: 600; color: #f97316; font-style: italic; }
+
+      /* Tab bar (all phones) */
+      .tab-bar { display: flex; justify-content: space-around; background: #0a1221; border-top: 1px solid #1e2d44; padding: 7px 0 18px; }
+      .tab-item { display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 8px; color: #4a5a72; font-weight: 600; }
+      .tab-item.active { color: #1da1f2; }
+      .tab-icon { font-size: 16px; }
+
+      /* Step labels below phones */
+      .step-label { text-align: center; }
+      .step-num { width: 30px; height: 30px; border-radius: 50%; background: #1da1f2; color: #fff; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; box-shadow: 0 4px 12px rgba(29,161,242,0.4); }
+      .step-label h3 { font-size: 19px; font-weight: 800; color: #f0f6fc; margin-bottom: 5px; }
+      .step-label p { font-size: 13px; color: #8b9ab3; line-height: 1.5; max-width: 240px; margin: 0 auto; }
+
+      /* ── Divider ── */
+      .section-divider {
         border: none;
-        border-top: 1px solid #e8edf2;
-        margin: 0 0 36px;
+        border-top: 1px solid #1e2d44;
+        max-width: 480px;
+        margin: 0 auto 36px;
+      }
+
+      /* ── Install section ── */
+      .install-section {
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 0 24px 56px;
+        text-align: center;
       }
       .install-label {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         letter-spacing: 1.5px;
         text-transform: uppercase;
-        color: #999;
-        margin-bottom: 16px;
+        color: #4a5a72;
+        margin-bottom: 20px;
+      }
+      .steps-container { display: flex; flex-direction: column; gap: 16px; }
+
+      .step {
+        padding: 22px;
+        border: 1px solid #1e2d44;
+        border-radius: 12px;
+        text-align: center;
+        background: #131c2e;
+      }
+      .step-header { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; }
+      .step-number { width: 26px; height: 26px; border: 1px solid #4a5a72; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex-shrink: 0; color: #8b9ab3; }
+      .step-title { font-size: 17px; font-weight: 600; margin: 0; color: #f0f6fc; }
+      .step-description { font-size: 13px; margin-bottom: 14px; color: #8b9ab3; }
+
+      .store-buttons { display: flex; flex-direction: column; gap: 6px; justify-content: center; flex-wrap: wrap; }
+      .store-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; font-size: 14px; font-weight: 500; border: 1px solid #2a3444; border-radius: 8px; text-decoration: none; color: #f0f6fc; background: #1a2332; transition: all 0.15s; }
+      .store-button:hover { background: #1e2a3d; border-color: #3a4a60; }
+      .store-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 0; font-size: 13px; font-weight: 400; text-decoration: underline; text-underline-offset: 2px; color: #4a5a72; background: none; border: none; transition: color 0.15s; }
+      .store-link:hover { color: #8b9ab3; }
+      .store-link .store-icon { width: 14px; height: 14px; }
+      .store-icon { width: 18px; height: 18px; }
+
+      .qr-section { background: #0d1117; border-color: #1e2d44; }
+      .qr-section .step-number { border-color: rgba(255,255,255,0.25); color: #8b9ab3; }
+      .qr-section .step-title { color: #f0f6fc; }
+      .qr-section .step-description { color: #8b9ab3; }
+      .qr-code { width: 160px; height: 160px; margin: 0 auto 14px; background: #fff; border-radius: 8px; padding: 10px; }
+      .qr-code canvas { width: 100%; height: 100%; }
+      .open-button { display: inline-block; padding: 11px 22px; font-size: 14px; font-weight: 500; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; text-decoration: none; color: #111; background: #f0f6fc; transition: opacity 0.15s; }
+      .open-button:hover { opacity: 0.9; }
+
+      /* ── Site footer ── */
+      .site-footer {
+        text-align: center;
+        padding: 20px 24px 40px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: #1e2d44;
+        text-transform: uppercase;
+        border-top: 1px solid #1a2232;
       }
 
       @media (min-width: 768px) {
-        .hiw-steps {
-          flex-direction: row;
-          gap: 16px;
-        }
-        .hiw-step {
-          flex: 1;
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 12px;
-        }
-        .hiw-title { font-size: 30px; }
-      }
-
-      /* Dark mode */
-      @media (prefers-color-scheme: dark) {
-        body {
-          background: #0d0d0d;
-          color: #e0e0e0;
-        }
-        h1 {
-          color: #f5f5f5;
-        }
-        .subtitle {
-          color: #999;
-        }
-        .spinner {
-          border-color: #444;
-          border-top-color: #ccc;
-        }
-        .loading-text {
-          color: #aaa;
-        }
-        .step {
-          border-color: #333;
-          background: #1a1a1a;
-        }
-        .step-number {
-          border-color: #666;
-          color: #bbb;
-        }
-        .step-title {
-          color: #f0f0f0;
-        }
-        .step-description {
-          color: #888;
-        }
-        .store-button {
-          border-color: #444;
-          color: #e0e0e0;
-          background: #222;
-        }
-        .store-button:hover {
-          background: #2a2a2a;
-          border-color: #666;
-        }
-        .store-link {
-          color: #888;
-        }
-        .store-link:hover {
-          color: #ccc;
-        }
-        .qr-section {
-          background: #111;
-          border-color: #333;
-        }
-        .qr-section .step-number {
-          border-color: rgba(255, 255, 255, 0.4);
-        }
-        .qr-section .step-description {
-          color: rgba(255, 255, 255, 0.6);
-        }
-        .open-button {
-          background: #f0f0f0;
-          color: #111;
-        }
-        .open-button:hover {
-          background: #e0e0e0;
-        }
-        .hiw-step {
-          background: #161b22;
-          border-color: #21262d;
-        }
-        .hiw-step-title { color: #f0f6fc; }
-        .hiw-step-desc { color: #8b949e; }
-        .hiw-title { color: #f0f6fc; }
-        .hiw-subtitle { color: #8b949e; }
-        .hiw-divider { border-color: #21262d; }
-        .install-label { color: #555; }
+        .steps-container { flex-direction: row; gap: 20px; align-items: stretch; }
+        .step { flex: 1; display: flex; flex-direction: column; }
+        .step-description { flex-grow: 1; }
+        .store-buttons { flex-direction: column; gap: 10px; }
+        .qr-code { width: 180px; height: 180px; }
       }
     </style>
   </head>
   <body>
-    <div class="wrapper">
-      <div class="loading" id="loading">
-        <div class="spinner"></div>
-        <div class="loading-text">Opening in Expo Go...</div>
+    <!-- Loading spinner (shown on mobile redirect) -->
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="loading-text">Opening in Expo Go...</div>
+    </div>
+
+    <!-- Page content (shown on desktop) -->
+    <div class="page" id="content">
+
+      <!-- Header -->
+      <div class="site-header">
+        <div class="brand-label">Swayger</div>
+        <h1>How to Create a Swayger</h1>
+        <p>Challenge anyone to a 1v1 wager — in under 60 seconds</p>
       </div>
 
-      <div class="content" id="content">
-        <h1>APP_NAME_PLACEHOLDER</h1>
-        <p class="subtitle">1v1 social wager contracts — for fun</p>
+      <!-- Phone mockups -->
+      <div class="hiw-section">
+        <div class="phones-grid">
 
-        <!-- How It Works -->
-        <div class="hiw-section">
-          <p class="hiw-label">How It Works</p>
-          <h2 class="hiw-title">Create a Swayger in under 60 seconds</h2>
-          <p class="hiw-subtitle">Challenge anyone to a wager on anything — sports, pop culture, life.</p>
-          <div class="hiw-steps">
-            <div class="hiw-step">
-              <div class="hiw-num">1</div>
-              <div class="hiw-text">
-                <p class="hiw-step-title">Set the Terms</p>
-                <p class="hiw-step-desc">Name your wager, pick a category, bet your Swayger Points, and add a stake note — "loser buys pizza," bragging rights, whatever's on the line.</p>
+          <!-- ── PHONE 1: Feed ── -->
+          <div class="phone-step">
+            <div class="phone">
+              <div class="status-bar">
+                <span class="status-time">9:41</span>
+                <div class="status-icons"><span>••• WiFi</span><span>🔋</span></div>
+              </div>
+              <div class="screen">
+                <div class="feed-header">
+                  <span class="feed-title">Swaygers</span>
+                  <span class="bell-icon">🔔</span>
+                </div>
+                <div class="challenge-banner">
+                  <div class="banner-icon">🏀</div>
+                  <div class="banner-text">
+                    <div class="bt">NBA Playoffs Live</div>
+                    <div class="bs">Make your bracket picks now</div>
+                  </div>
+                  <span class="banner-arrow">›</span>
+                </div>
+                <div class="card">
+                  <div class="card-top">
+                    <span class="card-title">Chiefs beat the Eagles in the Super Bowl</span>
+                    <span class="badge badge-active">Active</span>
+                  </div>
+                  <div class="card-meta">🏈 Sports &nbsp;<span class="sp-pill">⚡ 250 SP</span></div>
+                  <div class="picks-row">
+                    <div class="pick-box"><div class="pick-label">You</div><div class="pick-val">Chiefs win</div></div>
+                    <div class="pick-box"><div class="pick-label">Them</div><div class="pick-val">Eagles +4.5</div></div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-top">
+                    <span class="card-title">Lakers win the championship this season</span>
+                    <span class="badge badge-pending">Pending</span>
+                  </div>
+                  <div class="card-meta">🏀 Sports &nbsp;<span class="sp-pill">⚡ 100 SP</span></div>
+                </div>
+                <div class="card">
+                  <div class="card-top">
+                    <span class="card-title">First episode of Season 2 drops by March</span>
+                    <span class="badge badge-active">Active</span>
+                  </div>
+                  <div class="card-meta">🎬 Entertainment &nbsp;<span class="sp-pill">⚡ 50 SP</span></div>
+                </div>
+              </div>
+              <div class="tab-bar">
+                <div class="tab-item active"><span class="tab-icon">⚡</span>Swaygers</div>
+                <div class="tab-item"><span class="tab-icon">＋</span>Create</div>
+                <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+                <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
               </div>
             </div>
-            <div class="hiw-step">
-              <div class="hiw-num">2</div>
-              <div class="hiw-text">
-                <p class="hiw-step-title">Lock In Your Pick</p>
-                <p class="hiw-step-desc">Enter your prediction. Your opponent sets their pick when they accept — so both sides are committed before the game begins.</p>
-              </div>
-            </div>
-            <div class="hiw-step">
-              <div class="hiw-num">3</div>
-              <div class="hiw-text">
-                <p class="hiw-step-title">Share Your Code</p>
-                <p class="hiw-step-desc">Send the 5-letter code or a link. Your opponent joins, makes their pick, and the Swayger is live. Winner takes the points.</p>
-              </div>
+            <div class="step-label">
+              <div class="step-num">1</div>
+              <h3>Open the App</h3>
+              <p>See all your active challenges and browse live contests</p>
             </div>
           </div>
+
+          <!-- ── PHONE 2: Create ── -->
+          <div class="phone-step">
+            <div class="phone">
+              <div class="status-bar">
+                <span class="status-time">9:41</span>
+                <div class="status-icons"><span>••• WiFi</span><span>🔋</span></div>
+              </div>
+              <div class="screen">
+                <div class="create-header">
+                  <div class="create-title">Create Swayger</div>
+                  <div class="create-sub">Set up a 1v1 wager</div>
+                </div>
+                <div class="form-section">
+                  <div class="form-label">What's the Swayger?</div>
+                  <div class="form-input">Bills vs Chiefs — Bills win outright</div>
+                </div>
+                <div class="form-section">
+                  <div class="form-label">Category</div>
+                  <div class="category-row">
+                    <div class="cat-chip active">🏈 Sports</div>
+                    <div class="cat-chip">🎬 Ent.</div>
+                    <div class="cat-chip">🎮 Gaming</div>
+                    <div class="cat-chip">⋯ Other</div>
+                  </div>
+                </div>
+                <div class="stake-area">
+                  <div class="stake-label-row">
+                    <div class="form-label" style="margin-bottom:0">Swayger Points</div>
+                    <div class="balance-pill">💰 750 SP available</div>
+                  </div>
+                  <div class="stake-row">
+                    <div class="stake-btn">−</div>
+                    <div class="stake-val">100</div>
+                    <div class="stake-btn">+</div>
+                  </div>
+                  <div class="quick-row">
+                    <div class="quick-chip">+5</div>
+                    <div class="quick-chip">+10</div>
+                    <div class="quick-chip">+25</div>
+                    <div class="quick-chip">+50</div>
+                    <div class="quick-chip">+100</div>
+                    <div class="quick-chip reset">Reset</div>
+                  </div>
+                </div>
+                <div class="stake-note-area">
+                  <div class="form-label">Stake Note <span style="color:#4a5a72;font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+                  <div class="note-input">"Loser buys pizza"</div>
+                  <div class="form-hint">Add social flavor — what's really on the line?</div>
+                </div>
+                <div class="form-section">
+                  <div class="form-label">Your Pick</div>
+                  <div class="form-input">Bills win by 7+</div>
+                  <div class="form-hint">Opponent sets their pick when they accept.</div>
+                </div>
+                <div class="create-btn"><span>⚡ Create Swayger</span></div>
+              </div>
+              <div class="tab-bar">
+                <div class="tab-item"><span class="tab-icon">⚡</span>Swaygers</div>
+                <div class="tab-item active"><span class="tab-icon">＋</span>Create</div>
+                <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+                <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
+              </div>
+            </div>
+            <div class="step-label">
+              <div class="step-num">2</div>
+              <h3>Set the Terms</h3>
+              <p>Name the wager, bet your Swayger Points, add a stake note, and lock in your pick</p>
+            </div>
+          </div>
+
+          <!-- ── PHONE 3: Share ── -->
+          <div class="phone-step">
+            <div class="phone">
+              <div class="status-bar">
+                <span class="status-time">9:41</span>
+                <div class="status-icons"><span>••• WiFi</span><span>🔋</span></div>
+              </div>
+              <div class="screen">
+                <div class="share-nav">
+                  <span style="color:#1da1f2;font-size:13px">‹</span>
+                  <span class="back-text">Back to Swaygers</span>
+                </div>
+                <div class="swayger-detail">
+                  <div class="swayger-dtitle">Bills vs Chiefs — Bills win outright</div>
+                  <div class="detail-chips">
+                    <div class="dchip">🏈 Sports</div>
+                    <div class="dchip sp">⚡ 100 SP</div>
+                    <div class="dchip pending">⏳ Pending</div>
+                  </div>
+                  <div class="share-box">
+                    <div class="share-box-label">Share This Code</div>
+                    <div class="share-code">M K 7 R X</div>
+                  </div>
+                  <div class="share-btn">↗ Share Challenge</div>
+                  <div class="copy-btn">📋 Copy invite link</div>
+                  <div class="waiting-text">Waiting for your opponent to accept the challenge</div>
+                  <div class="your-pick-box">
+                    <div class="yp-label">Your Pick</div>
+                    <div class="yp-val">Bills win by 7+</div>
+                    <div class="stake-note-display">
+                      <span class="snd-label">On the line:</span>
+                      <span class="snd-val">"Loser buys pizza"</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="tab-bar">
+                <div class="tab-item active"><span class="tab-icon">⚡</span>Swaygers</div>
+                <div class="tab-item"><span class="tab-icon">＋</span>Create</div>
+                <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+                <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
+              </div>
+            </div>
+            <div class="step-label">
+              <div class="step-num">3</div>
+              <h3>Share Your Code</h3>
+              <p>Send the code or link — your opponent joins, sets their pick, and the game is on</p>
+            </div>
+          </div>
+
         </div>
+      </div>
 
-        <hr class="hiw-divider" />
+      <!-- Divider -->
+      <hr class="section-divider" />
+
+      <!-- Install section -->
+      <div class="install-section">
         <p class="install-label">Try it on your phone</p>
-
         <div class="steps-container">
           <div class="step">
             <div class="step-header">
               <div class="step-number">1</div>
               <h2 class="step-title">Download Expo Go</h2>
             </div>
-            <p class="step-description">
-              Expo Go is a free app to test mobile apps
-            </p>
+            <p class="step-description">Expo Go is a free app to test mobile apps</p>
             <div class="store-buttons" id="store-buttons">
-              <a
-                id="app-store-btn"
-                href="https://apps.apple.com/app/id982107779"
-                class="store-button"
-                target="_blank"
-              >
+              <a id="app-store-btn" href="https://apps.apple.com/app/id982107779" class="store-button" target="_blank">
                 <svg class="store-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"
-                  />
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
                 </svg>
                 App Store
               </a>
-              <a
-                id="play-store-btn"
-                href="https://play.google.com/store/apps/details?id=host.exp.exponent"
-                class="store-button"
-                target="_blank"
-              >
+              <a id="play-store-btn" href="https://play.google.com/store/apps/details?id=host.exp.exponent" class="store-button" target="_blank">
                 <svg class="store-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"
-                  />
+                  <path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/>
                 </svg>
                 Google Play
               </a>
@@ -522,12 +536,13 @@
             </div>
             <p class="step-description">Use your phone's camera or Expo Go</p>
             <div class="qr-code" id="qr-code"></div>
-            <a href="exps://EXPS_URL_PLACEHOLDER" class="open-button"
-              >Open in Expo Go</a
-            >
+            <a href="exps://EXPS_URL_PLACEHOLDER" class="open-button">Open in Expo Go</a>
           </div>
         </div>
       </div>
+
+      <div class="site-footer">Swayger &nbsp;·&nbsp; Social Wager Contracts &nbsp;·&nbsp; For Fun</div>
+
     </div>
 
     <script src="https://unpkg.com/qr-code-styling@1.6.0/lib/qr-code-styling.js"></script>
@@ -544,7 +559,6 @@
 
         const deepLink = "exps://EXPS_URL_PLACEHOLDER";
 
-        // Adjust store buttons based on platform
         const appStoreBtn = document.getElementById("app-store-btn");
         const playStoreBtn = document.getElementById("play-store-btn");
         const storeButtonsContainer = document.getElementById("store-buttons");
@@ -561,28 +575,17 @@
           width: 400,
           height: 400,
           data: deepLink,
-          dotsOptions: {
-            color: "#333333",
-            type: "rounded",
-          },
-          backgroundOptions: {
-            color: "#ffffff",
-          },
-          cornersSquareOptions: {
-            type: "extra-rounded",
-          },
-          cornersDotOptions: {
-            type: "dot",
-          },
-          qrOptions: {
-            errorCorrectionLevel: "H",
-          },
+          dotsOptions: { color: "#333333", type: "rounded" },
+          backgroundOptions: { color: "#ffffff" },
+          cornersSquareOptions: { type: "extra-rounded" },
+          cornersDotOptions: { type: "dot" },
+          qrOptions: { errorCorrectionLevel: "H" },
         });
 
         qrCode.append(document.getElementById("qr-code"));
 
         if (isAndroid || isIOS) {
-          loadingEl.style.display = "block";
+          loadingEl.style.display = "flex";
           contentEl.style.display = "none";
           window.location.href = deepLink;
           setTimeout(function () {
