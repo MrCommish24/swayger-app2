@@ -401,6 +401,40 @@ export default function AuthScreen() {
             </View>
           )}
         </View>
+
+        {/* How It Works — visible below the fold, only on the entry step */}
+        {step === "enter-email" && (
+          <View style={styles.hiwSection}>
+            <View style={styles.hiwDivider} />
+            <Text style={styles.hiwHeading}>How It Works</Text>
+            <View style={styles.hiwSteps}>
+              <View style={styles.hiwStep}>
+                <View style={styles.hiwNum}><Text style={styles.hiwNumText}>1</Text></View>
+                <View style={styles.hiwStepBody}>
+                  <Text style={styles.hiwStepTitle}>Set the Terms</Text>
+                  <Text style={styles.hiwStepDesc}>Name the wager, bet Swayger Points, add a stake note, and lock in your pick.</Text>
+                </View>
+              </View>
+              <View style={styles.hiwStep}>
+                <View style={styles.hiwNum}><Text style={styles.hiwNumText}>2</Text></View>
+                <View style={styles.hiwStepBody}>
+                  <Text style={styles.hiwStepTitle}>Share Your Code</Text>
+                  <Text style={styles.hiwStepDesc}>Send the 5-letter code to your opponent — they join and set their pick.</Text>
+                </View>
+              </View>
+              <View style={styles.hiwStep}>
+                <View style={styles.hiwNum}><Text style={styles.hiwNumText}>3</Text></View>
+                <View style={styles.hiwStepBody}>
+                  <Text style={styles.hiwStepTitle}>Winner Takes the Points</Text>
+                  <Text style={styles.hiwStepDesc}>No real money — just Swayger Points, bragging rights, and whatever you put on the line.</Text>
+                </View>
+              </View>
+            </View>
+            <Pressable onPress={() => Linking.openURL("https://swayger-app.replit.app/privacy")}>
+              <Text style={styles.privacyLink}>Privacy Policy</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -513,5 +547,72 @@ const styles = StyleSheet.create({
   linkText: {
     color: Colors.dark.tint,
     fontSize: 14,
+  },
+  hiwSection: {
+    paddingHorizontal: 28,
+    paddingBottom: 48,
+  },
+  hiwDivider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginBottom: 28,
+  },
+  hiwHeading: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: Colors.dark.tabIconDefault,
+    textTransform: "uppercase" as const,
+    letterSpacing: 1.2,
+    marginBottom: 20,
+    textAlign: "center" as const,
+  },
+  hiwSteps: {
+    gap: 16,
+    marginBottom: 28,
+  },
+  hiwStep: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 14,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 14,
+    padding: 14,
+  },
+  hiwNum: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.dark.tint,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  hiwNumText: {
+    fontSize: 14,
+    fontWeight: "800" as const,
+    color: "#FFFFFF",
+  },
+  hiwStepBody: {
+    flex: 1,
+    gap: 3,
+  },
+  hiwStepTitle: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  hiwStepDesc: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
+  },
+  privacyLink: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+    textAlign: "center" as const,
+    textDecorationLine: "underline" as const,
   },
 });
