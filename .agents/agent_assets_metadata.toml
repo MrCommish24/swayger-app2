@@ -84,6 +84,24 @@ uri = "file://attached_assets/generated_images/swayger-slash-horizontal.png"
 type = "image"
 title = "swayger slash horizontal lockup"
 
+[[generated]]
+id = "qpmzcoPiQ-lc4AAqggfu6"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-lockup.png"
+type = "image"
+title = "swayger arena slash dots lockup"
+
+[[generated]]
+id = "MDObQ9CTTWbUnFFmOjelo"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-icon.png"
+type = "image"
+title = "swayger arena slash icon no text"
+
+[[generated]]
+id = "IyoMkPsqLdY0nzDXN0sLZ"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-wide.png"
+type = "image"
+title = "swayger arena slash wide hero"
+
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
@@ -227,3 +245,21 @@ id = "YA6cE2F36szVCZXSuiwED"
 uri = "file://attached_assets/generated_images/swayger-slash-horizontal.png"
 type = "image"
 title = "Horizontal Lockup — Slash mark beside SWAYGER wordmark"
+
+[[outputs]]
+id = "N-DcDI7xbkklOn3h3aPZa"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-icon.png"
+type = "image"
+title = "Arena Slash Icon — Pure mark, no text (app icon / social avatar)"
+
+[[outputs]]
+id = "8J9GwJdqkeqt0AGiefash"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-lockup.png"
+type = "image"
+title = "Arena Slash Lockup — Mark + SWAYGER wordmark (square)"
+
+[[outputs]]
+id = "6DVX1Qpwm3VTRf2vuxV4o"
+uri = "file://attached_assets/generated_images/swayger-arena-slash-wide.png"
+type = "image"
+title = "Arena Slash Wide — Full hero banner (social cover / header)"
