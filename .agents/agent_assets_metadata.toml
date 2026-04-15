@@ -18,6 +18,24 @@ uri = "file://attached_assets/generated_images/swayger-logo-concept-c.png"
 type = "image"
 title = "swayger logo concept C badge stamp"
 
+[[generated]]
+id = "8ohjU9oBlNa2IWmf_YLXl"
+uri = "file://attached_assets/generated_images/swayger-refined-a.png"
+type = "image"
+title = "swayger refined logo bold S strike"
+
+[[generated]]
+id = "CSvZe69YreD2B-GSzbcxd"
+uri = "file://attached_assets/generated_images/swayger-refined-b.png"
+type = "image"
+title = "swayger refined logo seal stamp"
+
+[[generated]]
+id = "nqwDVHB1VyqbIYI9MclBH"
+uri = "file://attached_assets/generated_images/swayger-refined-c.png"
+type = "image"
+title = "swayger refined wordmark signature underline"
+
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
@@ -95,3 +113,21 @@ id = "ytjBHRUsjd9h5fIIIXfpM"
 uri = "file://attached_assets/generated_images/swayger-logo-concept-c.png"
 type = "image"
 title = "Concept C — The Badge/Stamp (receipt seal, premium)"
+
+[[outputs]]
+id = "sD7AoDh4Or78SYKpaWXlQ"
+uri = "file://attached_assets/generated_images/swayger-refined-a.png"
+type = "image"
+title = "The S-Strike — Bold geometric S, forward energy, lightning conviction"
+
+[[outputs]]
+id = "UGAfhO1g-fZzRbKWHqRdJ"
+uri = "file://attached_assets/generated_images/swayger-refined-b.png"
+type = "image"
+title = "The Seal — Official stamp mark, receipt authority, declaring it final"
+
+[[outputs]]
+id = "VyubE6ahbrT2xQoZOIfwu"
+uri = "file://attached_assets/generated_images/swayger-refined-c.png"
+type = "image"
+title = "The Wordmark — Signature underline, signing your name to the bet"
