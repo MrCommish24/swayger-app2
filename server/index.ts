@@ -200,6 +200,10 @@ function configureExpoAndLanding(app: express.Application) {
     }
 
     if (req.path === "/") {
+      const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
+      if (fs.existsSync(webIndexPath)) {
+        return res.sendFile(webIndexPath);
+      }
       return serveLandingPage({
         req,
         res,
