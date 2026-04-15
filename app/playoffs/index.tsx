@@ -324,7 +324,11 @@ export default function PlayoffsHubScreen() {
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <Pressable
+          onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")}
+          style={styles.backBtn}
+          hitSlop={12}
+        >
           <Ionicons name="chevron-back" size={22} color={Colors.dark.text} />
         </Pressable>
         <Text style={styles.headerTitle}>NBA Playoffs</Text>

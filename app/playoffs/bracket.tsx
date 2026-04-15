@@ -154,7 +154,7 @@ function SeriesCard({
 
       {/* Team buttons */}
       <View style={styles.teamRow}>
-        {[series.team1, series.team2].map((team) => {
+        {[series.team1, series.team2].map((team, idx) => {
           const isPicked = selectedTeam === team;
           const isWinner = isResolved && series.winner === team;
           const isLoser = isResolved && series.winner && series.winner !== team;
@@ -163,7 +163,7 @@ function SeriesCard({
 
           return (
             <Pressable
-              key={team}
+              key={`${idx}-${team}`}
               style={[
                 styles.teamBtn,
                 isPicked && !isResolved && styles.teamBtnPicked,
@@ -452,7 +452,11 @@ export default function BracketScreen() {
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <Pressable
+          onPress={() => router.canGoBack() ? router.back() : router.replace("/playoffs")}
+          style={styles.backBtn}
+          hitSlop={12}
+        >
           <Ionicons name="chevron-back" size={22} color={Colors.dark.text} />
         </Pressable>
         <Text style={styles.headerTitle}>🏀 Bracket Picks</Text>
