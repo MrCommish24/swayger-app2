@@ -36,6 +36,24 @@ uri = "file://attached_assets/generated_images/swayger-refined-c.png"
 type = "image"
 title = "swayger refined wordmark signature underline"
 
+[[generated]]
+id = "IUiPqwv1xUpFHsq4Y8PAv"
+uri = "file://attached_assets/generated_images/swayger-lockup-a.png"
+type = "image"
+title = "swayger lockup VS square badge"
+
+[[generated]]
+id = "LK8nOdMkf1vwVwQF1F4OB"
+uri = "file://attached_assets/generated_images/swayger-lockup-b.png"
+type = "image"
+title = "swayger lockup VS circle coin"
+
+[[generated]]
+id = "gJ1rbi4kIMCkfnugRtOxK"
+uri = "file://attached_assets/generated_images/swayger-lockup-c.png"
+type = "image"
+title = "swayger lockup VS split blocks"
+
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
@@ -131,3 +149,21 @@ id = "VyubE6ahbrT2xQoZOIfwu"
 uri = "file://attached_assets/generated_images/swayger-refined-c.png"
 type = "image"
 title = "The Wordmark — Signature underline, signing your name to the bet"
+
+[[outputs]]
+id = "8OE07-uFMBB356AhHNZpp"
+uri = "file://attached_assets/generated_images/swayger-lockup-a.png"
+type = "image"
+title = "Lockup A — VS Square Badge + Wordmark"
+
+[[outputs]]
+id = "wOERslkYKursocDfAySPr"
+uri = "file://attached_assets/generated_images/swayger-lockup-b.png"
+type = "image"
+title = "Lockup B — VS Circle Coin + Wordmark"
+
+[[outputs]]
+id = "bPpv3mPQ4D73lWZYdXs2E"
+uri = "file://attached_assets/generated_images/swayger-lockup-c.png"
+type = "image"
+title = "Lockup C — VS Split Blocks + Wordmark"
