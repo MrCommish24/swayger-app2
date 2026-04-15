@@ -22,12 +22,20 @@ import {
   fetchAllSeries,
   formatAmericanOdds,
   isRoundLocked,
-  ROUND_LOCK_DATES,
+  type PlayoffRound,
   type PlayoffScore,
   type NBAGame,
   type BracketPick,
   type PlayoffSeries,
 } from "@/lib/nba-playoffs";
+
+const ROUND_LABELS: Record<PlayoffRound, string> = {
+  round1: "Round 1",
+  round2: "Round 2",
+  conf_finals: "Conf. Finals",
+  finals: "NBA Finals",
+};
+const ROUND_ORDER: PlayoffRound[] = ["round1", "round2", "conf_finals", "finals"];
 
 const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
@@ -148,15 +156,29 @@ function PicksProgress({
   picks: BracketPick[];
 }) {
   const router = useRouter();
-  const r1Series = series.filter((s) => s.round === "round1" && !s.team1.startsWith("TBD"));
-  const r1Picks = picks.filter((p) => r1Series.some((s) => s.id === p.series_id));
-  const r1Locked = isRoundLocked("round1");
 
-  const pickCount = r1Picks.length;
-  const total = r1Series.length;
+  // Find the active round: first unlocked round with seeded matchups,
+  // or fall back to the last round that has series.
+  let activeRound: PlayoffRound = "round1";
+  let activeSeries: PlayoffSeries[] = [];
+  for (const r of ROUND_ORDER) {
+    const rs = series.filter(
+      (s) => s.round === r && !s.team1.startsWith("TBD") && !s.team2.startsWith("TBD")
+    );
+    if (rs.length === 0) continue;
+    activeRound = r;
+    activeSeries = rs;
+    if (!isRoundLocked(r)) break;
+  }
+
+  const roundPicks = picks.filter((p) => activeSeries.some((s) => s.id === p.series_id));
+  const locked = isRoundLocked(activeRound);
+  const pickCount = roundPicks.length;
+  const total = activeSeries.length;
   const allPicked = pickCount >= total && total > 0;
+  const label = ROUND_LABELS[activeRound];
 
-  if (r1Locked && total === 0) return null;
+  if (locked && total === 0) return null;
 
   return (
     <Pressable style={styles.picksProgress} onPress={() => router.push("/playoffs/bracket")}>
@@ -168,22 +190,91 @@ function PicksProgress({
         )}
         <View>
           <Text style={styles.picksProgressTitle}>
-            {r1Locked
-              ? allPicked ? "Your R1 picks are locked in ✅" : "R1 picks locked — no picks made"
+            {locked
+              ? allPicked
+                ? `${label} picks locked in ✅`
+                : `${label} locked — no picks made`
               : allPicked
-              ? "All R1 picks locked in!"
-              : `Make your Round 1 picks`}
+              ? `All ${label} picks in!`
+              : `Make your ${label} picks`}
           </Text>
-          {!r1Locked && (
+          {!locked && (
             <Text style={styles.picksProgressSub}>
               {pickCount}/{total} series picked
             </Text>
           )}
         </View>
       </View>
-      {!r1Locked && (
+      {!locked && (
         <Ionicons name="chevron-forward" size={18} color={Colors.dark.textSecondary} />
       )}
+    </Pressable>
+  );
+}
+
+function MyPicksSummary({
+  series,
+  picks,
+  onPress,
+}: {
+  series: PlayoffSeries[];
+  picks: BracketPick[];
+  onPress: () => void;
+}) {
+  if (picks.length === 0) return null;
+  const pickMap = new Map(picks.map((p) => [p.series_id, p]));
+  const roundsWithPicks = ROUND_ORDER.filter((r) =>
+    series.some((s) => s.round === r && pickMap.has(s.id))
+  );
+  if (roundsWithPicks.length === 0) return null;
+
+  return (
+    <Pressable style={styles.myPicksCard} onPress={onPress}>
+      <View style={styles.myPicksHeader}>
+        <Text style={styles.myPicksTitle}>My Picks</Text>
+        <View style={styles.leaderboardCardLink}>
+          <Text style={styles.leaderboardCardLinkText}>Edit</Text>
+          <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
+        </View>
+      </View>
+      {roundsWithPicks.map((round) => {
+        const roundSeries = series.filter((s) => s.round === round && pickMap.has(s.id));
+        return (
+          <View key={round}>
+            <Text style={styles.myPicksRoundLabel}>{ROUND_LABELS[round]}</Text>
+            {roundSeries.map((s) => {
+              const pick = pickMap.get(s.id)!;
+              const resolved = s.winner !== null;
+              const correct = resolved && s.winner === pick.picked_team;
+              const gamesCorrect = resolved && s.games === pick.games_guess;
+              return (
+                <View key={s.id} style={styles.myPickRow}>
+                  <View style={styles.myPickRowLeft}>
+                    <Text style={styles.myPickMatchup} numberOfLines={1}>
+                      {s.team1} vs {s.team2}
+                    </Text>
+                    <Text style={styles.myPickChoice} numberOfLines={1}>
+                      {pick.picked_team}{pick.games_guess ? ` in ${pick.games_guess}` : ""}
+                    </Text>
+                  </View>
+                  {resolved && (
+                    <View style={styles.myPickResult}>
+                      <Ionicons
+                        name={correct ? "checkmark-circle" : "close-circle"}
+                        size={16}
+                        color={correct ? "#22C55E" : "#EF4444"}
+                      />
+                      {correct && gamesCorrect && (
+                        <Text style={styles.myPickBonus}>+bonus</Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        );
+      })}
     </Pressable>
   );
 }
@@ -293,22 +384,14 @@ export default function PlayoffsHubScreen() {
           <PicksProgress series={series} picks={myPicks} />
         )}
 
-        {/* Bracket CTA */}
-        <Pressable
-          style={styles.bracketCTA}
-          onPress={() => router.push("/playoffs/bracket")}
-        >
-          <View style={styles.bracketCTALeft}>
-            <Text style={styles.bracketCTAIcon}>🏀</Text>
-            <View>
-              <Text style={styles.bracketCTATitle}>Make Your Picks</Text>
-              <Text style={styles.bracketCTASub}>
-                Pick series winners · call # of games · earn points
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.dark.text} />
-        </Pressable>
+        {/* My picks summary */}
+        {series && myPicks && myPicks.length > 0 && (
+          <MyPicksSummary
+            series={series}
+            picks={myPicks}
+            onPress={() => router.push("/playoffs/bracket")}
+          />
+        )}
 
         {/* Leaderboard snippet */}
         <View>
@@ -468,18 +551,43 @@ const styles = StyleSheet.create({
   picksProgressTitle: { fontSize: 14, fontWeight: "700" as const, color: Colors.dark.text },
   picksProgressSub: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 1 },
 
-  bracketCTA: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: NBA_BLUE,
+  myPicksCard: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
+    gap: 6,
   },
-  bracketCTALeft: { flexDirection: "row", alignItems: "center", gap: 14 },
-  bracketCTAIcon: { fontSize: 28 },
-  bracketCTATitle: { fontSize: 16, fontWeight: "800" as const, color: "#FFFFFF" },
-  bracketCTASub: { fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 },
+  myPicksHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    marginBottom: 4,
+  },
+  myPicksTitle: { fontSize: 15, fontWeight: "700" as const, color: Colors.dark.text },
+  myPicksRoundLabel: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  myPickRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  myPickRowLeft: { flex: 1, gap: 2 },
+  myPickMatchup: { fontSize: 11, color: Colors.dark.textSecondary },
+  myPickChoice: { fontSize: 13, fontWeight: "600" as const, color: Colors.dark.text },
+  myPickResult: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, marginLeft: 8 },
+  myPickBonus: { fontSize: 11, fontWeight: "700" as const, color: NBA_GOLD },
 
   leaderboardCard: {
     backgroundColor: Colors.dark.surface,
