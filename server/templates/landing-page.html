@@ -260,6 +260,100 @@
         }
       }
 
+      /* How It Works section */
+      .hiw-section {
+        margin-bottom: 48px;
+      }
+      .hiw-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #1da1f2;
+        margin-bottom: 10px;
+      }
+      .hiw-title {
+        font-size: 26px;
+        font-weight: 800;
+        color: #111;
+        margin: 0 0 6px;
+        line-height: 1.2;
+      }
+      .hiw-subtitle {
+        font-size: 15px;
+        color: #666;
+        margin: 0 0 28px;
+      }
+      .hiw-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .hiw-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        background: #f8fafc;
+        border: 1px solid #e8edf2;
+        border-radius: 14px;
+        padding: 18px 20px;
+        text-align: left;
+      }
+      .hiw-num {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #1da1f2;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .hiw-text { flex: 1; }
+      .hiw-step-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #111;
+        margin: 0 0 4px;
+      }
+      .hiw-step-desc {
+        font-size: 13px;
+        color: #666;
+        margin: 0;
+        line-height: 1.5;
+      }
+      .hiw-divider {
+        border: none;
+        border-top: 1px solid #e8edf2;
+        margin: 0 0 36px;
+      }
+      .install-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: #999;
+        margin-bottom: 16px;
+      }
+
+      @media (min-width: 768px) {
+        .hiw-steps {
+          flex-direction: row;
+          gap: 16px;
+        }
+        .hiw-step {
+          flex: 1;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 12px;
+        }
+        .hiw-title { font-size: 30px; }
+      }
+
       /* Dark mode */
       @media (prefers-color-scheme: dark) {
         body {
@@ -325,6 +419,16 @@
         .open-button:hover {
           background: #e0e0e0;
         }
+        .hiw-step {
+          background: #161b22;
+          border-color: #21262d;
+        }
+        .hiw-step-title { color: #f0f6fc; }
+        .hiw-step-desc { color: #8b949e; }
+        .hiw-title { color: #f0f6fc; }
+        .hiw-subtitle { color: #8b949e; }
+        .hiw-divider { border-color: #21262d; }
+        .install-label { color: #555; }
       }
     </style>
   </head>
@@ -337,7 +441,40 @@
 
       <div class="content" id="content">
         <h1>APP_NAME_PLACEHOLDER</h1>
-        <p class="subtitle">Preview this app on your phone</p>
+        <p class="subtitle">1v1 social wager contracts — for fun</p>
+
+        <!-- How It Works -->
+        <div class="hiw-section">
+          <p class="hiw-label">How It Works</p>
+          <h2 class="hiw-title">Create a Swayger in under 60 seconds</h2>
+          <p class="hiw-subtitle">Challenge anyone to a wager on anything — sports, pop culture, life.</p>
+          <div class="hiw-steps">
+            <div class="hiw-step">
+              <div class="hiw-num">1</div>
+              <div class="hiw-text">
+                <p class="hiw-step-title">Set the Terms</p>
+                <p class="hiw-step-desc">Name your wager, pick a category, bet your Swayger Points, and add a stake note — "loser buys pizza," bragging rights, whatever's on the line.</p>
+              </div>
+            </div>
+            <div class="hiw-step">
+              <div class="hiw-num">2</div>
+              <div class="hiw-text">
+                <p class="hiw-step-title">Lock In Your Pick</p>
+                <p class="hiw-step-desc">Enter your prediction. Your opponent sets their pick when they accept — so both sides are committed before the game begins.</p>
+              </div>
+            </div>
+            <div class="hiw-step">
+              <div class="hiw-num">3</div>
+              <div class="hiw-text">
+                <p class="hiw-step-title">Share Your Code</p>
+                <p class="hiw-step-desc">Send the 5-letter code or a link. Your opponent joins, makes their pick, and the Swayger is live. Winner takes the points.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="hiw-divider" />
+        <p class="install-label">Try it on your phone</p>
 
         <div class="steps-container">
           <div class="step">
