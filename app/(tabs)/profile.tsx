@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Share,
+  Linking,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -417,6 +418,37 @@ export default function ProfileScreen() {
             />
           </Pressable>
 
+        </View>
+
+        {/* Legal section */}
+        <View style={[styles.section, { marginTop: 8 }]}>
+          <Text style={styles.sectionTitle}>Legal</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+            onPress={() => Linking.openURL("https://swayger-app.replit.app/how-it-works")}
+          >
+            <Ionicons name="information-circle-outline" size={20} color={Colors.dark.text} />
+            <View style={styles.menuItemBody}>
+              <Text style={styles.menuItemText}>How Swayger Works</Text>
+              <Text style={styles.menuItemSub}>The 3-step guide to creating a wager</Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color={Colors.dark.tabIconDefault} />
+          </Pressable>
+
+          <View style={styles.menuDivider} />
+
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+            onPress={() => Linking.openURL("https://swayger-app.replit.app/privacy")}
+          >
+            <Ionicons name="shield-checkmark-outline" size={20} color={Colors.dark.text} />
+            <View style={styles.menuItemBody}>
+              <Text style={styles.menuItemText}>Privacy Policy</Text>
+              <Text style={styles.menuItemSub}>How we handle your data</Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color={Colors.dark.tabIconDefault} />
+          </Pressable>
         </View>
 
         {/* Bottom area */}
