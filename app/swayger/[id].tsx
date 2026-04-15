@@ -976,7 +976,11 @@ export default function SwaygerDetailScreen() {
         <View style={styles.stakeRow}>
           <Ionicons name="flame-outline" size={18} color={Colors.dark.accentGold} />
           <Text style={styles.stakeText}>
-            {swayger.stake_units || 1} Swayger Points at stake
+            {(() => {
+              const u = swayger.stake_units || 1;
+              const label = u === 10 ? "Gut Feeling" : u === 25 ? "Pretty Sure" : u === 50 ? "No Doubt" : null;
+              return label ? `${label} · ${u} SP at stake` : `${u} Swayger Points at stake`;
+            })()}
           </Text>
         </View>
         <View style={styles.expiryRow}>

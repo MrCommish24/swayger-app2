@@ -21,6 +21,31 @@ import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 import CreateOnboardingBanner from "@/components/CreateOnboardingBanner";
 
+const CONFIDENCE_TIERS = [
+  {
+    label: "Gut Feeling",
+    points: 10,
+    description: "Worth calling out",
+    icon: "help-circle-outline" as const,
+  },
+  {
+    label: "Pretty Sure",
+    points: 25,
+    description: "I'd stand on this",
+    icon: "checkmark-circle-outline" as const,
+  },
+  {
+    label: "No Doubt",
+    points: 50,
+    description: "Lock it in",
+    icon: "lock-closed-outline" as const,
+  },
+];
+
+function getConfidenceTier(units: number) {
+  return CONFIDENCE_TIERS.find((t) => t.points === units) ?? null;
+}
+
 export default function CreateSwaygerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -54,9 +79,10 @@ export default function CreateSwaygerScreen() {
   const [description, setDescription] = useState(params.prefillDescription || params.counterDescription || "");
   const [category, setCategory] = useState(params.prefillCategory || params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(
-    params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5
+    params.counterStake ? Math.max(10, parseInt(params.counterStake, 10)) : 10
   );
   const [stakeNote, setStakeNote] = useState("");
+  const [showCustomStake, setShowCustomStake] = useState(false);
   const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
 
   const { data: balanceData } = useQuery({
@@ -84,7 +110,7 @@ export default function CreateSwaygerScreen() {
   const canSubmit =
     title.trim().length >= 2 &&
     creatorPick.trim().length > 0 &&
-    stakeUnits >= 5 &&
+    stakeUnits >= 10 &&
     (balanceData == null || stakeUnits <= myBalance);
 
   const mutation = useMutation({
@@ -108,7 +134,8 @@ export default function CreateSwaygerScreen() {
       setTitle("");
       setDescription("");
       setCategory("Sports");
-      setStakeUnits(5);
+      setStakeUnits(10);
+      setShowCustomStake(false);
       setStakeNote("");
       setCreatorPick("");
       if (result.swayger) {
@@ -275,7 +302,7 @@ export default function CreateSwaygerScreen() {
 
           <View>
             <View style={styles.stakeLabelRow}>
-              <Text style={styles.label}>Swayger Points</Text>
+              <Text style={styles.label}>How sure are you?</Text>
               {balanceData != null && (
                 <View style={styles.balancePill}>
                   <Ionicons name="wallet-outline" size={12} color={Colors.dark.accentGold} />
@@ -283,56 +310,99 @@ export default function CreateSwaygerScreen() {
                 </View>
               )}
             </View>
-            <View style={styles.stakeRow}>
-              <Pressable
-                style={[styles.stakeButton, stakeUnits <= 5 && styles.stakeButtonDisabled]}
-                onPress={() => setStakeUnits((v) => Math.max(5, v - 1))}
-                disabled={stakeUnits <= 5}
-              >
-                <Ionicons name="remove" size={20} color={stakeUnits <= 5 ? Colors.dark.tabIconDefault : Colors.dark.text} />
-              </Pressable>
-              <Text style={styles.stakeValue}>{stakeUnits}</Text>
-              <Pressable
-                style={[styles.stakeButton, stakeUnits >= myBalance && balanceData != null && styles.stakeButtonDisabled]}
-                onPress={() => setStakeUnits((v) => balanceData != null ? Math.min(myBalance, v + 1) : v + 1)}
-                disabled={balanceData != null && stakeUnits >= myBalance}
-              >
-                <Ionicons name="add" size={20} color={balanceData != null && stakeUnits >= myBalance ? Colors.dark.tabIconDefault : Colors.dark.text} />
-              </Pressable>
+
+            {/* Confidence tier cards */}
+            <View style={styles.tierList}>
+              {CONFIDENCE_TIERS.map((tier) => {
+                const isSelected = stakeUnits === tier.points && !showCustomStake;
+                const insufficient = balanceData != null && tier.points > myBalance;
+                return (
+                  <Pressable
+                    key={tier.label}
+                    style={[
+                      styles.tierCard,
+                      isSelected && styles.tierCardSelected,
+                      insufficient && styles.tierCardDisabled,
+                    ]}
+                    onPress={() => {
+                      if (!insufficient) {
+                        setStakeUnits(tier.points);
+                        setShowCustomStake(false);
+                      }
+                    }}
+                    disabled={insufficient || mutation.isPending}
+                  >
+                    <View style={styles.tierLeft}>
+                      <Ionicons
+                        name={tier.icon}
+                        size={20}
+                        color={isSelected ? Colors.dark.tint : Colors.dark.textSecondary}
+                      />
+                      <View>
+                        <Text style={[styles.tierLabel, isSelected && styles.tierLabelSelected]}>
+                          {tier.label}
+                        </Text>
+                        <Text style={styles.tierDescription}>{tier.description}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.tierPoints, isSelected && styles.tierPointsSelected]}>
+                      {tier.points} SP
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
+
             {balanceData != null && stakeUnits > myBalance && (
               <Text style={styles.stakeError}>
                 Not enough SP — you have {myBalance.toLocaleString()}
               </Text>
             )}
-            <View style={styles.quickPickRow}>
-              {[5, 10, 25, 50, 100].map((amount) => (
-                <Pressable
-                  key={amount}
-                  style={({ pressed }) => [
-                    styles.quickPickChip,
-                    pressed && styles.quickPickChipPressed,
-                  ]}
-                  onPress={() => setStakeUnits((v) => {
-                    const next = v + amount;
-                    return balanceData != null ? Math.min(myBalance, next) : next;
-                  })}
-                >
-                  <Text style={styles.quickPickText}>+{amount}</Text>
-                </Pressable>
-              ))}
+
+            {/* Custom amount escape hatch */}
+            {!showCustomStake ? (
               <Pressable
-                style={({ pressed }) => [
-                  styles.quickPickChip,
-                  styles.quickPickClear,
-                  pressed && styles.quickPickChipPressed,
-                ]}
-                onPress={() => setStakeUnits(5)}
+                style={styles.customToggle}
+                onPress={() => setShowCustomStake(true)}
               >
-                <Text style={[styles.quickPickText, styles.quickPickClearText]}>Reset</Text>
+                <Ionicons name="create-outline" size={13} color={Colors.dark.tabIconDefault} />
+                <Text style={styles.customToggleText}>Enter custom amount</Text>
               </Pressable>
-            </View>
-            <Text style={styles.hint}>Min: 5 SP · What are you wagering for?</Text>
+            ) : (
+              <View style={styles.customSection}>
+                <View style={styles.customInputRow}>
+                  <TextInput
+                    style={styles.customInput}
+                    placeholder="Min 10 SP"
+                    placeholderTextColor={Colors.dark.tabIconDefault}
+                    keyboardType="numeric"
+                    value={stakeUnits > 0 ? String(stakeUnits) : ""}
+                    onChangeText={(v) => {
+                      const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+                      if (!isNaN(n)) {
+                        setStakeUnits(
+                          balanceData != null
+                            ? Math.min(myBalance, Math.max(10, n))
+                            : Math.max(10, n)
+                        );
+                      } else if (v === "") {
+                        setStakeUnits(10);
+                      }
+                    }}
+                    editable={!mutation.isPending}
+                    maxLength={6}
+                  />
+                  <Text style={styles.customSPLabel}>SP</Text>
+                  <Pressable
+                    onPress={() => { setShowCustomStake(false); setStakeUnits(10); }}
+                    style={styles.customClear}
+                  >
+                    <Text style={styles.customClearText}>Use tiers</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.hint}>Min: 10 SP</Text>
+              </View>
+            )}
           </View>
 
           <View>
@@ -535,39 +605,94 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     color: Colors.dark.tint,
   },
-  stakeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    alignSelf: "flex-start",
+  tierList: {
+    gap: 10,
   },
-  quickPickRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 14,
-    flexWrap: "wrap",
-  },
-  quickPickChip: {
-    backgroundColor: "rgba(29, 161, 242, 0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(29, 161, 242, 0.3)",
-    borderRadius: 8,
-    paddingVertical: 8,
+  tierCard: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.border,
+    borderRadius: 14,
     paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  quickPickChipPressed: {
-    opacity: 0.65,
+  tierCardSelected: {
+    borderColor: Colors.dark.tint,
+    backgroundColor: "rgba(29, 161, 242, 0.08)",
   },
-  quickPickText: {
-    fontSize: 14,
+  tierCardDisabled: {
+    opacity: 0.4,
+  },
+  tierLeft: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+  },
+  tierLabel: {
+    fontSize: 15,
     fontWeight: "600" as const,
+    color: Colors.dark.text,
+  },
+  tierLabelSelected: {
     color: Colors.dark.tint,
   },
-  quickPickClear: {
-    backgroundColor: "transparent",
-    borderColor: Colors.dark.border,
+  tierDescription: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+    marginTop: 1,
   },
-  quickPickClearText: {
+  tierPoints: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: Colors.dark.textSecondary,
+  },
+  tierPointsSelected: {
+    color: Colors.dark.tint,
+  },
+  customToggle: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+    marginTop: 12,
+    alignSelf: "flex-start" as const,
+  },
+  customToggleText: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+  },
+  customSection: {
+    marginTop: 12,
+  },
+  customInputRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+  },
+  customInput: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: Colors.dark.text,
+    minWidth: 90,
+  },
+  customSPLabel: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    fontWeight: "600" as const,
+  },
+  customClear: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  customClearText: {
+    fontSize: 12,
     color: Colors.dark.tabIconDefault,
   },
   stakeLabelRow: {
@@ -596,26 +721,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#EF4444",
     marginTop: 6,
-  },
-  stakeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stakeValue: {
-    fontSize: 28,
-    fontWeight: "bold" as const,
-    color: Colors.dark.tint,
-    minWidth: 40,
-    textAlign: "center",
-  },
-  stakeButtonDisabled: {
-    opacity: 0.35,
   },
   button: {
     backgroundColor: Colors.dark.accent,
