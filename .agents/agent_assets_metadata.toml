@@ -1,5 +1,22 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "GzsKyZ_-HbjBhBg6Wy15H"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-a.png"
+type = "image"
+title = "swayger logo concept A clash arrows"
+
+[[generated]]
+id = "azI6cU78yTP8rg7ztKAlY"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-b.png"
+type = "image"
+title = "swayger logo concept B split S"
+
+[[generated]]
+id = "i9L5HTJHFi7_3fNdSasje"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-c.png"
+type = "image"
+title = "swayger logo concept C badge stamp"
 
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
@@ -60,3 +77,21 @@ id = "M_ovpPp1leXTDtZ9WsEEi"
 uri = "file://docs/swayger-referral-system.md"
 type = "text"
 title = "Swayger — Referral System Design"
+
+[[outputs]]
+id = "VDMctB_J6DJVClkpFoMR2"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-a.png"
+type = "image"
+title = "Concept A — The Clash Mark (opposing chevrons, 1v1 tension)"
+
+[[outputs]]
+id = "Nxdj3vB8LqPl22wIwt6Y5"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-b.png"
+type = "image"
+title = "Concept B — The Split S (two sides, one letter)"
+
+[[outputs]]
+id = "ytjBHRUsjd9h5fIIIXfpM"
+uri = "file://attached_assets/generated_images/swayger-logo-concept-c.png"
+type = "image"
+title = "Concept C — The Badge/Stamp (receipt seal, premium)"
