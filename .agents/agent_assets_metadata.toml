@@ -54,6 +54,18 @@ uri = "file://attached_assets/generated_images/swayger-lockup-c.png"
 type = "image"
 title = "swayger lockup VS split blocks"
 
+[[generated]]
+id = "SWO8e9b6x6PtXRcYcD8SH"
+uri = "file://attached_assets/generated_images/swayger-arena-logo.png"
+type = "image"
+title = "swayger arena spotlight VS logo"
+
+[[generated]]
+id = "cTQK1Knqgc4EXoffcrNpe"
+uri = "file://attached_assets/generated_images/swayger-arena-logo-square.png"
+type = "image"
+title = "swayger arena VS logo square"
+
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
@@ -167,3 +179,15 @@ id = "bPpv3mPQ4D73lWZYdXs2E"
 uri = "file://attached_assets/generated_images/swayger-lockup-c.png"
 type = "image"
 title = "Lockup C — VS Split Blocks + Wordmark"
+
+[[outputs]]
+id = "dxYoEiDFf_hx4OaOveArH"
+uri = "file://attached_assets/generated_images/swayger-arena-logo.png"
+type = "image"
+title = "Swayger Arena Logo — Wide (16:9, social/banner format)"
+
+[[outputs]]
+id = "Q-WV2Q-shfRZ1EHDA55IV"
+uri = "file://attached_assets/generated_images/swayger-arena-logo-square.png"
+type = "image"
+title = "Swayger Arena Logo — Square (1:1, app icon/profile format)"
