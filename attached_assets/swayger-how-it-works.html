@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How to Create a Swayger</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 48px 24px;
+  }
+
+  .page {
+    max-width: 1080px;
+    width: 100%;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 52px;
+  }
+  .brand {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #1da1f2;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .header h1 {
+    font-size: 42px;
+    font-weight: 800;
+    color: #f0f6fc;
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+  .header p {
+    font-size: 17px;
+    color: #8b9ab3;
+  }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+
+  /* Phone frame */
+  .phone {
+    width: 100%;
+    max-width: 300px;
+    background: #0d1117;
+    border-radius: 44px;
+    border: 2px solid #2a3444;
+    box-shadow:
+      0 0 0 1px #1a2232,
+      0 32px 64px rgba(0,0,0,0.7),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 22px 8px;
+    background: #0d1117;
+  }
+  .status-time { font-size: 13px; font-weight: 700; color: #f0f6fc; }
+  .status-icons { display: flex; align-items: center; gap: 5px; }
+  .status-icons span { font-size: 12px; color: #f0f6fc; font-weight: 600; }
+
+  /* Screen content */
+  .screen { padding: 0; background: #0d1117; }
+
+  /* Screen 1 — Feed */
+  .feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 18px 14px;
+  }
+  .feed-title { font-size: 22px; font-weight: 800; color: #f0f6fc; }
+  .bell-icon { font-size: 20px; }
+
+  .challenge-banner {
+    margin: 0 14px 14px;
+    background: linear-gradient(135deg, #1a2d50 0%, #0f1e38 100%);
+    border: 1px solid #1da1f240;
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .banner-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .banner-text { flex: 1; }
+  .banner-text .bt { font-size: 13px; font-weight: 700; color: #f0f6fc; }
+  .banner-text .bs { font-size: 11px; color: #8b9ab3; margin-top: 1px; }
+  .banner-arrow { color: #1da1f2; font-size: 16px; }
+
+  .card {
+    margin: 0 14px 10px;
+    background: #131c2e;
+    border: 1px solid #1e2d44;
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+  .card-title { font-size: 14px; font-weight: 700; color: #f0f6fc; line-height: 1.3; flex: 1; margin-right: 8px; }
+  .badge {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 3px 7px; border-radius: 6px; flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .badge-active { background: #0f3d1e; color: #22c55e; border: 1px solid #22c55e40; }
+  .badge-pending { background: #2d1f0f; color: #f97316; border: 1px solid #f9731640; }
+  .card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8b9ab3; }
+  .sp-pill {
+    display: flex; align-items: center; gap: 3px;
+    background: #1a2a1a; border: 1px solid #22c55e30;
+    border-radius: 6px; padding: 2px 6px;
+    font-size: 11px; font-weight: 700; color: #22c55e;
+  }
+  .picks-row {
+    display: flex; gap: 6px; margin-top: 8px;
+  }
+  .pick-box {
+    flex: 1; background: #0d1117; border: 1px solid #1e2d44;
+    border-radius: 8px; padding: 6px 8px;
+  }
+  .pick-label { font-size: 9px; color: #8b9ab3; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pick-val { font-size: 12px; font-weight: 600; color: #f0f6fc; margin-top: 2px; }
+
+  /* Screen 2 — Create */
+  .create-header { padding: 10px 18px 14px; }
+  .create-title { font-size: 22px; font-weight: 800; color: #f0f6fc; }
+  .create-sub { font-size: 13px; color: #8b9ab3; margin-top: 2px; }
+
+  .form-section { padding: 0 14px 12px; }
+  .form-label {
+    font-size: 10px; font-weight: 700; color: #8b9ab3;
+    text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;
+  }
+  .form-input {
+    background: #131c2e; border: 1px solid #1e2d44;
+    border-radius: 10px; padding: 10px 12px;
+    font-size: 13px; color: #f0f6fc; width: 100%;
+  }
+  .form-hint { font-size: 10px; color: #4a5a72; margin-top: 4px; }
+
+  .category-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cat-chip {
+    display: flex; align-items: center; gap: 4px;
+    background: #131c2e; border: 1px solid #1e2d44;
+    border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #8b9ab3;
+  }
+  .cat-chip.active { border-color: #1da1f2; background: rgba(29,161,242,0.08); color: #1da1f2; }
+
+  .stake-area { padding: 0 14px 12px; }
+  .stake-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .balance-pill {
+    display: flex; align-items: center; gap: 3px;
+    background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3);
+    border-radius: 20px; padding: 3px 8px;
+    font-size: 10px; font-weight: 700; color: #eab308;
+  }
+  .stake-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .stake-btn {
+    width: 36px; height: 36px; border-radius: 18px;
+    background: #131c2e; border: 1px solid #1e2d44;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #f0f6fc; cursor: default;
+  }
+  .stake-val { font-size: 28px; font-weight: 800; color: #1da1f2; min-width: 50px; text-align: center; }
+  .quick-row { display: flex; gap: 5px; flex-wrap: wrap; }
+  .quick-chip {
+    background: rgba(29,161,242,0.08); border: 1px solid rgba(29,161,242,0.25);
+    border-radius: 7px; padding: 5px 10px;
+    font-size: 11px; font-weight: 700; color: #1da1f2;
+  }
+  .quick-chip.reset { background: transparent; border-color: #1e2d44; color: #4a5a72; }
+
+  .stake-note-area { padding: 0 14px 12px; }
+  .note-input {
+    background: #131c2e; border: 1px solid #f9731630;
+    border-radius: 10px; padding: 9px 12px;
+    font-size: 12px; color: #f97316; width: 100%;
+    font-style: italic;
+  }
+
+  .create-btn {
+    margin: 4px 14px 18px;
+    background: linear-gradient(135deg, #1da1f2, #0e8bd8);
+    border-radius: 12px; padding: 13px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    box-shadow: 0 4px 16px rgba(29,161,242,0.35);
+  }
+  .create-btn span { font-size: 15px; font-weight: 700; color: #fff; }
+
+  /* Screen 3 — Share */
+  .share-nav { padding: 8px 14px; display: flex; align-items: center; gap: 6px; }
+  .back-text { font-size: 11px; color: #1da1f2; }
+
+  .swayger-detail { padding: 2px 14px 14px; }
+  .swayger-dtitle { font-size: 16px; font-weight: 800; color: #f0f6fc; line-height: 1.3; margin-bottom: 8px; }
+  .detail-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .dchip {
+    display: flex; align-items: center; gap: 4px;
+    background: #131c2e; border: 1px solid #1e2d44;
+    border-radius: 8px; padding: 4px 8px; font-size: 11px; color: #8b9ab3;
+  }
+  .dchip.sp { background: rgba(29,161,242,0.08); border-color: #1da1f240; color: #1da1f2; font-weight: 700; }
+  .dchip.pending { background: #2d1f0f; border-color: #f9731640; color: #f97316; font-weight: 700; }
+
+  .share-box {
+    background: #131c2e; border: 2px dashed #1e2d44;
+    border-radius: 14px; padding: 16px;
+    text-align: center; margin-bottom: 10px;
+  }
+  .share-box-label { font-size: 10px; font-weight: 700; color: #8b9ab3; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+  .share-code { font-size: 28px; font-weight: 900; color: #f0f6fc; letter-spacing: 6px; margin-bottom: 2px; }
+
+  .share-btn {
+    background: linear-gradient(135deg, #1da1f2, #0e8bd8);
+    border-radius: 10px; padding: 11px;
+    text-align: center; font-size: 14px; font-weight: 700; color: #fff;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 12px rgba(29,161,242,0.3);
+  }
+  .copy-btn {
+    background: #131c2e; border: 1px solid #1e2d44;
+    border-radius: 10px; padding: 9px;
+    text-align: center; font-size: 13px; color: #8b9ab3;
+    margin-bottom: 10px;
+  }
+  .waiting-text { font-size: 11px; color: #4a5a72; text-align: center; margin-bottom: 14px; }
+
+  .your-pick-box {
+    background: #131c2e; border: 1px solid #1e2d44;
+    border-radius: 12px; padding: 12px;
+  }
+  .yp-label { font-size: 10px; font-weight: 700; color: #8b9ab3; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+  .yp-val { font-size: 14px; font-weight: 700; color: #f0f6fc; }
+  .stake-note-display {
+    display: flex; align-items: center; gap: 5px; margin-top: 6px;
+  }
+  .snd-label { font-size: 10px; color: #4a5a72; }
+  .snd-val { font-size: 11px; font-weight: 600; color: #f97316; font-style: italic; }
+
+  /* Tab bar */
+  .tab-bar {
+    display: flex; justify-content: space-around;
+    background: #0a1221; border-top: 1px solid #1e2d44;
+    padding: 8px 0 20px;
+    margin-top: auto;
+  }
+  .tab-item {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 9px; color: #4a5a72; font-weight: 600;
+  }
+  .tab-item.active { color: #1da1f2; }
+  .tab-icon { font-size: 18px; }
+
+  /* Step labels */
+  .step-label { text-align: center; }
+  .step-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #1da1f2; color: #fff;
+    font-size: 14px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 12px;
+    box-shadow: 0 4px 12px rgba(29,161,242,0.4);
+  }
+  .step-label h3 { font-size: 20px; font-weight: 800; color: #f0f6fc; margin-bottom: 6px; }
+  .step-label p { font-size: 14px; color: #8b9ab3; line-height: 1.5; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 48px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #2a3a55;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">Swayger</div>
+    <h1>How to Create a Swayger</h1>
+    <p>Challenge anyone to a 1v1 wager — in under 60 seconds</p>
+  </div>
+
+  <!-- 3 Phones -->
+  <div class="grid">
+
+    <!-- ── PHONE 1: Feed ── -->
+    <div class="step">
+      <div class="phone">
+        <div class="status-bar">
+          <span class="status-time">9:41</span>
+          <div class="status-icons">
+            <span>••• WiFi</span>
+            <span>🔋</span>
+          </div>
+        </div>
+        <div class="screen">
+          <div class="feed-header">
+            <span class="feed-title">Swaygers</span>
+            <span class="bell-icon">🔔</span>
+          </div>
+
+          <!-- NBA Banner -->
+          <div class="challenge-banner">
+            <div class="banner-icon">🏀</div>
+            <div class="banner-text">
+              <div class="bt">NBA Playoffs Live</div>
+              <div class="bs">Make your bracket picks now</div>
+            </div>
+            <span class="banner-arrow">›</span>
+          </div>
+
+          <!-- Card 1 -->
+          <div class="card">
+            <div class="card-top">
+              <span class="card-title">Chiefs beat the Eagles in the Super Bowl</span>
+              <span class="badge badge-active">Active</span>
+            </div>
+            <div class="card-meta">
+              🏈 Sports &nbsp;
+              <span class="sp-pill">⚡ 250 SP</span>
+            </div>
+            <div class="picks-row">
+              <div class="pick-box">
+                <div class="pick-label">You</div>
+                <div class="pick-val">Chiefs win</div>
+              </div>
+              <div class="pick-box">
+                <div class="pick-label">Them</div>
+                <div class="pick-val">Eagles +4.5</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="card">
+            <div class="card-top">
+              <span class="card-title">Lakers win the championship this season</span>
+              <span class="badge badge-pending">Pending</span>
+            </div>
+            <div class="card-meta">
+              🏀 Sports &nbsp;
+              <span class="sp-pill">⚡ 100 SP</span>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="card">
+            <div class="card-top">
+              <span class="card-title">First episode of Season 2 drops by March</span>
+              <span class="badge badge-active">Active</span>
+            </div>
+            <div class="card-meta">
+              🎬 Entertainment &nbsp;
+              <span class="sp-pill">⚡ 50 SP</span>
+            </div>
+          </div>
+
+        </div>
+        <div class="tab-bar">
+          <div class="tab-item active"><span class="tab-icon">⚡</span>Swaygers</div>
+          <div class="tab-item"><span class="tab-icon">＋</span>Create</div>
+          <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+          <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
+        </div>
+      </div>
+
+      <div class="step-label">
+        <div class="step-num">1</div>
+        <h3>Open the App</h3>
+        <p>See all your active challenges and browse live contests</p>
+      </div>
+    </div>
+
+    <!-- ── PHONE 2: Create ── -->
+    <div class="step">
+      <div class="phone">
+        <div class="status-bar">
+          <span class="status-time">9:41</span>
+          <div class="status-icons">
+            <span>••• WiFi</span>
+            <span>🔋</span>
+          </div>
+        </div>
+        <div class="screen">
+
+          <div class="create-header">
+            <div class="create-title">Create Swayger</div>
+            <div class="create-sub">Set up a 1v1 wager</div>
+          </div>
+
+          <!-- What's the Swayger -->
+          <div class="form-section">
+            <div class="form-label">What's the Swayger?</div>
+            <div class="form-input">Bills vs Chiefs — Bills win outright</div>
+          </div>
+
+          <!-- Category -->
+          <div class="form-section">
+            <div class="form-label">Category</div>
+            <div class="category-row">
+              <div class="cat-chip active">🏈 Sports</div>
+              <div class="cat-chip">🎬 Ent.</div>
+              <div class="cat-chip">🎮 Gaming</div>
+              <div class="cat-chip">⋯ Other</div>
+            </div>
+          </div>
+
+          <!-- Swayger Points -->
+          <div class="stake-area">
+            <div class="stake-label-row">
+              <div class="form-label" style="margin-bottom:0">Swayger Points</div>
+              <div class="balance-pill">💰 750 SP available</div>
+            </div>
+            <div class="stake-row">
+              <div class="stake-btn">−</div>
+              <div class="stake-val">100</div>
+              <div class="stake-btn">+</div>
+            </div>
+            <div class="quick-row">
+              <div class="quick-chip">+5</div>
+              <div class="quick-chip">+10</div>
+              <div class="quick-chip">+25</div>
+              <div class="quick-chip">+50</div>
+              <div class="quick-chip">+100</div>
+              <div class="quick-chip reset">Reset</div>
+            </div>
+          </div>
+
+          <!-- Stake Note -->
+          <div class="stake-note-area">
+            <div class="form-label">Stake Note <span style="color:#4a5a72;font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+            <div class="note-input">"Loser buys pizza"</div>
+            <div class="form-hint">Add social flavor — what's really on the line?</div>
+          </div>
+
+          <!-- Your Pick -->
+          <div class="form-section">
+            <div class="form-label">Your Pick</div>
+            <div class="form-input">Bills win by 7+</div>
+            <div class="form-hint">Opponent sets their pick when they accept.</div>
+          </div>
+
+          <div class="create-btn">
+            <span>⚡ Create Swayger</span>
+          </div>
+
+        </div>
+        <div class="tab-bar">
+          <div class="tab-item"><span class="tab-icon">⚡</span>Swaygers</div>
+          <div class="tab-item active"><span class="tab-icon">＋</span>Create</div>
+          <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+          <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
+        </div>
+      </div>
+
+      <div class="step-label">
+        <div class="step-num">2</div>
+        <h3>Set the Terms</h3>
+        <p>Name the wager, bet your Swayger Points, add a stake note, and lock in your pick</p>
+      </div>
+    </div>
+
+    <!-- ── PHONE 3: Share ── -->
+    <div class="step">
+      <div class="phone">
+        <div class="status-bar">
+          <span class="status-time">9:41</span>
+          <div class="status-icons">
+            <span>••• WiFi</span>
+            <span>🔋</span>
+          </div>
+        </div>
+        <div class="screen">
+
+          <div class="share-nav">
+            <span style="color:#1da1f2;font-size:14px">‹</span>
+            <span class="back-text">Back to Swaygers</span>
+          </div>
+
+          <div class="swayger-detail">
+            <div class="swayger-dtitle">Bills vs Chiefs — Bills win outright</div>
+            <div class="detail-chips">
+              <div class="dchip">🏈 Sports</div>
+              <div class="dchip sp">⚡ 100 SP</div>
+              <div class="dchip pending">⏳ Pending</div>
+            </div>
+
+            <div class="share-box">
+              <div class="share-box-label">Share This Code</div>
+              <div class="share-code">M K 7 R X</div>
+            </div>
+
+            <div class="share-btn">↗ Share Challenge</div>
+            <div class="copy-btn">📋 Copy invite link</div>
+            <div class="waiting-text">Waiting for your opponent to accept the challenge</div>
+
+            <div class="your-pick-box">
+              <div class="yp-label">Your Pick</div>
+              <div class="yp-val">Bills win by 7+</div>
+              <div class="stake-note-display">
+                <span class="snd-label">On the line:</span>
+                <span class="snd-val">"Loser buys pizza"</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+        <div class="tab-bar">
+          <div class="tab-item active"><span class="tab-icon">⚡</span>Swaygers</div>
+          <div class="tab-item"><span class="tab-icon">＋</span>Create</div>
+          <div class="tab-item"><span class="tab-icon">🏆</span>Leaderboard</div>
+          <div class="tab-item"><span class="tab-icon">👤</span>Profile</div>
+        </div>
+      </div>
+
+      <div class="step-label">
+        <div class="step-num">3</div>
+        <h3>Share Your Code</h3>
+        <p>Send the code or link — your opponent joins, sets their pick, and the game is on</p>
+      </div>
+    </div>
+
+  </div><!-- /grid -->
+
+  <div class="footer">Swayger &nbsp;·&nbsp; Social Wager Contracts &nbsp;·&nbsp; For Fun</div>
+
+</div>
+</body>
+</html>

@@ -10,6 +10,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/promo", (_req: Request, res: Response) => {
     res.sendFile(path.resolve(process.cwd(), "server/templates/promo.html"));
   });
+  app.get("/how-it-works", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"));
+  });
   app.get("/api/config", (_req: Request, res: Response) => {
     const domains = (process.env.REPLIT_DOMAINS || "")
       .split(",")
