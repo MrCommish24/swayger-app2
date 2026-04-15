@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,17 +8,22 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Share,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { captureRef } from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
+import NBABracketShareCard from "@/components/NBABracketShareCard";
 import {
   fetchAllSeries,
   fetchMyBracketPicks,
   saveBracketPick,
+  fetchLeaderboard,
   isRoundLocked,
   formatLockDate,
   ROUND_LOCK_DATES,
@@ -29,6 +34,7 @@ import {
   type PlayoffSeries,
   type BracketPick,
   type PlayoffRound,
+  type PlayoffScore,
 } from "@/lib/nba-playoffs";
 
 const NBA_BLUE = "#1D428A";
@@ -222,11 +228,13 @@ function RoundSection({
   seriesList,
   picks,
   onPick,
+  onShare,
 }: {
   round: PlayoffRound;
   seriesList: PlayoffSeries[];
   picks: BracketPick[];
   onPick: (seriesId: string, team: string, games: number | null) => void;
+  onShare: (round: PlayoffRound) => void;
 }) {
   const locked = isRoundLocked(round);
   const lockDate = ROUND_LOCK_DATES[round];
@@ -236,6 +244,7 @@ function RoundSection({
   const picksMap = new Map(picks.map((p) => [p.series_id, p]));
   const pickCount = seriesList.filter((s) => picksMap.has(s.id)).length;
   const total = seriesList.filter((s) => !s.team1.startsWith("TBD")).length;
+  const hasPicksForRound = pickCount > 0;
 
   return (
     <View style={styles.roundSection}>
@@ -253,6 +262,16 @@ function RoundSection({
               <Ionicons name="pencil" size={12} color={NBA_GOLD} />
               <Text style={styles.openBadgeText}>Open</Text>
             </View>
+          )}
+          {locked && hasPicksForRound && (
+            <Pressable
+              style={({ pressed }) => [styles.shareRoundBtn, pressed && { opacity: 0.7 }]}
+              onPress={() => onShare(round)}
+              hitSlop={8}
+            >
+              <Ionicons name="share-outline" size={14} color={NBA_GOLD} />
+              <Text style={styles.shareRoundBtnText}>Share</Text>
+            </Pressable>
           )}
         </View>
         <View style={styles.roundMeta}>
@@ -296,8 +315,13 @@ function RoundSection({
 export default function BracketScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+
+  const [shareRound, setShareRound] = useState<PlayoffRound | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [justCompletedRound, setJustCompletedRound] = useState<PlayoffRound | null>(null);
+  const shareCardRef = useRef<View>(null);
 
   const { data: allSeries, isLoading: seriesLoading } = useQuery<PlayoffSeries[]>({
     queryKey: ["/api/nba/series"],
@@ -312,6 +336,18 @@ export default function BracketScreen() {
     staleTime: 30_000,
   });
 
+  const { data: leaderboard } = useQuery<PlayoffScore[]>({
+    queryKey: ["/api/nba/leaderboard"],
+    queryFn: fetchLeaderboard,
+    staleTime: 120_000,
+  });
+
+  const userScore = leaderboard?.find((s) => s.user_id === user?.id);
+  const userRank = userScore
+    ? (leaderboard ?? []).filter((s) => s.total_pts > (userScore?.total_pts ?? 0)).length + 1
+    : undefined;
+  const playerCount = leaderboard?.length ?? 0;
+
   const saveMutation = useMutation({
     mutationFn: async ({
       seriesId,
@@ -325,8 +361,25 @@ export default function BracketScreen() {
       if (!user?.id) throw new Error("Not signed in");
       await saveBracketPick(user.id, seriesId, team, games);
     },
-    onSuccess: () => {
+    onSuccess: (_, { seriesId }) => {
       queryClient.invalidateQueries({ queryKey: ["/nba/my-picks", user?.id] });
+      // Check if this pick completed a round
+      setTimeout(() => {
+        const currentPicks = queryClient.getQueryData<BracketPick[]>(["/nba/my-picks", user?.id]) ?? [];
+        const series = queryClient.getQueryData<PlayoffSeries[]>(["/api/nba/series"]) ?? [];
+        for (const round of PLAYOFF_ROUND_ORDER) {
+          if (isRoundLocked(round)) continue;
+          const roundSeries = series.filter(
+            (s) => s.round === round && !s.team1.startsWith("TBD") && !s.team2.startsWith("TBD")
+          );
+          if (roundSeries.length === 0) continue;
+          const pickedIds = new Set(currentPicks.map((p) => p.series_id));
+          const allPicked = roundSeries.every((s) => pickedIds.has(s.id));
+          if (allPicked && roundSeries.some((s) => s.id === seriesId)) {
+            setJustCompletedRound(round);
+          }
+        }
+      }, 300);
     },
     onError: () => {
       Alert.alert("Error", "Couldn't save your pick. Try again.");
@@ -337,6 +390,44 @@ export default function BracketScreen() {
     await saveMutation.mutateAsync({ seriesId, team, games });
   }
 
+  async function handleShare() {
+    if (!shareCardRef.current) return;
+    setSharing(true);
+    try {
+      if (Platform.OS === "web") {
+        const { default: html2canvas } = await import("html2canvas");
+        const el = shareCardRef.current as unknown as HTMLElement;
+        const canvas = await html2canvas(el, {
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: "#111827",
+          scale: 2,
+          logging: false,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = `swayger-nba-${shareRound ?? "picks"}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const uri = await captureRef(shareCardRef, { format: "png", quality: 1 });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, { mimeType: "image/png" });
+        } else {
+          await Share.share({ url: uri });
+        }
+      }
+    } catch (e) {
+      console.error("[nba-share]", e);
+      Alert.alert("Couldn't capture image", "Try taking a screenshot instead.");
+    } finally {
+      setSharing(false);
+    }
+  }
+
   // Group series by round
   const seriesByRound = new Map<PlayoffRound, PlayoffSeries[]>();
   for (const round of PLAYOFF_ROUND_ORDER) {
@@ -345,6 +436,17 @@ export default function BracketScreen() {
       (allSeries ?? []).filter((s) => s.round === round)
     );
   }
+
+  const displayName = profile?.display_name || `@${profile?.username || "you"}`;
+  const ROUND_SCORE_KEYS: Record<PlayoffRound, keyof PlayoffScore> = {
+    round1: "round1_pts",
+    round2: "round2_pts",
+    conf_finals: "conf_finals_pts",
+    finals: "finals_pts",
+  };
+  const shareRoundScore = shareRound && userScore
+    ? (userScore[ROUND_SCORE_KEYS[shareRound]] as number) ?? 0
+    : undefined;
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
@@ -385,10 +487,92 @@ export default function BracketScreen() {
               seriesList={seriesByRound.get(round) ?? []}
               picks={myPicks ?? []}
               onPick={handlePick}
+              onShare={(r) => setShareRound(r)}
             />
           ))
         )}
       </ScrollView>
+
+      {/* Completion banner — shown after finishing all picks in a round */}
+      {justCompletedRound && !shareRound && (
+        <View style={[styles.completionBanner, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 8 }]}>
+          <View style={styles.completionBannerInner}>
+            <View style={styles.completionBannerLeft}>
+              <Text style={styles.completionEmoji}>🎉</Text>
+              <View>
+                <Text style={styles.completionTitle}>All picks locked in!</Text>
+                <Text style={styles.completionSub}>
+                  {ROUND_LABELS[justCompletedRound]} · share your bracket
+                </Text>
+              </View>
+            </View>
+            <View style={styles.completionActions}>
+              <Pressable
+                style={({ pressed }) => [styles.completionShareBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => { setShareRound(justCompletedRound); setJustCompletedRound(null); }}
+              >
+                <Ionicons name="share-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.completionShareBtnText}>Share</Text>
+              </Pressable>
+              <Pressable onPress={() => setJustCompletedRound(null)} hitSlop={12}>
+                <Ionicons name="close" size={18} color={Colors.dark.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Share overlay modal */}
+      {shareRound && (
+        <View style={styles.shareOverlay}>
+          <Pressable style={styles.shareOverlayBackdrop} onPress={() => setShareRound(null)} />
+          <View style={[styles.shareOverlayContent, { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 16 }]}>
+            <View style={styles.shareOverlayHandle} />
+            <Text style={styles.shareOverlayTitle}>
+              Share {ROUND_LABELS[shareRound]} Picks
+            </Text>
+
+            {/* Rendered share card (captured for image export) */}
+            <View style={styles.shareCardWrap} pointerEvents="none">
+              <View ref={shareCardRef} collapsable={false}>
+                <NBABracketShareCard
+                  round={shareRound}
+                  picks={myPicks ?? []}
+                  series={allSeries ?? []}
+                  displayName={displayName}
+                  score={shareRoundScore && shareRoundScore > 0 ? shareRoundScore : undefined}
+                  rank={userRank}
+                  playerCount={playerCount > 0 ? playerCount : undefined}
+                />
+              </View>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [styles.shareBtn, pressed && { opacity: 0.85 }]}
+              onPress={handleShare}
+              disabled={sharing}
+            >
+              {sharing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="share-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.shareBtnText}>
+                    {Platform.OS === "web" ? "Download Card" : "Share My Picks"}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.shareDismiss, pressed && { opacity: 0.7 }]}
+              onPress={() => setShareRound(null)}
+            >
+              <Text style={styles.shareDismissText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -552,5 +736,109 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     textAlign: "center",
     paddingTop: 2,
+  },
+
+  shareRoundBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: `${NBA_GOLD}15`,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: `${NBA_GOLD}30`,
+    marginLeft: "auto" as any,
+  },
+  shareRoundBtnText: { fontSize: 11, fontWeight: "700" as const, color: NBA_GOLD },
+
+  completionBanner: {
+    backgroundColor: Colors.dark.card,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+  },
+  completionBannerInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  completionBannerLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  completionEmoji: { fontSize: 24 },
+  completionTitle: { fontSize: 14, fontWeight: "700" as const, color: Colors.dark.text },
+  completionSub: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 1 },
+  completionActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  completionShareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: NBA_BLUE,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  completionShareBtnText: { fontSize: 13, fontWeight: "700" as const, color: "#FFFFFF" },
+
+  shareOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+  },
+  shareOverlayBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  shareOverlayContent: {
+    backgroundColor: Colors.dark.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignItems: "center",
+    gap: 16,
+  },
+  shareOverlayHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.dark.border,
+    marginBottom: 4,
+  },
+  shareOverlayTitle: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+    letterSpacing: -0.3,
+  },
+  shareCardWrap: { alignItems: "center" },
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: NBA_BLUE,
+    borderRadius: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 32,
+    width: "100%",
+  },
+  shareBtnText: { fontSize: 16, fontWeight: "700" as const, color: "#FFFFFF" },
+  shareDismiss: { paddingVertical: 6 },
+  shareDismissText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.dark.textSecondary,
+    textDecorationLine: "underline",
   },
 });

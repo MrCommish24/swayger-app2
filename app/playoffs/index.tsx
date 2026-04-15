@@ -232,9 +232,11 @@ function MyPicksSummary({
     <Pressable style={styles.myPicksCard} onPress={onPress}>
       <View style={styles.myPicksHeader}>
         <Text style={styles.myPicksTitle}>My Picks</Text>
-        <View style={styles.leaderboardCardLink}>
-          <Text style={styles.leaderboardCardLinkText}>Edit</Text>
-          <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
+        <View style={styles.myPicksHeaderActions}>
+          <View style={styles.leaderboardCardLink}>
+            <Text style={styles.leaderboardCardLinkText}>View & Share</Text>
+            <Ionicons name="share-outline" size={13} color={NBA_GOLD} />
+          </View>
         </View>
       </View>
       {roundsWithPicks.map((round) => {
@@ -565,6 +567,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between" as const,
     marginBottom: 4,
   },
+  myPicksHeaderActions: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10 },
   myPicksTitle: { fontSize: 15, fontWeight: "700" as const, color: Colors.dark.text },
   myPicksRoundLabel: {
     fontSize: 10,
