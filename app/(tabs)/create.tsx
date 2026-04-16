@@ -473,11 +473,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "bold" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 32,
     color: Colors.dark.text,
+    textTransform: "uppercase" as const,
+    letterSpacing: 1,
   },
   subtitle: {
+    fontFamily: "DMSans_400Regular",
     fontSize: 15,
     color: Colors.dark.textSecondary,
   },
@@ -532,12 +535,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "600" as const,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 12,
     color: Colors.dark.textSecondary,
     marginBottom: 8,
     textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   hint: {
     fontSize: 12,
@@ -545,6 +548,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   input: {
+    fontFamily: "DMSans_400Regular",
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -577,8 +581,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   categoryOptionActive: {
+    backgroundColor: "rgba(67, 97, 238, 0.08)",
     borderColor: Colors.dark.tint,
-    backgroundColor: "rgba(29, 161, 242, 0.08)",
   },
   categoryLabel: {
     fontSize: 13,
@@ -592,7 +596,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(29, 161, 242, 0.08)",
+    backgroundColor: "rgba(67, 97, 238, 0.08)",
     borderWidth: 1,
     borderColor: Colors.dark.tint,
     borderRadius: 12,
@@ -621,7 +625,7 @@ const styles = StyleSheet.create({
   },
   tierCardSelected: {
     borderColor: Colors.dark.tint,
-    backgroundColor: "rgba(29, 161, 242, 0.08)",
+    backgroundColor: "rgba(67, 97, 238, 0.08)",
   },
   tierCardDisabled: {
     opacity: 0.4,
@@ -632,8 +636,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   tierLabel: {
+    fontFamily: "DMSans_500Medium",
     fontSize: 15,
-    fontWeight: "600" as const,
     color: Colors.dark.text,
   },
   tierLabelSelected: {
@@ -645,8 +649,8 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   tierPoints: {
-    fontSize: 17,
-    fontWeight: "700" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 19,
     color: Colors.dark.textSecondary,
   },
   tierPointsSelected: {
@@ -739,8 +743,10 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
     color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600" as const,
+    fontSize: 18,
+    letterSpacing: 1.5,
+    textTransform: "uppercase" as const,
   },
 });

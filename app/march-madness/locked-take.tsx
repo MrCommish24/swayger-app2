@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
   },
   selCountBadge: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   },
   teamCard: {
     width: "47%",
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
     right: 8,
   },
   lockBar: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderTopWidth: 1,
     borderTopColor: Colors.dark.border,
     paddingTop: 12,
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
   },
   teamsPicked: {
     width: "100%",
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: "rgba(34,197,94,0.2)",

@@ -61,7 +61,7 @@ async function fetchAllSettled(): Promise<AllSettledData> {
   if (!settled || settled.length === 0) return { rows: [], profileMap: new Map() };
 
   const userIds = new Set<string>();
-  settled.forEach((s) => {
+  settled.forEach((s: SettledRow) => {
     if (s.creator_id) userIds.add(s.creator_id);
     if (s.opponent_id) userIds.add(s.opponent_id);
   });
@@ -526,7 +526,7 @@ export default function LeaderboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   header: { paddingHorizontal: 24, paddingVertical: 16 },
-  title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
+  title: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 32, color: Colors.dark.text, textTransform: "uppercase" as const, letterSpacing: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 },
   emptyText: { fontSize: 16, color: Colors.dark.textSecondary, textAlign: "center" as const },
   emptySubtext: { fontSize: 14, color: Colors.dark.tabIconDefault, textAlign: "center" as const },
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   columnHeaders: {
     flexDirection: "row" as const, alignItems: "center" as const, paddingHorizontal: 14, paddingBottom: 8,
   },
-  colLabel: { fontSize: 11, fontWeight: "600" as const, color: Colors.dark.tabIconDefault, textTransform: "uppercase" as const, letterSpacing: 0.5 },
+  colLabel: { fontFamily: "DMSans_500Medium", fontSize: 11, color: Colors.dark.tabIconDefault, textTransform: "uppercase" as const, letterSpacing: 0.8 },
   colLabelRight: { textAlign: "right" as const },
 
   entryRow: {
@@ -573,7 +573,7 @@ const styles = StyleSheet.create({
   entryInitialMe: { color: "#ffffff" },
   entryInfo: { flex: 1, gap: 2 },
   entryNameRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6 },
-  entryName: { fontSize: 15, fontWeight: "600" as const, color: Colors.dark.text },
+  entryName: { fontFamily: "DMSans_500Medium", fontSize: 15, color: Colors.dark.text },
   entryNameMe: { color: Colors.dark.tint },
   youBadge: {
     backgroundColor: "rgba(99, 102, 241, 0.2)",
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
   youBadgeText: { fontSize: 10, fontWeight: "700" as const, color: Colors.dark.tint },
   entryUsername: { fontSize: 11, color: Colors.dark.tabIconDefault },
   statsCol: { alignItems: "flex-end" as const, gap: 3 },
-  record: { fontSize: 15, fontWeight: "bold" as const, color: Colors.dark.text },
+  record: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 17, color: Colors.dark.text },
   recordMe: { color: Colors.dark.tint },
   statsTopRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, marginBottom: 2 },
   streakBadge: {
@@ -631,11 +631,11 @@ const styles = StyleSheet.create({
     justifyContent: "center" as const,
   },
   myStandingLabel: {
+    fontFamily: "DMSans_500Medium",
     fontSize: 11,
-    fontWeight: "600" as const,
     color: Colors.dark.tint,
     textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     marginBottom: 3,
   },
   myStandingEmpty: {
@@ -648,8 +648,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   myStandingRecord: {
-    fontSize: 15,
-    fontWeight: "700" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 17,
     color: Colors.dark.text,
   },
   myStandingSP: {
@@ -662,8 +662,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   myRankNum: {
-    fontSize: 20,
-    fontWeight: "800" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 22,
     color: Colors.dark.tint,
   },
   myRankSub: {
@@ -680,7 +680,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: Colors.dark.border, gap: 8,
   },
   recentHeader: {
-    fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tabIconDefault,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 11, color: Colors.dark.tabIconDefault,
     textTransform: "uppercase" as const, letterSpacing: 1, marginBottom: 4,
   },
   recentRow: {

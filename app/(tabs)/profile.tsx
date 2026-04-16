@@ -82,7 +82,7 @@ export default function ProfileScreen() {
       if (result.error) {
         showError(result.error);
       } else {
-        showMessage(`Emergency refill applied — ${result.newBalance} SP added!`);
+        showMessage("Refill Applied", `Emergency refill applied — ${result.newBalance} SP added!`);
         refetchBalance();
         queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
       }
@@ -518,7 +518,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   header: { paddingHorizontal: 24, paddingVertical: 16 },
-  title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
+  title: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 32, color: Colors.dark.text, textTransform: "uppercase" as const, letterSpacing: 1 },
   scrollContent: { flexGrow: 1 },
 
   identityBlock: {
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginBottom: 8,
   },
   avatarInitial: { fontSize: 32, fontWeight: "700" as const, color: "#FFFFFF" },
-  username: { fontSize: 20, fontWeight: "700" as const, color: Colors.dark.text },
+  username: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 24, color: Colors.dark.text, letterSpacing: 0.5 },
   displayNameText: { fontSize: 16, color: Colors.dark.textSecondary },
   displayNameMuted: { fontSize: 15, color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
   email: { fontSize: 13, color: Colors.dark.tabIconDefault, marginTop: 2 },
@@ -563,8 +563,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   spCardBalance: {
-    fontSize: 22,
-    fontWeight: "800" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 26,
     color: Colors.dark.text,
   },
   bankruptcyBtn: {
@@ -618,7 +618,8 @@ const styles = StyleSheet.create({
   },
   section: { paddingHorizontal: 24, paddingTop: 8, gap: 12 },
   sectionTitle: {
-    fontSize: 13, fontWeight: "600" as const, color: Colors.dark.tabIconDefault,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 11, color: Colors.dark.tabIconDefault,
     textTransform: "uppercase" as const, letterSpacing: 1,
   },
   menuItem: {
@@ -630,7 +631,7 @@ const styles = StyleSheet.create({
   menuItemPressed: { opacity: 0.7 },
   menuDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 6 },
   menuItemBody: { flex: 1, gap: 2 },
-  menuItemText: { fontSize: 16, color: Colors.dark.text },
+  menuItemText: { fontFamily: "DMSans_400Regular", fontSize: 16, color: Colors.dark.text },
   menuItemSub: { fontSize: 13, color: Colors.dark.textSecondary },
   menuItemSubMuted: { color: Colors.dark.tabIconDefault, fontStyle: "italic" as const },
 

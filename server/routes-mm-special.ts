@@ -87,7 +87,7 @@ interface RankedMatchup {
   underdogMoneyline?: number;
   gameDate?: string;
   site?: string;
-  oddsSource: "live" | "seed-based";
+  oddsSource: "live" | "seed-based" | "draftkings";
   keyStat?: string;
 }
 

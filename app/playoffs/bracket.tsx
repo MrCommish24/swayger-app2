@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
   shareRoundBtnText: { fontSize: 11, fontWeight: "700" as const, color: NBA_GOLD },
 
   completionBanner: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderTopWidth: 1,
     borderTopColor: Colors.dark.border,
     paddingTop: 12,
