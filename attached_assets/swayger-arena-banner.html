@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swayger — Arena Slash Banner</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .banner {
+      position: relative;
+      width: 1200px;
+      height: 675px;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Spotlight beams ── */
+    .spotlight {
+      position: absolute;
+      top: -10%;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
+
+    .spotlight-left {
+      left: 12%;
+      border-left: 160px solid transparent;
+      border-right: 160px solid transparent;
+      border-top: 700px solid rgba(99, 102, 241, 0.07);
+      filter: blur(40px);
+      transform: rotate(-12deg);
+    }
+
+    .spotlight-left::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -90px;
+      width: 0;
+      height: 0;
+      border-left: 90px solid transparent;
+      border-right: 90px solid transparent;
+      border-top: 700px solid rgba(255, 255, 255, 0.04);
+      filter: blur(20px);
+    }
+
+    .spotlight-right {
+      right: 12%;
+      border-left: 160px solid transparent;
+      border-right: 160px solid transparent;
+      border-top: 700px solid rgba(99, 102, 241, 0.07);
+      filter: blur(40px);
+      transform: rotate(12deg);
+    }
+
+    .spotlight-right::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -90px;
+      width: 0;
+      height: 0;
+      border-left: 90px solid transparent;
+      border-right: 90px solid transparent;
+      border-top: 700px solid rgba(255, 255, 255, 0.04);
+      filter: blur(20px);
+    }
+
+    /* ── Floor glow pools ── */
+    .glow-left {
+      position: absolute;
+      bottom: 15%;
+      left: 14%;
+      width: 220px;
+      height: 80px;
+      background: radial-gradient(ellipse, rgba(99, 102, 241, 0.18) 0%, transparent 70%);
+      border-radius: 50%;
+      filter: blur(20px);
+    }
+
+    .glow-right {
+      position: absolute;
+      bottom: 15%;
+      right: 14%;
+      width: 220px;
+      height: 80px;
+      background: radial-gradient(ellipse, rgba(99, 102, 241, 0.18) 0%, transparent 70%);
+      border-radius: 50%;
+      filter: blur(20px);
+    }
+
+    /* ── Center composition ── */
+    .center {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      z-index: 10;
+    }
+
+    .mark {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 200px;
+      height: 180px;
+    }
+
+    /* ── Dots ── */
+    .dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 12px 4px rgba(255, 255, 255, 0.6), 0 0 28px 8px rgba(99, 102, 241, 0.4);
+    }
+
+    .dot-left  { left: 18px;  top: 50%; transform: translateY(-50%); }
+    .dot-right { right: 18px; top: 50%; transform: translateY(-50%); }
+
+    /* ── Slash ── */
+    .slash-wrap {
+      position: absolute;
+      width: 88px;
+      height: 148px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .slash {
+      width: 14px;
+      height: 148px;
+      border-radius: 7px;
+      background: linear-gradient(
+        to right,
+        #6366f1 0%,
+        #818cf8 30%,
+        #ffffff 60%,
+        #e2e2e2 100%
+      );
+      transform: rotate(-28deg);
+      box-shadow:
+        0 0 18px 4px rgba(99, 102, 241, 0.55),
+        0 0 50px 10px rgba(99, 102, 241, 0.2);
+    }
+
+    /* ── Wordmark ── */
+    .wordmark {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .wordmark-text {
+      font-family: 'Inter', 'Arial Black', sans-serif;
+      font-weight: 900;
+      font-size: 52px;
+      letter-spacing: 0.12em;
+      color: #fff;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .wordmark-underline {
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(to right, #4f46e5, #6366f1, #818cf8);
+      border-radius: 2px;
+    }
+
+    /* ── Tagline ── */
+    .tagline {
+      font-family: 'Inter', 'Arial', sans-serif;
+      font-weight: 400;
+      font-size: 13px;
+      letter-spacing: 0.3em;
+      color: rgba(255, 255, 255, 0.35);
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">
+
+    <!-- Spotlights -->
+    <div class="spotlight spotlight-left"></div>
+    <div class="spotlight spotlight-right"></div>
+
+    <!-- Floor glow pools -->
+    <div class="glow-left"></div>
+    <div class="glow-right"></div>
+
+    <!-- Center mark + wordmark -->
+    <div class="center">
+      <div class="mark">
+        <div class="dot dot-left"></div>
+        <div class="slash-wrap">
+          <div class="slash"></div>
+        </div>
+        <div class="dot dot-right"></div>
+      </div>
+
+      <div class="wordmark">
+        <div class="wordmark-text">SWAYGER</div>
+        <div class="wordmark-underline"></div>
+      </div>
+
+      <div class="tagline">Make your wager. Draw the line.</div>
+    </div>
+
+  </div>
+</body>
+</html>
