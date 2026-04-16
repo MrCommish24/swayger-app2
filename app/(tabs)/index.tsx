@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  title: { fontSize: 28, fontWeight: "bold" as const, color: Colors.dark.text },
+  title: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 32, color: Colors.dark.text, textTransform: "uppercase" as const, letterSpacing: 1 },
   avatarPill: {
     flexDirection: "row" as const,
     alignItems: "center",

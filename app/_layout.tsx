@@ -14,6 +14,14 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  BarlowCondensed_700Bold,
+  BarlowCondensed_800ExtraBold,
+} from "@expo-google-fonts/barlow-condensed";
+import {
+  DMSans_400Regular,
+  DMSans_500Medium,
+} from "@expo-google-fonts/dm-sans";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
@@ -116,9 +124,19 @@ export default function RootLayout() {
   // New Architecture (newArchEnabled: true) does not auto-register vector icon
   // fonts on native. Load Ionicons explicitly before any icons render.
   // On web, icons use CSS so we skip this (empty map resolves instantly).
-  const [fontsLoaded, fontError] = useFonts(
-    Platform.OS === "web" ? {} : Ionicons.font
-  );
+  const [fontsLoaded, fontError] = useFonts({
+    ...(Platform.OS === "web" ? {} : Ionicons.font),
+    BarlowCondensed_700Bold,
+    BarlowCondensed_800ExtraBold,
+    DMSans_400Regular,
+    DMSans_500Medium,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) return null;
 

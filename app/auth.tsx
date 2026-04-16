@@ -16,6 +16,7 @@ import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+import SwaygerMark from "@/components/SwaygerMark";
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -164,17 +165,19 @@ export default function AuthScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.content}>
-          <Ionicons name="flash" size={48} color={Colors.dark.tint} />
-          <Text style={styles.title}>Swayger</Text>
-          <Text style={styles.headline}>Think you're right? Swayger on it.</Text>
-          <Text style={styles.tagline}>Friendly wagers. No real money. Just bragging rights.</Text>
+          <View style={styles.logoBlock}>
+            <SwaygerMark size={52} color={Colors.dark.text} />
+            <Text style={styles.wordmark}>SWAYGER</Text>
+            <View style={styles.wordmarkUnderline} />
+            <Text style={styles.tagline}>LOCK IT IN. STAND ON IT.</Text>
+          </View>
 
           {step === "enter-email" && (
             <View style={styles.form}>
               <TextInput
                 style={styles.input}
                 placeholder="Email address"
-                placeholderTextColor={Colors.dark.tabIconDefault}
+                placeholderTextColor={Colors.dark.textMuted}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -194,7 +197,7 @@ export default function AuthScreen() {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.buttonText}>Send Sign-In Code</Text>
+                  <Text style={styles.buttonText}>SEND SIGN-IN CODE</Text>
                 )}
               </Pressable>
             </View>
@@ -208,7 +211,7 @@ export default function AuthScreen() {
                   size={32}
                   color={Colors.dark.tint}
                 />
-                <Text style={styles.sentTitle}>Enter the code</Text>
+                <Text style={styles.sentTitle}>Check Your Email</Text>
                 <Text style={styles.sentTo}>
                   We sent a code to {email}. Enter it below.
                 </Text>
@@ -217,7 +220,7 @@ export default function AuthScreen() {
               <TextInput
                 style={[styles.input, styles.codeInput]}
                 placeholder="000000"
-                placeholderTextColor={Colors.dark.tabIconDefault}
+                placeholderTextColor={Colors.dark.textMuted}
                 value={otpCode}
                 onChangeText={(text) =>
                   setOtpCode(text.replace(/[^0-9]/g, "").slice(0, 8))
@@ -241,7 +244,7 @@ export default function AuthScreen() {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.buttonText}>Verify Code</Text>
+                  <Text style={styles.buttonText}>VERIFY CODE</Text>
                 )}
               </Pressable>
 
@@ -281,7 +284,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Email address"
-                placeholderTextColor={Colors.dark.tabIconDefault}
+                placeholderTextColor={Colors.dark.textMuted}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -292,7 +295,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Password"
-                placeholderTextColor={Colors.dark.tabIconDefault}
+                placeholderTextColor={Colors.dark.textMuted}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -312,7 +315,7 @@ export default function AuthScreen() {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.buttonText}>Sign In</Text>
+                  <Text style={styles.buttonText}>SIGN IN</Text>
                 )}
               </Pressable>
               <Pressable
@@ -346,7 +349,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Email address"
-                placeholderTextColor={Colors.dark.tabIconDefault}
+                placeholderTextColor={Colors.dark.textMuted}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -367,7 +370,7 @@ export default function AuthScreen() {
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.buttonText}>Send Reset Link</Text>
+                  <Text style={styles.buttonText}>SEND RESET LINK</Text>
                 )}
               </Pressable>
               <Pressable
@@ -387,7 +390,7 @@ export default function AuthScreen() {
                   size={32}
                   color={Colors.dark.tint}
                 />
-                <Text style={styles.sentTitle}>Check your email</Text>
+                <Text style={styles.sentTitle}>Check Your Email</Text>
                 <Text style={styles.sentTo}>
                   We sent a password reset link to {email}. Click it to set a new password.
                 </Text>
@@ -402,30 +405,29 @@ export default function AuthScreen() {
           )}
         </View>
 
-        {/* How It Works — visible below the fold, only on the entry step */}
         {step === "enter-email" && (
           <View style={styles.hiwSection}>
             <View style={styles.hiwDivider} />
-            <Text style={styles.hiwHeading}>How It Works</Text>
+            <Text style={styles.hiwHeading}>HOW IT WORKS</Text>
             <View style={styles.hiwSteps}>
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>1</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>Set the Terms</Text>
+                  <Text style={styles.hiwStepTitle}>SET THE TERMS</Text>
                   <Text style={styles.hiwStepDesc}>Name the wager, bet Swayger Points, add a stake note, and lock in your pick.</Text>
                 </View>
               </View>
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>2</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>Share Your Code</Text>
+                  <Text style={styles.hiwStepTitle}>SHARE YOUR CODE</Text>
                   <Text style={styles.hiwStepDesc}>Send the 5-letter code to your opponent — they join and set their pick.</Text>
                 </View>
               </View>
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>3</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>Winner Takes the Points</Text>
+                  <Text style={styles.hiwStepTitle}>WINNER TAKES THE POINTS</Text>
                   <Text style={styles.hiwStepDesc}>No real money — just Swayger Points, bragging rights, and whatever you put on the line.</Text>
                 </View>
               </View>
@@ -453,25 +455,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 32,
-    gap: 12,
+    paddingTop: 40,
+    gap: 32,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold" as const,
-    color: Colors.dark.text,
-    marginTop: 12,
+  logoBlock: {
+    alignItems: "center",
+    gap: 6,
   },
-  headline: {
-    fontSize: 18,
-    fontWeight: "600" as const,
+  wordmark: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 48,
+    letterSpacing: 6,
     color: Colors.dark.text,
-    textAlign: "center" as const,
+    textTransform: "uppercase",
+    marginTop: 4,
+  },
+  wordmarkUnderline: {
+    width: "100%",
+    height: 2,
+    backgroundColor: Colors.dark.tint,
+    borderRadius: 1,
+    marginTop: 2,
   },
   tagline: {
-    fontSize: 14,
-    color: Colors.dark.textSecondary,
-    textAlign: "center" as const,
-    marginBottom: 16,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 11,
+    letterSpacing: 3.5,
+    color: Colors.dark.tint,
+    textTransform: "uppercase",
+    marginTop: 6,
   },
   form: {
     width: "100%",
@@ -483,21 +495,25 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   sentTitle: {
-    fontSize: 18,
-    fontWeight: "600" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 28,
     color: Colors.dark.text,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   sentTo: {
+    fontFamily: "DMSans_400Regular",
     fontSize: 14,
     color: Colors.dark.textSecondary,
     textAlign: "center",
     lineHeight: 20,
   },
   input: {
+    fontFamily: "DMSans_400Regular",
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
@@ -507,44 +523,48 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 24,
     letterSpacing: 8,
+    fontFamily: "DMSans_500Medium",
   },
   button: {
-    backgroundColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.tint,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   buttonPressed: {
-    opacity: 0.8,
+    backgroundColor: Colors.dark.accentPress,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   buttonText: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
     color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600" as const,
+    fontSize: 17,
+    letterSpacing: 2,
+    textTransform: "uppercase",
   },
   secondaryButton: {
     backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: Colors.dark.tint,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryButtonText: {
+    fontFamily: "DMSans_500Medium",
     color: Colors.dark.tint,
     fontSize: 15,
-    fontWeight: "600" as const,
   },
   linkButton: {
     alignItems: "center",
     paddingVertical: 8,
   },
   linkText: {
+    fontFamily: "DMSans_400Regular",
     color: Colors.dark.tint,
     fontSize: 14,
   },
@@ -558,16 +578,16 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   hiwHeading: {
+    fontFamily: "BarlowCondensed_700Bold",
     fontSize: 13,
-    fontWeight: "700" as const,
-    color: Colors.dark.tabIconDefault,
-    textTransform: "uppercase" as const,
-    letterSpacing: 1.2,
+    color: Colors.dark.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 2,
     marginBottom: 20,
-    textAlign: "center" as const,
+    textAlign: "center",
   },
   hiwSteps: {
-    gap: 16,
+    gap: 12,
     marginBottom: 28,
   },
   hiwStep: {
@@ -577,13 +597,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
   },
   hiwNum: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: Colors.dark.tint,
     alignItems: "center" as const,
     justifyContent: "center" as const,
@@ -591,8 +611,8 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   hiwNumText: {
-    fontSize: 14,
-    fontWeight: "800" as const,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 15,
     color: "#FFFFFF",
   },
   hiwStepBody: {
@@ -600,18 +620,22 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   hiwStepTitle: {
+    fontFamily: "BarlowCondensed_700Bold",
     fontSize: 15,
-    fontWeight: "700" as const,
     color: Colors.dark.text,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   hiwStepDesc: {
+    fontFamily: "DMSans_400Regular",
     fontSize: 13,
     color: Colors.dark.textSecondary,
     lineHeight: 18,
   },
   privacyLink: {
+    fontFamily: "DMSans_400Regular",
     fontSize: 12,
-    color: Colors.dark.tabIconDefault,
+    color: Colors.dark.textMuted,
     textAlign: "center" as const,
     textDecorationLine: "underline" as const,
   },

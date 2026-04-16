@@ -1,18 +1,37 @@
 const Colors = {
   dark: {
-    background: "#0B1120",
-    surface: "#0F1A2E",
-    surfaceLight: "#162236",
-    text: "#FFFFFF",
-    textSecondary: "#8A9BB5",
-    tint: "#1DA1F2",
-    tintLight: "#4DB8F7",
-    tabIconDefault: "#5A6E85",
-    tabIconSelected: "#1DA1F2",
-    border: "#1C2A3E",
-    accent: "#1DA1F2",
-    accentGold: "#F5A623",
-    teal: "#0D7377",
+    // ── Base surfaces ──────────────────────────────────────────
+    background:    "#09090B",   // Void Black — app bg, dominant base
+    surface:       "#27272A",   // Zinc — card bg, elevated surfaces
+    surfaceLight:  "#323236",   // bg-elevated
+
+    // ── Text ───────────────────────────────────────────────────
+    text:          "#FAFAFA",   // Signal White — primary text on dark
+    textSecondary: "#A8A8B3",   // Slate — secondary text, metadata
+    textMuted:     "#6B6B77",   // muted — timestamps, placeholders
+
+    // ── Accent (Swayger Indigo) ────────────────────────────────
+    tint:          "#4361EE",   // Swayger Indigo — primary accent
+    tintLight:     "#5472F0",   // accent-hover
+    accent:        "#4361EE",   // alias for tint
+    accentHover:   "#5472F0",
+    accentPress:   "#3554DC",
+
+    // ── Tab bar ────────────────────────────────────────────────
+    tabIconDefault:  "#6B6B77",
+    tabIconSelected: "#4361EE",
+
+    // ── Borders ────────────────────────────────────────────────
+    border:       "#323236",   // border-default
+    borderStrong: "#404044",   // border-strong
+
+    // ── Semantic — use only for their meaning ──────────────────
+    success:      "#10B981",   // Proof Green — wins, correct, confirmed
+    danger:       "#EF4444",   // Heat Red — losses, wrong, urgency
+    accentGold:   "#F59E0B",   // Championship Gold — finals/prizes ONLY
+
+    // ── Legacy alias (kept so no breakage during transition) ───
+    teal: "#4361EE",
   },
 };
 
