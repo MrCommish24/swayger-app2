@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import { peekPendingInvite, consumePendingInvite } from "@/lib/pending-invite";
 
 type CallbackStatus = "processing" | "success" | "error";
 
@@ -203,9 +204,15 @@ export default function AuthCallbackScreen() {
     }
   }
 
-  function navigateHome() {
+  async function navigateHome() {
+    // Peek (don't consume) so the invite survives if username-setup is needed first
+    const pending = await peekPendingInvite();
     setTimeout(() => {
-      router.replace("/(tabs)");
+      if (pending?.code) {
+        router.replace(`/invite/${pending.code}` as never);
+      } else {
+        router.replace("/(tabs)");
+      }
     }, 300);
   }
 
@@ -216,8 +223,13 @@ export default function AuthCallbackScreen() {
     processInitialUrl();
   }
 
-  function handleContinue() {
-    router.replace("/(tabs)");
+  async function handleContinue() {
+    const pending = await peekPendingInvite();
+    if (pending?.code) {
+      router.replace(`/invite/${pending.code}` as never);
+    } else {
+      router.replace("/(tabs)");
+    }
   }
 
   function handleBackToSignIn() {

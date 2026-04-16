@@ -192,7 +192,7 @@ function PickReceiptCard({
   cardRef,
 }: {
   target: ReceiptTarget;
-  cardRef: React.RefObject<View>;
+  cardRef: React.RefObject<View | null>;
 }) {
   const { matchup, result, pickType } = target;
   const cfg = pickTypeConfig(pickType);
@@ -282,7 +282,7 @@ function PickReceiptModal({
 }: {
   target: ReceiptTarget | null;
   onClose: () => void;
-  offScreenRef: React.RefObject<View>;
+  offScreenRef: React.RefObject<View | null>;
 }) {
   const modalCardRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);

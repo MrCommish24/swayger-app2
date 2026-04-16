@@ -59,10 +59,14 @@ function useProtectedRoute() {
     const inAuthGroup = segments[0] === "auth";
     const inUsernameSetup = segments[0] === "username-setup";
     const inAuthCallback = segments[0] === "auth-callback";
-    const inMMPickLanding = segments[0] === "mm-pick"; // Public referral landing page
+    const inMMPickLanding = segments[0] === "mm-pick";
+    const inInvite = segments[0] === "invite"; // Preview-first: let invite screen handle its own auth
 
     if (inAuthCallback) return;
-    if (inMMPickLanding) return; // Let landing page handle its own auth-aware rendering
+    if (inMMPickLanding) return;
+    // Unauthenticated invite visitors get preview mode — no redirect to /auth.
+    // Authenticated visitors with needsUsername still fall through to /username-setup.
+    if (inInvite && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       router.replace("/auth");

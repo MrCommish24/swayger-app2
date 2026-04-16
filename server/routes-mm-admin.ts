@@ -189,7 +189,8 @@ export async function computeAndSaveScores(
     const ptsEach = (TAKE_POINTS[take.take_type] ?? 0) * mult;
     for (const team of take.teams ?? []) {
       if (advancedTeams.has(team)) {
-        scores[take.user_id][take.take_type as keyof typeof scores[string]] += ptsEach;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (scores[take.user_id] as Record<string, any>)[take.take_type] += ptsEach;
       }
     }
   }
@@ -1313,9 +1314,8 @@ export function registerMMAdminRoutes(app: Express): void {
         const leaderboard = scores.map((s: { user_id: string; total_points: number }, i: number) => ({
           rank: i + 1,
           username: nameMap.get(s.user_id)?.username ?? "—",
-          display_name: nameMap.get(s.user_id)?.display_name ?? null,
-          total_points: s.total_points,
-          is_me: s.user_id === profile.id,
+          displayName: nameMap.get(s.user_id)?.display_name ?? null,
+          totalPoints: s.total_points,
         }));
         try {
           await sendThankyouEmail({

@@ -20,6 +20,7 @@ import { validateUsername } from "@/lib/helpers";
 import { Profile } from "@/types";
 import Colors from "@/constants/colors";
 import type { PendingReferral } from "@/app/mm-pick/[matchupId]";
+import { consumePendingInvite } from "@/lib/pending-invite";
 
 const PENDING_REFERRAL_KEY = "swayger_pending_referral";
 
@@ -69,7 +70,18 @@ export default function UsernameSetupScreen() {
         setProfile(data as Profile);
         setNeedsUsername(false);
 
-        // Check for a pending referral from a matchup share link
+        // 1. Check for a pending invite first (highest priority)
+        try {
+          const pendingInvite = await consumePendingInvite();
+          if (pendingInvite?.code) {
+            router.replace(`/invite/${pendingInvite.code}` as never);
+            return;
+          }
+        } catch {
+          // Non-blocking
+        }
+
+        // 2. Check for a pending referral from a matchup share link
         try {
           const raw = await AsyncStorage.getItem(PENDING_REFERRAL_KEY);
           if (raw && user) {
@@ -80,7 +92,6 @@ export default function UsernameSetupScreen() {
               referral_code_in: pending.referralCode,
             });
             if (!rpcErr) {
-              // Navigate to the picks screen for the referred round
               router.replace({
                 pathname: "/march-madness/picks" as never,
                 params: { roundId: pending.roundId },
