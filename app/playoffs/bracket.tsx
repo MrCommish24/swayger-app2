@@ -240,11 +240,9 @@ function RoundSection({
   const lockDate = ROUND_LOCK_DATES[round];
   const pts = ROUND_POINTS[round];
   const bonus = GAMES_BONUS_POINTS[round];
-  const visibleSeries = seriesList.filter((s) => !s.team1.startsWith("TBD") && !s.team2.startsWith("TBD"));
-
   const picksMap = new Map(picks.map((p) => [p.series_id, p]));
-  const pickCount = visibleSeries.filter((s) => picksMap.has(s.id)).length;
-  const total = visibleSeries.length;
+  const pickCount = seriesList.filter((s) => picksMap.has(s.id)).length;
+  const total = seriesList.filter((s) => !s.team1.startsWith("TBD") || !s.team2.startsWith("TBD")).length;
   const hasPicksForRound = pickCount > 0;
 
   return (
@@ -293,13 +291,13 @@ function RoundSection({
       </View>
 
       {/* Series cards */}
-      {visibleSeries.length === 0 ? (
+      {seriesList.length === 0 ? (
         <View style={styles.roundEmpty}>
           <Ionicons name="time-outline" size={20} color={Colors.dark.textSecondary} />
           <Text style={styles.roundEmptyText}>Matchups announced after previous round</Text>
         </View>
       ) : (
-        visibleSeries.map((s) => (
+        seriesList.map((s) => (
           <SeriesCard
             key={s.id}
             series={s}
