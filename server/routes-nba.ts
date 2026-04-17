@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
+import { sendNBALaunchBlast } from "./email";
 
 // ─── Supabase admin client ────────────────────────────────────
 
@@ -395,6 +396,198 @@ export function registerNBARoutes(app: Express): void {
       res.json({ ok: true, message: "Scores recomputed" });
     } catch (err) {
       console.error("[nba/admin/recompute]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── POST /api/nba/admin/seed-from-odds ────────────────────────
+  // Calls The Odds API, deduplicates R1 matchups, upserts into nba_playoff_series.
+  // Safe to call multiple times — uses onConflict upsert.
+  app.post("/api/nba/admin/seed-from-odds", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+
+    const apiKey = process.env.ODDS_API_KEY;
+    if (!apiKey) {
+      res.status(400).json({ ok: false, error: "ODDS_API_KEY not configured" });
+      return;
+    }
+
+    // NBA team → conference lookup (all 30 teams)
+    const EAST_TEAMS = new Set([
+      "Boston Celtics", "Brooklyn Nets", "New York Knicks",
+      "Philadelphia 76ers", "Toronto Raptors",
+      "Chicago Bulls", "Cleveland Cavaliers", "Detroit Pistons",
+      "Indiana Pacers", "Milwaukee Bucks",
+      "Atlanta Hawks", "Charlotte Hornets", "Miami Heat",
+      "Orlando Magic", "Washington Wizards",
+    ]);
+
+    function slugify(name: string): string {
+      return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    }
+
+    try {
+      const url = `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=american`;
+      const oddsRes = await fetch(url);
+      if (!oddsRes.ok) {
+        const body = await oddsRes.text();
+        res.status(502).json({ ok: false, error: `Odds API error ${oddsRes.status}`, detail: body });
+        return;
+      }
+
+      const events: OddsEvent[] = await oddsRes.json();
+
+      // Deduplicate matchups by canonical team pair (alphabetical key)
+      const seen = new Map<string, {
+        team1: string; team2: string;
+        team1Odds: number | null; team2Odds: number | null;
+        startsAt: string;
+      }>();
+
+      for (const ev of events) {
+        const fanduel = ev.bookmakers.find((b) => b.key === "fanduel") ?? ev.bookmakers[0];
+        const h2h = fanduel?.markets.find((m) => m.key === "h2h");
+        const homeOdds = h2h?.outcomes.find((o) => o.name === ev.home_team)?.price ?? null;
+        const awayOdds = h2h?.outcomes.find((o) => o.name === ev.away_team)?.price ?? null;
+
+        // Canonical key: sort team names alphabetically so (A vs B) == (B vs A)
+        const teams = [ev.home_team, ev.away_team].sort();
+        const key = teams.join("|");
+
+        if (!seen.has(key)) {
+          seen.set(key, {
+            team1: teams[0],
+            team2: teams[1],
+            team1Odds: teams[0] === ev.home_team ? homeOdds : awayOdds,
+            team2Odds: teams[1] === ev.home_team ? homeOdds : awayOdds,
+            startsAt: ev.commence_time,
+          });
+        } else {
+          // Keep earliest game date
+          const existing = seen.get(key)!;
+          if (ev.commence_time < existing.startsAt) {
+            existing.startsAt = ev.commence_time;
+          }
+        }
+      }
+
+      if (seen.size === 0) {
+        res.json({ ok: true, message: "No NBA games found from Odds API", upserted: 0 });
+        return;
+      }
+
+      const supabase = getSupabase();
+
+      // Build upsert rows
+      const rows: {
+        id: string; season: string; round: string;
+        conference: string | null; seed1: number | null; seed2: number | null;
+        team1: string; team2: string; starts_at: string; sort_order: number;
+        updated_at: string;
+      }[] = [];
+
+      let eastOrder = 0;
+      let westOrder = 100;
+
+      for (const matchup of seen.values()) {
+        const { team1, team2, team1Odds, team2Odds, startsAt } = matchup;
+
+        const isEast1 = EAST_TEAMS.has(team1);
+        const isEast2 = EAST_TEAMS.has(team2);
+        const conf = (isEast1 || isEast2) ? "east" : "west";
+
+        // Determine seed order: lower (more negative) odds = bigger favorite = seed1
+        let orderedTeam1 = team1;
+        let orderedTeam2 = team2;
+        let seed1: number | null = null;
+        let seed2: number | null = null;
+
+        if (team1Odds !== null && team2Odds !== null) {
+          // More negative american odds = bigger favorite
+          if (team2Odds < team1Odds) {
+            orderedTeam1 = team2;
+            orderedTeam2 = team1;
+          }
+        }
+
+        const seriesId = `r1-${conf}-${slugify(orderedTeam1)}-vs-${slugify(orderedTeam2)}`;
+        const sortOrder = conf === "east" ? eastOrder++ : westOrder++;
+
+        rows.push({
+          id: seriesId,
+          season: "2026",
+          round: "round1",
+          conference: conf,
+          seed1,
+          seed2,
+          team1: orderedTeam1,
+          team2: orderedTeam2,
+          starts_at: startsAt,
+          sort_order: sortOrder,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      const { error } = await supabase
+        .from("nba_playoff_series")
+        .upsert(rows, { onConflict: "id" });
+
+      if (error) throw error;
+
+      console.log(`[nba/seed-from-odds] Upserted ${rows.length} series`);
+      res.json({
+        ok: true,
+        upserted: rows.length,
+        series: rows.map((r) => ({ id: r.id, team1: r.team1, team2: r.team2, conf: r.conference, starts_at: r.starts_at })),
+      });
+    } catch (err) {
+      console.error("[nba/seed-from-odds]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── POST /api/nba/admin/blast-launch ──────────────────────────
+  // Manual trigger: send NBA Playoffs launch email to all subscribed users.
+  // Call this when ready — does NOT fire automatically.
+  app.post("/api/nba/admin/blast-launch", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+
+      type ProfileRow = {
+        id: string;
+        notification_email?: string | null;
+        email_unsubscribed?: boolean;
+      };
+
+      const eligible = ((allProfiles ?? []) as ProfileRow[]).filter(
+        (p) => p.notification_email && !p.email_unsubscribed
+      );
+
+      console.log(`[nba/blast-launch] Sending to ${eligible.length} users`);
+
+      let sent = 0;
+      const errors: string[] = [];
+
+      for (const profile of eligible) {
+        try {
+          await sendNBALaunchBlast({
+            to: profile.notification_email as string,
+            userId: profile.id,
+          });
+          sent++;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[nba/blast-launch] Failed for ${profile.id}:`, msg);
+          errors.push(`${profile.id}: ${msg}`);
+        }
+      }
+
+      console.log(`[nba/blast-launch] Done — sent: ${sent}, errors: ${errors.length}`);
+      res.json({ ok: true, sent, errors: errors.length > 0 ? errors : undefined });
+    } catch (err) {
+      console.error("[nba/blast-launch]", err);
       res.status(500).json({ ok: false, error: String(err) });
     }
   });

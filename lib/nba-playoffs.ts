@@ -40,10 +40,10 @@ export const ROUND_PRIZES: Record<string, { amount: string; label: string }> = {
 // Bracket picks for a round are only available before its lock date.
 
 export const ROUND_LOCK_DATES: Record<string, string> = {
-  round1:      "2026-04-19T13:00:00-04:00",  // 1pm ET — before first R1 game
-  round2:      "2026-05-05T12:00:00-04:00",  // ~May 5 — adjusted after R1 ends
-  conf_finals: "2026-05-26T12:00:00-04:00",  // ~May 26
-  finals:      "2026-06-09T12:00:00-04:00",  // ~June 9
+  round1:      "2026-04-18T11:00:00-05:00",  // 11am CDT Saturday April 18 — before first R1 tip
+  round2:      "2026-05-05T12:00:00-05:00",  // ~May 5 CDT — adjusted after R1 ends
+  conf_finals: "2026-05-26T12:00:00-05:00",  // ~May 26 CDT
+  finals:      "2026-06-09T12:00:00-05:00",  // ~June 9 CDT
 };
 
 export function isRoundLocked(round: string): boolean {

@@ -1644,6 +1644,129 @@ export function buildOutreachBFollowupEmailPreview(): string {
   return buildOutreachBFollowupEmailHtml({ displayName: "Jordan", feedbackUrl });
 }
 
+// ─── NBA Playoffs 2026 Launch Blast ──────────────────────────────────────────
+
+export function buildNBALaunchBlastHtml(): string {
+  const picksUrl = `${APP_URL}/playoffs/bracket`;
+
+  const body = `
+    <div style="background:linear-gradient(135deg,#0a1628 0%,#1a2a4a 100%);border:1px solid rgba(255,199,44,0.4);border-radius:12px;padding:18px 20px;margin-bottom:22px;text-align:center;">
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#FFC72C;text-transform:uppercase;">🏀 NBA Playoffs 2026</p>
+      <p style="margin:0;font-size:22px;font-weight:800;color:#FFFFFF;line-height:1.2;">Pick the bracket. Win the pot.</p>
+      <p style="margin:8px 0 0;font-size:13px;color:#93A8C8;">Picks lock today at <strong style="color:#FFFFFF;">11am CDT.</strong></p>
+    </div>
+
+    <p style="margin:0 0 20px;font-size:15px;color:#D1D5DB;line-height:1.6;">
+      The NBA Playoffs tip off today. Pick the winner and number of games for every series — each round you get right earns points. The leaderboard resets every round, so you can make a run all the way through the Finals.
+    </p>
+
+    <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Points per round</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:22px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">First Round</span>
+        <span style="float:right;font-size:13px;font-weight:700;color:#FFFFFF;">100 pts <span style="color:#FFC72C;font-size:11px;">+ 50 bonus (exact games)</span></span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Second Round</span>
+        <span style="float:right;font-size:13px;font-weight:700;color:#FFFFFF;">300 pts <span style="color:#FFC72C;font-size:11px;">+ 75 bonus</span></span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Conference Finals</span>
+        <span style="float:right;font-size:13px;font-weight:700;color:#FFFFFF;">1,000 pts <span style="color:#FFC72C;font-size:11px;">+ 150 bonus</span></span>
+      </td></tr>
+      <tr><td style="padding:10px 0;">
+        <span style="font-size:13px;color:#8B95A5;">NBA Finals</span>
+        <span style="float:right;font-size:13px;font-weight:700;color:#FFFFFF;">3,000 pts <span style="color:#FFC72C;font-size:11px;">+ 250 bonus</span></span>
+      </td></tr>
+    </table>
+
+    <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Prizes</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:22px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Best First Round score</span>
+        <span style="float:right;font-size:14px;font-weight:700;color:#FFC72C;">$15</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Best Second Round score</span>
+        <span style="float:right;font-size:14px;font-weight:700;color:#FFC72C;">$15</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">Best Conference Finals score</span>
+        <span style="float:right;font-size:14px;font-weight:700;color:#FFC72C;">$20</span>
+      </td></tr>
+      <tr><td style="padding:10px 0;">
+        <span style="font-size:13px;color:#8B95A5;">Overall Leaderboard Champion</span>
+        <span style="float:right;font-size:14px;font-weight:700;color:#FFC72C;">$50</span>
+      </td></tr>
+    </table>
+
+    <p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks lock <strong style="color:#FFFFFF;">11am CDT today.</strong> Once locked, they're locked.</p>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NBA Playoffs 2026 — Pick your bracket</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">The NBA Playoffs start today. Your bracket won't fill itself. 🏀</p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}"
+                     style="display:inline-block;background:#FFC72C;color:#000000;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Make My Picks →
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendNBALaunchBlast(opts: {
+  to: string;
+  userId?: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  let html = buildNBALaunchBlastHtml();
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "🏀 NBA Playoffs 2026 — Pick your bracket before 11am",
+    html,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildThankyouEmailPreview(): string {
