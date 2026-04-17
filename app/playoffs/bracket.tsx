@@ -242,7 +242,7 @@ function RoundSection({
   const bonus = GAMES_BONUS_POINTS[round];
   const picksMap = new Map(picks.map((p) => [p.series_id, p]));
   const pickCount = seriesList.filter((s) => picksMap.has(s.id)).length;
-  const total = seriesList.filter((s) => !s.team1.startsWith("TBD") || !s.team2.startsWith("TBD")).length;
+  const total = seriesList.length;
   const hasPicksForRound = pickCount > 0;
 
   return (
