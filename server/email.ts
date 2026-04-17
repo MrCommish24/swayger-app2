@@ -1653,11 +1653,11 @@ export function buildNBALaunchBlastHtml(): string {
     <div style="background:linear-gradient(135deg,#0a1628 0%,#1a2a4a 100%);border:1px solid rgba(255,199,44,0.4);border-radius:12px;padding:18px 20px;margin-bottom:22px;text-align:center;">
       <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#FFC72C;text-transform:uppercase;">🏀 NBA Playoffs 2026</p>
       <p style="margin:0;font-size:22px;font-weight:800;color:#FFFFFF;line-height:1.2;">Pick every series. Nail the games.</p>
-      <p style="margin:8px 0 0;font-size:13px;color:#93A8C8;">Picks lock today at <strong style="color:#FFFFFF;">11am CDT.</strong></p>
+      <p style="margin:8px 0 0;font-size:13px;color:#93A8C8;">Picks lock tomorrow at <strong style="color:#FFFFFF;">11am CDT.</strong></p>
     </div>
 
     <p style="margin:0 0 20px;font-size:15px;color:#D1D5DB;line-height:1.6;">
-      The NBA Playoffs tip off today. Pick who wins each series and how many games it goes — every correct call earns points. The leaderboard resets every round, so you can keep climbing all the way through the Finals.
+      The NBA Playoffs tip off tomorrow. Pick who wins each series and how many games it goes — every correct call earns points. The leaderboard resets every round, so you can keep climbing all the way through the Finals.
     </p>
 
     <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Points per round</p>
@@ -1702,7 +1702,7 @@ export function buildNBALaunchBlastHtml(): string {
       </td></tr>
     </table>
 
-    <p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks lock <strong style="color:#FFFFFF;">11am CDT today.</strong> Once locked, they're locked.</p>
+    <p style="margin:0;font-size:13px;color:#6B7280;text-align:center;">Picks lock <strong style="color:#FFFFFF;">11am CDT tomorrow.</strong> Once locked, they're locked.</p>
   `;
 
   return `<!DOCTYPE html>
@@ -1723,7 +1723,7 @@ export function buildNBALaunchBlastHtml(): string {
         </tr>
         <tr>
           <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">The NBA Playoffs start today. Your bracket won't fill itself. 🏀</p>
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">The NBA Playoffs start tomorrow. Your picks won't make themselves. 🏀</p>
             ${body}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px;">
               <tr>
