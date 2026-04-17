@@ -429,21 +429,54 @@ export function registerNBARoutes(app: Express): void {
   });
 
   // ── POST /api/nba/admin/seed-known-r1 ─────────────────────────
-  // Restores the Round 1 matchups that are already known, leaving only the
-  // two play-in-dependent slots as TBD.
+  // Wipes all stale round1 rows and inserts the canonical 8 matchups:
+  //   6 fully known + 2 play-in TBD slots (1 seed known, 8 seed TBD).
+  // East: Pistons(1)/TBD, Celtics(2)/76ers(7), Knicks(3)/Hawks(6), Cavs(4)/Raptors(5)
+  // West: Thunder(1)/TBD, Spurs(2)/Blazers(7), Nuggets(3)/Wolves(6), Lakers(4)/Rockets(5)
   app.post("/api/nba/admin/seed-known-r1", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
     try {
       const supabase = getSupabase();
+
+      // IDs that are authoritative — delete everything else in round1
+      const canonicalIds = [
+        "r1-east-detroit-pistons-vs-tbd",
+        "r1-east-boston-celtics-vs-philadelphia-76ers",
+        "r1-east-new-york-knicks-vs-atlanta-hawks",
+        "r1-east-cleveland-cavaliers-vs-toronto-raptors",
+        "r1-west-oklahoma-city-thunder-vs-tbd",
+        "r1-west-san-antonio-spurs-vs-portland-trail-blazers",
+        "r1-west-denver-nuggets-vs-minnesota-timberwolves",
+        "r1-west-los-angeles-lakers-vs-houston-rockets",
+      ];
+
+      // Delete all stale round1 rows that aren't in the canonical list
+      const { error: delErr } = await supabase
+        .from("nba_playoff_series")
+        .delete()
+        .eq("round", "round1")
+        .not("id", "in", `(${canonicalIds.map((id) => `"${id}"`).join(",")})`);
+      if (delErr) console.warn("[nba/seed-known-r1] cleanup warn:", delErr.message);
+
       const knownRows = [
-        { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors", team1: "Cleveland Cavaliers", team2: "Toronto Raptors", conference: "east", seed1: 2, seed2: 7, starts_at: "2026-04-18T12:10:00-05:00", sort_order: 1 },
-        { id: "r1-east-new-york-knicks-vs-atlanta-hawks", team1: "New York Knicks", team2: "Atlanta Hawks", conference: "east", seed1: 4, seed2: 5, starts_at: "2026-04-18T17:10:00-05:00", sort_order: 2 },
-        { id: "r1-east-boston-celtics-vs-philadelphia-76ers", team1: "Boston Celtics", team2: "Philadelphia 76ers", conference: "east", seed1: 3, seed2: 6, starts_at: "2026-04-19T12:10:00-05:00", sort_order: 3 },
-        { id: "r1-east-brooklyn-nets-vs-miami-heat", team1: "Brooklyn Nets", team2: "Miami Heat", conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 4 },
-        { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves", team1: "Denver Nuggets", team2: "Minnesota Timberwolves", conference: "west", seed1: 2, seed2: 7, starts_at: "2026-04-18T14:40:00-05:00", sort_order: 101 },
-        { id: "r1-west-houston-rockets-vs-los-angeles-lakers", team1: "Houston Rockets", team2: "Los Angeles Lakers", conference: "west", seed1: 4, seed2: 5, starts_at: "2026-04-18T19:40:00-05:00", sort_order: 102 },
-        { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers", team1: "San Antonio Spurs", team2: "Portland Trail Blazers", conference: "west", seed1: 3, seed2: 6, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 103 },
-        { id: "r1-west-phoenix-suns-vs-golden-state-warriors", team1: "Phoenix Suns", team2: "Golden State Warriors", conference: "west", seed1: 4, seed2: 5, starts_at: "2026-04-17T21:10:00-05:00", sort_order: 100 },
+        // ── East ──────────────────────────────────────────────────────────────
+        // 1 seed: Detroit Pistons — 8 seed TBD (play-in)
+        { id: "r1-east-detroit-pistons-vs-tbd",                      team1: "Detroit Pistons",          team2: "TBD",                   conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-19T13:00:00-05:00", sort_order: 1 },
+        // 2 seed: Boston Celtics vs 7 seed: Philadelphia 76ers
+        { id: "r1-east-boston-celtics-vs-philadelphia-76ers",         team1: "Boston Celtics",           team2: "Philadelphia 76ers",     conference: "east", seed1: 2, seed2: 7, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 2 },
+        // 3 seed: New York Knicks vs 6 seed: Atlanta Hawks
+        { id: "r1-east-new-york-knicks-vs-atlanta-hawks",             team1: "New York Knicks",          team2: "Atlanta Hawks",          conference: "east", seed1: 3, seed2: 6, starts_at: "2026-04-18T17:10:00-05:00", sort_order: 3 },
+        // 4 seed: Cleveland Cavaliers vs 5 seed: Toronto Raptors
+        { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors",       team1: "Cleveland Cavaliers",      team2: "Toronto Raptors",        conference: "east", seed1: 4, seed2: 5, starts_at: "2026-04-18T12:10:00-05:00", sort_order: 4 },
+        // ── West ──────────────────────────────────────────────────────────────
+        // 1 seed: OKC Thunder — 8 seed TBD (play-in)
+        { id: "r1-west-oklahoma-city-thunder-vs-tbd",                 team1: "Oklahoma City Thunder",    team2: "TBD",                   conference: "west", seed1: 1, seed2: 8, starts_at: "2026-04-19T15:30:00-05:00", sort_order: 101 },
+        // 2 seed: San Antonio Spurs vs 7 seed: Portland Trail Blazers
+        { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers",  team1: "San Antonio Spurs",        team2: "Portland Trail Blazers", conference: "west", seed1: 2, seed2: 7, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 102 },
+        // 3 seed: Denver Nuggets vs 6 seed: Minnesota Timberwolves
+        { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves",     team1: "Denver Nuggets",           team2: "Minnesota Timberwolves", conference: "west", seed1: 3, seed2: 6, starts_at: "2026-04-18T14:40:00-05:00", sort_order: 103 },
+        // 4 seed: Los Angeles Lakers vs 5 seed: Houston Rockets
+        { id: "r1-west-los-angeles-lakers-vs-houston-rockets",        team1: "Los Angeles Lakers",       team2: "Houston Rockets",        conference: "west", seed1: 4, seed2: 5, starts_at: "2026-04-18T19:40:00-05:00", sort_order: 104 },
       ];
 
       const { error } = await supabase.from("nba_playoff_series").upsert(

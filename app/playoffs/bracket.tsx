@@ -311,31 +311,42 @@ function RoundSection({
   );
 }
 
-const ROUND1_SERIES_ORDER = [
-  "r1-east-cleveland-cavaliers-vs-toronto-raptors",
-  "r1-east-new-york-knicks-vs-atlanta-hawks",
-  "r1-east-boston-celtics-vs-philadelphia-76ers",
-  "r1-east-brooklyn-nets-vs-miami-heat",
-  "r1-west-phoenix-suns-vs-golden-state-warriors",
-  "r1-west-denver-nuggets-vs-minnesota-timberwolves",
-  "r1-west-houston-rockets-vs-los-angeles-lakers",
-  "r1-west-san-antonio-spurs-vs-portland-trail-blazers",
-] as const;
+// Canonical Round 1 order — East (1-4) then West (1-4) by seed
+// The two 1v8 slots have a known 1 seed but TBD 8 seed (play-in determines it).
+const ROUND1_SERIES_ORDER: {
+  id: string;
+  seed1: number;
+  seed2: number;
+  team1Fallback: string;
+  team2Fallback: string;
+  conference: "east" | "west";
+}[] = [
+  // East
+  { id: "r1-east-detroit-pistons-vs-tbd",               seed1: 1, seed2: 8, team1Fallback: "Detroit Pistons",          team2Fallback: "TBD", conference: "east" },
+  { id: "r1-east-boston-celtics-vs-philadelphia-76ers",  seed1: 2, seed2: 7, team1Fallback: "Boston Celtics",           team2Fallback: "Philadelphia 76ers", conference: "east" },
+  { id: "r1-east-new-york-knicks-vs-atlanta-hawks",      seed1: 3, seed2: 6, team1Fallback: "New York Knicks",          team2Fallback: "Atlanta Hawks", conference: "east" },
+  { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors",seed1: 4, seed2: 5, team1Fallback: "Cleveland Cavaliers",      team2Fallback: "Toronto Raptors", conference: "east" },
+  // West
+  { id: "r1-west-oklahoma-city-thunder-vs-tbd",          seed1: 1, seed2: 8, team1Fallback: "Oklahoma City Thunder",    team2Fallback: "TBD", conference: "west" },
+  { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers", seed1: 2, seed2: 7, team1Fallback: "San Antonio Spurs", team2Fallback: "Portland Trail Blazers", conference: "west" },
+  { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves", seed1: 3, seed2: 6, team1Fallback: "Denver Nuggets",       team2Fallback: "Minnesota Timberwolves", conference: "west" },
+  { id: "r1-west-los-angeles-lakers-vs-houston-rockets", seed1: 4, seed2: 5, team1Fallback: "Los Angeles Lakers",      team2Fallback: "Houston Rockets", conference: "west" },
+];
 
 function canonicalizeRound1Series(series: PlayoffSeries[]): PlayoffSeries[] {
   const map = new Map(series.map((s) => [s.id, s]));
-  return ROUND1_SERIES_ORDER.map((id, index) => {
+  return ROUND1_SERIES_ORDER.map(({ id, seed1, seed2, team1Fallback, team2Fallback, conference }, index) => {
     const row = map.get(id);
     if (row) return row;
     return {
       id,
       season: "2026",
       round: "round1",
-      conference: id.includes("-east-") ? "east" : "west",
-      seed1: id.includes("-1v8") ? 1 : id.includes("-2v7") ? 2 : id.includes("-3v6") ? 3 : 4,
-      seed2: id.includes("-1v8") ? 8 : id.includes("-2v7") ? 7 : id.includes("-3v6") ? 6 : 5,
-      team1: "TBD",
-      team2: "TBD",
+      conference,
+      seed1,
+      seed2,
+      team1: team1Fallback,
+      team2: team2Fallback,
       winner: null,
       games: null,
       starts_at: null,
