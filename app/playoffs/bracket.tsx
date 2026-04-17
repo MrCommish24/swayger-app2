@@ -311,6 +311,41 @@ function RoundSection({
   );
 }
 
+const ROUND1_SERIES_ORDER = [
+  "r1-east-cleveland-cavaliers-vs-toronto-raptors",
+  "r1-east-new-york-knicks-vs-atlanta-hawks",
+  "r1-east-boston-celtics-vs-philadelphia-76ers",
+  "r1-east-brooklyn-nets-vs-miami-heat",
+  "r1-west-phoenix-suns-vs-golden-state-warriors",
+  "r1-west-denver-nuggets-vs-minnesota-timberwolves",
+  "r1-west-houston-rockets-vs-los-angeles-lakers",
+  "r1-west-san-antonio-spurs-vs-portland-trail-blazers",
+] as const;
+
+function canonicalizeRound1Series(series: PlayoffSeries[]): PlayoffSeries[] {
+  const map = new Map(series.map((s) => [s.id, s]));
+  return ROUND1_SERIES_ORDER.map((id, index) => {
+    const row = map.get(id);
+    if (row) return row;
+    return {
+      id,
+      season: "2026",
+      round: "round1",
+      conference: id.includes("-east-") ? "east" : "west",
+      seed1: id.includes("-1v8") ? 1 : id.includes("-2v7") ? 2 : id.includes("-3v6") ? 3 : 4,
+      seed2: id.includes("-1v8") ? 8 : id.includes("-2v7") ? 7 : id.includes("-3v6") ? 6 : 5,
+      team1: "TBD",
+      team2: "TBD",
+      winner: null,
+      games: null,
+      starts_at: null,
+      sort_order: index,
+      created_at: "",
+      updated_at: "",
+    } as PlayoffSeries;
+  });
+}
+
 export default function BracketScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -432,7 +467,9 @@ export default function BracketScreen() {
   for (const round of PLAYOFF_ROUND_ORDER) {
     seriesByRound.set(
       round,
-      (allSeries ?? []).filter((s) => s.round === round)
+      round === "round1"
+        ? canonicalizeRound1Series((allSeries ?? []).filter((s) => s.round === "round1"))
+        : (allSeries ?? []).filter((s) => s.round === round)
     );
   }
 
