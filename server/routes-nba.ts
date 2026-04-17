@@ -436,14 +436,14 @@ export function registerNBARoutes(app: Express): void {
     try {
       const supabase = getSupabase();
       const knownRows = [
-        { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors", team1: "Cleveland Cavaliers", team2: "Toronto Raptors", conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-18T12:10:00-05:00", sort_order: 1 },
+        { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors", team1: "Cleveland Cavaliers", team2: "Toronto Raptors", conference: "east", seed1: 2, seed2: 7, starts_at: "2026-04-18T12:10:00-05:00", sort_order: 1 },
         { id: "r1-east-new-york-knicks-vs-atlanta-hawks", team1: "New York Knicks", team2: "Atlanta Hawks", conference: "east", seed1: 4, seed2: 5, starts_at: "2026-04-18T17:10:00-05:00", sort_order: 2 },
         { id: "r1-east-boston-celtics-vs-philadelphia-76ers", team1: "Boston Celtics", team2: "Philadelphia 76ers", conference: "east", seed1: 3, seed2: 6, starts_at: "2026-04-19T12:10:00-05:00", sort_order: 3 },
-        { id: "r1-east-brooklyn-nets-vs-miami-heat", team1: "Brooklyn Nets", team2: "Miami Heat", conference: "east", seed1: 2, seed2: 7, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 4 },
-        { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves", team1: "Denver Nuggets", team2: "Minnesota Timberwolves", conference: "west", seed1: 1, seed2: 8, starts_at: "2026-04-18T14:40:00-05:00", sort_order: 101 },
+        { id: "r1-east-brooklyn-nets-vs-miami-heat", team1: "Brooklyn Nets", team2: "Miami Heat", conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 4 },
+        { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves", team1: "Denver Nuggets", team2: "Minnesota Timberwolves", conference: "west", seed1: 2, seed2: 7, starts_at: "2026-04-18T14:40:00-05:00", sort_order: 101 },
         { id: "r1-west-houston-rockets-vs-los-angeles-lakers", team1: "Houston Rockets", team2: "Los Angeles Lakers", conference: "west", seed1: 4, seed2: 5, starts_at: "2026-04-18T19:40:00-05:00", sort_order: 102 },
         { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers", team1: "San Antonio Spurs", team2: "Portland Trail Blazers", conference: "west", seed1: 3, seed2: 6, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 103 },
-        { id: "r1-west-phoenix-suns-vs-golden-state-warriors", team1: "Phoenix Suns", team2: "Golden State Warriors", conference: "west", seed1: 2, seed2: 7, starts_at: "2026-04-17T21:10:00-05:00", sort_order: 100 },
+        { id: "r1-west-phoenix-suns-vs-golden-state-warriors", team1: "Phoenix Suns", team2: "Golden State Warriors", conference: "west", seed1: 4, seed2: 5, starts_at: "2026-04-17T21:10:00-05:00", sort_order: 100 },
       ];
 
       const { error } = await supabase.from("nba_playoff_series").upsert(
