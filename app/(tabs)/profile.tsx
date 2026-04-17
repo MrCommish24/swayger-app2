@@ -50,7 +50,7 @@ export default function ProfileScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
 
   const INVITE_MESSAGE =
-    "March Madness is here.\nI'm testing a new app where you can lock your champion, call upsets, and make friendly wagers with friends.\n\nNo real money — just bragging rights.\n\nCome make your picks: https://swayger-app.replit.app";
+    "The NBA Challenge is live on Swayger.\nMake your picks, challenge your friends, and keep the receipt.\n\nSwayger is the app for locking in takes, tracking outcomes, and proving who was right. No real money — just bragging rights.\n\nTry it here: https://swayger-app.replit.app";
 
   async function handleInvite() {
     if (Platform.OS === "web") {
