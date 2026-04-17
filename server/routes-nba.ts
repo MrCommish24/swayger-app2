@@ -644,6 +644,21 @@ export function registerNBARoutes(app: Express): void {
     }
   });
 
+  // ── POST /api/nba/admin/test-launch-email ─────────────────────
+  // Send a single preview of the launch email to any address for QA.
+  app.post("/api/nba/admin/test-launch-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email } = req.body as { email?: string };
+    if (!email) return res.status(400).json({ ok: false, error: "email required" }) as any;
+    try {
+      await sendNBALaunchBlast({ to: email, userId: "preview" });
+      res.json({ ok: true, sent_to: email });
+    } catch (err) {
+      console.error("[nba/test-launch-email]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // ── POST /api/nba/admin/blast-launch ──────────────────────────
   // Manual trigger: send NBA Playoffs launch email to all subscribed users.
   // Call this when ready — does NOT fire automatically.
