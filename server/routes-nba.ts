@@ -400,6 +400,34 @@ export function registerNBARoutes(app: Express): void {
     }
   });
 
+  // ── POST /api/nba/admin/reset-to-tbd ─────────────────────────
+  // Sets all R1 series teams to TBD so bracket is unpickable pending play-in results.
+  // Safe to call multiple times. After play-in games conclude, re-run seed-from-odds.
+  app.post("/api/nba/admin/reset-to-tbd", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { error, count } = await supabase
+        .from("nba_playoff_series")
+        .update({
+          team1: "TBD",
+          team2: "TBD",
+          winner: null,
+          games: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("season", "2026")
+        .eq("round", "round1");
+
+      if (error) throw error;
+      console.log(`[nba/reset-to-tbd] Reset ${count ?? "?"} series to TBD`);
+      res.json({ ok: true, message: `All R1 series reset to TBD` });
+    } catch (err) {
+      console.error("[nba/reset-to-tbd]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // ── POST /api/nba/admin/seed-from-odds ────────────────────────
   // Calls The Odds API, deduplicates R1 matchups, upserts into nba_playoff_series.
   // Safe to call multiple times — uses onConflict upsert.
