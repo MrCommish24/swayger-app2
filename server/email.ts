@@ -1767,6 +1767,102 @@ export async function sendNBALaunchBlast(opts: {
   });
 }
 
+// ─── NBA Playoffs 2026 Picks-Lock Reminder ────────────────────────────────────
+
+export function buildNBAReminderBlastHtml(): string {
+  const picksUrl = `${APP_URL}/playoffs/bracket`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Picks lock in less than an hour</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+
+            <p style="margin:0 0 20px;font-size:17px;font-weight:700;color:#FFFFFF;line-height:1.4;">⏰ Picks lock in less than an hour. Don't miss it.</p>
+
+            <div style="background:linear-gradient(135deg,#0a1628 0%,#1a2a4a 100%);border:1px solid rgba(255,199,44,0.4);border-radius:12px;padding:18px 20px;margin-bottom:22px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#FFC72C;text-transform:uppercase;">🏀 Round 1 Lock</p>
+              <p style="margin:0;font-size:22px;font-weight:800;color:#FFFFFF;line-height:1.2;">11am CDT — Today</p>
+              <p style="margin:8px 0 0;font-size:13px;color:#93A8C8;">Once locked, they're locked. No exceptions.</p>
+            </div>
+
+            <p style="margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:0.8px;color:#9CA3AF;text-transform:uppercase;">Final matchups just confirmed</p>
+
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:22px;">
+              <tr><td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+                <span style="font-size:13px;color:#8B95A5;">East · 1 vs 8</span>
+                <span style="float:right;font-size:14px;font-weight:700;color:#FFFFFF;">Pistons vs Magic</span>
+              </td></tr>
+              <tr><td style="padding:12px 0;">
+                <span style="font-size:13px;color:#8B95A5;">West · 1 vs 8</span>
+                <span style="float:right;font-size:14px;font-weight:700;color:#FFFFFF;">Thunder vs Suns</span>
+              </td></tr>
+            </table>
+
+            <p style="margin:0 0 22px;font-size:14px;color:#D1D5DB;line-height:1.6;">
+              All 8 first round matchups are now live. Head to the bracket, make your picks before tip-off, and get on the board.
+            </p>
+
+            <p style="margin:0 0 22px;font-size:13px;color:#9CA3AF;line-height:1.5;background:#13131D;border-radius:10px;padding:14px 16px;">
+              Not seeing the updated matchups? <strong style="color:#FFFFFF;">Refresh your browser or reopen the app</strong> to load the latest lineup.
+            </p>
+
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}"
+                     style="display:inline-block;background:#FFC72C;color:#000000;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">
+                    Lock In My Picks →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendNBAReminderBlast(opts: {
+  to: string;
+  userId?: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  let html = buildNBAReminderBlastHtml();
+  if (opts.userId) html = addUnsubFooter(html, generateUnsubscribeUrl(opts.userId));
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: "⏰ Picks lock in less than an hour — all matchups are set",
+    html,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildThankyouEmailPreview(): string {

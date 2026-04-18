@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
-import { sendNBALaunchBlast } from "./email";
+import { sendNBALaunchBlast, sendNBAReminderBlast } from "./email";
 
 // ─── Supabase admin client ────────────────────────────────────
 
@@ -655,6 +655,52 @@ export function registerNBARoutes(app: Express): void {
       res.json({ ok: true, sent_to: email });
     } catch (err) {
       console.error("[nba/test-launch-email]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── POST /api/nba/admin/test-reminder-email ───────────────────
+  app.post("/api/nba/admin/test-reminder-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email } = req.body as { email?: string };
+    if (!email) return res.status(400).json({ ok: false, error: "email required" }) as any;
+    try {
+      await sendNBAReminderBlast({ to: email, userId: "preview" });
+      res.json({ ok: true, sent_to: email });
+    } catch (err) {
+      console.error("[nba/test-reminder-email]", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ── POST /api/nba/admin/blast-reminder ────────────────────────
+  // Manual trigger: send picks-lock reminder to all subscribed users.
+  app.post("/api/nba/admin/blast-reminder", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      type ProfileRow = { id: string; notification_email?: string | null; email_unsubscribed?: boolean };
+      const eligible = ((allProfiles ?? []) as ProfileRow[]).filter(
+        (p) => p.notification_email && !p.email_unsubscribed
+      );
+      console.log(`[nba/blast-reminder] Sending to ${eligible.length} users`);
+      let sent = 0;
+      const errors: string[] = [];
+      for (const profile of eligible) {
+        try {
+          await sendNBAReminderBlast({ to: profile.notification_email as string, userId: profile.id });
+          sent++;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[nba/blast-reminder] Failed for ${profile.id}:`, msg);
+          errors.push(`${profile.id}: ${msg}`);
+        }
+      }
+      console.log(`[nba/blast-reminder] Done — sent: ${sent}, errors: ${errors.length}`);
+      res.json({ ok: true, sent, errors: errors.length > 0 ? errors : undefined });
+    } catch (err) {
+      console.error("[nba/blast-reminder]", err);
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
