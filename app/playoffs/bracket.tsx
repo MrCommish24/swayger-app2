@@ -10,7 +10,7 @@ import {
   Alert,
   Share,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -362,11 +362,13 @@ export default function BracketScreen() {
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const { share: shareParam } = useLocalSearchParams<{ share?: string }>();
 
   const [shareRound, setShareRound] = useState<PlayoffRound | null>(null);
   const [sharing, setSharing] = useState(false);
   const [justCompletedRound, setJustCompletedRound] = useState<PlayoffRound | null>(null);
   const shareCardRef = useRef<View>(null);
+  const shareParamHandled = useRef(false);
 
   const { data: allSeries, isLoading: seriesLoading } = useQuery<PlayoffSeries[]>({
     queryKey: ["/api/nba/series"],
@@ -392,6 +394,14 @@ export default function BracketScreen() {
     ? (leaderboard ?? []).filter((s) => s.total_pts > (userScore?.total_pts ?? 0)).length + 1
     : undefined;
   const playerCount = leaderboard?.length ?? 0;
+
+  // Auto-open share overlay when navigated here via "View & Share" with ?share=<round>
+  useEffect(() => {
+    if (shareParam && myPicks && !shareParamHandled.current) {
+      shareParamHandled.current = true;
+      setShareRound(shareParam as PlayoffRound);
+    }
+  }, [shareParam, myPicks]);
 
   const saveMutation = useMutation({
     mutationFn: async ({

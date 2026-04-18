@@ -391,13 +391,20 @@ export default function PlayoffsHubScreen() {
         )}
 
         {/* My picks summary */}
-        {series && myPicks && myPicks.length > 0 && (
-          <MyPicksSummary
-            series={series}
-            picks={myPicks}
-            onPress={() => router.push("/playoffs/bracket")}
-          />
-        )}
+        {series && myPicks && myPicks.length > 0 && (() => {
+          const pickSeriesIds = new Set(myPicks.map((p) => p.series_id));
+          const roundsWithPicks = ROUND_ORDER.filter((r) =>
+            series.some((s) => s.round === r && pickSeriesIds.has(s.id))
+          );
+          const latestRound = roundsWithPicks[roundsWithPicks.length - 1] ?? "round1";
+          return (
+            <MyPicksSummary
+              series={series}
+              picks={myPicks}
+              onPress={() => router.push(`/playoffs/bracket?share=${latestRound}`)}
+            />
+          );
+        })()}
 
         {/* Leaderboard snippet */}
         <View>
