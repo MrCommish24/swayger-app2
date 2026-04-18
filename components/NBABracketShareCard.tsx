@@ -13,7 +13,7 @@ import {
 
 const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
-const APP_URL = process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
+const APP_URL = process.env.EXPO_PUBLIC_APP_URL || "https://www.swayger.app";
 
 function teamNickname(fullName: string): string {
   const parts = fullName.trim().split(" ");
@@ -169,7 +169,7 @@ export default function NBABracketShareCard({
               <Text style={styles.scanLabel}>SCAN TO JOIN</Text>
             </>
           ) : (
-            <Text style={styles.urlLabel}>swayger-app.replit.app</Text>
+            <Text style={styles.urlLabel}>www.swayger.app</Text>
           )}
         </View>
       </View>

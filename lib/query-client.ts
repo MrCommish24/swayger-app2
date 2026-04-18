@@ -9,7 +9,7 @@ export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    return "https://swayger-app.replit.app";
+    return "https://www.swayger.app";
   }
 
   let url = new URL(`https://${host}`);

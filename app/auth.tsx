@@ -432,7 +432,7 @@ export default function AuthScreen() {
                 </View>
               </View>
             </View>
-            <Pressable onPress={() => Linking.openURL("https://swayger-app.replit.app/privacy")}>
+            <Pressable onPress={() => Linking.openURL("https://www.swayger.app/privacy")}>
               <Text style={styles.privacyLink}>Privacy Policy</Text>
             </Pressable>
           </View>

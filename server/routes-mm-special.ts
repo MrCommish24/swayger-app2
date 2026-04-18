@@ -1256,7 +1256,7 @@ export function registerMMSpecialRoutes(app: Express) {
 
       // Build app base URL for redirect
       const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
-      const appDomain = domains[0]?.trim() || process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
+      const appDomain = domains[0]?.trim() || process.env.EXPO_PUBLIC_APP_URL || "https://www.swayger.app";
       const baseUrl = appDomain.startsWith("http") ? appDomain : `https://${appDomain}`;
 
       const successUrl = `${baseUrl}/api/mm/boost-success?session_id={CHECKOUT_SESSION_ID}&user_id=${encodeURIComponent(userId)}`;
@@ -1294,7 +1294,7 @@ export function registerMMSpecialRoutes(app: Express) {
     const { session_id, user_id } = req.query as Record<string, string>;
 
     const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
-    const appDomain = domains[0]?.trim() || "swayger-app.replit.app";
+    const appDomain = domains[0]?.trim() || "www.swayger.app";
     const baseUrl = appDomain.startsWith("http") ? appDomain : `https://${appDomain}`;
 
     if (!session_id || !user_id) {

@@ -4,7 +4,7 @@ import Colors from "@/constants/colors";
 
 const ORANGE = "#E8590A";
 const GOLD = "#F5A623";
-const APP_URL = "swayger-app.replit.app";
+const APP_URL = "www.swayger.app";
 
 interface MMStats {
   wins: number;

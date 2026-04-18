@@ -50,7 +50,7 @@ export default function ProfileScreen() {
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
 
   const INVITE_MESSAGE =
-    "The NBA Challenge is live on Swayger.\nMake your picks, challenge your friends, and keep the receipt.\n\nSwayger is the app for locking in takes, tracking outcomes, and proving who was right. No real money — just bragging rights.\n\nTry it here: https://swayger-app.replit.app";
+    "The NBA Challenge is live on Swayger.\nMake your picks, challenge your friends, and keep the receipt.\n\nSwayger is the app for locking in takes, tracking outcomes, and proving who was right. No real money — just bragging rights.\n\nTry it here: https://www.swayger.app";
 
   async function handleInvite() {
     if (Platform.OS === "web") {
@@ -426,7 +426,7 @@ export default function ProfileScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-            onPress={() => Linking.openURL("https://swayger-app.replit.app/how-it-works")}
+            onPress={() => Linking.openURL("https://www.swayger.app/how-it-works")}
           >
             <Ionicons name="information-circle-outline" size={20} color={Colors.dark.text} />
             <View style={styles.menuItemBody}>
@@ -440,7 +440,7 @@ export default function ProfileScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
-            onPress={() => Linking.openURL("https://swayger-app.replit.app/privacy")}
+            onPress={() => Linking.openURL("https://www.swayger.app/privacy")}
           >
             <Ionicons name="shield-checkmark-outline" size={20} color={Colors.dark.text} />
             <View style={styles.menuItemBody}>
