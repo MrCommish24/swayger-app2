@@ -431,8 +431,8 @@ export function registerNBARoutes(app: Express): void {
   // ── POST /api/nba/admin/seed-known-r1 ─────────────────────────
   // Wipes all stale round1 rows and inserts the canonical 8 matchups:
   //   6 fully known + 2 play-in TBD slots (1 seed known, 8 seed TBD).
-  // East: Pistons(1)/TBD, Celtics(2)/76ers(7), Knicks(3)/Hawks(6), Cavs(4)/Raptors(5)
-  // West: Thunder(1)/TBD, Spurs(2)/Blazers(7), Nuggets(3)/Wolves(6), Lakers(4)/Rockets(5)
+  // East: Pistons(1)/Magic(8), Celtics(2)/76ers(7), Knicks(3)/Hawks(6), Cavaliers(4)/Raptors(5)
+  // West: Thunder(1)/Suns(8), Spurs(2)/Blazers(7), Nuggets(3)/Wolves(6), Lakers(4)/Rockets(5)
   app.post("/api/nba/admin/seed-known-r1", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
     try {
@@ -440,11 +440,11 @@ export function registerNBARoutes(app: Express): void {
 
       // IDs that are authoritative — delete everything else in round1
       const canonicalIds = [
-        "r1-east-detroit-pistons-vs-tbd",
+        "r1-east-detroit-pistons-vs-orlando-magic",
         "r1-east-boston-celtics-vs-philadelphia-76ers",
         "r1-east-new-york-knicks-vs-atlanta-hawks",
         "r1-east-cleveland-cavaliers-vs-toronto-raptors",
-        "r1-west-oklahoma-city-thunder-vs-tbd",
+        "r1-west-oklahoma-city-thunder-vs-phoenix-suns",
         "r1-west-san-antonio-spurs-vs-portland-trail-blazers",
         "r1-west-denver-nuggets-vs-minnesota-timberwolves",
         "r1-west-los-angeles-lakers-vs-houston-rockets",
@@ -460,8 +460,8 @@ export function registerNBARoutes(app: Express): void {
 
       const knownRows = [
         // ── East ──────────────────────────────────────────────────────────────
-        // 1 seed: Detroit Pistons — 8 seed TBD (play-in)
-        { id: "r1-east-detroit-pistons-vs-tbd",                      team1: "Detroit Pistons",          team2: "TBD",                   conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-19T13:00:00-05:00", sort_order: 1 },
+        // 1 seed: Detroit Pistons vs 8 seed: Orlando Magic
+        { id: "r1-east-detroit-pistons-vs-orlando-magic",             team1: "Detroit Pistons",          team2: "Orlando Magic",         conference: "east", seed1: 1, seed2: 8, starts_at: "2026-04-19T13:00:00-05:00", sort_order: 1 },
         // 2 seed: Boston Celtics vs 7 seed: Philadelphia 76ers
         { id: "r1-east-boston-celtics-vs-philadelphia-76ers",         team1: "Boston Celtics",           team2: "Philadelphia 76ers",     conference: "east", seed1: 2, seed2: 7, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 2 },
         // 3 seed: New York Knicks vs 6 seed: Atlanta Hawks
@@ -469,8 +469,8 @@ export function registerNBARoutes(app: Express): void {
         // 4 seed: Cleveland Cavaliers vs 5 seed: Toronto Raptors
         { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors",       team1: "Cleveland Cavaliers",      team2: "Toronto Raptors",        conference: "east", seed1: 4, seed2: 5, starts_at: "2026-04-18T12:10:00-05:00", sort_order: 4 },
         // ── West ──────────────────────────────────────────────────────────────
-        // 1 seed: OKC Thunder — 8 seed TBD (play-in)
-        { id: "r1-west-oklahoma-city-thunder-vs-tbd",                 team1: "Oklahoma City Thunder",    team2: "TBD",                   conference: "west", seed1: 1, seed2: 8, starts_at: "2026-04-19T15:30:00-05:00", sort_order: 101 },
+        // 1 seed: OKC Thunder vs 8 seed: Phoenix Suns
+        { id: "r1-west-oklahoma-city-thunder-vs-phoenix-suns",        team1: "Oklahoma City Thunder",    team2: "Phoenix Suns",          conference: "west", seed1: 1, seed2: 8, starts_at: "2026-04-19T15:30:00-05:00", sort_order: 101 },
         // 2 seed: San Antonio Spurs vs 7 seed: Portland Trail Blazers
         { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers",  team1: "San Antonio Spurs",        team2: "Portland Trail Blazers", conference: "west", seed1: 2, seed2: 7, starts_at: "2026-04-19T20:10:00-05:00", sort_order: 102 },
         // 3 seed: Denver Nuggets vs 6 seed: Minnesota Timberwolves
