@@ -81,5 +81,5 @@ ensurePreviewReachable = "/status"
 [userenv]
 
 [userenv.shared]
-EXPO_PUBLIC_APP_URL = "https://swayger-app.replit.app"
+EXPO_PUBLIC_APP_URL = "https://www.swayger.app"
 RESEND_FROM_EMAIL = "Swayger <noreply@swayger.app>"
