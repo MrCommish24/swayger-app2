@@ -15,6 +15,11 @@ const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
 const APP_URL = process.env.EXPO_PUBLIC_APP_URL || "https://swayger-app.replit.app";
 
+function teamNickname(fullName: string): string {
+  const parts = fullName.trim().split(" ");
+  return parts[parts.length - 1];
+}
+
 const ROUND_SERIES_COUNT: Record<PlayoffRound, number> = {
   round1: 8,
   round2: 4,
@@ -85,7 +90,7 @@ export default function NBABracketShareCard({
               <View key={s.id} style={styles.pickCellWide}>
                 <Ionicons name="checkmark-circle" size={11} color="#22C55E" />
                 <Text style={styles.pickCellText} numberOfLines={1}>
-                  {pick.picked_team}{pick.games_guess ? ` · ${pick.games_guess}G` : ""}
+                  {teamNickname(pick.picked_team)}{pick.games_guess ? ` · ${pick.games_guess}G` : ""}
                 </Text>
               </View>
             );
@@ -100,10 +105,10 @@ export default function NBABracketShareCard({
                 <Ionicons name="checkmark-circle" size={13} color="#22C55E" />
                 <View style={styles.pickRowText}>
                   <Text style={styles.pickTeam} numberOfLines={1}>
-                    {pick.picked_team}
+                    {teamNickname(pick.picked_team)}
                   </Text>
                   {pick.games_guess && (
-                    <Text style={styles.pickGames}>in {pick.games_guess} games</Text>
+                    <Text style={styles.pickGames}>· {pick.games_guess}G</Text>
                   )}
                 </View>
               </View>
