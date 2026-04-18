@@ -312,7 +312,7 @@ function RoundSection({
 }
 
 // Canonical Round 1 order — East (1-4) then West (1-4) by seed
-// The two 1v8 slots have a known 1 seed but TBD 8 seed (play-in determines it).
+// The two 1v8 slots are now known.
 const ROUND1_SERIES_ORDER: {
   id: string;
   seed1: number;
@@ -322,12 +322,12 @@ const ROUND1_SERIES_ORDER: {
   conference: "east" | "west";
 }[] = [
   // East
-  { id: "r1-east-detroit-pistons-vs-tbd",               seed1: 1, seed2: 8, team1Fallback: "Detroit Pistons",          team2Fallback: "TBD", conference: "east" },
+  { id: "r1-east-detroit-pistons-vs-orlando-magic",     seed1: 1, seed2: 8, team1Fallback: "Detroit Pistons",          team2Fallback: "Orlando Magic", conference: "east" },
   { id: "r1-east-boston-celtics-vs-philadelphia-76ers",  seed1: 2, seed2: 7, team1Fallback: "Boston Celtics",           team2Fallback: "Philadelphia 76ers", conference: "east" },
   { id: "r1-east-new-york-knicks-vs-atlanta-hawks",      seed1: 3, seed2: 6, team1Fallback: "New York Knicks",          team2Fallback: "Atlanta Hawks", conference: "east" },
   { id: "r1-east-cleveland-cavaliers-vs-toronto-raptors",seed1: 4, seed2: 5, team1Fallback: "Cleveland Cavaliers",      team2Fallback: "Toronto Raptors", conference: "east" },
   // West
-  { id: "r1-west-oklahoma-city-thunder-vs-tbd",          seed1: 1, seed2: 8, team1Fallback: "Oklahoma City Thunder",    team2Fallback: "TBD", conference: "west" },
+  { id: "r1-west-oklahoma-city-thunder-vs-phoenix-suns", seed1: 1, seed2: 8, team1Fallback: "Oklahoma City Thunder",    team2Fallback: "Phoenix Suns", conference: "west" },
   { id: "r1-west-san-antonio-spurs-vs-portland-trail-blazers", seed1: 2, seed2: 7, team1Fallback: "San Antonio Spurs", team2Fallback: "Portland Trail Blazers", conference: "west" },
   { id: "r1-west-denver-nuggets-vs-minnesota-timberwolves", seed1: 3, seed2: 6, team1Fallback: "Denver Nuggets",       team2Fallback: "Minnesota Timberwolves", conference: "west" },
   { id: "r1-west-los-angeles-lakers-vs-houston-rockets", seed1: 4, seed2: 5, team1Fallback: "Los Angeles Lakers",      team2Fallback: "Houston Rockets", conference: "west" },
