@@ -5,7 +5,7 @@ const STORAGE_KEY = "swayger_pending_invite";
 
 export interface PendingInvite {
   code: string;
-  intent: "accept" | "view";
+  intent: "accept" | "view" | "picks_challenge";
 }
 
 export async function storePendingInvite(invite: PendingInvite): Promise<void> {

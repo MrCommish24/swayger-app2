@@ -334,6 +334,24 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // GET /api/props/night/:nightId — public, returns a specific night's data (for invite previews)
+  app.get("/api/props/night/:nightId", async (req: Request, res: Response) => {
+    try {
+      const supabase = getSupabase();
+      const { nightId } = req.params;
+      const { data: night, error } = await supabase
+        .from("prop_nights")
+        .select("id, date, status, lock_time, props")
+        .eq("id", nightId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+      res.json({ ok: true, night });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // POST /api/admin/props/resolve/:nightId — auto-resolve using SportsGameOdds
   app.post("/api/admin/props/resolve/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;

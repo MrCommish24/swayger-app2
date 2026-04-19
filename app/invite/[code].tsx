@@ -26,7 +26,7 @@ import {
 } from "@/lib/swayger";
 import { showError, showMessage, formatDateTime } from "@/lib/helpers";
 import { sendPushNotification } from "@/lib/notifications";
-import { storePendingInvite, consumePendingInvite } from "@/lib/pending-invite";
+import { storePendingInvite, consumePendingInvite, peekPendingInvite } from "@/lib/pending-invite";
 import { getApiUrl } from "@/lib/query-client";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
@@ -43,6 +43,33 @@ interface InvitePreview {
   creator_id: string;
   creator_username: string | null;
   creator_display_name: string | null;
+}
+
+interface ChallengeNight {
+  id: string;
+  date: string;
+  status: string;
+  lock_time: string;
+  props: Array<{ id: string; player: string; stat: string; line: number; status?: string }>;
+}
+
+function parseNightId(description: string | null): string | null {
+  if (!description) return null;
+  const match = description.match(/\[night:([^\]]+)\]/);
+  return match ? match[1] : null;
+}
+
+function cleanDescription(description: string | null): string | null {
+  if (!description) return null;
+  return description.replace(/\[night:[^\]]+\]\s*/g, "").trim() || null;
+}
+
+function statLabel(stat: string): string {
+  const map: Record<string, string> = {
+    points: "PTS", rebounds: "REB", assists: "AST", steals: "STL",
+    blocks: "BLK", threes: "3PM", turnovers: "TO",
+  };
+  return map[stat.toLowerCase()] || stat.toUpperCase().slice(0, 3);
 }
 
 async function fetchInvitePreview(code: string): Promise<InvitePreview | null> {
@@ -105,6 +132,56 @@ export default function InviteScreen() {
     queryFn: () => fetchParticipantProfiles(swayger!.creator_id, swayger!.opponent_id),
     enabled: !!swayger,
   });
+
+  // ─── Picks Challenge context ───────────────────────────────────────────────
+  const previewTitle = preview?.title ?? swayger?.title ?? "";
+  const previewDescription = preview?.description ?? swayger?.description ?? null;
+  const isPicksChallenge = previewTitle.startsWith("🎯 Picks Challenge");
+  const challengeNightId = isPicksChallenge ? parseNightId(previewDescription) : null;
+
+  const { data: challengeNightData } = useQuery<{ ok: boolean; night: ChallengeNight | null } | null>({
+    queryKey: ["challenge-night", challengeNightId],
+    queryFn: async () => {
+      const url = new URL(`/api/props/night/${challengeNightId}`, getApiUrl());
+      const res = await fetch(url.toString());
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!challengeNightId,
+    staleTime: 60_000,
+  });
+
+  const challengeNight = challengeNightData?.night ?? null;
+  const isNightLocked = challengeNight
+    ? challengeNight.status !== "open" || new Date() >= new Date(challengeNight.lock_time)
+    : false;
+
+  const { data: userPicksData } = useQuery<{ ok: boolean; pick: { picks: unknown[] } | null } | null>({
+    queryKey: ["my-picks-for-challenge", challengeNightId, user?.id],
+    queryFn: async () => {
+      const url = new URL("/api/props/my-picks", getApiUrl());
+      url.searchParams.set("night_id", challengeNightId!);
+      url.searchParams.set("user_id", user!.id);
+      const res = await fetch(url.toString());
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!challengeNightId && !!user?.id && isPicksChallenge,
+    staleTime: 30_000,
+  });
+  const hasPicksForNight = !!userPicksData?.pick;
+
+  async function handleGoMakePicks() {
+    if (!code) return;
+    await storePendingInvite({ code, intent: "picks_challenge" });
+    router.push("/picks" as never);
+  }
+
+  async function handleSignInToMakePicks() {
+    if (!code) return;
+    await storePendingInvite({ code, intent: "picks_challenge" });
+    router.replace("/auth");
+  }
 
   // Auto-join when user lands on this screen authenticated (came back from auth).
   // Also clear any stored pending invite so it doesn't carry over to future sessions.
@@ -303,47 +380,115 @@ export default function InviteScreen() {
           </View>
         </View>
 
-        <View style={styles.previewCard}>
+        <View style={[styles.previewCard, isPicksChallenge && inviteStyles.picksCard]}>
+          {isPicksChallenge && (
+            <View style={inviteStyles.picksEyebrowRow}>
+              <Text style={inviteStyles.picksEyebrow}>🎯 PICKS CHALLENGE</Text>
+              <View style={inviteStyles.spBadge}>
+                <Ionicons name="trophy-outline" size={11} color="#000" />
+                <Text style={inviteStyles.spBadgeText}>{preview.stake_units} SP</Text>
+              </View>
+            </View>
+          )}
           <Text style={styles.swaygerName}>{preview.title}</Text>
-          <View style={styles.metaRow}>
-            <View style={styles.chip}>
-              <Ionicons
-                name={categoryIcon(preview.category) as keyof typeof Ionicons.glyphMap}
-                size={14}
-                color={Colors.dark.textSecondary}
-              />
-              <Text style={styles.chipText}>{preview.category}</Text>
+          {!isPicksChallenge && (
+            <View style={styles.metaRow}>
+              <View style={styles.chip}>
+                <Ionicons
+                  name={categoryIcon(preview.category) as keyof typeof Ionicons.glyphMap}
+                  size={14}
+                  color={Colors.dark.textSecondary}
+                />
+                <Text style={styles.chipText}>{preview.category}</Text>
+              </View>
+              <View style={[styles.chip, { backgroundColor: `${Colors.dark.accentGold}18` }]}>
+                <Ionicons name="trophy-outline" size={12} color={Colors.dark.accentGold} />
+                <Text style={[styles.chipText, { color: Colors.dark.accentGold }]}>
+                  {preview.stake_units} SP on the line
+                </Text>
+              </View>
             </View>
-            <View style={[styles.chip, { backgroundColor: `${Colors.dark.accentGold}18` }]}>
-              <Ionicons name="trophy-outline" size={12} color={Colors.dark.accentGold} />
-              <Text style={[styles.chipText, { color: Colors.dark.accentGold }]}>
-                {preview.stake_units} SP on the line
-              </Text>
-            </View>
-          </View>
+          )}
 
-          {preview.description ? (
-            <Text style={styles.description}>{preview.description}</Text>
+          {isPicksChallenge ? (
+            <Text style={styles.description}>
+              {`${creatorName} thinks they'll out-pick you tonight. Whoever gets more NBA Playoff props correct wins ${preview.stake_units} SP.`}
+            </Text>
+          ) : preview.description ? (
+            <Text style={styles.description}>{cleanDescription(preview.description)}</Text>
           ) : null}
 
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Their Pick</Text>
-              <Text style={styles.detailValue}>{preview.creator_pick || "—"}</Text>
-            </View>
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Stake</Text>
-              <Text style={styles.detailValue}>{preview.stake_units} Swayger Points</Text>
-            </View>
-            {preview.expires_at ? (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Expires</Text>
-                <Text style={styles.detailValue}>{formatDateTime(preview.expires_at)}</Text>
+          {isPicksChallenge && challengeNight && (
+            <View style={inviteStyles.propsTeaser}>
+              <Text style={inviteStyles.propsTeaserLabel}>Tonight's Props</Text>
+              <View style={inviteStyles.propsGrid}>
+                {challengeNight.props.filter(p => p.status !== "voided").slice(0, 4).map((prop) => (
+                  <View key={prop.id} style={inviteStyles.propChip}>
+                    <Text style={inviteStyles.propChipPlayer} numberOfLines={1}>{prop.player}</Text>
+                    <Text style={inviteStyles.propChipLine}>{statLabel(prop.stat)} {prop.line}</Text>
+                  </View>
+                ))}
               </View>
-            ) : null}
-          </View>
+            </View>
+          )}
+
+          {!isPicksChallenge && (
+            <View style={styles.detailsGrid}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Their Pick</Text>
+                <Text style={styles.detailValue}>{preview.creator_pick || "—"}</Text>
+              </View>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Stake</Text>
+                <Text style={styles.detailValue}>{preview.stake_units} Swayger Points</Text>
+              </View>
+              {preview.expires_at ? (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Expires</Text>
+                  <Text style={styles.detailValue}>{formatDateTime(preview.expires_at)}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
         </View>
 
+        {isPicksChallenge && isNightLocked ? (
+          <View style={inviteStyles.lockedBox}>
+            <Ionicons name="lock-closed" size={20} color={Colors.dark.textSecondary} />
+            <Text style={inviteStyles.lockedTitle}>This challenge is closed</Text>
+            <Text style={inviteStyles.lockedSub}>Picks locked at tip-off. This one's done.</Text>
+            <Pressable
+              style={({ pressed }) => [styles.primaryButton, { marginTop: 8 }, pressed && styles.btnPressed]}
+              onPress={() => router.replace("/auth")}
+            >
+              <Text style={styles.primaryButtonText}>Sign In to Swayger</Text>
+            </Pressable>
+          </View>
+        ) : isPicksChallenge ? (
+          <View style={inviteStyles.picksCta}>
+            <View style={inviteStyles.stepsRow}>
+              <View style={inviteStyles.stepItem}>
+                <View style={inviteStyles.stepNum}><Text style={inviteStyles.stepNumText}>1</Text></View>
+                <Text style={inviteStyles.stepLabel}>Lock in tonight's picks</Text>
+              </View>
+              <View style={inviteStyles.stepDivider} />
+              <View style={inviteStyles.stepItem}>
+                <View style={[inviteStyles.stepNum, inviteStyles.stepNumFaded]}><Text style={inviteStyles.stepNumText}>2</Text></View>
+                <Text style={[inviteStyles.stepLabel, { color: Colors.dark.textSecondary }]}>Accept the challenge</Text>
+              </View>
+            </View>
+            <Pressable
+              style={({ pressed }) => [inviteStyles.makePicksBtn, pressed && { opacity: 0.85 }]}
+              onPress={handleSignInToMakePicks}
+            >
+              <Ionicons name="basketball-outline" size={20} color="#000000" />
+              <Text style={inviteStyles.makePicksBtnText}>Make Tonight's Picks →</Text>
+            </Pressable>
+            <Text style={inviteStyles.picksChallengeHint}>
+              Sign in to compete — then come back to accept
+            </Text>
+          </View>
+        ) : (
         <View style={styles.previewCta}>
           <Text style={styles.previewCtaHint}>Sign in to accept or decline this challenge</Text>
           <Pressable
@@ -360,6 +505,7 @@ export default function InviteScreen() {
             <Text style={styles.declineButtonText}>Decline</Text>
           </Pressable>
         </View>
+        )}
 
         <View style={styles.brandFooter}>
           <Ionicons name="flash" size={14} color={Colors.dark.tabIconDefault} />
@@ -447,7 +593,7 @@ export default function InviteScreen() {
           </View>
 
           {swayger.description ? (
-            <Text style={styles.description}>{swayger.description}</Text>
+            <Text style={styles.description}>{cleanDescription(swayger.description)}</Text>
           ) : null}
 
           <View style={styles.detailsGrid}>
@@ -472,17 +618,62 @@ export default function InviteScreen() {
           </View>
         </View>
 
-        {canAccept && (
+        {canAccept && isPicksChallenge && isNightLocked && (
+          <View style={inviteStyles.lockedBox}>
+            <Ionicons name="lock-closed" size={20} color={Colors.dark.textSecondary} />
+            <Text style={inviteStyles.lockedTitle}>This challenge is closed</Text>
+            <Text style={inviteStyles.lockedSub}>
+              Picks locked at tip-off — you can't compete in this one.
+            </Text>
+          </View>
+        )}
+
+        {canAccept && isPicksChallenge && !isNightLocked && !hasPicksForNight && (
+          <View style={inviteStyles.picksCta}>
+            <Text style={inviteStyles.makePicksTitle}>First, lock in tonight's picks</Text>
+            <Text style={inviteStyles.makePicksSub}>
+              Come back here after to accept the challenge. Your picks determine the winner.
+            </Text>
+            {challengeNight && (
+              <View style={inviteStyles.propsTeaser}>
+                <Text style={inviteStyles.propsTeaserLabel}>Tonight's Props</Text>
+                <View style={inviteStyles.propsGrid}>
+                  {challengeNight.props.filter(p => p.status !== "voided").slice(0, 4).map((prop) => (
+                    <View key={prop.id} style={inviteStyles.propChip}>
+                      <Text style={inviteStyles.propChipPlayer} numberOfLines={1}>{prop.player}</Text>
+                      <Text style={inviteStyles.propChipLine}>{statLabel(prop.stat)} {prop.line}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+            <Pressable
+              style={({ pressed }) => [inviteStyles.makePicksBtn, pressed && { opacity: 0.85 }]}
+              onPress={handleGoMakePicks}
+            >
+              <Ionicons name="basketball-outline" size={20} color="#000000" />
+              <Text style={inviteStyles.makePicksBtnText}>Make Tonight's Picks →</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {canAccept && (!isPicksChallenge || (isPicksChallenge && !isNightLocked && hasPicksForNight)) && (
           <View style={styles.acceptSection}>
-            <Text style={styles.acceptTitle}>Enter Your Pick</Text>
-            <Text style={styles.acceptSubtitle}>What's your prediction?</Text>
+            {isPicksChallenge && (
+              <View style={inviteStyles.picksReadyBanner}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.dark.success} />
+                <Text style={inviteStyles.picksReadyText}>Your picks are in — ready to accept!</Text>
+              </View>
+            )}
+            <Text style={styles.acceptTitle}>{isPicksChallenge ? "Confirm your entry" : "Enter Your Pick"}</Text>
+            <Text style={styles.acceptSubtitle}>{isPicksChallenge ? "Your pick is pre-filled — just tap Accept." : "What's your prediction?"}</Text>
             <TextInput
               style={styles.pickInput}
               placeholder="e.g. Chiefs win by 3+"
               placeholderTextColor={Colors.dark.tabIconDefault}
               value={opponentPick}
               onChangeText={setOpponentPick}
-              editable={!anyPending}
+              editable={!anyPending && !isPicksChallenge}
               maxLength={200}
               onFocus={() => {
                 setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
@@ -667,4 +858,188 @@ const styles = StyleSheet.create({
     gap: 6, marginTop: 32, marginBottom: 8, opacity: 0.5,
   },
   brandFooterText: { fontFamily: "DMSans_400Regular", fontSize: 12, color: Colors.dark.tabIconDefault },
+});
+
+const NBA_GOLD = "#FFC72C";
+
+const inviteStyles = StyleSheet.create({
+  picksCard: {
+    borderColor: NBA_GOLD,
+    borderWidth: 1.5,
+    backgroundColor: "rgba(255,199,44,0.05)",
+  },
+  picksEyebrowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  picksEyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: NBA_GOLD,
+    letterSpacing: 1.2,
+  },
+  spBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: NBA_GOLD,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  spBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  propsTeaser: {
+    marginTop: 12,
+    gap: 8,
+  },
+  propsTeaserLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  propsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  propChip: {
+    width: "47%",
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: 10,
+    gap: 3,
+  },
+  propChipPlayer: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  propChipLine: {
+    fontSize: 12,
+    color: NBA_GOLD,
+    fontWeight: "600",
+  },
+  lockedBox: {
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  lockedTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  lockedSub: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  picksCta: {
+    gap: 14,
+    marginBottom: 16,
+  },
+  stepsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  stepItem: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  stepNum: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: NBA_GOLD,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepNumFaded: {
+    backgroundColor: Colors.dark.border,
+  },
+  stepNumText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#000000",
+  },
+  stepDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: Colors.dark.border,
+  },
+  stepLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  makePicksBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  makePicksBtnText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  makePicksTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  makePicksSub: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
+  },
+  picksChallengeHint: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+  },
+  picksReadyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(16,185,129,0.1)",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.success,
+  },
+  picksReadyText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.dark.success,
+  },
 });

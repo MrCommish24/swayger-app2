@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
 import { createSwayger, fetchSwaygerInvite } from "@/lib/swayger";
+import { peekPendingInvite, storePendingInvite } from "@/lib/pending-invite";
 import Colors from "@/constants/colors";
 
 const NBA_BLUE = "#1D428A";
@@ -721,6 +722,7 @@ export default function PicksScreen() {
   const [activeTab, setActiveTab] = useState<"picks" | "leaderboard">("picks");
   const [lastNightDismissed, setLastNightDismissed] = useState(false);
   const [showLastNightExpanded, setShowLastNightExpanded] = useState(false);
+  const [pendingChallengeCode, setPendingChallengeCode] = useState<string | null>(null);
 
   const { data: nightData, isLoading: nightLoading } = useQuery<{ ok: boolean; night: PropNight | null }>({
     queryKey: ["/api/props/tonight"],
@@ -779,6 +781,15 @@ export default function PicksScreen() {
 
   const activePicks = isLocked || isResolved ? existingPickMap : pendingPicks;
 
+  // Check for a pending picks challenge invite on mount (user came from the invite screen)
+  useEffect(() => {
+    peekPendingInvite().then((pending) => {
+      if (pending?.intent === "picks_challenge") {
+        setPendingChallengeCode(pending.code);
+      }
+    }).catch(() => {});
+  }, []);
+
   const submitMutation = useMutation({
     mutationFn: async (picks: { prop_id: string; pick: "over" | "under" }[]) => {
       const url = new URL("/api/props/pick", getApiUrl());
@@ -790,10 +801,15 @@ export default function PicksScreen() {
       if (!res.ok) throw new Error("Failed to submit picks");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setSubmitted(true);
       queryClient.invalidateQueries({ queryKey: ["/api/props/my-picks", night?.id, user?.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/props/leaderboard"] });
+      // Check if user came from a picks challenge invite
+      const pending = await peekPendingInvite().catch(() => null);
+      if (pending?.intent === "picks_challenge") {
+        setPendingChallengeCode(pending.code);
+      }
     },
     onError: () => {
       Alert.alert("Error", "Could not submit picks. Please try again.");
@@ -989,8 +1005,22 @@ export default function PicksScreen() {
             ))}
           </View>
 
-          {/* Submit button */}
-          {!isLocked && (
+          {/* Submit button or sign-in wall */}
+          {!isLocked && !user && (
+            <View style={styles.signInWall}>
+              <Ionicons name="lock-closed" size={22} color={NBA_GOLD} />
+              <Text style={styles.signInWallTitle}>Sign in to lock in your picks</Text>
+              <Text style={styles.signInWallSub}>Browse freely — create an account when ready.</Text>
+              <Pressable
+                style={({ pressed }) => [styles.signInBtn, pressed && { opacity: 0.85 }]}
+                onPress={() => router.push("/auth/sign-in")}
+              >
+                <Text style={styles.signInBtnText}>Sign In / Sign Up</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {!isLocked && user && (
             <Pressable
               style={({ pressed }) => [
                 styles.submitBtn,
@@ -1008,6 +1038,23 @@ export default function PicksScreen() {
                   <Text style={styles.submitBtnText}>{hasPriorPicks ? "Update Picks" : "Submit Picks"}</Text>
                 </>
               )}
+            </Pressable>
+          )}
+
+          {/* Ready to accept? banner after successful submission with pending challenge */}
+          {submitted && pendingChallengeCode && (
+            <Pressable
+              style={({ pressed }) => [styles.readyToAcceptBanner, pressed && { opacity: 0.9 }]}
+              onPress={() => router.push(`/invite/${pendingChallengeCode}`)}
+            >
+              <View style={styles.readyToAcceptInner}>
+                <Ionicons name="checkmark-circle" size={22} color="#000000" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.readyToAcceptTitle}>Picks locked in!</Text>
+                  <Text style={styles.readyToAcceptSub}>Tap to accept the challenge →</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#000000" />
+              </View>
             </Pressable>
           )}
 
@@ -1254,6 +1301,41 @@ const styles = StyleSheet.create({
   submitBtnDisabled: { opacity: 0.45 },
   submitBtnPressed: { opacity: 0.85 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
+
+  signInWall: {
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(255,199,44,0.06)",
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 4,
+  },
+  signInWallTitle: { fontSize: 16, fontWeight: "800", color: "#FFFFFF", textAlign: "center" },
+  signInWallSub: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center" },
+  signInBtn: {
+    backgroundColor: NBA_GOLD,
+    borderRadius: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  signInBtnText: { fontSize: 15, fontWeight: "800", color: "#000000" },
+
+  readyToAcceptBanner: {
+    backgroundColor: NBA_GOLD,
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 8,
+  },
+  readyToAcceptInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  readyToAcceptTitle: { fontSize: 15, fontWeight: "800", color: "#000000" },
+  readyToAcceptSub: { fontSize: 13, fontWeight: "600", color: "rgba(0,0,0,0.7)" },
 
   leaderboardSection: { gap: 10 },
   sectionTitle: {
