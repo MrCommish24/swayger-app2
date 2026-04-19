@@ -98,6 +98,40 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // GET /api/props/last-night?user_id= — most recent resolved night + user's picks
+  app.get("/api/props/last-night", async (req: Request, res: Response) => {
+    try {
+      const { user_id } = req.query as Record<string, string>;
+      const supabase = getSupabase();
+
+      const { data: night, error } = await supabase
+        .from("prop_nights")
+        .select("*")
+        .eq("status", "resolved")
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!night) return res.json({ ok: true, night: null, pick: null });
+
+      let pick = null;
+      if (user_id) {
+        const { data } = await supabase
+          .from("prop_user_picks")
+          .select("*")
+          .eq("night_id", night.id)
+          .eq("user_id", user_id)
+          .maybeSingle();
+        pick = data;
+      }
+
+      res.json({ ok: true, night, pick });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // GET /api/props/history — last 10 resolved nights
   app.get("/api/props/history", async (_req: Request, res: Response) => {
     try {

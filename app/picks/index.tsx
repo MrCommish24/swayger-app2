@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -79,6 +80,14 @@ function formatLockTime(iso: string): string {
   });
 }
 
+function formatNightDate(dateStr: string): string {
+  return new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 function scoreLabel(score: number): string {
   if (score >= 250) return "Perfect Night 🔥";
   if (score >= 100) return "Strong Night";
@@ -87,7 +96,294 @@ function scoreLabel(score: number): string {
   return "No Points";
 }
 
-// ─── Sub-components ──────────────────────────────────────────
+function pickEmoji(pick: "over" | "under"): string {
+  return pick === "over" ? "📈" : "📉";
+}
+
+function buildShareText(
+  night: PropNight,
+  pick: UserPick | null,
+  picksMap: Record<string, "over" | "under">,
+  resolved: boolean
+): string {
+  const dateStr = formatNightDate(night.date);
+  const lines: string[] = [`🏀 NBA Playoffs Picks – ${dateStr}`];
+
+  for (const prop of night.props) {
+    if (prop.status === "voided") continue;
+    const choice = picksMap[prop.id];
+    if (!choice) continue;
+    const emoji = pickEmoji(choice);
+    const label = `${prop.player_name} ${choice.toUpperCase()} ${prop.line} ${prop.stat_label.toLowerCase()}`;
+    if (resolved && prop.result) {
+      const correct = prop.result === choice;
+      lines.push(`${emoji} ${label} ${correct ? "✓" : "✗"}`);
+    } else {
+      lines.push(`${emoji} ${label}`);
+    }
+  }
+
+  if (resolved && pick) {
+    const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+    lines.push(`\n${pick.correct_count}/${activePropCount} correct · ${pick.score} pts · ${scoreLabel(pick.score)}`);
+    lines.push("Play on Swayger!");
+  } else {
+    lines.push("\nCan you beat me? 👀 Play on Swayger!");
+  }
+
+  return lines.join("\n");
+}
+
+// ─── Share Card ───────────────────────────────────────────────
+
+function ShareCard({
+  night,
+  pick,
+  picksMap,
+  resolved,
+}: {
+  night: PropNight;
+  pick: UserPick | null;
+  picksMap: Record<string, "over" | "under">;
+  resolved: boolean;
+}) {
+  const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+  const hasPicks = Object.keys(picksMap).length > 0;
+  if (!hasPicks) return null;
+
+  async function handleShare() {
+    const message = buildShareText(night, pick, picksMap, resolved);
+    try {
+      await Share.share({ message });
+    } catch {
+      // user dismissed
+    }
+  }
+
+  return (
+    <View style={shareStyles.wrapper}>
+      <View style={shareStyles.card}>
+        <View style={shareStyles.cardHeader}>
+          <Text style={shareStyles.cardBrand}>SWAYGER</Text>
+          <View style={shareStyles.cardPill}>
+            <Ionicons
+              name={resolved ? "checkmark-circle" : "lock-closed"}
+              size={12}
+              color={resolved ? Colors.dark.success : Colors.dark.textSecondary}
+            />
+            <Text style={[shareStyles.cardPillText, resolved && shareStyles.cardPillTextResolved]}>
+              {resolved ? "Results" : "Locked In"}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={shareStyles.cardDate}>{formatNightDate(night.date)}</Text>
+        <Text style={shareStyles.cardLeague}>NBA PLAYOFFS CHALLENGE</Text>
+
+        <View style={shareStyles.picksGrid}>
+          {night.props
+            .filter((p) => p.status !== "voided")
+            .map((prop) => {
+              const choice = picksMap[prop.id];
+              if (!choice) return null;
+              const correct = resolved && prop.result ? prop.result === choice : null;
+
+              return (
+                <View key={prop.id} style={shareStyles.pickRow}>
+                  <View style={shareStyles.pickLeft}>
+                    <Ionicons name={statIcon(prop.stat)} size={13} color={NBA_GOLD} />
+                    <View>
+                      <Text style={shareStyles.pickPlayer}>{prop.player_name}</Text>
+                      <Text style={shareStyles.pickDetail}>
+                        {choice.toUpperCase()} {prop.line} {prop.stat_label}
+                      </Text>
+                    </View>
+                  </View>
+                  {resolved && correct !== null && (
+                    <View style={[shareStyles.pickResult, correct ? shareStyles.pickResultCorrect : shareStyles.pickResultWrong]}>
+                      <Ionicons
+                        name={correct ? "checkmark" : "close"}
+                        size={14}
+                        color={correct ? Colors.dark.success : Colors.dark.danger}
+                      />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+        </View>
+
+        {resolved && pick && (
+          <View style={shareStyles.scoreRow}>
+            <Text style={shareStyles.scoreValue}>{pick.score} pts</Text>
+            <Text style={shareStyles.scoreLabel}>
+              {pick.correct_count}/{activePropCount} · {scoreLabel(pick.score)}
+            </Text>
+          </View>
+        )}
+
+        <View style={shareStyles.cardFooter}>
+          <Text style={shareStyles.cardFooterText}>swayger.app</Text>
+        </View>
+      </View>
+
+      <Pressable
+        style={({ pressed }) => [shareStyles.shareBtn, pressed && shareStyles.shareBtnPressed]}
+        onPress={handleShare}
+      >
+        <Ionicons name="share-outline" size={18} color="#FFFFFF" />
+        <Text style={shareStyles.shareBtnText}>
+          {resolved ? "Share Results" : "Share Picks"}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// ─── Last Night Pill ──────────────────────────────────────────
+
+function LastNightPill({
+  night,
+  pick,
+  onDismiss,
+  onExpand,
+}: {
+  night: PropNight;
+  pick: UserPick | null;
+  onDismiss: () => void;
+  onExpand: () => void;
+}) {
+  const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+
+  return (
+    <Pressable style={pillStyles.container} onPress={onExpand}>
+      <View style={pillStyles.left}>
+        <Ionicons name="time-outline" size={15} color={NBA_GOLD} />
+        <Text style={pillStyles.label}>
+          Last night:{" "}
+          {pick ? (
+            <Text style={pillStyles.score}>
+              {pick.correct_count}/{activePropCount} correct · {pick.score} pts
+            </Text>
+          ) : (
+            <Text style={pillStyles.score}>tap to see results</Text>
+          )}
+        </Text>
+      </View>
+      <View style={pillStyles.right}>
+        <Text style={pillStyles.review}>Review</Text>
+        <Ionicons name="chevron-forward" size={13} color={NBA_GOLD} />
+        <Pressable onPress={onDismiss} hitSlop={10} style={pillStyles.dismiss}>
+          <Ionicons name="close" size={14} color={Colors.dark.textSecondary} />
+        </Pressable>
+      </View>
+    </Pressable>
+  );
+}
+
+// ─── Results Window ───────────────────────────────────────────
+
+function ResultsWindow({
+  night,
+  pick,
+}: {
+  night: PropNight;
+  pick: UserPick | null;
+}) {
+  const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+  const pickMap: Record<string, "over" | "under"> = {};
+  if (pick?.picks) {
+    for (const p of pick.picks) pickMap[p.prop_id] = p.pick;
+  }
+
+  return (
+    <View style={resultsStyles.container}>
+      <View style={resultsStyles.headerBadge}>
+        <Ionicons name="moon" size={14} color={NBA_GOLD} />
+        <Text style={resultsStyles.headerBadgeText}>Last Night's Results</Text>
+      </View>
+
+      <Text style={resultsStyles.date}>{formatNightDate(night.date)}</Text>
+
+      {pick ? (
+        <View style={resultsStyles.scoreSummary}>
+          <Text style={resultsStyles.scoreValue}>{pick.score} pts</Text>
+          <Text style={resultsStyles.scoreLabel}>
+            {pick.correct_count}/{activePropCount} correct · {scoreLabel(pick.score)}
+          </Text>
+        </View>
+      ) : (
+        <View style={resultsStyles.scoreSummary}>
+          <Text style={resultsStyles.scoreLabel}>You didn't play last night</Text>
+        </View>
+      )}
+
+      <View style={resultsStyles.propsList}>
+        {night.props
+          .filter((p) => p.status !== "voided")
+          .map((prop) => {
+            const choice = pickMap[prop.id];
+            const correct = choice && prop.result ? prop.result === choice : null;
+
+            return (
+              <View key={prop.id} style={resultsStyles.propRow}>
+                <View style={resultsStyles.propLeft}>
+                  <View style={resultsStyles.propStat}>
+                    <Ionicons name={statIcon(prop.stat)} size={11} color={NBA_GOLD} />
+                    <Text style={resultsStyles.propStatText}>{prop.stat_label}</Text>
+                  </View>
+                  <Text style={resultsStyles.propPlayer}>{prop.player_name}</Text>
+                  <Text style={resultsStyles.propLine}>
+                    Line: {prop.line} · Result: {prop.result ? prop.result.toUpperCase() : "—"}
+                  </Text>
+                </View>
+                <View style={resultsStyles.propRight}>
+                  {choice ? (
+                    <>
+                      <View style={[
+                        resultsStyles.choicePill,
+                        correct === true && resultsStyles.choicePillCorrect,
+                        correct === false && resultsStyles.choicePillWrong,
+                        correct === null && resultsStyles.choicePillNeutral,
+                      ]}>
+                        <Text style={[
+                          resultsStyles.choiceText,
+                          correct === true && resultsStyles.choiceTextCorrect,
+                          correct === false && resultsStyles.choiceTextWrong,
+                        ]}>
+                          {choice.toUpperCase()}
+                        </Text>
+                      </View>
+                      {correct !== null && (
+                        <Ionicons
+                          name={correct ? "checkmark-circle" : "close-circle"}
+                          size={18}
+                          color={correct ? Colors.dark.success : Colors.dark.danger}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <Text style={resultsStyles.noPick}>—</Text>
+                  )}
+                </View>
+              </View>
+            );
+          })}
+      </View>
+
+      {pick && (
+        <ShareCard
+          night={night}
+          pick={pick}
+          picksMap={pickMap}
+          resolved={true}
+        />
+      )}
+    </View>
+  );
+}
+
+// ─── Prop Card ────────────────────────────────────────────────
 
 function PropCard({
   prop,
@@ -232,13 +528,30 @@ export default function PicksScreen() {
   const [pendingPicks, setPendingPicks] = useState<Record<string, "over" | "under">>({});
   const [submitted, setSubmitted] = useState(false);
   const [activeTab, setActiveTab] = useState<"picks" | "leaderboard">("picks");
+  const [lastNightDismissed, setLastNightDismissed] = useState(false);
+  const [showLastNightExpanded, setShowLastNightExpanded] = useState(false);
 
   const { data: nightData, isLoading: nightLoading } = useQuery<{ ok: boolean; night: PropNight | null }>({
     queryKey: ["/api/props/tonight"],
     staleTime: 60_000,
   });
 
+  const { data: lastNightData } = useQuery<{ ok: boolean; night: PropNight | null; pick: UserPick | null }>({
+    queryKey: ["/api/props/last-night", user?.id],
+    queryFn: async () => {
+      const url = new URL("/api/props/last-night", getApiUrl());
+      if (user?.id) url.searchParams.set("user_id", user.id);
+      const res = await fetch(url.toString());
+      return res.json();
+    },
+    enabled: !!user?.id,
+    staleTime: 120_000,
+  });
+
   const night = nightData?.night ?? null;
+  const lastNight = lastNightData?.night ?? null;
+  const lastNightPick = lastNightData?.pick ?? null;
+
   const isLocked = !night || night.status !== "open" || new Date() >= new Date(night.lock_time);
   const isResolved = night?.status === "resolved";
 
@@ -265,7 +578,6 @@ export default function PicksScreen() {
     }
   }
 
-  // Pre-populate pending picks from saved server picks (so user can edit them)
   useEffect(() => {
     if (myPick?.picks && Object.keys(pendingPicks).length === 0) {
       const map: Record<string, "over" | "under"> = {};
@@ -274,7 +586,6 @@ export default function PicksScreen() {
     }
   }, [myPick]);
 
-  // Before lock: use pendingPicks (editable). After lock/resolved: use server picks.
   const activePicks = isLocked || isResolved ? existingPickMap : pendingPicks;
 
   const submitMutation = useMutation({
@@ -318,6 +629,15 @@ export default function PicksScreen() {
 
   const hasPriorPicks = !!myPick;
 
+  // Determine if we should show the last night results window
+  // (no tonight AND last night exists and is resolved)
+  const showResultsWindow = !nightLoading && !night && !!lastNight;
+
+  // Show last night pill above tonight's picks
+  const showLastNightPill =
+    !!night && !!lastNight && !lastNightDismissed && !showLastNightExpanded &&
+    lastNight.id !== night.id;
+
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}>
       <View style={styles.header}>
@@ -327,27 +647,29 @@ export default function PicksScreen() {
         </Pressable>
         <Text style={styles.eyebrow}>NBA PLAYOFFS CHALLENGE</Text>
         <Text style={styles.title}>Picks</Text>
-        <View style={styles.tabRow}>
-          <Pressable
-            style={[styles.tabBtn, activeTab === "picks" && styles.tabBtnActive]}
-            onPress={() => setActiveTab("picks")}
-          >
-            <Text style={[styles.tabBtnText, activeTab === "picks" && styles.tabBtnTextActive]}>
-              Tonight
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.tabBtn, activeTab === "leaderboard" && styles.tabBtnActive]}
-            onPress={() => setActiveTab("leaderboard")}
-          >
-            <Text style={[styles.tabBtnText, activeTab === "leaderboard" && styles.tabBtnTextActive]}>
-              Leaderboard
-            </Text>
-          </Pressable>
-        </View>
+        {!showResultsWindow && (
+          <View style={styles.tabRow}>
+            <Pressable
+              style={[styles.tabBtn, activeTab === "picks" && styles.tabBtnActive]}
+              onPress={() => setActiveTab("picks")}
+            >
+              <Text style={[styles.tabBtnText, activeTab === "picks" && styles.tabBtnTextActive]}>
+                Tonight
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tabBtn, activeTab === "leaderboard" && styles.tabBtnActive]}
+              onPress={() => setActiveTab("leaderboard")}
+            >
+              <Text style={[styles.tabBtnText, activeTab === "leaderboard" && styles.tabBtnTextActive]}>
+                Leaderboard
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
-      {activeTab === "leaderboard" ? (
+      {activeTab === "leaderboard" && !showResultsWindow ? (
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
@@ -358,6 +680,19 @@ export default function PicksScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={NBA_GOLD} />
         </View>
+      ) : showResultsWindow ? (
+        // ── Results Window: no night tonight, show last night's results ──
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <ResultsWindow night={lastNight!} pick={lastNightPick} />
+          <View style={styles.noNightNote}>
+            <Ionicons name="moon-outline" size={16} color={Colors.dark.textSecondary} />
+            <Text style={styles.noNightNoteText}>Tonight's picks aren't up yet. Check back at 9 AM.</Text>
+          </View>
+          <LeaderboardView nightId={lastNight!.id} />
+        </ScrollView>
       ) : !night ? (
         <View style={styles.centered}>
           <Ionicons name="moon-outline" size={48} color={Colors.dark.textSecondary} />
@@ -369,16 +704,33 @@ export default function PicksScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: isWeb ? 34 + 84 : insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
+          {/* Last Night pill */}
+          {showLastNightPill && (
+            <LastNightPill
+              night={lastNight!}
+              pick={lastNightPick}
+              onDismiss={() => setLastNightDismissed(true)}
+              onExpand={() => setShowLastNightExpanded(true)}
+            />
+          )}
+
+          {/* Expanded last night results inline */}
+          {showLastNightExpanded && lastNight && (
+            <View style={styles.lastNightExpanded}>
+              <View style={styles.lastNightExpandedHeader}>
+                <Text style={styles.lastNightExpandedTitle}>Last Night</Text>
+                <Pressable onPress={() => setShowLastNightExpanded(false)} hitSlop={8}>
+                  <Ionicons name="chevron-up" size={18} color={Colors.dark.textSecondary} />
+                </Pressable>
+              </View>
+              <ResultsWindow night={lastNight} pick={lastNightPick} />
+            </View>
+          )}
+
           {/* Night header */}
           <View style={styles.nightHeader}>
             <View style={styles.nightHeaderLeft}>
-              <Text style={styles.nightDate}>
-                {new Date(night.date + "T12:00:00").toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </Text>
+              <Text style={styles.nightDate}>{formatNightDate(night.date)}</Text>
               {isResolved ? (
                 <View style={[styles.statusPill, styles.statusPillResolved]}>
                   <Ionicons name="checkmark-circle" size={12} color={Colors.dark.success} />
@@ -468,6 +820,16 @@ export default function PicksScreen() {
             </Pressable>
           )}
 
+          {/* Share card — show after lock if picks exist */}
+          {(isLocked || isResolved) && hasPriorPicks && (
+            <ShareCard
+              night={night}
+              pick={myPick}
+              picksMap={activePicks}
+              resolved={isResolved}
+            />
+          )}
+
           <LeaderboardView nightId={night.id} />
         </ScrollView>
       )}
@@ -531,6 +893,29 @@ const styles = StyleSheet.create({
   tabBtnTextActive: { color: "#FFFFFF" },
 
   scrollContent: { padding: 16, gap: 16 },
+
+  lastNightExpanded: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    overflow: "hidden",
+  },
+  lastNightExpandedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.dark.border,
+  },
+  lastNightExpandedTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: NBA_GOLD,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
 
   nightHeader: {
     flexDirection: "row",
@@ -624,39 +1009,39 @@ const styles = StyleSheet.create({
   lineLabel: { fontSize: 12, color: Colors.dark.textMuted, textTransform: "uppercase", letterSpacing: 0.6 },
   lineValue: { fontSize: 28, fontWeight: "800", color: Colors.dark.text },
 
-  pickRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  pickRow: { flexDirection: "row", gap: 8, marginTop: 6 },
   pickBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 5,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderColor: "rgba(255,255,255,0.08)",
   },
   pickBtnSelected: {
     backgroundColor: NBA_BLUE,
     borderColor: NBA_BLUE,
   },
   pickBtnCorrect: {
-    backgroundColor: "rgba(16,185,129,0.15)",
+    backgroundColor: "rgba(16,185,129,0.20)",
     borderColor: Colors.dark.success,
   },
-  pickBtnCorrectDim: {
-    backgroundColor: "rgba(16,185,129,0.06)",
-    borderColor: "rgba(16,185,129,0.25)",
-  },
   pickBtnWrong: {
-    backgroundColor: "rgba(239,68,68,0.12)",
+    backgroundColor: "rgba(239,68,68,0.15)",
     borderColor: Colors.dark.danger,
   },
-  pickBtnDim: {
-    opacity: 0.4,
+  pickBtnCorrectDim: {
+    backgroundColor: "rgba(16,185,129,0.08)",
+    borderColor: "rgba(16,185,129,0.20)",
   },
-  pickBtnText: { fontSize: 14, fontWeight: "600", color: Colors.dark.textSecondary },
+  pickBtnDim: {
+    opacity: 0.35,
+  },
+  pickBtnText: { fontSize: 13, fontWeight: "700", color: Colors.dark.textSecondary },
   pickBtnTextSelected: { color: "#FFFFFF" },
   pickBtnTextCorrect: { color: Colors.dark.success },
   pickBtnTextWrong: { color: Colors.dark.danger },
@@ -669,35 +1054,222 @@ const styles = StyleSheet.create({
     backgroundColor: NBA_BLUE,
     borderRadius: 14,
     paddingVertical: 16,
-    marginTop: 4,
   },
-  submitBtnDisabled: { opacity: 0.4 },
+  submitBtnDisabled: { opacity: 0.45 },
   submitBtnPressed: { opacity: 0.85 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: "#FFFFFF" },
 
-  leaderboardSection: { gap: 2, marginTop: 8 },
+  leaderboardSection: { gap: 10 },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.dark.textSecondary,
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.dark.text,
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    marginBottom: 10,
   },
   lbRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 11,
+    gap: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     backgroundColor: Colors.dark.surface,
     borderRadius: 12,
-    marginBottom: 6,
-    gap: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
   lbRank: { fontSize: 14, fontWeight: "700", color: Colors.dark.textSecondary, width: 22, textAlign: "center" },
   lbRankTop: { color: NBA_GOLD },
   lbName: { flex: 1, gap: 2 },
   lbUsername: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
-  lbMeta: { fontSize: 11, color: Colors.dark.textMuted },
-  lbScore: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
+  lbMeta: { fontSize: 12, color: Colors.dark.textSecondary },
+  lbScore: { fontSize: 14, fontWeight: "700", color: NBA_GOLD },
+
+  noNightNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  noNightNoteText: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    flex: 1,
+  },
+});
+
+// ─── Share card styles ────────────────────────────────────────
+
+const shareStyles = StyleSheet.create({
+  wrapper: { gap: 10 },
+  card: {
+    backgroundColor: "#0F1923",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    padding: 18,
+    gap: 10,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardBrand: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: NBA_GOLD,
+    letterSpacing: 2,
+  },
+  cardPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  cardPillText: { fontSize: 11, fontWeight: "700", color: Colors.dark.textSecondary },
+  cardPillTextResolved: { color: Colors.dark.success },
+  cardDate: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  cardLeague: { fontSize: 10, fontWeight: "700", color: "rgba(255,199,44,0.6)", letterSpacing: 1.2, textTransform: "uppercase" },
+  picksGrid: {
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingTop: 10,
+    marginTop: 2,
+  },
+  pickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pickLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  pickPlayer: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
+  pickDetail: { fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 1 },
+  pickResult: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickResultCorrect: { backgroundColor: "rgba(16,185,129,0.20)" },
+  pickResultWrong: { backgroundColor: "rgba(239,68,68,0.15)" },
+  scoreRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingTop: 10,
+    marginTop: 2,
+  },
+  scoreValue: { fontSize: 28, fontWeight: "800", color: NBA_GOLD },
+  scoreLabel: { fontSize: 13, color: "rgba(255,255,255,0.5)" },
+  cardFooter: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,199,44,0.20)",
+    paddingTop: 8,
+    marginTop: 2,
+  },
+  cardFooterText: { fontSize: 11, color: "rgba(255,199,44,0.45)", textAlign: "center", letterSpacing: 1 },
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  shareBtnPressed: { opacity: 0.82 },
+  shareBtnText: { fontSize: 15, fontWeight: "700", color: "#000000" },
+});
+
+// ─── Last Night pill styles ───────────────────────────────────
+
+const pillStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255,199,44,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.22)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  left: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  label: { fontSize: 13, color: Colors.dark.text, fontWeight: "500" },
+  score: { fontWeight: "700", color: NBA_GOLD },
+  right: { flexDirection: "row", alignItems: "center", gap: 4 },
+  review: { fontSize: 12, fontWeight: "700", color: NBA_GOLD },
+  dismiss: { marginLeft: 6 },
+});
+
+// ─── Results window styles ────────────────────────────────────
+
+const resultsStyles = StyleSheet.create({
+  container: { gap: 14 },
+  headerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,199,44,0.10)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  headerBadgeText: { fontSize: 12, fontWeight: "700", color: NBA_GOLD, textTransform: "uppercase", letterSpacing: 0.8 },
+  date: { fontSize: 20, fontWeight: "800", color: Colors.dark.text },
+  scoreSummary: {
+    backgroundColor: "rgba(16,185,129,0.08)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(16,185,129,0.20)",
+    padding: 16,
+    alignItems: "center",
+    gap: 4,
+  },
+  scoreValue: { fontSize: 40, fontWeight: "900", color: Colors.dark.success },
+  scoreLabel: { fontSize: 14, color: Colors.dark.textSecondary },
+  propsList: { gap: 10 },
+  propRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: 14,
+  },
+  propLeft: { flex: 1, gap: 3 },
+  propStat: { flexDirection: "row", alignItems: "center", gap: 5 },
+  propStatText: { fontSize: 11, fontWeight: "600", color: NBA_GOLD, textTransform: "uppercase", letterSpacing: 0.5 },
+  propPlayer: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
+  propLine: { fontSize: 12, color: Colors.dark.textSecondary },
+  propRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+  choicePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  choicePillCorrect: { backgroundColor: "rgba(16,185,129,0.15)" },
+  choicePillWrong: { backgroundColor: "rgba(239,68,68,0.12)" },
+  choicePillNeutral: { backgroundColor: "rgba(255,255,255,0.06)" },
+  choiceText: { fontSize: 12, fontWeight: "700", color: Colors.dark.textSecondary },
+  choiceTextCorrect: { color: Colors.dark.success },
+  choiceTextWrong: { color: Colors.dark.danger },
+  noPick: { fontSize: 14, color: Colors.dark.textSecondary },
 });
