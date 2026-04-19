@@ -45,6 +45,7 @@ const ACCEPTED_WINDOW_MS = 72 * 60 * 60 * 1000;
 
 type ModalItem =
   | { kind: "settlement"; swayger: SwaygerData; opponentName: string }
+  | { kind: "pending"; swayger: SwaygerData; opponentName: string }
   | { kind: "accepted"; swayger: SwaygerData; opponentName: string };
 
 // ─── SwaygerActionModal ────────────────────────────────────────────────────────
@@ -90,7 +91,43 @@ function SwaygerActionModal({
   }, [onAction]);
 
   const isSettlement = item.kind === "settlement";
+  const isPending = item.kind === "pending";
   const isPicksChallenge = item.swayger.title?.startsWith("🎯 Picks Challenge");
+
+  const iconEmoji = isSettlement ? "🔥" : isPending ? "🤝" : "⚡";
+  const iconBg = isSettlement
+    ? "rgba(239,68,68,0.15)"
+    : isPending
+    ? "rgba(245,158,11,0.13)"
+    : "rgba(255,199,44,0.12)";
+  const iconBorder = isSettlement
+    ? "rgba(239,68,68,0.4)"
+    : isPending
+    ? "rgba(245,158,11,0.4)"
+    : "rgba(255,199,44,0.4)";
+  const accentColor = isSettlement ? SETTLE_RED : isPending ? PENDING_AMBER : NBA_GOLD;
+  const accentColorSoft = isSettlement ? SETTLE_ORANGE : isPending ? PENDING_AMBER : NBA_GOLD;
+
+  const headline = isSettlement
+    ? "Time to settle."
+    : isPending
+    ? "You've been challenged."
+    : "Challenge accepted.";
+
+  const subText = isSettlement
+    ? `${item.opponentName} has called the result. Agree or push back — the Swayger's on the line.`
+    : isPending
+    ? isPicksChallenge
+      ? `${item.opponentName} challenged you to a Picks Challenge. Accept to compete head-to-head tonight.`
+      : `${item.opponentName} challenged you to a Swayger. Ready to compete?`
+    : isPicksChallenge
+    ? `${item.opponentName} accepted your Picks Challenge. Your picks compete head-to-head tonight.`
+    : `${item.opponentName} is in. Your Swayger is live — it's game time.`;
+
+  const ctaLabel = isSettlement ? "Settle Now" : isPending ? "View Challenge" : "View Swayger";
+  const ctaIcon = isSettlement ? "checkmark-done-outline" : isPending ? "enter-outline" : "flash";
+  const ctaTextColor = isSettlement || isPending ? "#FFFFFF" : "#000000";
+  const dismissLabel = isSettlement ? "Remind me later" : "Dismiss";
 
   return (
     <Modal transparent animationType="none" visible statusBarTranslucent>
@@ -114,46 +151,31 @@ function SwaygerActionModal({
             </View>
           )}
 
-          {/* Icon + headline */}
-          {isSettlement ? (
-            <View style={modalStyles.iconWrap}>
-              <View style={[modalStyles.iconCircle, { backgroundColor: "rgba(239,68,68,0.15)", borderColor: "rgba(239,68,68,0.4)" }]}>
-                <Text style={modalStyles.iconEmoji}>🔥</Text>
-              </View>
+          {/* Icon */}
+          <View style={modalStyles.iconWrap}>
+            <View style={[modalStyles.iconCircle, { backgroundColor: iconBg, borderColor: iconBorder }]}>
+              <Text style={modalStyles.iconEmoji}>{iconEmoji}</Text>
             </View>
-          ) : (
-            <View style={modalStyles.iconWrap}>
-              <View style={[modalStyles.iconCircle, { backgroundColor: "rgba(255,199,44,0.12)", borderColor: "rgba(255,199,44,0.4)" }]}>
-                <Text style={modalStyles.iconEmoji}>⚡</Text>
-              </View>
-            </View>
-          )}
+          </View>
 
-          <Text style={[modalStyles.headline, isSettlement && { color: SETTLE_RED }]}>
-            {isSettlement ? "Time to settle." : "Challenge accepted."}
+          <Text style={[modalStyles.headline, { color: accentColor }]}>
+            {headline}
           </Text>
 
-          <Text style={modalStyles.sub}>
-            {isSettlement
-              ? `${item.opponentName} has called the result. Agree or push back — the Swayger's on the line.`
-              : isPicksChallenge
-                ? `${item.opponentName} accepted your Picks Challenge. Your picks compete head-to-head tonight.`
-                : `${item.opponentName} is in. Your Swayger is live — it's game time.`
-            }
-          </Text>
+          <Text style={modalStyles.sub}>{subText}</Text>
 
           {/* Swayger title card */}
-          <View style={[modalStyles.titleCard, isSettlement && { borderColor: "rgba(239,68,68,0.3)" }]}>
+          <View style={[modalStyles.titleCard, { borderColor: `${accentColor}4D` }]}>
             <Ionicons
               name={isPicksChallenge ? "basketball-outline" : "flash-outline"}
               size={14}
-              color={isSettlement ? SETTLE_ORANGE : NBA_GOLD}
+              color={accentColorSoft}
             />
             <Text style={modalStyles.titleCardText} numberOfLines={2}>
               {item.swayger.title}
             </Text>
-            <View style={[modalStyles.spPill, isSettlement && { backgroundColor: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)" }]}>
-              <Text style={[modalStyles.spPillText, isSettlement && { color: SETTLE_ORANGE }]}>
+            <View style={[modalStyles.spPill, { backgroundColor: `${accentColor}1A`, borderColor: `${accentColor}4D` }]}>
+              <Text style={[modalStyles.spPillText, { color: accentColorSoft }]}>
                 {item.swayger.stake_units} SP
               </Text>
             </View>
@@ -163,28 +185,20 @@ function SwaygerActionModal({
           <Pressable
             style={({ pressed }) => [
               modalStyles.ctaBtn,
-              isSettlement
-                ? { backgroundColor: SETTLE_RED }
-                : { backgroundColor: NBA_GOLD },
+              { backgroundColor: accentColor },
               pressed && { opacity: 0.88 },
             ]}
             onPress={action}
           >
-            <Ionicons
-              name={isSettlement ? "checkmark-done-outline" : "flash"}
-              size={18}
-              color={isSettlement ? "#FFFFFF" : "#000000"}
-            />
-            <Text style={[modalStyles.ctaText, isSettlement && { color: "#FFFFFF" }]}>
-              {isSettlement ? "Settle Now" : "View Swayger"}
+            <Ionicons name={ctaIcon} size={18} color={ctaTextColor} />
+            <Text style={[modalStyles.ctaText, { color: ctaTextColor }]}>
+              {ctaLabel}
             </Text>
           </Pressable>
 
           {/* Dismiss */}
           <Pressable onPress={dismiss} hitSlop={8}>
-            <Text style={modalStyles.dismissText}>
-              {isSettlement ? "Remind me later" : "Dismiss"}
-            </Text>
+            <Text style={modalStyles.dismissText}>{dismissLabel}</Text>
           </Pressable>
         </Animated.View>
         </Pressable>
@@ -390,7 +404,17 @@ export default function DashboardScreen() {
         shownInSession.add(s.id);
       }
 
-      // Priority 2: newly accepted challenges (within 72h)
+      // Priority 2: pending invites waiting for YOU to accept
+      const pendingInvites = swaygers.filter(
+        (s) => s.status === "pending_invite" && s.creator_id !== user.id && !shownInSession.has(s.id)
+      );
+      for (const s of pendingInvites) {
+        const name = s.creator_id ? await fetchProfileName(s.creator_id) : "Someone";
+        items.push({ kind: "pending", swayger: s, opponentName: name });
+        shownInSession.add(s.id);
+      }
+
+      // Priority 3: newly accepted challenges (within 72h)
       const accepted = swaygers.filter(
         (s) =>
           s.status === "active" &&
