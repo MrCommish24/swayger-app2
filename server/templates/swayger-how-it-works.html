@@ -311,6 +311,32 @@
     color: #2a3a55;
     text-transform: uppercase;
   }
+
+  /* ── Responsive ── */
+  @media (max-width: 720px) {
+    body { padding: 32px 16px 40px; }
+
+    .header { margin-bottom: 36px; }
+    .header h1 { font-size: 28px; }
+    .header p { font-size: 15px; }
+
+    .grid {
+      grid-template-columns: 1fr;
+      gap: 48px;
+    }
+
+    .step { gap: 20px; }
+
+    .phone {
+      max-width: 340px;
+      margin: 0 auto;
+    }
+
+    .step-label h3 { font-size: 18px; }
+    .step-label p { font-size: 13px; }
+
+    .footer { margin-top: 36px; }
+  }
 </style>
 </head>
 <body>
