@@ -40,23 +40,51 @@ function ChallengeCards({
 }) {
   if (!NBA_PLAYOFFS_ACTIVE) return null;
   return (
-    <View style={styles.challengeRow}>
-      <Pressable
-        style={({ pressed }) => [styles.challengeCard, styles.challengeCardPlayoffs, pressed && { opacity: 0.88 }]}
-        onPress={onPressPlayoffs}
-      >
-        <Text style={styles.challengeCardEmoji}>🏆</Text>
-        <Text style={styles.challengeCardTitle}>Bracket</Text>
-        <Text style={styles.challengeCardSub}>Pick series winners</Text>
-      </Pressable>
-      <Pressable
-        style={({ pressed }) => [styles.challengeCard, styles.challengeCardPicks, pressed && { opacity: 0.88 }]}
-        onPress={onPressPicks}
-      >
-        <Text style={styles.challengeCardEmoji}>🎯</Text>
-        <Text style={styles.challengeCardTitle}>Picks</Text>
-        <Text style={styles.challengeCardSub}>Nightly player props</Text>
-      </Pressable>
+    <View style={styles.nbaCard}>
+      {/* Brand header */}
+      <View style={styles.nbaCardHeader}>
+        <Text style={styles.nbaCardEmoji}>🏀</Text>
+        <View style={styles.nbaCardHeaderText}>
+          <Text style={styles.nbaCardTitle}>NBA PLAYOFFS CHALLENGE</Text>
+          <Text style={styles.nbaCardSub}>Series picks · Nightly props · Win $100</Text>
+        </View>
+      </View>
+
+      {/* Divider */}
+      <View style={styles.nbaCardDivider} />
+
+      {/* Two tappable modes */}
+      <View style={styles.nbaCardModes}>
+        <Pressable
+          style={({ pressed }) => [styles.nbaMode, pressed && styles.nbaModePressed]}
+          onPress={onPressPlayoffs}
+        >
+          <View style={styles.nbaModeIcon}>
+            <Text style={styles.nbaModeEmoji}>🏆</Text>
+          </View>
+          <Text style={styles.nbaModeLabel}>Bracket</Text>
+          <Text style={styles.nbaModeSub}>Pick series winners</Text>
+          <View style={styles.nbaModeArrow}>
+            <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
+          </View>
+        </Pressable>
+
+        <View style={styles.nbaModeDivider} />
+
+        <Pressable
+          style={({ pressed }) => [styles.nbaMode, pressed && styles.nbaModePressed]}
+          onPress={onPressPicks}
+        >
+          <View style={[styles.nbaModeIcon, styles.nbaModeIconPicks]}>
+            <Text style={styles.nbaModeEmoji}>🎯</Text>
+          </View>
+          <Text style={styles.nbaModeLabel}>Picks</Text>
+          <Text style={styles.nbaModeSub}>Nightly player props</Text>
+          <View style={styles.nbaModeArrow}>
+            <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
+          </View>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -739,38 +767,84 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  challengeRow: {
-    flexDirection: "row" as const,
+  nbaCard: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    gap: 10,
+    marginBottom: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "rgba(29,66,138,0.60)",
+    backgroundColor: "rgba(29,66,138,0.14)",
+    overflow: "hidden" as const,
   },
-  challengeCard: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    gap: 4,
+  nbaCardHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
   },
-  challengeCardPlayoffs: {
-    backgroundColor: "rgba(29,66,138,0.20)",
-    borderColor: "rgba(29,66,138,0.55)",
+  nbaCardEmoji: { fontSize: 22 },
+  nbaCardHeaderText: { flex: 1, gap: 2 },
+  nbaCardTitle: {
+    fontSize: 13,
+    fontWeight: "800" as const,
+    color: NBA_GOLD,
+    letterSpacing: 0.8,
   },
-  challengeCardPicks: {
-    backgroundColor: "rgba(255,199,44,0.10)",
-    borderColor: "rgba(255,199,44,0.35)",
-  },
-  challengeCardEmoji: { fontSize: 22, marginBottom: 2 },
-  challengeCardTitle: {
-    fontSize: 15,
-    fontWeight: "700" as const,
-    color: "#FFFFFF",
-  },
-  challengeCardSub: {
+  nbaCardSub: {
     fontSize: 12,
     color: Colors.dark.textSecondary,
     fontWeight: "500" as const,
+  },
+  nbaCardDivider: {
+    height: 1,
+    backgroundColor: "rgba(29,66,138,0.45)",
+    marginHorizontal: 0,
+  },
+  nbaCardModes: {
+    flexDirection: "row" as const,
+  },
+  nbaMode: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 3,
+  },
+  nbaModePressed: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  nbaModeIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "rgba(29,66,138,0.35)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 6,
+  },
+  nbaModeIconPicks: {
+    backgroundColor: "rgba(255,199,44,0.15)",
+  },
+  nbaModeEmoji: { fontSize: 17 },
+  nbaModeLabel: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  nbaModeSub: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+  },
+  nbaModeArrow: {
+    position: "absolute" as const,
+    top: 14,
+    right: 14,
+  },
+  nbaModeDivider: {
+    width: 1,
+    backgroundColor: "rgba(29,66,138,0.45)",
+    marginVertical: 12,
   },
 
   playoffsBannerTitle: {

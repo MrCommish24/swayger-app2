@@ -309,6 +309,7 @@ export default function PicksScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}>
       <View style={styles.header}>
+        <Text style={styles.eyebrow}>NBA PLAYOFFS CHALLENGE</Text>
         <Text style={styles.title}>Picks</Text>
         <View style={styles.tabRow}>
           <Pressable
@@ -465,9 +466,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    gap: 12,
+    gap: 6,
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.border,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: NBA_GOLD,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
   },
   title: {
     fontSize: 28,
@@ -475,6 +483,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
     textTransform: "uppercase",
     letterSpacing: 1,
+    marginBottom: 6,
   },
   tabRow: { flexDirection: "row", gap: 8 },
   tabBtn: {
