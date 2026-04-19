@@ -3,12 +3,9 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
-import { fetchMySwaygers } from "@/lib/swayger";
-import { SwaygerData } from "@/types";
 import AppFeedbackModal, {
   shouldShowAppFeedbackPrompt,
   markAppFeedbackPromptShown,
@@ -26,7 +23,7 @@ function checkLiquidGlass(): boolean {
   }
 }
 
-function NativeTabLayout({ badgeCount }: { badgeCount: number }) {
+function NativeTabLayout() {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { NativeTabs, Icon, Label } = require("expo-router/unstable-native-tabs");
@@ -51,11 +48,11 @@ function NativeTabLayout({ badgeCount }: { badgeCount: number }) {
       </NativeTabs>
     );
   } catch {
-    return <ClassicTabLayout badgeCount={badgeCount} />;
+    return <ClassicTabLayout />;
   }
 }
 
-function ClassicTabLayout({ badgeCount }: { badgeCount: number }) {
+function ClassicTabLayout() {
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
 
@@ -85,7 +82,6 @@ function ClassicTabLayout({ badgeCount }: { badgeCount: number }) {
         name="index"
         options={{
           title: "Swaygers",
-          tabBarBadge: badgeCount > 0 ? badgeCount : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="flash-outline" color={color} size={size} />
           ),
@@ -123,39 +119,20 @@ function ClassicTabLayout({ badgeCount }: { badgeCount: number }) {
 }
 
 export default function TabLayout() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
-  const { data: swaygers = [] } = useQuery<SwaygerData[]>({
-    queryKey: ["swaygers", "mine", user?.id],
-    queryFn: () => fetchMySwaygers(user!.id),
-    enabled: !!user,
-    staleTime: 30_000,
-  });
-
-  const badgeCount = swaygers.filter((s) => {
-    if (s.status === "pending_invite" && s.creator_id !== user?.id) return true;
-    if (s.status === "settlement_proposed") return true;
-    return false;
-  }).length;
-
   // ─── App-open feedback prompt ─────────────────────────────────────────────
-  // Wait for profile to load, then check eligibility after a short delay so
-  // the prompt doesn't interrupt the initial navigation render.
-  //
-  // To reset for testing: clear AsyncStorage key PROMPT_SHOWN_KEY, or bump
-  // the key version in components/AppFeedbackModal.tsx.
   useEffect(() => {
     if (!profile?.created_at) return;
 
     const timer = setTimeout(async () => {
       const eligible = await shouldShowAppFeedbackPrompt(profile.created_at);
       if (eligible) {
-        // Mark shown immediately so a re-render loop can't fire it twice
         await markAppFeedbackPromptShown();
         setShowFeedbackModal(true);
       }
-    }, 2000); // 2-second delay — lets the home screen settle before prompting
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, [profile?.created_at]);
@@ -164,9 +141,9 @@ export default function TabLayout() {
   return (
     <>
       {checkLiquidGlass() ? (
-        <NativeTabLayout badgeCount={badgeCount} />
+        <NativeTabLayout />
       ) : (
-        <ClassicTabLayout badgeCount={badgeCount} />
+        <ClassicTabLayout />
       )}
 
       {/* App-open feedback prompt — shown once per device for existing users */}

@@ -255,56 +255,6 @@ function ChallengeCards({
 
 const PENDING_AMBER = "#F59E0B";
 
-function PendingBanner({
-  challengeCount,
-  settlementCount,
-  onViewChallenges,
-  onViewSettlements,
-  onDismiss,
-}: {
-  challengeCount: number;
-  settlementCount: number;
-  onViewChallenges: () => void;
-  onViewSettlements: () => void;
-  onDismiss: () => void;
-}) {
-  const total = challengeCount + settlementCount;
-  if (total === 0) return null;
-
-  return (
-    <View style={bannerStyles.wrapper}>
-      <View style={bannerStyles.container}>
-        <View style={bannerStyles.left}>
-          <Ionicons name="notifications" size={18} color={PENDING_AMBER} />
-        </View>
-        <View style={bannerStyles.body}>
-          {challengeCount > 0 && (
-            <Pressable onPress={onViewChallenges} style={bannerStyles.row}>
-              <Text style={bannerStyles.text}>
-                <Text style={bannerStyles.count}>{challengeCount}</Text>
-                {challengeCount === 1 ? " challenge" : " challenges"} waiting for you
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color={PENDING_AMBER} />
-            </Pressable>
-          )}
-          {settlementCount > 0 && (
-            <Pressable onPress={onViewSettlements} style={bannerStyles.row}>
-              <Text style={bannerStyles.text}>
-                <Text style={bannerStyles.count}>{settlementCount}</Text>
-                {settlementCount === 1 ? " settlement" : " settlements"} to review
-              </Text>
-              <Ionicons name="chevron-forward" size={14} color={PENDING_AMBER} />
-            </Pressable>
-          )}
-        </View>
-        <Pressable onPress={onDismiss} style={bannerStyles.dismiss} hitSlop={8}>
-          <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 const GOLD = "#F5A623";
 
 function StatsStrip({
@@ -400,7 +350,6 @@ export default function DashboardScreen() {
 
   type FilterKey = "all" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
-  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // ─── Action Modal state ──────────────────────────────────────────────────────
   const [modalQueue, setModalQueue] = useState<ModalItem[]>([]);
@@ -472,6 +421,9 @@ export default function DashboardScreen() {
     () => swaygers.filter((s) => s.status === "settlement_proposed").length,
     [swaygers]
   );
+
+  const actionCount = challengeCount + settlementCount;
+  const handleBellPress = useCallback(() => setModalIndex(0), []);
 
   const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
 
@@ -616,43 +568,43 @@ export default function DashboardScreen() {
 
       <View style={styles.header}>
         <Text style={styles.title}>My Swaygers</Text>
-        {user && (
-          <Pressable
-            style={styles.avatarPill}
-            onPress={() => router.push("/(tabs)/profile")}
-          >
-            <View style={[styles.avatarCircle, { backgroundColor: getAvatarColor(profile?.username || user.email || "?") }]}>
-              <Text style={styles.avatarInitial}>
-                {(profile?.display_name || profile?.username || user.email || "?").charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            {profile?.username ? (
-              <Text style={styles.avatarUsername} numberOfLines={1}>
-                @{profile.username}
-              </Text>
-            ) : (
-              <Text style={[styles.avatarUsername, { opacity: 0.5 }]} numberOfLines={1}>
-                {user.email?.split("@")[0] ?? "…"}
-              </Text>
-            )}
-          </Pressable>
-        )}
+        <View style={styles.headerRight}>
+          {user && actionCount > 0 && (
+            <Pressable onPress={handleBellPress} style={styles.bellButton} hitSlop={8}>
+              <Ionicons name="notifications" size={22} color={PENDING_AMBER} />
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{actionCount}</Text>
+              </View>
+            </Pressable>
+          )}
+          {user && (
+            <Pressable
+              style={styles.avatarPill}
+              onPress={() => router.push("/(tabs)/profile")}
+            >
+              <View style={[styles.avatarCircle, { backgroundColor: getAvatarColor(profile?.username || user.email || "?") }]}>
+                <Text style={styles.avatarInitial}>
+                  {(profile?.display_name || profile?.username || user.email || "?").charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              {profile?.username ? (
+                <Text style={styles.avatarUsername} numberOfLines={1}>
+                  @{profile.username}
+                </Text>
+              ) : (
+                <Text style={[styles.avatarUsername, { opacity: 0.5 }]} numberOfLines={1}>
+                  {user.email?.split("@")[0] ?? "…"}
+                </Text>
+              )}
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {!isLoading && !error && user && (
         <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
       )}
 
-
-      {!isLoading && !bannerDismissed && (
-        <PendingBanner
-          challengeCount={challengeCount}
-          settlementCount={settlementCount}
-          onViewChallenges={() => setActiveFilter("pending")}
-          onViewSettlements={() => setActiveFilter("active")}
-          onDismiss={() => setBannerDismissed(true)}
-        />
-      )}
 
       <ChallengeCards
         onPressPlayoffs={() => router.push("/playoffs")}
@@ -820,48 +772,6 @@ export default function DashboardScreen() {
   );
 }
 
-const bannerStyles = StyleSheet.create({
-  wrapper: {
-    marginHorizontal: 24,
-    marginBottom: 12,
-  },
-  container: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    backgroundColor: "rgba(245,158,11,0.10)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(245,158,11,0.35)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
-  },
-  left: {
-    paddingRight: 2,
-  },
-  body: {
-    flex: 1,
-    gap: 4,
-  },
-  row: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  text: {
-    fontSize: 13,
-    color: Colors.dark.text,
-    flex: 1,
-  },
-  count: {
-    fontWeight: "700" as const,
-    color: PENDING_AMBER,
-  },
-  dismiss: {
-    paddingLeft: 4,
-  },
-});
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   header: {
@@ -872,6 +782,35 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   title: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 32, color: Colors.dark.text, textTransform: "uppercase" as const, letterSpacing: 1 },
+  headerRight: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 12,
+  },
+  bellButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bellBadge: {
+    position: "absolute" as const,
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  bellBadgeText: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+    lineHeight: 12,
+  },
   avatarPill: {
     flexDirection: "row" as const,
     alignItems: "center",
