@@ -13,9 +13,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
+import * as Linking from "expo-linking";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
+import { createSwayger, fetchSwaygerInvite } from "@/lib/swayger";
 import Colors from "@/constants/colors";
 
 const NBA_BLUE = "#1D428A";
@@ -379,6 +382,194 @@ function ResultsWindow({
           resolved={true}
         />
       )}
+    </View>
+  );
+}
+
+// ─── Picks Challenge Card ─────────────────────────────────────
+
+const CHALLENGE_TIERS = [
+  { label: "Gut Feeling", points: 10, icon: "help-circle-outline" as const, desc: "Worth bragging about" },
+  { label: "Pretty Sure", points: 25, icon: "checkmark-circle-outline" as const, desc: "I'd stand on this" },
+  { label: "Lock it In", points: 50, icon: "lock-closed-outline" as const, desc: "Easy money" },
+];
+
+function buildNightInviteLink(inviteCode: string): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/join?code=${inviteCode}`;
+  }
+  return Linking.createURL(`/invite/${inviteCode}`);
+}
+
+function PicksChallengeCard({
+  night,
+  userId,
+}: {
+  night: PropNight;
+  userId: string;
+}) {
+  const [selectedTier, setSelectedTier] = useState<typeof CHALLENGE_TIERS[0] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [swaygerTitle, setSwaygerTitle] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const inviteLink = inviteCode ? buildNightInviteLink(inviteCode) : null;
+
+  async function handleCreate() {
+    if (!selectedTier) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const dateStr = formatNightDate(night.date);
+      const title = `🎯 Picks Challenge – ${dateStr}`;
+      const description = `[night:${night.id}] Whoever gets more NBA Playoff props correct tonight wins. Lower score confirms the result.`;
+      const { swayger, error } = await createSwayger(
+        title,
+        "Sports",
+        selectedTier.points,
+        "I'll get more picks correct than you tonight 🎯",
+        userId,
+        description
+      );
+      if (error || !swayger) {
+        setCreateError(error ?? "Could not create challenge. Try again.");
+        return;
+      }
+      setSwaygerTitle(title);
+      const invite = await fetchSwaygerInvite(swayger.id);
+      if (invite?.invite_code) {
+        setInviteCode(invite.invite_code);
+      }
+    } catch (e) {
+      setCreateError("Something went wrong. Please try again.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (!inviteLink) return;
+    await Clipboard.setStringAsync(inviteLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleShare() {
+    if (!inviteLink || !swaygerTitle) return;
+    const message = `I challenged you to a Picks Showdown on Swayger! 🏀🎯\n\n${swaygerTitle}\n\nWhoever gets more props correct tonight wins. Accept here: ${inviteLink}`;
+    try {
+      await Share.share({ message, url: inviteLink });
+    } catch {
+      await handleCopy();
+    }
+  }
+
+  if (inviteCode && inviteLink) {
+    return (
+      <View style={challengeStyles.successCard}>
+        <View style={challengeStyles.successHeader}>
+          <Ionicons name="checkmark-circle" size={20} color={Colors.dark.success} />
+          <Text style={challengeStyles.successTitle}>Challenge Created!</Text>
+        </View>
+        <Text style={challengeStyles.successSub}>
+          Share your invite link — opponent must accept before lock time to compete.
+        </Text>
+        <View style={challengeStyles.linkBox}>
+          <Text style={challengeStyles.linkText} numberOfLines={1} ellipsizeMode="middle">
+            {inviteLink}
+          </Text>
+        </View>
+        <View style={challengeStyles.successBtns}>
+          <Pressable
+            style={({ pressed }) => [challengeStyles.copyBtn, pressed && { opacity: 0.8 }]}
+            onPress={handleCopy}
+          >
+            <Ionicons name={copied ? "checkmark" : "copy-outline"} size={16} color={NBA_GOLD} />
+            <Text style={challengeStyles.copyBtnText}>{copied ? "Copied!" : "Copy Link"}</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [challengeStyles.shareSuccessBtn, pressed && { opacity: 0.8 }]}
+            onPress={handleShare}
+          >
+            <Ionicons name="share-outline" size={16} color="#000000" />
+            <Text style={challengeStyles.shareSuccessBtnText}>Send Challenge</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={challengeStyles.card}>
+      <View style={challengeStyles.cardHeader}>
+        <Text style={challengeStyles.cardEyebrow}>🎯 PICKS CHALLENGE</Text>
+        <View style={challengeStyles.newBadge}>
+          <Text style={challengeStyles.newBadgeText}>NEW</Text>
+        </View>
+      </View>
+      <Text style={challengeStyles.cardTitle}>Think you can out-pick a friend?</Text>
+      <Text style={challengeStyles.cardSub}>
+        Challenge someone to beat your score tonight. Whoever gets more correct wins the bet.
+      </Text>
+
+      <View style={challengeStyles.tiers}>
+        {CHALLENGE_TIERS.map((tier) => {
+          const selected = selectedTier?.points === tier.points;
+          return (
+            <Pressable
+              key={tier.points}
+              style={({ pressed }) => [
+                challengeStyles.tier,
+                selected && challengeStyles.tierSelected,
+                pressed && !selected && challengeStyles.tierPressed,
+              ]}
+              onPress={() => setSelectedTier(tier)}
+            >
+              <Ionicons
+                name={tier.icon}
+                size={18}
+                color={selected ? "#000000" : NBA_GOLD}
+              />
+              <Text style={[challengeStyles.tierLabel, selected && challengeStyles.tierLabelSelected]}>
+                {tier.label}
+              </Text>
+              <Text style={[challengeStyles.tierPoints, selected && challengeStyles.tierPointsSelected]}>
+                {tier.points} SP
+              </Text>
+              <Text style={[challengeStyles.tierDesc, selected && challengeStyles.tierDescSelected]}>
+                {tier.desc}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {createError && (
+        <Text style={challengeStyles.errorText}>{createError}</Text>
+      )}
+
+      <Pressable
+        style={({ pressed }) => [
+          challengeStyles.createBtn,
+          !selectedTier && challengeStyles.createBtnDisabled,
+          pressed && selectedTier && { opacity: 0.85 },
+        ]}
+        onPress={handleCreate}
+        disabled={!selectedTier || creating}
+      >
+        {creating ? (
+          <ActivityIndicator color="#000000" size="small" />
+        ) : (
+          <>
+            <Ionicons name="flash" size={18} color={selectedTier ? "#000000" : Colors.dark.textSecondary} />
+            <Text style={[challengeStyles.createBtnText, !selectedTier && challengeStyles.createBtnTextDisabled]}>
+              {selectedTier ? `Create ${selectedTier.points} SP Challenge →` : "Select your confidence"}
+            </Text>
+          </>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -818,6 +1009,11 @@ export default function PicksScreen() {
                 </>
               )}
             </Pressable>
+          )}
+
+          {/* Picks Challenge — create a Swayger for tonight */}
+          {isLocked && !isResolved && hasPriorPicks && user && (
+            <PicksChallengeCard night={night} userId={user.id} />
           )}
 
           {/* Share card — show after lock if picks exist */}
@@ -1272,4 +1468,196 @@ const resultsStyles = StyleSheet.create({
   choiceTextCorrect: { color: Colors.dark.success },
   choiceTextWrong: { color: Colors.dark.danger },
   noPick: { fontSize: 14, color: Colors.dark.textSecondary },
+});
+
+const challengeStyles = StyleSheet.create({
+  card: {
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    backgroundColor: "rgba(255,199,44,0.06)",
+    padding: 18,
+    marginBottom: 16,
+    gap: 12,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  cardEyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: NBA_GOLD,
+    letterSpacing: 1.2,
+  },
+  newBadge: {
+    backgroundColor: NBA_GOLD,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  newBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#000000",
+    letterSpacing: 0.8,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  cardSub: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
+  },
+  tiers: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  tier: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surface,
+    padding: 10,
+    alignItems: "center",
+    gap: 4,
+  },
+  tierSelected: {
+    borderColor: NBA_GOLD,
+    backgroundColor: NBA_GOLD,
+  },
+  tierPressed: {
+    opacity: 0.8,
+  },
+  tierLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.text,
+    textAlign: "center",
+  },
+  tierLabelSelected: {
+    color: "#000000",
+  },
+  tierPoints: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: NBA_GOLD,
+  },
+  tierPointsSelected: {
+    color: "#000000",
+  },
+  tierDesc: {
+    fontSize: 9,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+  },
+  tierDescSelected: {
+    color: "rgba(0,0,0,0.65)",
+  },
+  createBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  createBtnDisabled: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  createBtnText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  createBtnTextDisabled: {
+    color: Colors.dark.textSecondary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.dark.danger,
+    textAlign: "center",
+  },
+  successCard: {
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.success,
+    backgroundColor: "rgba(16,185,129,0.07)",
+    padding: 18,
+    marginBottom: 16,
+    gap: 12,
+  },
+  successHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  successTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: Colors.dark.success,
+  },
+  successSub: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
+  },
+  linkBox: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  linkText: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+  successBtns: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  copyBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    backgroundColor: "transparent",
+    paddingVertical: 12,
+  },
+  copyBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: NBA_GOLD,
+  },
+  shareSuccessBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 12,
+    backgroundColor: NBA_GOLD,
+    paddingVertical: 12,
+  },
+  shareSuccessBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#000000",
+  },
 });

@@ -419,6 +419,77 @@ export function registerPropsRoutes(app: Express) {
           .eq("id", userPick.id);
       }
 
+      // ── Auto-propose settlement for active Picks Challenge swaygers tied to this night ──
+      try {
+        const { data: challengeSwaygers } = await supabase
+          .from("swaygers")
+          .select("id, creator_id, opponent_id, status")
+          .eq("status", "active")
+          .ilike("description", `%[night:${nightId}]%`);
+
+        for (const sw of (challengeSwaygers ?? []) as Array<{ id: string; creator_id: string; opponent_id: string | null; status: string }>) {
+          if (!sw.opponent_id) continue;
+
+          // Look up each user's correct_count for this night
+          const { data: creatorRow } = await supabase
+            .from("prop_user_picks")
+            .select("correct_count")
+            .eq("night_id", nightId)
+            .eq("user_id", sw.creator_id)
+            .maybeSingle();
+
+          const { data: oppRow } = await supabase
+            .from("prop_user_picks")
+            .select("correct_count")
+            .eq("night_id", nightId)
+            .eq("user_id", sw.opponent_id)
+            .maybeSingle();
+
+          const creatorScore: number | null = (creatorRow as { correct_count?: number } | null)?.correct_count ?? null;
+          const oppScore: number | null = (oppRow as { correct_count?: number } | null)?.correct_count ?? null;
+
+          let outcome: "creator" | "opponent" | "draw" | "no_contest";
+          if (creatorScore === null || oppScore === null) {
+            outcome = "no_contest";
+          } else if (creatorScore > oppScore) {
+            outcome = "creator";
+          } else if (oppScore > creatorScore) {
+            outcome = "opponent";
+          } else {
+            outcome = "draw";
+          }
+
+          const proposedBy = outcome === "creator" ? sw.creator_id
+            : outcome === "opponent" ? sw.opponent_id
+            : sw.creator_id;
+
+          // Attempt direct writes — may be blocked by RLS in which case we log and skip
+          const { error: insertErr } = await supabase
+            .from("settlement_proposals")
+            .insert({
+              swayger_id: sw.id,
+              proposed_by: proposedBy,
+              outcome,
+              creator_confirmed: proposedBy === sw.creator_id,
+              opponent_confirmed: proposedBy === sw.opponent_id,
+            });
+
+          if (insertErr) {
+            console.warn(`[props] auto-settle: could not insert proposal for swayger ${sw.id}:`, insertErr.message);
+            continue;
+          }
+
+          await supabase
+            .from("swaygers")
+            .update({ status: "settlement_proposed" })
+            .eq("id", sw.id);
+
+          console.log(`[props] auto-settled picks challenge swayger ${sw.id}: ${outcome} (${creatorScore ?? "?"}–${oppScore ?? "?"})`);
+        }
+      } catch (autoErr) {
+        console.error("[props] auto-settle picks challenge error:", autoErr);
+      }
+
       res.json({ ok: true, resolvedProps });
     } catch (err: unknown) {
       res.status(500).json({ ok: false, error: String(err) });

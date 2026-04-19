@@ -115,6 +115,16 @@ export default function InviteScreen() {
     }
   }, [user, code]);
 
+  // Pre-fill opponent pick for Picks Challenge swaygers
+  const [opponentPickPrefilled, setOpponentPickPrefilled] = useState(false);
+  useEffect(() => {
+    if (!swayger || opponentPickPrefilled) return;
+    if (swayger.title?.startsWith("🎯 Picks Challenge")) {
+      setOpponentPick("I'll get more picks correct than you tonight 🎯");
+      setOpponentPickPrefilled(true);
+    }
+  }, [swayger?.id, swayger?.title]);
+
   const isCreator = swayger?.creator_id === user?.id;
   const canAccept = swayger && !isCreator && swayger.status === "pending_invite";
 

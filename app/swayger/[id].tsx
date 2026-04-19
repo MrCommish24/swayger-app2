@@ -419,6 +419,7 @@ export default function SwaygerDetailScreen() {
   const queryClient = useQueryClient();
 
   const [opponentPick, setOpponentPick] = useState("");
+  const [opponentPickPrefilled, setOpponentPickPrefilled] = useState(false);
   const [countering, setCountering] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -600,6 +601,15 @@ export default function SwaygerDetailScreen() {
       setShowFightCard(true);
     }, 500);
   }, [justAccepted, swayger?.status, profiles]);
+
+  // Pre-fill opponent pick for Picks Challenge swaygers
+  useEffect(() => {
+    if (!swayger || opponentPickPrefilled) return;
+    if (swayger.title?.startsWith("🎯 Picks Challenge")) {
+      setOpponentPick("I'll get more picks correct than you tonight 🎯");
+      setOpponentPickPrefilled(true);
+    }
+  }, [swayger?.id, swayger?.title]);
 
   const isCreator = swayger?.creator_id === user?.id;
   const isOpponent = swayger?.opponent_id === user?.id;
