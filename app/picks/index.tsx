@@ -512,7 +512,7 @@ function PicksChallengeCard({
       </View>
       <Text style={challengeStyles.cardTitle}>Think you can out-pick a friend?</Text>
       <Text style={challengeStyles.cardSub}>
-        Challenge someone to beat your score tonight. Whoever gets more correct wins the bet.
+        Challenge someone to beat your score tonight. Whoever gets more correct wins the Swayger.
       </Text>
 
       <View style={challengeStyles.tiers}>
@@ -1058,8 +1058,8 @@ export default function PicksScreen() {
             </Pressable>
           )}
 
-          {/* Picks Challenge — create a Swayger for tonight */}
-          {isLocked && !isResolved && hasPriorPicks && user && (
+          {/* Picks Challenge — create a Swayger for tonight (only before lock) */}
+          {!isLocked && !isResolved && hasPriorPicks && user && (
             <PicksChallengeCard night={night} userId={user.id} />
           )}
 
