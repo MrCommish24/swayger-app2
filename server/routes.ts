@@ -6,6 +6,7 @@ import { sendNotificationEmail, type NotifyPayload } from "./email";
 import { registerMMAdminRoutes } from "./routes-mm-admin";
 import { registerMMSpecialRoutes } from "./routes-mm-special";
 import { registerNBARoutes } from "./routes-nba";
+import { registerPropsRoutes } from "./routes-props";
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -111,6 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMMAdminRoutes(app);
   registerMMSpecialRoutes(app);
   registerNBARoutes(app);
+  registerPropsRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

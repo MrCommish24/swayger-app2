@@ -31,26 +31,33 @@ const MM_ORANGE = "#E8590A";
 const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
 
-function PlayoffsBanner({ onPress }: { onPress: () => void }) {
+function ChallengeCards({
+  onPressPlayoffs,
+  onPressPicks,
+}: {
+  onPressPlayoffs: () => void;
+  onPressPicks: () => void;
+}) {
   if (!NBA_PLAYOFFS_ACTIVE) return null;
   return (
-    <Pressable
-      style={({ pressed }) => [styles.playoffsBanner, pressed && { opacity: 0.88 }]}
-      onPress={onPress}
-    >
-      <View style={styles.mmBannerLeft}>
-        <Text style={styles.mmBannerEmoji}>🏀</Text>
-        <View style={styles.mmBannerText}>
-          <Text style={styles.playoffsBannerTitle}>NBA Playoffs Challenge 🏆</Text>
-          <Text style={styles.playoffsBannerSub}>
-            Pick series winners · Win $100 · Race the leaderboard
-          </Text>
-        </View>
-      </View>
-      <View style={styles.mmBannerArrow}>
-        <Ionicons name="chevron-forward" size={16} color={NBA_GOLD} />
-      </View>
-    </Pressable>
+    <View style={styles.challengeRow}>
+      <Pressable
+        style={({ pressed }) => [styles.challengeCard, styles.challengeCardPlayoffs, pressed && { opacity: 0.88 }]}
+        onPress={onPressPlayoffs}
+      >
+        <Text style={styles.challengeCardEmoji}>🏆</Text>
+        <Text style={styles.challengeCardTitle}>Bracket</Text>
+        <Text style={styles.challengeCardSub}>Pick series winners</Text>
+      </Pressable>
+      <Pressable
+        style={({ pressed }) => [styles.challengeCard, styles.challengeCardPicks, pressed && { opacity: 0.88 }]}
+        onPress={onPressPicks}
+      >
+        <Text style={styles.challengeCardEmoji}>🎯</Text>
+        <Text style={styles.challengeCardTitle}>Picks</Text>
+        <Text style={styles.challengeCardSub}>Nightly player props</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -361,7 +368,10 @@ export default function DashboardScreen() {
         />
       )}
 
-      <PlayoffsBanner onPress={() => router.push("/playoffs")} />
+      <ChallengeCards
+        onPressPlayoffs={() => router.push("/playoffs")}
+        onPressPicks={() => router.push("/picks")}
+      />
 
       <View style={styles.actions}>
         <Pressable
@@ -729,19 +739,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  playoffsBanner: {
+  challengeRow: {
     flexDirection: "row" as const,
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginHorizontal: 24,
+    marginHorizontal: 16,
     marginBottom: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    backgroundColor: "rgba(29,66,138,0.18)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(29,66,138,0.50)",
+    gap: 10,
   },
+  challengeCard: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    gap: 4,
+  },
+  challengeCardPlayoffs: {
+    backgroundColor: "rgba(29,66,138,0.20)",
+    borderColor: "rgba(29,66,138,0.55)",
+  },
+  challengeCardPicks: {
+    backgroundColor: "rgba(255,199,44,0.10)",
+    borderColor: "rgba(255,199,44,0.35)",
+  },
+  challengeCardEmoji: { fontSize: 22, marginBottom: 2 },
+  challengeCardTitle: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  challengeCardSub: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    fontWeight: "500" as const,
+  },
+
   playoffsBannerTitle: {
     fontSize: 14,
     fontWeight: "700" as const,
