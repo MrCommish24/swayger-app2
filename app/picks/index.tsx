@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
@@ -225,6 +226,7 @@ export default function PicksScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
+  const router = useRouter();
   const queryClient = useQueryClient();
 
   const [pendingPicks, setPendingPicks] = useState<Record<string, "over" | "under">>({});
@@ -319,6 +321,10 @@ export default function PicksScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}>
       <View style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={22} color={Colors.dark.text} />
+          <Text style={styles.backBtnText}>Back</Text>
+        </Pressable>
         <Text style={styles.eyebrow}>NBA PLAYOFFS CHALLENGE</Text>
         <Text style={styles.title}>Picks</Text>
         <View style={styles.tabRow}>
@@ -485,6 +491,18 @@ const styles = StyleSheet.create({
     gap: 6,
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.border,
+  },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    alignSelf: "flex-start",
+    marginLeft: -4,
+  },
+  backBtnText: {
+    fontSize: 16,
+    color: Colors.dark.text,
+    fontWeight: "500",
   },
   eyebrow: {
     fontSize: 11,
