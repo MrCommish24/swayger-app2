@@ -7,11 +7,13 @@ import {
   FlatList,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useEffect, useState } from "react";
+import React, { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { formatDate, getAvatarColor } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -30,6 +32,166 @@ import Colors from "@/constants/colors";
 const MM_ORANGE = "#E8590A";
 const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
+const SETTLE_ORANGE = "#F97316";
+const SETTLE_RED = "#EF4444";
+
+// ─── Per-page-load session tracking ───────────────────────────────────────────
+// Resets when the page reloads/refreshes. Prevents the same modal from
+// re-appearing within the same browser session (tab switch etc.)
+const shownInSession = new Set<string>();
+
+// 72h window for "newly accepted" challenge alerts
+const ACCEPTED_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+type ModalItem =
+  | { kind: "settlement"; swayger: SwaygerData; opponentName: string }
+  | { kind: "accepted"; swayger: SwaygerData; opponentName: string };
+
+// ─── SwaygerActionModal ────────────────────────────────────────────────────────
+function SwaygerActionModal({
+  item,
+  total,
+  index,
+  onDismiss,
+  onAction,
+}: {
+  item: ModalItem;
+  total: number;
+  index: number;
+  onDismiss: () => void;
+  onAction: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(400)).current;
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      damping: 22,
+      stiffness: 180,
+    }).start();
+  }, []);
+
+  const dismiss = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 500,
+      duration: 220,
+      useNativeDriver: false,
+    }).start(onDismiss);
+  }, [onDismiss]);
+
+  const action = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: 500,
+      duration: 180,
+      useNativeDriver: false,
+    }).start(onAction);
+  }, [onAction]);
+
+  const isSettlement = item.kind === "settlement";
+  const isPicksChallenge = item.swayger.title?.startsWith("🎯 Picks Challenge");
+
+  return (
+    <Modal transparent animationType="none" visible statusBarTranslucent>
+      <Pressable style={modalStyles.backdrop} onPress={dismiss}>
+        <Pressable onPress={(e) => e.stopPropagation()}>
+        <Animated.View
+          style={[
+            modalStyles.sheet,
+            { paddingBottom: insets.bottom + 16, transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          {/* Drag handle */}
+          <View style={modalStyles.handle} />
+
+          {/* Counter pill */}
+          {total > 1 && (
+            <View style={modalStyles.counterRow}>
+              <View style={[modalStyles.counterPill, isSettlement && modalStyles.counterPillSettle]}>
+                <Text style={modalStyles.counterText}>{index + 1} of {total}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Icon + headline */}
+          {isSettlement ? (
+            <View style={modalStyles.iconWrap}>
+              <View style={[modalStyles.iconCircle, { backgroundColor: "rgba(239,68,68,0.15)", borderColor: "rgba(239,68,68,0.4)" }]}>
+                <Text style={modalStyles.iconEmoji}>🔥</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={modalStyles.iconWrap}>
+              <View style={[modalStyles.iconCircle, { backgroundColor: "rgba(255,199,44,0.12)", borderColor: "rgba(255,199,44,0.4)" }]}>
+                <Text style={modalStyles.iconEmoji}>⚡</Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={[modalStyles.headline, isSettlement && { color: SETTLE_RED }]}>
+            {isSettlement ? "Time to settle." : "Challenge accepted."}
+          </Text>
+
+          <Text style={modalStyles.sub}>
+            {isSettlement
+              ? `${item.opponentName} has called the result. Agree or push back — the Swayger's on the line.`
+              : isPicksChallenge
+                ? `${item.opponentName} accepted your Picks Challenge. Your picks compete head-to-head tonight.`
+                : `${item.opponentName} is in. Your Swayger is live — it's game time.`
+            }
+          </Text>
+
+          {/* Swayger title card */}
+          <View style={[modalStyles.titleCard, isSettlement && { borderColor: "rgba(239,68,68,0.3)" }]}>
+            <Ionicons
+              name={isPicksChallenge ? "basketball-outline" : "flash-outline"}
+              size={14}
+              color={isSettlement ? SETTLE_ORANGE : NBA_GOLD}
+            />
+            <Text style={modalStyles.titleCardText} numberOfLines={2}>
+              {item.swayger.title}
+            </Text>
+            <View style={[modalStyles.spPill, isSettlement && { backgroundColor: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)" }]}>
+              <Text style={[modalStyles.spPillText, isSettlement && { color: SETTLE_ORANGE }]}>
+                {item.swayger.stake_units} SP
+              </Text>
+            </View>
+          </View>
+
+          {/* CTA */}
+          <Pressable
+            style={({ pressed }) => [
+              modalStyles.ctaBtn,
+              isSettlement
+                ? { backgroundColor: SETTLE_RED }
+                : { backgroundColor: NBA_GOLD },
+              pressed && { opacity: 0.88 },
+            ]}
+            onPress={action}
+          >
+            <Ionicons
+              name={isSettlement ? "checkmark-done-outline" : "flash"}
+              size={18}
+              color={isSettlement ? "#FFFFFF" : "#000000"}
+            />
+            <Text style={[modalStyles.ctaText, isSettlement && { color: "#FFFFFF" }]}>
+              {isSettlement ? "Settle Now" : "View Swayger"}
+            </Text>
+          </Pressable>
+
+          {/* Dismiss */}
+          <Pressable onPress={dismiss} hitSlop={8}>
+            <Text style={modalStyles.dismissText}>
+              {isSettlement ? "Remind me later" : "Dismiss"}
+            </Text>
+          </Pressable>
+        </Animated.View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
 
 function ChallengeCards({
   onPressPlayoffs,
@@ -240,6 +402,68 @@ export default function DashboardScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // ─── Action Modal state ──────────────────────────────────────────────────────
+  const [modalQueue, setModalQueue] = useState<ModalItem[]>([]);
+  const [modalIndex, setModalIndex] = useState(0);
+  const [profileMap, setProfileMap] = useState<Map<string, string>>(new Map());
+  const modalBuilt = useRef(false);
+
+  // Fetch display names for any user IDs we need in the modal
+  const fetchProfileName = useCallback(async (uid: string): Promise<string> => {
+    if (profileMap.has(uid)) return profileMap.get(uid)!;
+    const { data } = await supabase
+      .from("profiles")
+      .select("username, display_name")
+      .eq("id", uid)
+      .single();
+    const name = data?.display_name || data?.username || "Your opponent";
+    setProfileMap((prev) => new Map(prev).set(uid, name));
+    return name;
+  }, [profileMap]);
+
+  // Build modal queue once after swaygers load
+  useEffect(() => {
+    if (!user?.id || swaygers.length === 0 || modalBuilt.current) return;
+    modalBuilt.current = true;
+
+    (async () => {
+      const now = Date.now();
+      const items: ModalItem[] = [];
+
+      // Priority 1: settlements (someone is waiting on you)
+      const settlements = swaygers.filter(
+        (s) => s.status === "settlement_proposed" && !shownInSession.has(s.id)
+      );
+      for (const s of settlements) {
+        const otherId = s.creator_id === user.id ? s.opponent_id : s.creator_id;
+        const name = otherId ? await fetchProfileName(otherId) : "Your opponent";
+        items.push({ kind: "settlement", swayger: s, opponentName: name });
+        shownInSession.add(s.id);
+      }
+
+      // Priority 2: newly accepted challenges (within 72h)
+      const accepted = swaygers.filter(
+        (s) =>
+          s.status === "active" &&
+          s.creator_id === user.id &&
+          s.opponent_id !== null &&
+          s.accepted_at !== null &&
+          now - new Date(s.accepted_at).getTime() < ACCEPTED_WINDOW_MS &&
+          !shownInSession.has(s.id)
+      );
+      for (const s of accepted) {
+        const name = s.opponent_id ? await fetchProfileName(s.opponent_id) : "Your opponent";
+        items.push({ kind: "accepted", swayger: s, opponentName: name });
+        shownInSession.add(s.id);
+      }
+
+      if (items.length > 0) {
+        setModalQueue(items);
+        setModalIndex(0);
+      }
+    })();
+  }, [swaygers, user?.id]);
+
   const challengeCount = useMemo(
     () => swaygers.filter((s) => s.status === "pending_invite" && s.creator_id !== user?.id).length,
     [swaygers, user?.id]
@@ -301,6 +525,26 @@ export default function DashboardScreen() {
     };
   }, [user?.id]);
 
+  // ─── Modal handlers ───────────────────────────────────────────────────────────
+  const currentModalItem = modalQueue.length > 0 ? modalQueue[modalIndex] : null;
+
+  const handleModalDismiss = useCallback(() => {
+    if (modalIndex < modalQueue.length - 1) {
+      setModalIndex((i) => i + 1);
+    } else {
+      setModalQueue([]);
+    }
+  }, [modalIndex, modalQueue.length]);
+
+  const handleModalAction = useCallback(() => {
+    if (!currentModalItem) return;
+    const swayger = currentModalItem.swayger;
+    // Close the modal queue first
+    setModalQueue([]);
+    // Navigate straight to the swayger
+    router.push(`/swayger/${swayger.id}`);
+  }, [currentModalItem, router]);
+
   function renderSwaygerCard({ item }: { item: SwaygerData }) {
     const st = displayStatus(item.status || "pending_invite");
     const isCreator = item.creator_id === user?.id;
@@ -358,6 +602,18 @@ export default function DashboardScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
+
+      {/* ─── Action Modal ─────────────────────────────────────────────────── */}
+      {currentModalItem && (
+        <SwaygerActionModal
+          item={currentModalItem}
+          total={modalQueue.length}
+          index={modalIndex}
+          onDismiss={handleModalDismiss}
+          onAction={handleModalAction}
+        />
+      )}
+
       <View style={styles.header}>
         <Text style={styles.title}>My Swaygers</Text>
         {user && (
@@ -1101,4 +1357,135 @@ const styles = StyleSheet.create({
   cardDetails: { flexDirection: "row", gap: 12, flexWrap: "wrap", rowGap: 4 },
   detailRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   detailText: { fontSize: 13, color: Colors.dark.textSecondary },
+});
+
+// ─── Modal styles ──────────────────────────────────────────────────────────────
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#111827",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.07)",
+    borderBottomWidth: 0,
+    alignItems: "center",
+    gap: 16,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginBottom: 4,
+  },
+  counterRow: {
+    alignItems: "center",
+  },
+  counterPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,199,44,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.3)",
+  },
+  counterPillSettle: {
+    backgroundColor: "rgba(239,68,68,0.1)",
+    borderColor: "rgba(239,68,68,0.3)",
+  },
+  counterText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+    letterSpacing: 0.5,
+  },
+  iconWrap: {
+    alignItems: "center",
+    marginTop: 4,
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconEmoji: {
+    fontSize: 34,
+  },
+  headline: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: NBA_GOLD,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  sub: {
+    fontSize: 15,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 4,
+  },
+  titleCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.2)",
+    borderRadius: 14,
+    padding: 12,
+    width: "100%",
+  },
+  titleCardText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.dark.text,
+    lineHeight: 20,
+  },
+  spPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,199,44,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.3)",
+  },
+  spPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: NBA_GOLD,
+  },
+  ctaBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginTop: 4,
+  },
+  ctaText: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#000000",
+    letterSpacing: 0.2,
+  },
+  dismissText: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
 });
