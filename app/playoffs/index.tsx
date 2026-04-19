@@ -330,6 +330,7 @@ export default function PlayoffsHubScreen() {
           hitSlop={12}
         >
           <Ionicons name="chevron-back" size={22} color={Colors.dark.text} />
+          <Text style={styles.backBtnText}>Back</Text>
         </Pressable>
         <Text style={styles.headerTitle}>NBA Playoffs</Text>
         <Pressable
@@ -487,7 +488,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.border,
   },
-  backBtn: { width: 34, alignItems: "flex-start" },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 2 },
+  backBtnText: { fontSize: 16, color: Colors.dark.text, fontWeight: "500" },
   headerTitle: { fontSize: 17, fontWeight: "700" as const, color: Colors.dark.text },
 
   scroll: { flex: 1 },

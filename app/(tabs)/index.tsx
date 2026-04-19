@@ -65,6 +65,7 @@ function ChallengeCards({
           <Text style={styles.nbaModeLabel}>Bracket</Text>
           <Text style={styles.nbaModeSub}>Pick series winners</Text>
           <View style={styles.nbaModeArrow}>
+            <Text style={styles.nbaModeEnter}>Enter</Text>
             <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
           </View>
         </Pressable>
@@ -81,6 +82,7 @@ function ChallengeCards({
           <Text style={styles.nbaModeLabel}>Picks</Text>
           <Text style={styles.nbaModeSub}>Nightly player props</Text>
           <View style={styles.nbaModeArrow}>
+            <Text style={styles.nbaModeEnter}>Enter</Text>
             <Ionicons name="chevron-forward" size={14} color={NBA_GOLD} />
           </View>
         </Pressable>
@@ -812,7 +814,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   nbaModePressed: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(255,255,255,0.09)",
   },
   nbaModeIcon: {
     width: 34,
@@ -838,8 +840,16 @@ const styles = StyleSheet.create({
   },
   nbaModeArrow: {
     position: "absolute" as const,
-    top: 14,
+    bottom: 14,
     right: 14,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+  },
+  nbaModeEnter: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: NBA_GOLD,
   },
   nbaModeDivider: {
     width: 1,
