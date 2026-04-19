@@ -263,7 +263,17 @@ export default function PicksScreen() {
     }
   }
 
-  const activePicks = submitted || myPick ? existingPickMap : pendingPicks;
+  // Pre-populate pending picks from saved server picks (so user can edit them)
+  useEffect(() => {
+    if (myPick?.picks && Object.keys(pendingPicks).length === 0) {
+      const map: Record<string, "over" | "under"> = {};
+      for (const p of myPick.picks) map[p.prop_id] = p.pick;
+      setPendingPicks(map);
+    }
+  }, [myPick]);
+
+  // Before lock: use pendingPicks (editable). After lock/resolved: use server picks.
+  const activePicks = isLocked || isResolved ? existingPickMap : pendingPicks;
 
   const submitMutation = useMutation({
     mutationFn: async (picks: { prop_id: string; pick: "over" | "under" }[]) => {
@@ -405,8 +415,14 @@ export default function PicksScreen() {
           {/* Prior picks submitted banner */}
           {hasPriorPicks && !isResolved && (
             <View style={styles.submittedBanner}>
-              <Ionicons name="checkmark-circle" size={16} color={Colors.dark.success} />
-              <Text style={styles.submittedText}>Picks submitted · locked in</Text>
+              <Ionicons
+                name={isLocked ? "lock-closed" : "checkmark-circle"}
+                size={16}
+                color={isLocked ? Colors.dark.textSecondary : Colors.dark.success}
+              />
+              <Text style={[styles.submittedText, isLocked && { color: Colors.dark.textSecondary }]}>
+                {isLocked ? "Picks locked in" : "Picks saved · tap any card to change"}
+              </Text>
             </View>
           )}
 
@@ -418,14 +434,14 @@ export default function PicksScreen() {
                 prop={prop}
                 myPick={activePicks[prop.id]}
                 onPick={handlePick}
-                locked={isLocked || hasPriorPicks}
+                locked={isLocked}
                 showResult={isResolved}
               />
             ))}
           </View>
 
           {/* Submit button */}
-          {!isLocked && !hasPriorPicks && (
+          {!isLocked && (
             <Pressable
               style={({ pressed }) => [
                 styles.submitBtn,
@@ -440,7 +456,7 @@ export default function PicksScreen() {
               ) : (
                 <>
                   <Ionicons name="flash" size={18} color="#FFFFFF" />
-                  <Text style={styles.submitBtnText}>Submit Picks</Text>
+                  <Text style={styles.submitBtnText}>{hasPriorPicks ? "Update Picks" : "Submit Picks"}</Text>
                 </>
               )}
             </Pressable>
