@@ -517,6 +517,141 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // POST /api/admin/props/manual-resolve/:nightId — manually enter results and score picks
+  // Body: { results: { [prop_id]: "over" | "under" | "voided" } }
+  app.post("/api/admin/props/manual-resolve/:nightId", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { nightId } = req.params;
+      const { results } = req.body as { results: Record<string, "over" | "under" | "voided"> };
+
+      if (!results || typeof results !== "object") {
+        return res.status(400).json({ ok: false, error: "results object required: {prop_id: 'over'|'under'|'voided'}" });
+      }
+
+      const { data: night, error: nightErr } = await supabase
+        .from("prop_nights")
+        .select("*")
+        .eq("id", nightId)
+        .maybeSingle();
+
+      if (nightErr) throw nightErr;
+      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+
+      const props = night.props as PropDef[];
+
+      // Apply manual results
+      const resolvedProps: PropDef[] = props.map((prop) => {
+        const manualResult = results[prop.id];
+        if (!manualResult) return prop;
+        if (manualResult === "voided") return { ...prop, status: "voided" as const, result: null };
+        return { ...prop, result: manualResult };
+      });
+
+      // Update night
+      await supabase
+        .from("prop_nights")
+        .update({ props: resolvedProps, status: "resolved" })
+        .eq("id", nightId);
+
+      // Score all user picks
+      const { data: userPicks } = await supabase
+        .from("prop_user_picks")
+        .select("*")
+        .eq("night_id", nightId);
+
+      for (const userPick of (userPicks ?? [])) {
+        const picks = userPick.picks as UserPickEntry[];
+        let correctCount = 0;
+        let voidedCount = 0;
+
+        for (const pick of picks) {
+          const prop = resolvedProps.find((p) => p.id === pick.prop_id);
+          if (!prop) continue;
+          if (prop.status === "voided") { voidedCount++; continue; }
+          if (prop.result === pick.pick) correctCount++;
+        }
+
+        const activePropCount = resolvedProps.filter((p) => p.status !== "voided").length;
+        const score = computeScore(correctCount, activePropCount) + voidedCount * 25;
+
+        await supabase
+          .from("prop_user_picks")
+          .update({ score, correct_count: correctCount })
+          .eq("id", userPick.id);
+      }
+
+      // Auto-propose settlements for active Picks Challenge swaygers tied to this night
+      try {
+        const { data: challengeSwaygers } = await supabase
+          .from("swaygers")
+          .select("id, creator_id, opponent_id, status")
+          .eq("status", "active")
+          .ilike("description", `%[night:${nightId}]%`);
+
+        for (const sw of (challengeSwaygers ?? []) as Array<{ id: string; creator_id: string; opponent_id: string | null; status: string }>) {
+          if (!sw.opponent_id) continue;
+
+          const { data: creatorRow } = await supabase
+            .from("prop_user_picks")
+            .select("correct_count")
+            .eq("night_id", nightId)
+            .eq("user_id", sw.creator_id)
+            .maybeSingle();
+
+          const { data: oppRow } = await supabase
+            .from("prop_user_picks")
+            .select("correct_count")
+            .eq("night_id", nightId)
+            .eq("user_id", sw.opponent_id)
+            .maybeSingle();
+
+          const creatorScore: number | null = (creatorRow as { correct_count?: number } | null)?.correct_count ?? null;
+          const oppScore: number | null = (oppRow as { correct_count?: number } | null)?.correct_count ?? null;
+
+          let outcome: "creator" | "opponent" | "draw" | "no_contest";
+          if (creatorScore === null || oppScore === null) outcome = "no_contest";
+          else if (creatorScore > oppScore) outcome = "creator";
+          else if (oppScore > creatorScore) outcome = "opponent";
+          else outcome = "draw";
+
+          const proposedBy = outcome === "creator" ? sw.creator_id
+            : outcome === "opponent" ? sw.opponent_id
+            : sw.creator_id;
+
+          const { error: insertErr } = await supabase
+            .from("settlement_proposals")
+            .insert({
+              swayger_id: sw.id,
+              proposed_by: proposedBy,
+              outcome,
+              creator_confirmed: proposedBy === sw.creator_id,
+              opponent_confirmed: proposedBy === sw.opponent_id,
+            });
+
+          if (insertErr) {
+            console.warn(`[props] manual auto-settle: could not insert proposal for swayger ${sw.id}:`, insertErr.message);
+            continue;
+          }
+
+          await supabase
+            .from("swaygers")
+            .update({ status: "settlement_proposed" })
+            .eq("id", sw.id);
+
+          console.log(`[props] manual-resolve auto-settled picks challenge ${sw.id}: ${outcome} (${creatorScore ?? "?"}–${oppScore ?? "?"})`);
+        }
+      } catch (autoErr) {
+        console.error("[props] manual-resolve auto-settle error:", autoErr);
+      }
+
+      res.json({ ok: true, resolvedProps, picksScored: (userPicks ?? []).length });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // POST /api/admin/props/void/:nightId/:propId — void a single prop
   app.post("/api/admin/props/void/:nightId/:propId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
