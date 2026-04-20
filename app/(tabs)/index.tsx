@@ -703,22 +703,13 @@ export default function DashboardScreen() {
               const isActive = activeFilter === key;
               const label = key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1);
               const count = counts[key];
-              const isSettlingChip = key === "settling";
               return (
                 <Pressable
                   key={key}
-                  style={[
-                    styles.filterChip,
-                    isActive && styles.filterChipActive,
-                    isSettlingChip && !isActive && count > 0 && styles.filterChipSettlingAlert,
-                  ]}
+                  style={[styles.filterChip, isActive && styles.filterChipActive]}
                   onPress={() => setActiveFilter(key)}
                 >
-                  <Text style={[
-                    styles.filterChipText,
-                    isActive && styles.filterChipTextActive,
-                    isSettlingChip && !isActive && count > 0 && styles.filterChipSettlingAlertText,
-                  ]}>
+                  <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
                     {label}
                     <Text style={[styles.filterChipCount, isActive && styles.filterChipCountActive]}>
                       {" "}{count}
@@ -837,18 +828,8 @@ export default function DashboardScreen() {
           renderItem={renderSwaygerCard}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
-              <Text style={[
-                styles.sectionHeaderText,
-                section.key === "settling" && styles.sectionHeaderSettling,
-              ]}>
-                {section.title}
-              </Text>
-              <Text style={[
-                styles.sectionHeaderCount,
-                section.key === "settling" && styles.sectionHeaderSettling,
-              ]}>
-                {section.data.length}
-              </Text>
+              <Text style={styles.sectionHeaderText}>{section.title}</Text>
+              <Text style={styles.sectionHeaderCount}>{section.data.length}</Text>
             </View>
           )}
           contentContainerStyle={styles.listContent}
@@ -1168,11 +1149,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.tint,
     borderColor: Colors.dark.tint,
   },
-  filterChipSettlingAlert: {
-    borderColor: SETTLE_ORANGE,
-    backgroundColor: "rgba(249,115,22,0.08)",
-  },
-  filterChipSettlingAlertText: { color: SETTLE_ORANGE },
   filterChipText: { fontFamily: "DMSans_500Medium", fontSize: 13, color: Colors.dark.textSecondary },
   filterChipTextActive: { color: "#FFFFFF" },
   filterChipCount: { fontSize: 11, fontWeight: "500" as const, color: Colors.dark.textSecondary, opacity: 0.7 },
@@ -1383,7 +1359,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     color: Colors.dark.textSecondary,
   },
-  sectionHeaderSettling: { color: SETTLE_ORANGE },
   sectionHeaderCount: {
     fontSize: 11,
     fontFamily: "DMSans_500Medium",
