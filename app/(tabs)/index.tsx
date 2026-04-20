@@ -10,7 +10,7 @@ import {
   Modal,
   Animated,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useEffect, useState, useRef, useCallback } from "react";
@@ -370,6 +370,7 @@ export default function DashboardScreen() {
   const [modalIndex, setModalIndex] = useState(0);
   const [profileMap, setProfileMap] = useState<Map<string, string>>(new Map());
   const modalBuilt = useRef(false);
+  const pendingReturnToQueue = useRef(false);
 
   // Fetch display names for any user IDs we need in the modal
   const fetchProfileName = useCallback(async (uid: string): Promise<string> => {
@@ -437,16 +438,6 @@ export default function DashboardScreen() {
     })();
   }, [swaygers, user?.id]);
 
-  const challengeCount = useMemo(
-    () => swaygers.filter((s) => s.status === "pending_invite" && s.creator_id !== user?.id).length,
-    [swaygers, user?.id]
-  );
-  const settlementCount = useMemo(
-    () => swaygers.filter((s) => s.status === "settlement_proposed").length,
-    [swaygers]
-  );
-
-  const actionCount = challengeCount + settlementCount;
   const handleBellPress = useCallback(() => setModalIndex(0), []);
 
   const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
@@ -504,22 +495,34 @@ export default function DashboardScreen() {
   // ─── Modal handlers ───────────────────────────────────────────────────────────
   const currentModalItem = modalQueue.length > 0 ? modalQueue[modalIndex] : null;
 
+  // "Remind me later" / "Dismiss" — just advance the index.
+  // Never clears the queue so the bell can always replay from the top.
   const handleModalDismiss = useCallback(() => {
-    if (modalIndex < modalQueue.length - 1) {
-      setModalIndex((i) => i + 1);
-    } else {
-      setModalQueue([]);
-    }
-  }, [modalIndex, modalQueue.length]);
+    setModalIndex((i) => i + 1);
+  }, []);
 
+  // "Settle Now" / "View Challenge" / "View Swayger" — remove this item from
+  // the queue (it's been acted on), flag that we should resurface remaining
+  // items when the user returns to this screen, then navigate.
   const handleModalAction = useCallback(() => {
     if (!currentModalItem) return;
     const swayger = currentModalItem.swayger;
-    // Close the modal queue first
-    setModalQueue([]);
-    // Navigate straight to the swayger
+    setModalQueue((q) => q.filter((_, idx) => idx !== modalIndex));
+    setModalIndex(0);
+    pendingReturnToQueue.current = true;
     router.push(`/swayger/${swayger.id}`);
-  }, [currentModalItem, router]);
+  }, [currentModalItem, modalIndex, router]);
+
+  // When we return to this screen after acting on a notification, auto-show
+  // whatever remains in the queue.
+  useFocusEffect(
+    useCallback(() => {
+      if (pendingReturnToQueue.current) {
+        pendingReturnToQueue.current = false;
+        setModalIndex(0);
+      }
+    }, [])
+  );
 
   function renderSwaygerCard({ item }: { item: SwaygerData }) {
     const st = displayStatus(item.status || "pending_invite");
@@ -582,6 +585,7 @@ export default function DashboardScreen() {
       {/* ─── Action Modal ─────────────────────────────────────────────────── */}
       {currentModalItem && (
         <SwaygerActionModal
+          key={`modal-${modalIndex}-${currentModalItem.swayger.id}`}
           item={currentModalItem}
           total={modalQueue.length}
           index={modalIndex}
@@ -593,11 +597,11 @@ export default function DashboardScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>My Swaygers</Text>
         <View style={styles.headerRight}>
-          {user && actionCount > 0 && (
+          {user && modalQueue.length > 0 && (
             <Pressable onPress={handleBellPress} style={styles.bellButton} hitSlop={8}>
               <Ionicons name="notifications" size={22} color={PENDING_AMBER} />
               <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>{actionCount}</Text>
+                <Text style={styles.bellBadgeText}>{modalQueue.length}</Text>
               </View>
             </Pressable>
           )}
