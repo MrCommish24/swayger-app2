@@ -4,7 +4,7 @@ import {
   View,
   Pressable,
   Platform,
-  FlatList,
+  SectionList,
   ActivityIndicator,
   ScrollView,
   Modal,
@@ -362,7 +362,7 @@ export default function DashboardScreen() {
   });
   const spBalance = balanceData?.balance ?? null;
 
-  type FilterKey = "all" | "active" | "pending" | "settled" | "other";
+  type FilterKey = "all" | "settling" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
   // ─── Action Modal state ──────────────────────────────────────────────────────
@@ -370,6 +370,8 @@ export default function DashboardScreen() {
   const [modalIndex, setModalIndex] = useState(0);
   const [profileMap, setProfileMap] = useState<Map<string, string>>(new Map());
   const [modalSuppressed, setModalSuppressed] = useState(false);
+  // swayger_id → proposed_by: tells the card whether it's "Your Turn" or "Awaiting Them"
+  const [settlementProposerMap, setSettlementProposerMap] = useState<Map<string, string>>(new Map());
   const modalBuilt = useRef(false);
 
   // Fetch display names for any user IDs we need in the modal
@@ -410,6 +412,8 @@ export default function DashboardScreen() {
         for (const p of (proposals || [])) {
           if (!proposerMap.has(p.swayger_id)) proposerMap.set(p.swayger_id, p.proposed_by);
         }
+        // Expose to state so cards can show "Your Turn" vs "Awaiting Them"
+        setSettlementProposerMap(proposerMap);
         for (const s of settlementSwaygers) {
           if (proposerMap.get(s.id) === user.id) continue; // You proposed — skip
           const otherId = s.creator_id === user.id ? s.opponent_id : s.creator_id;
@@ -457,34 +461,33 @@ export default function DashboardScreen() {
   const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
 
   const counts = useMemo(() => ({
-    all:     swaygers.length,
-    active:  swaygers.filter((s) => ["active", "settlement_proposed"].includes(s.status)).length,
-    pending: swaygers.filter((s) => s.status === "pending_invite").length,
-    settled: swaygers.filter((s) => s.status === "settled").length,
-    other:   swaygers.filter((s) => OTHER_STATUSES.includes(s.status)).length,
+    all:      swaygers.length,
+    settling: swaygers.filter((s) => s.status === "settlement_proposed").length,
+    active:   swaygers.filter((s) => s.status === "active").length,
+    pending:  swaygers.filter((s) => s.status === "pending_invite").length,
+    settled:  swaygers.filter((s) => s.status === "settled").length,
+    other:    swaygers.filter((s) => OTHER_STATUSES.includes(s.status)).length,
   }), [swaygers]);
 
-  const filteredSwaygers = useMemo(() => {
-    const statusOrder = (s: SwaygerData): number => {
-      if (["active", "settlement_proposed"].includes(s.status)) return 0;
-      if (s.status === "pending_invite") return 1;
-      if (s.status === "settled") return 2;
-      return 3;
-    };
-    const filtered = activeFilter === "all"
-      ? [...swaygers]
-      : swaygers.filter((s) => {
-          if (activeFilter === "active")  return ["active", "settlement_proposed"].includes(s.status);
-          if (activeFilter === "pending") return s.status === "pending_invite";
-          if (activeFilter === "settled") return s.status === "settled";
-          if (activeFilter === "other")   return OTHER_STATUSES.includes(s.status);
-          return true;
-        });
-    return filtered.sort((a, b) => {
-      const orderDiff = statusOrder(a) - statusOrder(b);
-      if (orderDiff !== 0) return orderDiff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
+  type SwaygerSection = { key: FilterKey; title: string; data: SwaygerData[] };
+
+  const sections = useMemo((): SwaygerSection[] => {
+    const byDate = (a: SwaygerData, b: SwaygerData) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+
+    const groups: SwaygerSection[] = [
+      { key: "settling", title: "SETTLING", data: swaygers.filter((s) => s.status === "settlement_proposed").sort(byDate) },
+      { key: "active",   title: "ACTIVE",   data: swaygers.filter((s) => s.status === "active").sort(byDate) },
+      { key: "pending",  title: "PENDING",  data: swaygers.filter((s) => s.status === "pending_invite").sort(byDate) },
+      { key: "settled",  title: "SETTLED",  data: swaygers.filter((s) => s.status === "settled").sort(byDate) },
+      { key: "other",    title: "OTHER",    data: swaygers.filter((s) => OTHER_STATUSES.includes(s.status)).sort(byDate) },
+    ];
+
+    const visible = activeFilter === "all"
+      ? groups
+      : groups.filter((g) => g.key === activeFilter);
+
+    return visible.filter((g) => g.data.length > 0);
   }, [swaygers, activeFilter]);
 
   useEffect(() => {
@@ -539,12 +542,19 @@ export default function DashboardScreen() {
   );
 
   function renderSwaygerCard({ item }: { item: SwaygerData }) {
+    const isSettling = item.status === "settlement_proposed";
+    const iProposed = isSettling && settlementProposerMap.get(item.id) === user?.id;
     const st = displayStatus(item.status || "pending_invite");
     const isCreator = item.creator_id === user?.id;
 
+    // Settling sub-state chip values
+    const settlingColor = iProposed ? Colors.dark.textSecondary : SETTLE_ORANGE;
+    const settlingIcon = iProposed ? "time-outline" : "checkmark-circle-outline";
+    const settlingLabel = iProposed ? "Awaiting Them" : "Your Turn";
+
     return (
       <Pressable
-        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        style={({ pressed }) => [styles.card, isSettling && styles.cardSettling, pressed && styles.cardPressed]}
         onPress={() => router.push(`/swayger/${item.id}`)}
       >
         <View style={styles.cardHeader}>
@@ -581,8 +591,19 @@ export default function DashboardScreen() {
             <Text style={styles.detailText}>{item.stake_units || 1} SP</Text>
           </View>
           <View style={styles.detailRow}>
-            <Ionicons name="radio-button-on" size={10} color={st.color} />
-            <Text style={[styles.detailText, { color: st.color }]}>{st.label}</Text>
+            {isSettling ? (
+              <>
+                <Ionicons name={settlingIcon as keyof typeof Ionicons.glyphMap} size={12} color={settlingColor} />
+                <Text style={[styles.detailText, { color: settlingColor, fontWeight: iProposed ? "400" : "600" }]}>
+                  {settlingLabel}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="radio-button-on" size={10} color={st.color} />
+                <Text style={[styles.detailText, { color: st.color }]}>{st.label}</Text>
+              </>
+            )}
           </View>
           <View style={styles.detailRow}>
             <Ionicons name="calendar-outline" size={14} color={Colors.dark.textSecondary} />
@@ -678,17 +699,26 @@ export default function DashboardScreen() {
             contentContainerStyle={styles.filterRow}
             bounces={false}
           >
-            {(["all", "active", "pending", "settled", "other"] as FilterKey[]).map((key) => {
+            {(["all", "settling", "active", "pending", "settled", "other"] as FilterKey[]).map((key) => {
               const isActive = activeFilter === key;
               const label = key === "all" ? "All" : key.charAt(0).toUpperCase() + key.slice(1);
               const count = counts[key];
+              const isSettlingChip = key === "settling";
               return (
                 <Pressable
                   key={key}
-                  style={[styles.filterChip, isActive && styles.filterChipActive]}
+                  style={[
+                    styles.filterChip,
+                    isActive && styles.filterChipActive,
+                    isSettlingChip && !isActive && count > 0 && styles.filterChipSettlingAlert,
+                  ]}
                   onPress={() => setActiveFilter(key)}
                 >
-                  <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                  <Text style={[
+                    styles.filterChipText,
+                    isActive && styles.filterChipTextActive,
+                    isSettlingChip && !isActive && count > 0 && styles.filterChipSettlingAlertText,
+                  ]}>
                     {label}
                     <Text style={[styles.filterChipCount, isActive && styles.filterChipCountActive]}>
                       {" "}{count}
@@ -795,18 +825,33 @@ export default function DashboardScreen() {
             <Text style={styles.emptyCreateButtonText}>Create Your First Swayger</Text>
           </Pressable>
         </ScrollView>
-      ) : filteredSwaygers.length === 0 && swaygers.length > 0 ? (
+      ) : sections.length === 0 && swaygers.length > 0 ? (
         <View style={styles.centered}>
           <Ionicons name="filter-outline" size={40} color={Colors.dark.textSecondary} />
           <Text style={styles.emptyText}>No {activeFilter === "all" ? "" : activeFilter + " "}swaygers yet.</Text>
         </View>
       ) : (
-        <FlatList
-          data={filteredSwaygers}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={renderSwaygerCard}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={[
+                styles.sectionHeaderText,
+                section.key === "settling" && styles.sectionHeaderSettling,
+              ]}>
+                {section.title}
+              </Text>
+              {section.key === "settling" && (
+                <View style={styles.sectionHeaderPill}>
+                  <Text style={styles.sectionHeaderPillText}>{section.data.length}</Text>
+                </View>
+              )}
+            </View>
+          )}
           contentContainerStyle={styles.listContent}
-          scrollEnabled={filteredSwaygers.length > 0}
+          stickySectionHeadersEnabled={false}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -1122,6 +1167,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.tint,
     borderColor: Colors.dark.tint,
   },
+  filterChipSettlingAlert: {
+    borderColor: SETTLE_ORANGE,
+    backgroundColor: "rgba(249,115,22,0.08)",
+  },
+  filterChipSettlingAlertText: { color: SETTLE_ORANGE },
   filterChipText: { fontFamily: "DMSans_500Medium", fontSize: 13, color: Colors.dark.textSecondary },
   filterChipTextActive: { color: "#FFFFFF" },
   filterChipCount: { fontSize: 11, fontWeight: "500" as const, color: Colors.dark.textSecondary, opacity: 0.7 },
@@ -1317,10 +1367,37 @@ const styles = StyleSheet.create({
   },
   retryButton: { paddingVertical: 8, paddingHorizontal: 20 },
   retryText: { color: Colors.dark.tint, fontSize: 14, fontWeight: "600" as const },
-  listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 100 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
+  sectionHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 20,
+    paddingBottom: 8,
+    paddingHorizontal: 2,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    fontFamily: "DMSans_500Medium",
+    letterSpacing: 1.2,
+    color: Colors.dark.textSecondary,
+  },
+  sectionHeaderSettling: { color: SETTLE_ORANGE },
+  sectionHeaderPill: {
+    backgroundColor: SETTLE_ORANGE,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  sectionHeaderPillText: { fontSize: 10, fontWeight: "700" as const, color: "#FFFFFF" },
   card: {
     backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 16,
     borderWidth: 1, borderColor: Colors.dark.border,
+    marginBottom: 12,
+  },
+  cardSettling: {
+    borderColor: "rgba(249,115,22,0.35)",
+    backgroundColor: "rgba(249,115,22,0.04)",
   },
   cardPressed: { opacity: 0.8 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
