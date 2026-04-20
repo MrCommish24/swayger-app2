@@ -21,19 +21,81 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 
 // ─── SportsGameOdds fetcher ───────────────────────────────────
+// SGO does not support individual event lookup (/v2/events/:id returns 404).
+// Instead we page through the list endpoint using startsAfter to build a map.
 
-async function fetchEventFromSGO(eventID: string): Promise<Record<string, unknown> | null> {
+// nightDate: ISO date string (e.g. "2026-04-19") to narrow the search window
+async function fetchSGOEventMap(eventIDs: string[], nightDate?: string): Promise<Record<string, Record<string, unknown>>> {
   const apiKey = process.env.SPORTS_GAME_ODDS_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const url = `https://api.sportsgameodds.com/v2/events/${eventID}`;
-    const res = await fetch(url, { headers: { "X-Api-Key": apiKey } });
-    if (!res.ok) return null;
-    const data = await res.json() as { success: boolean; data: Record<string, unknown> };
-    return data.success ? data.data : null;
-  } catch {
-    return null;
+  if (!apiKey || eventIDs.length === 0) return {};
+
+  const map: Record<string, Record<string, unknown>> = {};
+  const needed = new Set(eventIDs);
+
+  // Start 1 day before the night's date to catch games that start the prior evening.
+  // Fall back to 3 days ago if no date hint is given.
+  let windowStart: string;
+  if (nightDate) {
+    const d = new Date(nightDate + "T00:00:00Z");
+    d.setDate(d.getDate() - 1);
+    windowStart = d.toISOString();
+  } else {
+    windowStart = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
   }
+
+  let cursor: string | null = null;
+  let pageCount = 0;
+  const MAX_PAGES = 15; // safety ceiling — 15 pages × 10 events = 150 events
+
+  try {
+    do {
+      const url = new URL("https://api.sportsgameodds.com/v2/events/");
+      url.searchParams.set("sportID", "BASKETBALL");
+      url.searchParams.set("leagueID", "NBA");
+      url.searchParams.set("startsAfter", windowStart);
+      if (cursor) url.searchParams.set("cursor", cursor);
+
+      const res = await fetch(url.toString(), { headers: { "X-Api-Key": apiKey } });
+      if (!res.ok) break;
+
+      const data = await res.json() as {
+        success: boolean;
+        data: Record<string, unknown>[];
+        nextCursor?: string;
+      };
+      if (!data.success) break;
+
+      pageCount++;
+      for (const event of (data.data || [])) {
+        const id = event.eventID as string;
+        if (needed.has(id)) {
+          map[id] = event;
+          needed.delete(id);
+        }
+      }
+
+      cursor = needed.size > 0 && pageCount < MAX_PAGES ? (data.nextCursor || null) : null;
+    } while (cursor);
+  } catch {
+    // return whatever we found so far
+  }
+
+  console.log(`[SGO] fetchSGOEventMap: ${pageCount} page(s), found ${Object.keys(map).length}/${eventIDs.length} events`);
+  return map;
+}
+
+// Helper: extract a single stat value from a player's stats object or legacy flat number
+function extractStat(playerData: unknown, statName: string): number | null {
+  if (playerData === undefined || playerData === null) return null;
+  // SGO returns player stats as an object: { points: 23, rebounds: 6, assists: 2, ... }
+  if (typeof playerData === "object") {
+    const obj = playerData as Record<string, number>;
+    const val = obj[statName];
+    return typeof val === "number" ? val : null;
+  }
+  // Legacy flat number format
+  const num = Number(playerData);
+  return isNaN(num) ? null : num;
 }
 
 // ─── Scoring helper ───────────────────────────────────────────
@@ -374,33 +436,40 @@ export function registerPropsRoutes(app: Express) {
 
       const props = night.props as PropDef[];
 
-      // Group props by event_id to minimize API calls
+      // Batch-fetch all events from SGO using the list endpoint with startsAfter.
+      // Pass the night's date so the window starts 1 day before, keeping page count low.
       const eventIds = [...new Set(props.map((p) => p.event_id))];
-      const eventMap: Record<string, Record<string, unknown>> = {};
-
-      for (const eventId of eventIds) {
-        const event = await fetchEventFromSGO(eventId);
-        if (event) eventMap[eventId] = event;
-      }
+      const eventMap = await fetchSGOEventMap(eventIds, night.date as string);
+      console.log(`[props/resolve] fetched ${Object.keys(eventMap).length}/${eventIds.length} events from SGO`);
 
       // Resolve each prop
       const resolvedProps: PropDef[] = props.map((prop) => {
         if (prop.status === "voided") return prop;
 
         const event = eventMap[prop.event_id];
-        if (!event) return prop;
+        if (!event) {
+          console.warn(`[props/resolve] no SGO event found for event_id=${prop.event_id}, prop=${prop.id}`);
+          return prop;
+        }
 
-        const results = event.results as Record<string, Record<string, number>> | undefined;
-        if (!results) return prop;
+        const gameResults = (event.results as Record<string, unknown> | undefined)?.game as Record<string, unknown> | undefined;
+        if (!gameResults) return prop;
 
-        const playerStats = results.game?.[prop.player_id as keyof typeof results.game];
-        if (playerStats === undefined || playerStats === null) {
-          // Player didn't play — void it
+        const playerData = gameResults[prop.player_id];
+        if (playerData === undefined || playerData === null) {
+          // Player didn't appear in game data — void the prop
+          console.warn(`[props/resolve] player ${prop.player_id} not in results, voiding`);
           return { ...prop, status: "voided" as const };
         }
 
-        const actualScore = Number(playerStats);
+        const actualScore = extractStat(playerData, prop.stat);
+        if (actualScore === null) {
+          console.warn(`[props/resolve] stat "${prop.stat}" not found for ${prop.player_id}, voiding`);
+          return { ...prop, status: "voided" as const };
+        }
+
         const result: "over" | "under" = actualScore > prop.line ? "over" : "under";
+        console.log(`[props/resolve] ${prop.player_name} ${prop.stat}: ${actualScore} vs line ${prop.line} → ${result}`);
         return { ...prop, result };
       });
 
