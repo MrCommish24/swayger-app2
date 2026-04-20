@@ -549,7 +549,6 @@ export default function DashboardScreen() {
 
     // Settling sub-state chip values
     const settlingColor = iProposed ? Colors.dark.textSecondary : SETTLE_ORANGE;
-    const settlingIcon = iProposed ? "time-outline" : "checkmark-circle-outline";
     const settlingLabel = iProposed ? "Awaiting Them" : "Your Turn";
 
     return (
@@ -591,19 +590,10 @@ export default function DashboardScreen() {
             <Text style={styles.detailText}>{item.stake_units || 1} SP</Text>
           </View>
           <View style={styles.detailRow}>
-            {isSettling ? (
-              <>
-                <Ionicons name={settlingIcon as keyof typeof Ionicons.glyphMap} size={12} color={settlingColor} />
-                <Text style={[styles.detailText, { color: settlingColor, fontWeight: iProposed ? "400" : "600" }]}>
-                  {settlingLabel}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="radio-button-on" size={10} color={st.color} />
-                <Text style={[styles.detailText, { color: st.color }]}>{st.label}</Text>
-              </>
-            )}
+            <Ionicons name="radio-button-on" size={10} color={isSettling ? settlingColor : st.color} />
+            <Text style={[styles.detailText, { color: isSettling ? settlingColor : st.color }]}>
+              {isSettling ? settlingLabel : st.label}
+            </Text>
           </View>
           <View style={styles.detailRow}>
             <Ionicons name="calendar-outline" size={14} color={Colors.dark.textSecondary} />
