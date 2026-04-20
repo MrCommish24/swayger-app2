@@ -14,6 +14,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useEffect, useState, useRef, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { formatDate, getAvatarColor } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
@@ -42,6 +43,9 @@ const shownInSession = new Set<string>();
 
 // 72h window for "newly accepted" challenge alerts
 const ACCEPTED_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+// AsyncStorage key for permanently dismissed "accepted" notifications
+const SEEN_ACCEPTED_KEY = "swayger:seen_accepted_notifications";
 
 type ModalItem =
   | { kind: "settlement"; swayger: SwaygerData; opponentName: string }
@@ -372,7 +376,35 @@ export default function DashboardScreen() {
   const [modalSuppressed, setModalSuppressed] = useState(false);
   // swayger_id → proposed_by: tells the card whether it's "Your Turn" or "Awaiting Them"
   const [settlementProposerMap, setSettlementProposerMap] = useState<Map<string, string>>(new Map());
+  // Swayger IDs whose "accepted" notification has been permanently seen (survives restarts)
+  const [seenAcceptedIds, setSeenAcceptedIds] = useState<Set<string>>(new Set());
+  const [seenAcceptedLoaded, setSeenAcceptedLoaded] = useState(false);
   const modalBuilt = useRef(false);
+
+  // Load persisted "accepted" notification IDs once on mount.
+  // Sets seenAcceptedLoaded=true when done (even if empty) so the queue
+  // build effect knows it's safe to proceed.
+  useEffect(() => {
+    AsyncStorage.getItem(SEEN_ACCEPTED_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const ids: string[] = JSON.parse(raw);
+          setSeenAcceptedIds(new Set(ids));
+        } catch {}
+      }
+      setSeenAcceptedLoaded(true);
+    });
+  }, []);
+
+  // Persist a single swayger ID as permanently seen for "accepted" notifications
+  const markAcceptedSeen = useCallback(async (id: string) => {
+    setSeenAcceptedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      AsyncStorage.setItem(SEEN_ACCEPTED_KEY, JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  }, []);
 
   // Fetch display names for any user IDs we need in the modal
   const fetchProfileName = useCallback(async (uid: string): Promise<string> => {
@@ -387,9 +419,10 @@ export default function DashboardScreen() {
     return name;
   }, [profileMap]);
 
-  // Build modal queue once after swaygers load
+  // Build modal queue once after swaygers load.
+  // Waits for seenAcceptedLoaded so the persistent filter is ready before we build.
   useEffect(() => {
-    if (!user?.id || swaygers.length === 0 || modalBuilt.current) return;
+    if (!user?.id || swaygers.length === 0 || modalBuilt.current || !seenAcceptedLoaded) return;
     modalBuilt.current = true;
 
     (async () => {
@@ -433,7 +466,8 @@ export default function DashboardScreen() {
         shownInSession.add(s.id);
       }
 
-      // Priority 3: newly accepted challenges (within 72h)
+      // Priority 3: newly accepted challenges (within 72h).
+      // Skip any the user has already permanently dismissed (persisted in AsyncStorage).
       const accepted = swaygers.filter(
         (s) =>
           s.status === "active" &&
@@ -441,7 +475,8 @@ export default function DashboardScreen() {
           s.opponent_id !== null &&
           s.accepted_at !== null &&
           now - new Date(s.accepted_at).getTime() < ACCEPTED_WINDOW_MS &&
-          !shownInSession.has(s.id)
+          !shownInSession.has(s.id) &&
+          !seenAcceptedIds.has(s.id)
       );
       for (const s of accepted) {
         const name = s.opponent_id ? await fetchProfileName(s.opponent_id) : "Your opponent";
@@ -454,7 +489,7 @@ export default function DashboardScreen() {
         setModalIndex(0);
       }
     })();
-  }, [swaygers, user?.id]);
+  }, [swaygers, user?.id, seenAcceptedLoaded]);
 
   const handleBellPress = useCallback(() => setModalIndex(0), []);
 
@@ -512,26 +547,33 @@ export default function DashboardScreen() {
   // ─── Modal handlers ───────────────────────────────────────────────────────────
   const currentModalItem = modalQueue.length > 0 ? modalQueue[modalIndex] : null;
 
-  // "Remind me later" / "Dismiss" — just advance the index.
-  // Never clears the queue so the bell can always replay from the top.
+  // "Remind me later" / "Dismiss" — advance the index.
+  // For "accepted" notifications, also persist as permanently seen so they
+  // never reappear after an app restart.
   const handleModalDismiss = useCallback(() => {
+    if (currentModalItem?.kind === "accepted") {
+      markAcceptedSeen(currentModalItem.swayger.id);
+    }
     setModalIndex((i) => i + 1);
-  }, []);
+  }, [currentModalItem, markAcceptedSeen]);
 
   // "Settle Now" / "View Challenge" / "View Swayger"
   // Immediately suppress the modal overlay so the navigation target isn't
   // covered, remove the acted-on item from the queue (bell count drops),
   // and park the index at the end so nothing auto-shows on return.
-  // The user decides when to continue by pressing the bell.
+  // For "accepted" notifications, also permanently mark as seen.
   const handleModalAction = useCallback(() => {
     if (!currentModalItem) return;
     const swayger = currentModalItem.swayger;
+    if (currentModalItem.kind === "accepted") {
+      markAcceptedSeen(swayger.id);
+    }
     setModalSuppressed(true);
     const newQueue = modalQueue.filter((_, idx) => idx !== modalIndex);
     setModalQueue(newQueue);
     setModalIndex(newQueue.length); // park past end — no auto-show on return
     router.push(`/swayger/${swayger.id}`);
-  }, [currentModalItem, modalIndex, modalQueue, router]);
+  }, [currentModalItem, modalIndex, modalQueue, markAcceptedSeen, router]);
 
   // Re-enable the modal overlay when the user returns to this screen.
   // Does NOT auto-show anything — the bell is the only replay trigger.
