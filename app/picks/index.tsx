@@ -606,6 +606,7 @@ function ChallengeBottomSheet({
   const [createError, setCreateError] = useState<string | null>(null);
 
   const inviteLink = inviteCode ? buildNightInviteLink(inviteCode) : null;
+  const nativeDriver = Platform.OS !== "web";
 
   useEffect(() => {
     if (visible) {
@@ -614,14 +615,14 @@ function ChallengeBottomSheet({
       Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
-          useNativeDriver: true,
+          useNativeDriver: nativeDriver,
           tension: 62,
           friction: 11,
         }),
         Animated.timing(backdropAnim, {
           toValue: 1,
           duration: 280,
-          useNativeDriver: true,
+          useNativeDriver: nativeDriver,
         }),
       ]).start();
     }
@@ -629,8 +630,8 @@ function ChallengeBottomSheet({
 
   function dismiss() {
     Animated.parallel([
-      Animated.timing(slideAnim, { toValue: SCREEN_HEIGHT, duration: 260, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 260, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: SCREEN_HEIGHT, duration: 260, useNativeDriver: nativeDriver }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 260, useNativeDriver: nativeDriver }),
     ]).start(() => onDismiss());
   }
 
@@ -701,8 +702,7 @@ function ChallengeBottomSheet({
     >
       {/* Backdrop */}
       <Animated.View
-        style={[sheetStyles.backdrop, { opacity: backdropAnim }]}
-        pointerEvents="box-none"
+        style={[sheetStyles.backdrop, { opacity: backdropAnim, pointerEvents: "box-none" }]}
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
       </Animated.View>
@@ -1331,16 +1331,9 @@ export default function PicksScreen() {
             </Pressable>
           )}
 
-          {/* Persistent challenge button — always visible after picks submitted, before lock */}
+          {/* Inline challenge card — full tier selector visible right below picks */}
           {!isLocked && !isResolved && hasPriorPicks && user && (
-            <Pressable
-              style={({ pressed }) => [styles.challengeBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => setShowChallengeSheet(true)}
-            >
-              <Ionicons name="flash" size={16} color="#000000" />
-              <Text style={styles.challengeBtnText}>Challenge a Friend</Text>
-              <Ionicons name="chevron-forward" size={14} color="#000000" />
-            </Pressable>
+            <PicksChallengeCard night={night} userId={user.id} />
           )}
 
           {/* Share card — show after lock if picks exist */}
