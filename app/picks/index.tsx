@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,11 @@ import {
   Platform,
   Alert,
   Share,
+  Modal,
+  Animated,
+  Dimensions,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -575,6 +579,265 @@ function PicksChallengeCard({
   );
 }
 
+// ─── Challenge Bottom Sheet ───────────────────────────────────
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+
+function ChallengeBottomSheet({
+  night,
+  userId,
+  visible,
+  onDismiss,
+}: {
+  night: PropNight;
+  userId: string;
+  visible: boolean;
+  onDismiss: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const backdropAnim = useRef(new Animated.Value(0)).current;
+
+  const [selectedTier, setSelectedTier] = useState<typeof CHALLENGE_TIERS[0] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [swaygerTitle, setSwaygerTitle] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const inviteLink = inviteCode ? buildNightInviteLink(inviteCode) : null;
+
+  useEffect(() => {
+    if (visible) {
+      slideAnim.setValue(SCREEN_HEIGHT);
+      backdropAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 62,
+          friction: 11,
+        }),
+        Animated.timing(backdropAnim, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
+
+  function dismiss() {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: SCREEN_HEIGHT, duration: 260, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 260, useNativeDriver: true }),
+    ]).start(() => onDismiss());
+  }
+
+  function handleReset() {
+    setSelectedTier(null);
+    setInviteCode(null);
+    setSwaygerTitle(null);
+    setCreateError(null);
+    setCopied(false);
+  }
+
+  async function handleCreate() {
+    if (!selectedTier) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const dateStr = formatNightDate(night.date);
+      const title = `🎯 Picks Challenge – ${dateStr}`;
+      const description = `[night:${night.id}] Whoever gets more NBA Playoff props correct tonight wins. Lower score confirms the result.`;
+      const { swayger, error } = await createSwayger(
+        title,
+        "Sports",
+        selectedTier.points,
+        "I'll get more picks correct than you tonight 🎯",
+        userId,
+        description
+      );
+      if (error || !swayger) {
+        setCreateError(error ?? "Could not create challenge. Try again.");
+        return;
+      }
+      setSwaygerTitle(title);
+      const invite = await fetchSwaygerInvite(swayger.id);
+      if (invite?.invite_code) {
+        setInviteCode(invite.invite_code);
+      }
+    } catch {
+      setCreateError("Something went wrong. Please try again.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (!inviteLink) return;
+    await Clipboard.setStringAsync(inviteLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleShare() {
+    if (!inviteLink || !swaygerTitle) return;
+    const message = `I challenged you to a Picks Showdown on Swayger! 🏀🎯\n\n${swaygerTitle}\n\nWhoever gets more props correct tonight wins. Accept here: ${inviteLink}`;
+    try {
+      await Share.share({ message, url: inviteLink });
+    } catch {
+      await handleCopy();
+    }
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={dismiss}
+    >
+      {/* Backdrop */}
+      <Animated.View
+        style={[sheetStyles.backdrop, { opacity: backdropAnim }]}
+        pointerEvents="box-none"
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} />
+      </Animated.View>
+
+      {/* Sheet */}
+      <Animated.View
+        style={[
+          sheetStyles.sheet,
+          { paddingBottom: insets.bottom + 24, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        {/* Handle bar */}
+        <View style={sheetStyles.handle} />
+
+        {/* Close button */}
+        <Pressable style={sheetStyles.closeBtn} onPress={dismiss} hitSlop={12}>
+          <Ionicons name="close" size={22} color={Colors.dark.textSecondary} />
+        </Pressable>
+
+        {/* Top copy */}
+        <View style={sheetStyles.sheetTop}>
+          <Text style={sheetStyles.eyebrow}>🔥  PICKS LOCKED IN</Text>
+          <Text style={sheetStyles.headline}>Now make it{"\n"}interesting.</Text>
+          <Text style={sheetStyles.subHeadline}>
+            Challenge a friend to beat your score tonight. Whoever gets more correct wins the Swayger.
+          </Text>
+        </View>
+
+        {inviteCode && inviteLink ? (
+          // ── Success state ──
+          <View style={sheetStyles.successState}>
+            <View style={sheetStyles.successHeader}>
+              <Ionicons name="checkmark-circle" size={24} color={Colors.dark.success} />
+              <Text style={sheetStyles.successTitle}>Challenge Created!</Text>
+            </View>
+            <Text style={sheetStyles.successSub}>
+              Share your link — opponent must accept before games lock to compete.
+            </Text>
+            <View style={sheetStyles.linkBox}>
+              <Text style={sheetStyles.linkText} numberOfLines={1} ellipsizeMode="middle">
+                {inviteLink}
+              </Text>
+            </View>
+            <View style={sheetStyles.successBtns}>
+              <Pressable
+                style={({ pressed }) => [sheetStyles.copyBtn, pressed && { opacity: 0.8 }]}
+                onPress={handleCopy}
+              >
+                <Ionicons name={copied ? "checkmark" : "copy-outline"} size={16} color={NBA_GOLD} />
+                <Text style={sheetStyles.copyBtnText}>{copied ? "Copied!" : "Copy Link"}</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [sheetStyles.sendBtn, pressed && { opacity: 0.8 }]}
+                onPress={handleShare}
+              >
+                <Ionicons name="share-outline" size={16} color="#000000" />
+                <Text style={sheetStyles.sendBtnText}>Send Challenge</Text>
+              </Pressable>
+            </View>
+            <Pressable style={sheetStyles.anotherBtn} onPress={handleReset}>
+              <Text style={sheetStyles.anotherBtnText}>Challenge someone else →</Text>
+            </Pressable>
+          </View>
+        ) : (
+          // ── Tier selection state ──
+          <View style={sheetStyles.tierSection}>
+            <View style={sheetStyles.tiers}>
+              {CHALLENGE_TIERS.map((tier) => {
+                const selected = selectedTier?.points === tier.points;
+                return (
+                  <Pressable
+                    key={tier.points}
+                    style={({ pressed }) => [
+                      sheetStyles.tier,
+                      selected && sheetStyles.tierSelected,
+                      pressed && !selected && sheetStyles.tierPressed,
+                    ]}
+                    onPress={() => setSelectedTier(tier)}
+                  >
+                    <Ionicons name={tier.icon} size={20} color={selected ? "#000000" : NBA_GOLD} />
+                    <Text style={[sheetStyles.tierLabel, selected && sheetStyles.tierLabelSel]}>
+                      {tier.label}
+                    </Text>
+                    <Text style={[sheetStyles.tierPoints, selected && sheetStyles.tierPointsSel]}>
+                      {tier.points} SP
+                    </Text>
+                    <Text style={[sheetStyles.tierDesc, selected && sheetStyles.tierDescSel]}>
+                      {tier.desc}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {createError && <Text style={sheetStyles.errorText}>{createError}</Text>}
+
+            <Pressable
+              style={({ pressed }) => [
+                sheetStyles.createBtn,
+                !selectedTier && sheetStyles.createBtnDisabled,
+                pressed && !!selectedTier && { opacity: 0.85 },
+              ]}
+              onPress={handleCreate}
+              disabled={!selectedTier || creating}
+            >
+              {creating ? (
+                <ActivityIndicator color="#000000" size="small" />
+              ) : (
+                <>
+                  <Ionicons
+                    name="flash"
+                    size={18}
+                    color={selectedTier ? "#000000" : Colors.dark.textSecondary}
+                  />
+                  <Text
+                    style={[sheetStyles.createBtnText, !selectedTier && sheetStyles.createBtnTextDisabled]}
+                  >
+                    {selectedTier
+                      ? `Create ${selectedTier.points} SP Challenge →`
+                      : "Select your confidence level"}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable style={sheetStyles.maybeLater} onPress={dismiss}>
+              <Text style={sheetStyles.maybeLaterText}>Maybe later</Text>
+            </Pressable>
+          </View>
+        )}
+      </Animated.View>
+    </Modal>
+  );
+}
+
 // ─── Prop Card ────────────────────────────────────────────────
 
 function PropCard({
@@ -723,6 +986,7 @@ export default function PicksScreen() {
   const [lastNightDismissed, setLastNightDismissed] = useState(false);
   const [showLastNightExpanded, setShowLastNightExpanded] = useState(false);
   const [pendingChallengeCode, setPendingChallengeCode] = useState<string | null>(null);
+  const [showChallengeSheet, setShowChallengeSheet] = useState(false);
 
   const { data: nightData, isLoading: nightLoading } = useQuery<{ ok: boolean; night: PropNight | null }>({
     queryKey: ["/api/props/tonight"],
@@ -809,6 +1073,15 @@ export default function PicksScreen() {
       const pending = await peekPendingInvite().catch(() => null);
       if (pending?.intent === "picks_challenge") {
         setPendingChallengeCode(pending.code);
+      }
+      // Show the challenge sheet once per night (after a brief celebratory pause)
+      if (night?.id) {
+        const shownKey = `swayger_challenge_sheet_${night.id}`;
+        const alreadyShown = await AsyncStorage.getItem(shownKey).catch(() => null);
+        if (!alreadyShown) {
+          await AsyncStorage.setItem(shownKey, "1").catch(() => {});
+          setTimeout(() => setShowChallengeSheet(true), 800);
+        }
       }
     },
     onError: () => {
@@ -1058,9 +1331,16 @@ export default function PicksScreen() {
             </Pressable>
           )}
 
-          {/* Picks Challenge — create a Swayger for tonight (only before lock) */}
+          {/* Persistent challenge button — always visible after picks submitted, before lock */}
           {!isLocked && !isResolved && hasPriorPicks && user && (
-            <PicksChallengeCard night={night} userId={user.id} />
+            <Pressable
+              style={({ pressed }) => [styles.challengeBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => setShowChallengeSheet(true)}
+            >
+              <Ionicons name="flash" size={16} color="#000000" />
+              <Text style={styles.challengeBtnText}>Challenge a Friend</Text>
+              <Ionicons name="chevron-forward" size={14} color="#000000" />
+            </Pressable>
           )}
 
           {/* Share card — show after lock if picks exist */}
@@ -1075,6 +1355,16 @@ export default function PicksScreen() {
 
           <LeaderboardView nightId={night.id} />
         </ScrollView>
+      )}
+
+      {/* Challenge bottom sheet — slides up after submit */}
+      {night && user && (
+        <ChallengeBottomSheet
+          night={night}
+          userId={user.id}
+          visible={showChallengeSheet}
+          onDismiss={() => setShowChallengeSheet(false)}
+        />
       )}
     </View>
   );
@@ -1373,6 +1663,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.textSecondary,
     flex: 1,
+  },
+
+  challengeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 15,
+    marginTop: 2,
+  },
+  challengeBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#000000",
+    flex: 1,
+    textAlign: "center",
   },
 });
 
@@ -1741,5 +2049,226 @@ const challengeStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: "#000000",
+  },
+});
+
+// ─── Challenge Sheet styles ───────────────────────────────────
+
+const sheetStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.78)",
+  },
+  sheet: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#0A1628",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,199,44,0.15)",
+  },
+  handle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 18,
+    right: 22,
+    zIndex: 10,
+  },
+  sheetTop: {
+    marginTop: 20,
+    marginBottom: 24,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 2.5,
+    color: NBA_GOLD,
+    marginBottom: 14,
+  },
+  headline: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    lineHeight: 38,
+    letterSpacing: -0.5,
+    marginBottom: 10,
+  },
+  subHeadline: {
+    fontSize: 15,
+    color: "rgba(255,255,255,0.55)",
+    lineHeight: 22,
+  },
+
+  // ── Success state ──
+  successState: {
+    gap: 14,
+    marginBottom: 16,
+  },
+  successHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  successSub: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.55)",
+    lineHeight: 20,
+  },
+  linkBox: {
+    backgroundColor: "rgba(255,199,44,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.25)",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  linkText: {
+    fontSize: 12,
+    color: NBA_GOLD,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  successBtns: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  copyBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,199,44,0.10)",
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  copyBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: NBA_GOLD,
+  },
+  sendBtn: {
+    flex: 1.5,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  sendBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  anotherBtn: {
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  anotherBtnText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.45)",
+    textDecorationLine: "underline",
+  },
+
+  // ── Tier selection ──
+  tierSection: {
+    gap: 16,
+    marginBottom: 8,
+  },
+  tiers: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  tier: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    gap: 5,
+  },
+  tierSelected: {
+    backgroundColor: NBA_GOLD,
+    borderColor: NBA_GOLD,
+  },
+  tierPressed: {
+    opacity: 0.65,
+  },
+  tierLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.text,
+    textAlign: "center",
+    letterSpacing: 0.3,
+  },
+  tierLabelSel: { color: "#000000" },
+  tierPoints: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: NBA_GOLD,
+  },
+  tierPointsSel: { color: "#000000" },
+  tierDesc: {
+    fontSize: 10,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    lineHeight: 14,
+  },
+  tierDescSel: { color: "rgba(0,0,0,0.6)" },
+  errorText: {
+    fontSize: 13,
+    color: Colors.dark.danger,
+    textAlign: "center",
+  },
+  createBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: NBA_GOLD,
+    borderRadius: 16,
+    paddingVertical: 18,
+  },
+  createBtnDisabled: {
+    backgroundColor: "rgba(255,199,44,0.18)",
+  },
+  createBtnText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  createBtnTextDisabled: {
+    color: Colors.dark.textSecondary,
+  },
+  maybeLater: {
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  maybeLaterText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.35)",
   },
 });
