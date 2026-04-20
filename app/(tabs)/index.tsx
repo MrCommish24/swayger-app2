@@ -554,7 +554,7 @@ export default function DashboardScreen() {
 
     return (
       <Pressable
-        style={({ pressed }) => [styles.card, isSettling && styles.cardSettling, pressed && styles.cardPressed]}
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
         onPress={() => router.push(`/swayger/${item.id}`)}
       >
         <View style={styles.cardHeader}>
@@ -843,11 +843,12 @@ export default function DashboardScreen() {
               ]}>
                 {section.title}
               </Text>
-              {section.key === "settling" && (
-                <View style={styles.sectionHeaderPill}>
-                  <Text style={styles.sectionHeaderPillText}>{section.data.length}</Text>
-                </View>
-              )}
+              <Text style={[
+                styles.sectionHeaderCount,
+                section.key === "settling" && styles.sectionHeaderSettling,
+              ]}>
+                {section.data.length}
+              </Text>
             </View>
           )}
           contentContainerStyle={styles.listContent}
@@ -1383,21 +1384,16 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
   },
   sectionHeaderSettling: { color: SETTLE_ORANGE },
-  sectionHeaderPill: {
-    backgroundColor: SETTLE_ORANGE,
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+  sectionHeaderCount: {
+    fontSize: 11,
+    fontFamily: "DMSans_500Medium",
+    color: Colors.dark.textSecondary,
+    opacity: 0.6,
   },
-  sectionHeaderPillText: { fontSize: 10, fontWeight: "700" as const, color: "#FFFFFF" },
   card: {
     backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 16,
     borderWidth: 1, borderColor: Colors.dark.border,
     marginBottom: 12,
-  },
-  cardSettling: {
-    borderColor: "rgba(249,115,22,0.35)",
-    backgroundColor: "rgba(249,115,22,0.04)",
   },
   cardPressed: { opacity: 0.8 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
