@@ -84,12 +84,18 @@ async function fetchSGOEventMap(eventIDs: string[], nightDate?: string): Promise
   return map;
 }
 
-// Helper: extract a single stat value from a player's stats object or legacy flat number
+// Helper: extract a single stat value from a player's stats object or legacy flat number.
+// Supports composite stat "pra" = points + rebounds + assists.
 function extractStat(playerData: unknown, statName: string): number | null {
   if (playerData === undefined || playerData === null) return null;
   // SGO returns player stats as an object: { points: 23, rebounds: 6, assists: 2, ... }
   if (typeof playerData === "object") {
     const obj = playerData as Record<string, number>;
+    if (statName === "pra") {
+      const p = obj["points"], r = obj["rebounds"], a = obj["assists"];
+      if (typeof p !== "number" || typeof r !== "number" || typeof a !== "number") return null;
+      return p + r + a;
+    }
     const val = obj[statName];
     return typeof val === "number" ? val : null;
   }
