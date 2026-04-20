@@ -369,8 +369,8 @@ export default function DashboardScreen() {
   const [modalQueue, setModalQueue] = useState<ModalItem[]>([]);
   const [modalIndex, setModalIndex] = useState(0);
   const [profileMap, setProfileMap] = useState<Map<string, string>>(new Map());
+  const [modalSuppressed, setModalSuppressed] = useState(false);
   const modalBuilt = useRef(false);
-  const pendingReturnToQueue = useRef(false);
 
   // Fetch display names for any user IDs we need in the modal
   const fetchProfileName = useCallback(async (uid: string): Promise<string> => {
@@ -394,15 +394,29 @@ export default function DashboardScreen() {
       const now = Date.now();
       const items: ModalItem[] = [];
 
-      // Priority 1: settlements (someone is waiting on you)
-      const settlements = swaygers.filter(
+      // Priority 1: settlements where YOUR opponent proposed (you need to confirm).
+      // Skip any where YOU are the proposer — you're just waiting, no action needed.
+      const settlementSwaygers = swaygers.filter(
         (s) => s.status === "settlement_proposed" && !shownInSession.has(s.id)
       );
-      for (const s of settlements) {
-        const otherId = s.creator_id === user.id ? s.opponent_id : s.creator_id;
-        const name = otherId ? await fetchProfileName(otherId) : "Your opponent";
-        items.push({ kind: "settlement", swayger: s, opponentName: name });
-        shownInSession.add(s.id);
+      if (settlementSwaygers.length > 0) {
+        const { data: proposals } = await supabase
+          .from("settlement_proposals")
+          .select("swayger_id, proposed_by")
+          .in("swayger_id", settlementSwaygers.map((s) => s.id))
+          .order("created_at", { ascending: false });
+        // Latest proposal per swayger
+        const proposerMap = new Map<string, string>();
+        for (const p of (proposals || [])) {
+          if (!proposerMap.has(p.swayger_id)) proposerMap.set(p.swayger_id, p.proposed_by);
+        }
+        for (const s of settlementSwaygers) {
+          if (proposerMap.get(s.id) === user.id) continue; // You proposed — skip
+          const otherId = s.creator_id === user.id ? s.opponent_id : s.creator_id;
+          const name = otherId ? await fetchProfileName(otherId) : "Your opponent";
+          items.push({ kind: "settlement", swayger: s, opponentName: name });
+          shownInSession.add(s.id);
+        }
       }
 
       // Priority 2: pending invites waiting for YOU to accept
@@ -501,26 +515,26 @@ export default function DashboardScreen() {
     setModalIndex((i) => i + 1);
   }, []);
 
-  // "Settle Now" / "View Challenge" / "View Swayger" — remove this item from
-  // the queue (it's been acted on), flag that we should resurface remaining
-  // items when the user returns to this screen, then navigate.
+  // "Settle Now" / "View Challenge" / "View Swayger"
+  // Immediately suppress the modal overlay so the navigation target isn't
+  // covered, remove the acted-on item from the queue (bell count drops),
+  // and park the index at the end so nothing auto-shows on return.
+  // The user decides when to continue by pressing the bell.
   const handleModalAction = useCallback(() => {
     if (!currentModalItem) return;
     const swayger = currentModalItem.swayger;
-    setModalQueue((q) => q.filter((_, idx) => idx !== modalIndex));
-    setModalIndex(0);
-    pendingReturnToQueue.current = true;
+    setModalSuppressed(true);
+    const newQueue = modalQueue.filter((_, idx) => idx !== modalIndex);
+    setModalQueue(newQueue);
+    setModalIndex(newQueue.length); // park past end — no auto-show on return
     router.push(`/swayger/${swayger.id}`);
-  }, [currentModalItem, modalIndex, router]);
+  }, [currentModalItem, modalIndex, modalQueue, router]);
 
-  // When we return to this screen after acting on a notification, auto-show
-  // whatever remains in the queue.
+  // Re-enable the modal overlay when the user returns to this screen.
+  // Does NOT auto-show anything — the bell is the only replay trigger.
   useFocusEffect(
     useCallback(() => {
-      if (pendingReturnToQueue.current) {
-        pendingReturnToQueue.current = false;
-        setModalIndex(0);
-      }
+      setModalSuppressed(false);
     }, [])
   );
 
@@ -583,7 +597,7 @@ export default function DashboardScreen() {
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
 
       {/* ─── Action Modal ─────────────────────────────────────────────────── */}
-      {currentModalItem && (
+      {!modalSuppressed && currentModalItem && (
         <SwaygerActionModal
           key={`modal-${modalIndex}-${currentModalItem.swayger.id}`}
           item={currentModalItem}
