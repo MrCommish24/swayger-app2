@@ -1,0 +1,49 @@
+I need you to write a high-converting marketing email for Swayger, a social sports challenge app built around making picks, challenging friends, and sharing receipts/results.
+
+This email is NOT a generic product announcement.
+It is a direct challenge email from Swayger HQ to each user.
+
+Important campaign mechanic:
+- A unique Swayger challenge has ALREADY been created by Swayger HQ for every individual user in our database.
+- The email goes out to everyone in the database.
+- The email should clearly say that Swayger HQ is challenging the recipient to an NBA Picks Swayger.
+- The main CTA in the email is: “Accept the Challenge”
+- That CTA should conceptually take the user to their pre-created Swayger acceptance page from Swayger HQ.
+- Once the user accepts the challenge, they make their nightly NBA playoff picks.
+- Immediately after accepting and/or making picks, they should be encouraged to create another Swayger and challenge someone else.
+- Later, they should also be encouraged to share their result/receipt.
+
+Core user flow:
+1. Swayger HQ challenges you
+2. You click “Accept the Challenge”
+3. You accept your pre-created NBA Picks Swayger
+4. You make your picks
+5. You challenge someone else
+6. You share the result
+
+Campaign objective:
+Increase the percentage of users who accept their pre-created HQ challenge and then create at least one additional Swayger immediately after.
+
+Audience:
+- About 40 users total
+- All are marginally invested in Swayger
+- We do NOT want segmented email versions
+- We want one unified email that works for everyone
+
+Positioning:
+This should feel like:
+- a direct challenge
+- an easy way to get involved
+- an easy way back in
+- an easy way to connect with someone else
+- a simple nightly action during the NBA Playoffs
+
+Brand and voice guidance:
+- Brand: Swayger
+- Sender persona: Swayger HQ
+- Tone: confident, competitive, social, sharp
+- Should feel like a smart sports-obsessed friend in a group chat
+- Avoid corporate language
+- Avoid sounding like gambling or sportsbook copy
+- Emphasize proving your take, challenging friends, receipts, and bragging rights
+- Keep it concise and action-oriented
