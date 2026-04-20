@@ -471,6 +471,14 @@ function PicksChallengeCard({
     }
   }
 
+  function handleReset() {
+    setSelectedTier(null);
+    setInviteCode(null);
+    setSwaygerTitle(null);
+    setCreateError(null);
+    setCopied(false);
+  }
+
   if (inviteCode && inviteLink) {
     return (
       <View style={challengeStyles.successCard}>
@@ -502,6 +510,9 @@ function PicksChallengeCard({
             <Text style={challengeStyles.shareSuccessBtnText}>Send Challenge</Text>
           </Pressable>
         </View>
+        <Pressable style={challengeStyles.anotherBtn} onPress={handleReset}>
+          <Text style={challengeStyles.anotherBtnText}>Challenge someone else →</Text>
+        </Pressable>
       </View>
     );
   }
@@ -2042,6 +2053,15 @@ const challengeStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     color: "#000000",
+  },
+  anotherBtn: {
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  anotherBtnText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    textDecorationLine: "underline",
   },
 });
 
