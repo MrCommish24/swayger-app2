@@ -76,18 +76,21 @@ interface UserPickEntry {
 
 export function registerPropsRoutes(app: Express) {
 
-  // GET /api/props/tonight — returns tonight's open or locked prop night
+  // GET /api/props/tonight — returns tonight's open or locked prop night.
+  // Searches today AND yesterday in UTC to handle games that run past UTC midnight
+  // while still being "tonight" in US Eastern time (NBA home timezone).
   app.get("/api/props/tonight", async (_req: Request, res: Response) => {
     try {
       const supabase = getSupabase();
-      const today = new Date().toISOString().slice(0, 10);
+      const todayUTC = new Date().toISOString().slice(0, 10);
+      const yesterdayUTC = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
       const { data, error } = await supabase
         .from("prop_nights")
         .select("*")
-        .eq("date", today)
+        .in("date", [todayUTC, yesterdayUTC])
         .in("status", ["open", "locked", "resolved"])
-        .order("created_at", { ascending: false })
+        .order("date", { ascending: false })
         .limit(1)
         .maybeSingle();
 
