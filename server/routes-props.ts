@@ -503,6 +503,13 @@ export function registerPropsRoutes(app: Express) {
     res.send(buildNightlyPicksChallengePreview());
   });
 
+  // Open preview route (no auth) — for visual inspection only
+  app.get("/admin/props/email-preview/challenge", async (_req: Request, res: Response) => {
+    const { buildNightlyPicksChallengePreview } = await import("./email.js");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildNightlyPicksChallengePreview());
+  });
+
   // POST /api/admin/props/lock/:nightId — manually lock a night
   app.post("/api/admin/props/lock/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
