@@ -16,7 +16,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -990,6 +990,8 @@ export default function PicksScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { hq } = useLocalSearchParams<{ hq?: string }>();
+  const hqMode = hq === "1";
 
   const [pendingPicks, setPendingPicks] = useState<Record<string, "over" | "under">>({});
   const [submitted, setSubmitted] = useState(false);
@@ -1086,12 +1088,17 @@ export default function PicksScreen() {
         setPendingChallengeCode(pending.code);
       }
       // Show the challenge sheet once per night (after a brief celebratory pause)
+      // In HQ mode, always show it — the email CTA1 is specifically about challenging a friend next
       if (night?.id) {
-        const shownKey = `swayger_challenge_sheet_${night.id}`;
-        const alreadyShown = await AsyncStorage.getItem(shownKey).catch(() => null);
-        if (!alreadyShown) {
-          await AsyncStorage.setItem(shownKey, "1").catch(() => {});
+        if (hqMode) {
           setTimeout(() => setShowChallengeSheet(true), 800);
+        } else {
+          const shownKey = `swayger_challenge_sheet_${night.id}`;
+          const alreadyShown = await AsyncStorage.getItem(shownKey).catch(() => null);
+          if (!alreadyShown) {
+            await AsyncStorage.setItem(shownKey, "1").catch(() => {});
+            setTimeout(() => setShowChallengeSheet(true), 800);
+          }
         }
       }
     },
@@ -1258,6 +1265,20 @@ export default function PicksScreen() {
                 {myPick.correct_count}/{night.props.filter((p) => p.status !== "voided").length} correct ·{" "}
                 {scoreLabel(myPick.score)}
               </Text>
+            </View>
+          )}
+
+          {/* HQ Challenge Banner — shown when user arrives via email CTA1 */}
+          {hqMode && !isLocked && !isResolved && (
+            <View style={hqStyles.banner}>
+              <View style={hqStyles.bannerLeft}>
+                <Text style={hqStyles.bannerEyebrow}>🏀 SWAYGER HQ CHALLENGE</Text>
+                <Text style={hqStyles.bannerTitle}>Beat HQ's picks tonight.</Text>
+                <Text style={hqStyles.bannerSub}>Make your calls below — then challenge a friend.</Text>
+              </View>
+              <View style={hqStyles.bannerBadge}>
+                <Text style={hqStyles.bannerBadgeText}>HQ</Text>
+              </View>
             </View>
           )}
 
@@ -1862,6 +1883,52 @@ const resultsStyles = StyleSheet.create({
   choiceTextCorrect: { color: Colors.dark.success },
   choiceTextWrong: { color: Colors.dark.danger },
   noPick: { fontSize: 14, color: Colors.dark.textSecondary },
+});
+
+const hqStyles = StyleSheet.create({
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: NBA_BLUE,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: NBA_GOLD,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  bannerLeft: { flex: 1, paddingRight: 12 },
+  bannerEyebrow: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    color: NBA_GOLD,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  bannerTitle: {
+    fontSize: 18,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+    marginBottom: 2,
+  },
+  bannerSub: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.75)",
+  },
+  bannerBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: NBA_GOLD,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerBadgeText: {
+    fontSize: 14,
+    fontWeight: "800" as const,
+    color: NBA_BLUE,
+  },
 });
 
 const challengeStyles = StyleSheet.create({

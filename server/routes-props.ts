@@ -390,6 +390,72 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // GET /api/admin/props/hq-challenge-link — returns the shareable HQ challenge URL for tonight (or a specific night)
+  app.get("/api/admin/props/hq-challenge-link", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const nightId = req.query.night_id as string | undefined;
+
+      let night: { id: string; date: string } | null = null;
+
+      if (nightId) {
+        const { data } = await supabase
+          .from("prop_nights")
+          .select("id, date")
+          .eq("id", nightId)
+          .maybeSingle();
+        night = data;
+      } else {
+        // Get tonight's open night
+        const today = new Date().toISOString().split("T")[0];
+        const { data } = await supabase
+          .from("prop_nights")
+          .select("id, date")
+          .eq("date", today)
+          .eq("status", "open")
+          .maybeSingle();
+        night = data;
+        // Fallback: latest open night
+        if (!night) {
+          const { data: latest } = await supabase
+            .from("prop_nights")
+            .select("id, date")
+            .eq("status", "open")
+            .order("date", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          night = latest;
+        }
+      }
+
+      if (!night) {
+        return res.status(404).json({ ok: false, error: "No open prop night found" });
+      }
+
+      const baseUrl = "https://www.swayger.app";
+      const url = `${baseUrl}/picks?hq=1`;
+
+      res.json({
+        ok: true,
+        night_id: night.id,
+        night_date: night.date,
+        hq_challenge_url: url,
+        email_cta1: {
+          text: "Accept the Challenge →",
+          url,
+        },
+        email_cta2: {
+          text: "Challenge a Friend →",
+          url: `${baseUrl}/picks`,
+          note: "User creates a Picks Challenge from the challenge sheet after submitting picks",
+        },
+      });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // POST /api/admin/props/lock/:nightId — manually lock a night
   app.post("/api/admin/props/lock/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
