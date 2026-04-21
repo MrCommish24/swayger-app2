@@ -456,6 +456,53 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // POST /api/admin/props/send-challenge-email — send HQ challenge email to one or all users
+  app.post("/api/admin/props/send-challenge-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const { to, displayName, userId, lockTime, props, hqChallengeUrl, picksUrl } = req.body as {
+        to: string;
+        displayName?: string;
+        userId?: string;
+        lockTime?: string;
+        props?: Array<{ player: string; line: string; matchup: string }>;
+        hqChallengeUrl?: string;
+        picksUrl?: string;
+      };
+
+      if (!to) return res.status(400).json({ ok: false, error: "to is required" });
+
+      const { sendNightlyPicksChallenge } = await import("./email.js");
+
+      await sendNightlyPicksChallenge({
+        to,
+        displayName: displayName ?? "there",
+        userId,
+        lockTime: lockTime ?? "6:30 PM CDT",
+        props: props ?? [
+          { player: "Jayson Tatum",       line: "O/U 23.5 pts", matchup: "Celtics vs 76ers" },
+          { player: "Alperen Sengun",     line: "O/U 5.5 ast",  matchup: "Rockets vs Lakers" },
+          { player: "Jaylen Brown",       line: "O/U 37.5 PRA", matchup: "Celtics vs 76ers" },
+          { player: "Victor Wembanyama", line: "O/U 11.5 reb", matchup: "Spurs vs Blazers" },
+        ],
+        hqChallengeUrl: hqChallengeUrl ?? "https://www.swayger.app/picks?hq=1",
+        picksUrl: picksUrl ?? "https://www.swayger.app/picks",
+      });
+
+      res.json({ ok: true, sent_to: to });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // GET /api/admin/props/preview-challenge-email — renders the HQ challenge email HTML for preview
+  app.get("/api/admin/props/preview-challenge-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { buildNightlyPicksChallengePreview } = await import("./email.js");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildNightlyPicksChallengePreview());
+  });
+
   // POST /api/admin/props/lock/:nightId — manually lock a night
   app.post("/api/admin/props/lock/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;

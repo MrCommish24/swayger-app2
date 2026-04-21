@@ -1863,6 +1863,169 @@ export async function sendNBAReminderBlast(opts: {
   });
 }
 
+// ─── NBA Nightly Picks — HQ Challenge Email ───────────────────────────────────
+
+interface NightlyProp {
+  player: string;
+  line: string;   // e.g. "23.5 pts"
+  matchup: string; // e.g. "Celtics vs 76ers"
+}
+
+interface NightlyPicksChallengeOpts {
+  to: string;
+  displayName: string;
+  userId?: string;
+  lockTime: string;       // e.g. "6:30 PM CDT"
+  props: NightlyProp[];
+  hqChallengeUrl: string; // CTA1
+  picksUrl: string;       // CTA2 (base picks url)
+}
+
+function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string {
+  const { displayName, lockTime, props, hqChallengeUrl, picksUrl } = opts;
+
+  const propRows = props.map(p => `
+    <tr>
+      <td style="padding:12px 0;border-bottom:1px solid #1E2030;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:14px;font-weight:700;color:#FFFFFF;">${p.player}</span>
+          <span style="font-size:13px;font-weight:800;color:#FFC72C;background:rgba(255,199,44,0.12);padding:3px 10px;border-radius:20px;">${p.line}</span>
+        </div>
+        <div style="font-size:12px;color:#6B7280;margin-top:3px;">${p.matchup}</div>
+      </td>
+    </tr>`).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swayger HQ Challenge — Tonight's NBA Picks</title>
+</head>
+<body style="margin:0;padding:0;background:#0D0D14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0D0D14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+
+        <!-- Logo -->
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:11px;font-weight:800;letter-spacing:2px;color:#6B7280;text-transform:uppercase;">Swayger</span>
+          </td>
+        </tr>
+
+        <!-- Card -->
+        <tr>
+          <td style="background:#13131D;border:1px solid #1E2030;border-radius:18px;padding:28px 24px 32px;">
+
+            <!-- HQ Badge -->
+            <div style="margin-bottom:20px;">
+              <span style="display:inline-block;background:rgba(255,199,44,0.12);border:1px solid rgba(255,199,44,0.35);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:800;letter-spacing:1.5px;color:#FFC72C;text-transform:uppercase;">🏀 HQ Challenge · Tonight</span>
+            </div>
+
+            <!-- Headline -->
+            <p style="margin:0 0 8px;font-size:24px;font-weight:800;color:#FFFFFF;line-height:1.2;">
+              Beat HQ's picks.<br>Then make a friend pay.
+            </p>
+            <p style="margin:0 0 24px;font-size:14px;color:#6B7280;line-height:1.5;">
+              Hey ${displayName} — HQ made their calls for tonight. Think you can do better? Lock yours before ${lockTime}, then challenge a friend on the lines.
+            </p>
+
+            <!-- Prop lines -->
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:1.2px;color:#6B7280;text-transform:uppercase;">Tonight's lines</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+              ${propRows}
+            </table>
+
+            <!-- CTA 1: Accept the Challenge -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+              <tr>
+                <td align="center">
+                  <a href="${hqChallengeUrl}"
+                     style="display:block;background:linear-gradient(135deg,#1A3A6E 0%,#0A1628 100%);border:1.5px solid #FFC72C;color:#FFC72C;font-size:15px;font-weight:800;padding:15px 20px;border-radius:12px;text-decoration:none;text-align:center;letter-spacing:0.3px;">
+                    Accept the Challenge →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- CTA 2: Challenge a Friend -->
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}"
+                     style="display:block;background:#1C1C2C;border:1px solid #2A2A40;color:#FFFFFF;font-size:14px;font-weight:700;padding:13px 20px;border-radius:12px;text-decoration:none;text-align:center;">
+                    Challenge a Friend →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Note under CTAs -->
+            <p style="margin:16px 0 0;font-size:12px;color:#4A5568;text-align:center;line-height:1.5;">
+              Make your picks, then share a challenge link with whoever's always got the hot NBA take.
+            </p>
+
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#3A3A4A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendNightlyPicksChallenge(opts: NightlyPicksChallengeOpts): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    console.log("[email] RESEND_API_KEY not set — skipping");
+    return;
+  }
+  const html = addUnsubFooter(
+    buildNightlyPicksChallengeHtml(opts),
+    opts.userId ? generateUnsubscribeUrl(opts.userId) : `${APP_URL}/unsubscribe`,
+  );
+  const subject = `You're the friend who always has the hot NBA take`;
+  const text = `Hey ${opts.displayName},
+
+HQ made their calls for tonight. Think you can do better? Lock your picks before ${opts.lockTime}.
+
+Tonight's lines:
+${opts.props.map(p => `• ${p.player} — ${p.line} (${p.matchup})`).join("\n")}
+
+Accept the Challenge (beat HQ's picks):
+${opts.hqChallengeUrl}
+
+Challenge a Friend (make a side bet on the lines):
+${opts.picksUrl}
+
+— The Swayger team`;
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
+}
+
+export function buildNightlyPicksChallengePreview(): string {
+  return buildNightlyPicksChallengeHtml({
+    to: "preview@swayger.app",
+    displayName: "Darius",
+    lockTime: "6:30 PM CDT",
+    props: [
+      { player: "Jayson Tatum", line: "O/U 23.5 pts", matchup: "Celtics vs 76ers" },
+      { player: "Alperen Sengun", line: "O/U 5.5 ast", matchup: "Rockets vs Lakers" },
+      { player: "Jaylen Brown", line: "O/U 37.5 PRA", matchup: "Celtics vs 76ers" },
+      { player: "Victor Wembanyama", line: "O/U 11.5 reb", matchup: "Spurs vs Blazers" },
+    ],
+    hqChallengeUrl: "https://www.swayger.app/picks?hq=1",
+    picksUrl: "https://www.swayger.app/picks",
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildThankyouEmailPreview(): string {
