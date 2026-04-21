@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
+import { BLAST_EMAILS_PAUSED } from "./routes-mm-admin.js";
 
 // ─── Supabase client ─────────────────────────────────────────
 
@@ -508,6 +509,80 @@ export function registerPropsRoutes(app: Express) {
     const { buildNightlyPicksChallengePreview } = await import("./email.js");
     res.setHeader("Content-Type", "text/html");
     res.send(buildNightlyPicksChallengePreview());
+  });
+
+  // GET /api/admin/props/blast-challenge-email/dry-run — preview who would receive the blast
+  app.get("/api/admin/props/blast-challenge-email/dry-run", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Profile[]),
+        ...((authProfiles ?? []) as Profile[]),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => !p.email_unsubscribed);
+      const recipients = eligible.map((u) => ({
+        user_id: u.id,
+        email: u.notification_email,
+        display_name: u.display_name || u.username,
+        hq_url: `https://www.swayger.app/picks?hq=1&uid=${u.id}`,
+      }));
+      res.json({ ok: true, total_eligible: eligible.length, recipients });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-challenge-email — send HQ challenge email to all users
+  app.post("/api/admin/props/blast-challenge-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      return;
+    }
+    try {
+      const { sendNightlyPicksChallenge } = await import("./email.js");
+      const supabase = getSupabase();
+
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Profile[]),
+        ...((authProfiles ?? []) as Profile[]),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => !p.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendNightlyPicksChallenge({
+            to: user.notification_email,
+            displayName: user.display_name || user.username,
+            userId: user.id,
+            hqChallengeUrl: `https://www.swayger.app/picks?hq=1&uid=${user.id}`,
+            picksUrl: "https://www.swayger.app/picks",
+          });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[challenge-blast] failed for ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[challenge-blast] complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[challenge-blast] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
   });
 
   // POST /api/admin/props/lock/:nightId — manually lock a night
