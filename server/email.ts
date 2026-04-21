@@ -1882,103 +1882,70 @@ interface NightlyPicksChallengeOpts {
 }
 
 function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string {
-  const { displayName, lockTime, props, hqChallengeUrl, picksUrl } = opts;
-
-  const propRows = props.map(p => `
-    <tr>
-      <td style="padding:12px 0;border-bottom:1px solid #1E2030;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:14px;font-weight:700;color:#FFFFFF;">${p.player}</span>
-          <span style="font-size:13px;font-weight:800;color:#FFC72C;background:rgba(255,199,44,0.12);padding:3px 10px;border-radius:20px;">${p.line}</span>
-        </div>
-        <div style="font-size:12px;color:#6B7280;margin-top:3px;">${p.matchup}</div>
-      </td>
-    </tr>`).join("");
+  const { hqChallengeUrl, picksUrl } = opts;
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Swayger HQ Challenge — Tonight's NBA Picks</title>
+  <title>Someone at Swayger HQ Thinks They Know More NBA Than You</title>
 </head>
-<body style="margin:0;padding:0;background:#0D0D14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0D0D14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;padding:48px 24px;">
 
-        <!-- Logo -->
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:11px;font-weight:800;letter-spacing:2px;color:#6B7280;text-transform:uppercase;">Swayger</span>
-          </td>
-        </tr>
+    <p style="margin:0 0 32px;font-size:12px;font-weight:700;letter-spacing:1.5px;color:#aaa;text-transform:uppercase;">Swayger</p>
 
-        <!-- Card -->
-        <tr>
-          <td style="background:#13131D;border:1px solid #1E2030;border-radius:18px;padding:28px 24px 32px;">
+    <p style="margin:0 0 20px;font-size:16px;color:#111;line-height:1.7;">
+      Hey.
+    </p>
 
-            <!-- HQ Badge -->
-            <div style="margin-bottom:20px;">
-              <span style="display:inline-block;background:rgba(255,199,44,0.12);border:1px solid rgba(255,199,44,0.35);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:800;letter-spacing:1.5px;color:#FFC72C;text-transform:uppercase;">🏀 HQ Challenge · Tonight</span>
-            </div>
+    <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
+      We built you an NBA picks challenge. Make your calls. See if you've got it.
+    </p>
 
-            <!-- Headline -->
-            <p style="margin:0 0 8px;font-size:24px;font-weight:800;color:#FFFFFF;line-height:1.2;">
-              Beat HQ's picks.<br>Then make a friend pay.
-            </p>
-            <p style="margin:0 0 24px;font-size:14px;color:#6B7280;line-height:1.5;">
-              Hey ${displayName} — HQ made their calls for tonight. Think you can do better? Lock yours before ${lockTime}, then challenge a friend on the lines.
-            </p>
+    <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
+      Accept it, make your picks, and see who gets more right tonight.
+    </p>
 
-            <!-- Prop lines -->
-            <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:1.2px;color:#6B7280;text-transform:uppercase;">Tonight's lines</p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-              ${propRows}
-            </table>
+    <p style="margin:0 0 32px;">
+      <a href="${hqChallengeUrl}"
+         style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
+        Accept the Challenge &rarr;
+      </a>
+    </p>
 
-            <!-- CTA 1: Accept the Challenge -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
-              <tr>
-                <td align="center">
-                  <a href="${hqChallengeUrl}"
-                     style="display:block;background:linear-gradient(135deg,#1A3A6E 0%,#0A1628 100%);border:1.5px solid #FFC72C;color:#FFC72C;font-size:15px;font-weight:800;padding:15px 20px;border-radius:12px;text-decoration:none;text-align:center;letter-spacing:0.3px;">
-                    Accept the Challenge →
-                  </a>
-                </td>
-              </tr>
-            </table>
+    <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
+      Then &mdash; and this is important &mdash; immediately go challenge someone you know.
+    </p>
 
-            <!-- CTA 2: Challenge a Friend -->
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td align="center">
-                  <a href="${picksUrl}"
-                     style="display:block;background:#1C1C2C;border:1px solid #2A2A40;color:#FFFFFF;font-size:14px;font-weight:700;padding:13px 20px;border-radius:12px;text-decoration:none;text-align:center;">
-                    Challenge a Friend →
-                  </a>
-                </td>
-              </tr>
-            </table>
+    <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
+      Your group chat is right there. Your buddy who&rsquo;s always got the hot NBA take? He needs a Swayger in his inbox. Your coworker who&rsquo;s been bragging about their basketball instincts? Make them prove it.
+    </p>
 
-            <!-- Note under CTAs -->
-            <p style="margin:16px 0 0;font-size:12px;color:#4A5568;text-align:center;line-height:1.5;">
-              Make your picks, then share a challenge link with whoever's always got the hot NBA take.
-            </p>
+    <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
+      Challenge a friend to beat your score tonight. Whoever gets more correct wins the Swayger.
+    </p>
 
-          </td>
-        </tr>
+    <p style="margin:0 0 32px;">
+      <a href="${picksUrl}"
+         style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
+        Challenge a Friend &rarr;
+      </a>
+    </p>
 
-        <!-- Footer -->
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#3A3A4A;">Swayger &middot; Social wager contracts, for fun</p>
-          </td>
-        </tr>
+    <p style="margin:0 0 32px;font-size:16px;color:#333;line-height:1.7;">
+      When it&rsquo;s all said and done, screenshot your result. Post it. Let your picks speak for themselves.
+    </p>
 
-      </table>
-    </td></tr>
-  </table>
+    <p style="margin:0 0 8px;font-size:16px;color:#333;line-height:1.7;">
+      Good luck (you&rsquo;ll probably need it),
+    </p>
+    <p style="margin:0;font-size:16px;color:#111;font-weight:600;">
+      -Swayger HQ
+    </p>
+
+  </div>
 </body>
 </html>`;
 }
@@ -1992,21 +1959,29 @@ export async function sendNightlyPicksChallenge(opts: NightlyPicksChallengeOpts)
     buildNightlyPicksChallengeHtml(opts),
     opts.userId ? generateUnsubscribeUrl(opts.userId) : `${APP_URL}/unsubscribe`,
   );
-  const subject = `You're the friend who always has the hot NBA take`;
-  const text = `Hey ${opts.displayName},
+  const subject = `Someone at Swayger HQ Thinks They Know More NBA Than You`;
+  const text = `Hey.
 
-HQ made their calls for tonight. Think you can do better? Lock your picks before ${opts.lockTime}.
+We built you an NBA picks challenge. Make your calls. See if you've got it.
 
-Tonight's lines:
-${opts.props.map(p => `• ${p.player} — ${p.line} (${p.matchup})`).join("\n")}
+Accept it, make your picks, and see who gets more right tonight.
 
-Accept the Challenge (beat HQ's picks):
+Accept the Challenge:
 ${opts.hqChallengeUrl}
 
-Challenge a Friend (make a side bet on the lines):
+Then — and this is important — immediately go challenge someone you know.
+
+Your group chat is right there. Your buddy who's always got the hot NBA take? He needs a Swayger in his inbox. Your coworker who's been bragging about their basketball instincts? Make them prove it.
+
+Challenge a friend to beat your score tonight. Whoever gets more correct wins the Swayger.
+
+Challenge a Friend:
 ${opts.picksUrl}
 
-— The Swayger team`;
+When it's all said and done, screenshot your result. Post it. Let your picks speak for themselves.
+
+Good luck (you'll probably need it),
+-Swayger HQ`;
   await resend.emails.send({ from: FROM, to: opts.to, subject, html, text });
 }
 
