@@ -321,14 +321,15 @@ export function registerPropsRoutes(app: Express) {
       const userIds = Object.keys(userMap);
       if (userIds.length === 0) return res.json({ ok: true, leaderboard: [] });
 
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, display_name")
-        .in("id", userIds);
+      // Use SECURITY DEFINER RPC to bypass RLS on profiles table
+      const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+      type ProfileRow = { id: string; username: string; display_name?: string | null };
 
       const profileMap: Record<string, { username: string; display_name: string }> = {};
-      for (const p of (profiles ?? [])) {
-        profileMap[p.id] = { username: p.username, display_name: p.display_name };
+      for (const p of ((allProfiles ?? []) as ProfileRow[])) {
+        if (userIds.includes(p.id)) {
+          profileMap[p.id] = { username: p.username, display_name: p.display_name ?? "" };
+        }
       }
 
       const leaderboard = Object.entries(userMap)
