@@ -29,6 +29,7 @@ import Colors from "@/constants/colors";
 
 const NBA_BLUE = "#1D428A";
 const NBA_GOLD = "#FFC72C";
+const PENDING_PICKS_KEY_PREFIX = "swayger_pending_picks_";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -1108,19 +1109,58 @@ export default function PicksScreen() {
     },
   });
 
+  // Restore picks saved before the auth round-trip; auto-submit if all props covered
+  useEffect(() => {
+    if (!user || !night) return;
+    const key = PENDING_PICKS_KEY_PREFIX + night.id;
+    AsyncStorage.getItem(key)
+      .then((raw) => {
+        if (!raw) return;
+        AsyncStorage.removeItem(key).catch(() => {});
+        const saved = JSON.parse(raw) as Record<string, "over" | "under">;
+        const activePropIds = night.props
+          .filter((p) => p.status !== "voided")
+          .map((p) => p.id);
+        const allCovered = activePropIds.every((id) => saved[id]);
+        setPendingPicks(saved);
+        if (allCovered && activePropIds.length > 0) {
+          // Brief delay so the UI renders the restored selections first
+          setTimeout(() => {
+            submitMutation.mutate(
+              activePropIds.map((id) => ({ prop_id: id, pick: saved[id] })),
+            );
+          }, 400);
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, night?.id]);
+
   const handlePick = useCallback((propId: string, side: "over" | "under") => {
     setPendingPicks((prev) => ({ ...prev, [propId]: side }));
   }, []);
 
-  const handleSubmit = useCallback(() => {
-    if (!night || !user) return;
+  const handleSubmit = useCallback(async () => {
+    if (!night) return;
+    const activePropCount = night.props.filter((p) => p.status !== "voided").length;
     const picks = Object.entries(pendingPicks).map(([prop_id, pick]) => ({ prop_id, pick }));
-    if (picks.length !== night.props.length) {
+    if (picks.length < activePropCount) {
       Alert.alert("Pick all props", "Make a pick on every prop before submitting.");
       return;
     }
+    if (!user) {
+      // Save picks so they survive the auth round-trip
+      const redirectPath = hqMode ? "/picks?hq=1" : "/picks";
+      await AsyncStorage.setItem(
+        PENDING_PICKS_KEY_PREFIX + night.id,
+        JSON.stringify(pendingPicks),
+      ).catch(() => {});
+      await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, redirectPath).catch(() => {});
+      router.replace("/auth");
+      return;
+    }
     submitMutation.mutate(picks);
-  }, [night, user, pendingPicks, submitMutation]);
+  }, [night, user, hqMode, pendingPicks, submitMutation]);
 
   const allPicked =
     night &&
@@ -1311,34 +1351,16 @@ export default function PicksScreen() {
             ))}
           </View>
 
-          {/* Submit button or sign-in wall */}
-          {!isLocked && !user && (
-            <View style={styles.signInWall}>
-              <Ionicons name="lock-closed" size={22} color={NBA_GOLD} />
-              <Text style={styles.signInWallTitle}>Sign up to lock in your picks</Text>
-              <Text style={styles.signInWallSub}>Browse freely — create an account when you're ready.</Text>
-              <Pressable
-                style={({ pressed }) => [styles.signInBtn, pressed && { opacity: 0.85 }]}
-                onPress={async () => {
-                  const redirectPath = hqMode ? "/picks?hq=1" : "/picks";
-                  await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, redirectPath).catch(() => {});
-                  router.replace("/auth");
-                }}
-              >
-                <Text style={styles.signInBtnText}>Sign Up / Sign In</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {!isLocked && user && (
+          {/* Submit button — visible for everyone; auth gate fires inside handleSubmit */}
+          {!isLocked && (
             <Pressable
               style={({ pressed }) => [
                 styles.submitBtn,
                 !allPicked && styles.submitBtnDisabled,
-                pressed && allPicked && styles.submitBtnPressed,
+                pressed && !!allPicked && styles.submitBtnPressed,
               ]}
               onPress={handleSubmit}
-              disabled={!allPicked || submitMutation.isPending}
+              disabled={submitMutation.isPending}
             >
               {submitMutation.isPending ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
