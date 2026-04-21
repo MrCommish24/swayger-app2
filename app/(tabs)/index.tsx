@@ -9,6 +9,7 @@ import {
   ScrollView,
   Modal,
   Animated,
+  Share,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,6 +20,7 @@ import { formatDate, getAvatarColor } from "@/lib/helpers";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
+import { getApiUrl } from "@/lib/query-client";
 import {
   fetchMySwaygers,
   fetchMyBalance,
@@ -46,6 +48,35 @@ const ACCEPTED_WINDOW_MS = 72 * 60 * 60 * 1000;
 
 // AsyncStorage key for permanently dismissed "accepted" notifications
 const SEEN_ACCEPTED_KEY = "swayger:seen_accepted_notifications";
+
+// ─── Results modal ────────────────────────────────────────────────────────────
+// Fires once per session (first open after a resolved night, within 48h).
+// If it fires, Swayger action modals are deferred to the bell.
+let resultsShownThisSession = false;
+const RESULTS_MODAL_KEY = (nightId: string) => `results_modal_shown_${nightId}`;
+
+interface ResultsNightProp {
+  id: string;
+  player_name: string;
+  stat_label: string;
+  line: number;
+  status: string;
+  result: "over" | "under" | null;
+}
+interface ResultsNight {
+  id: string;
+  date: string;
+  props: ResultsNightProp[];
+}
+interface ResultsPickEntry {
+  prop_id: string;
+  pick: "over" | "under";
+}
+interface ResultsPick {
+  picks: ResultsPickEntry[];
+  score: number;
+  correct_count: number;
+}
 
 type ModalItem =
   | { kind: "settlement"; swayger: SwaygerData; opponentName: string }
@@ -211,6 +242,128 @@ function SwaygerActionModal({
   );
 }
 
+// ─── ResultsModal ──────────────────────────────────────────────────────────────
+function ResultsModal({
+  night,
+  pick,
+  onShare,
+  onDismiss,
+}: {
+  night: ResultsNight;
+  pick: ResultsPick;
+  onShare: () => void;
+  onDismiss: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const slideAnim = useRef(new Animated.Value(400)).current;
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      damping: 22,
+      stiffness: 180,
+    }).start();
+  }, []);
+
+  const dismiss = useCallback(() => {
+    Animated.timing(slideAnim, { toValue: 500, duration: 220, useNativeDriver: false }).start(onDismiss);
+  }, [onDismiss]);
+
+  const share = useCallback(() => {
+    Animated.timing(slideAnim, { toValue: 500, duration: 180, useNativeDriver: false }).start(onShare);
+  }, [onShare]);
+
+  const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+
+  const picksMap = useMemo(() => {
+    const m: Record<string, "over" | "under"> = {};
+    for (const p of pick.picks) m[p.prop_id] = p.pick;
+    return m;
+  }, [pick.picks]);
+
+  const pickResults = useMemo(() =>
+    night.props
+      .filter((p) => p.status !== "voided" && picksMap[p.id])
+      .map((p) => ({
+        id: p.id,
+        label: `${p.player_name} ${(picksMap[p.id] || "").toUpperCase()} ${p.line} ${p.stat_label.toLowerCase()}`,
+        correct: p.result ? p.result === picksMap[p.id] : null,
+      })),
+    [night.props, picksMap]
+  );
+
+  const pct = activePropCount > 0 ? Math.round((pick.correct_count / activePropCount) * 100) : 0;
+  const headline =
+    pick.correct_count === activePropCount
+      ? "Perfect night. 🔥"
+      : pct >= 80
+      ? "Locked in. 💪"
+      : pct >= 60
+      ? "Solid night."
+      : "You played tonight.";
+
+  return (
+    <Modal transparent animationType="none" visible statusBarTranslucent>
+      <Pressable style={modalStyles.backdrop} onPress={dismiss}>
+        <Pressable onPress={(e) => e.stopPropagation()}>
+          <Animated.View
+            style={[
+              modalStyles.sheet,
+              { paddingBottom: insets.bottom + 16, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <View style={modalStyles.handle} />
+
+            <View style={modalStyles.iconWrap}>
+              <View style={[modalStyles.iconCircle, { backgroundColor: "rgba(255,199,44,0.12)", borderColor: "rgba(255,199,44,0.4)" }]}>
+                <Text style={modalStyles.iconEmoji}>🏀</Text>
+              </View>
+            </View>
+
+            <Text style={[modalStyles.headline, { color: NBA_GOLD }]}>{headline}</Text>
+
+            <View style={resultsStyles.scorePill}>
+              <Text style={resultsStyles.scoreMain}>
+                {pick.correct_count}
+                <Text style={resultsStyles.scoreDenom}>/{activePropCount}</Text>
+              </Text>
+              <Text style={resultsStyles.scoreLabel}>correct · {pick.score} pts</Text>
+            </View>
+
+            <View style={resultsStyles.pickList}>
+              {pickResults.map((r) => (
+                <View key={r.id} style={resultsStyles.pickRow}>
+                  <Text style={resultsStyles.pickResult}>
+                    {r.correct === true ? "✅" : r.correct === false ? "❌" : "–"}
+                  </Text>
+                  <Text style={resultsStyles.pickLabel} numberOfLines={1}>{r.label}</Text>
+                </View>
+              ))}
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                modalStyles.ctaBtn,
+                { backgroundColor: NBA_GOLD },
+                pressed && { opacity: 0.88 },
+              ]}
+              onPress={share}
+            >
+              <Ionicons name="share-outline" size={18} color="#000000" />
+              <Text style={[modalStyles.ctaText, { color: "#000000" }]}>Share Results</Text>
+            </Pressable>
+
+            <Pressable onPress={dismiss} hitSlop={8}>
+              <Text style={modalStyles.dismissText}>Dismiss</Text>
+            </Pressable>
+          </Animated.View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function ChallengeCards({
   onPressPlayoffs,
   onPressPicks,
@@ -366,6 +519,19 @@ export default function DashboardScreen() {
   });
   const spBalance = balanceData?.balance ?? null;
 
+  // ─── Last resolved night (for results modal) ─────────────────────────────────
+  const { data: lastNightData } = useQuery({
+    queryKey: ["props", "last-night", user?.id],
+    queryFn: async () => {
+      const url = new URL("/api/props/last-night", getApiUrl());
+      if (user?.id) url.searchParams.set("user_id", user.id);
+      const res = await fetch(url.toString());
+      return res.json();
+    },
+    enabled: !!user,
+    staleTime: 2 * 60 * 1000,
+  });
+
   type FilterKey = "all" | "settling" | "active" | "pending" | "settled" | "other";
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
@@ -380,6 +546,11 @@ export default function DashboardScreen() {
   const [seenAcceptedIds, setSeenAcceptedIds] = useState<Set<string>>(new Set());
   const [seenAcceptedLoaded, setSeenAcceptedLoaded] = useState(false);
   const modalBuilt = useRef(false);
+
+  // ─── Results modal state ──────────────────────────────────────────────────────
+  const [resultsData, setResultsData] = useState<{ night: ResultsNight; pick: ResultsPick } | null>(null);
+  const [resultsLoaded, setResultsLoaded] = useState(false);
+  const resultsWillShow = useRef(false);
 
   // Load persisted "accepted" notification IDs once on mount.
   // Sets seenAcceptedLoaded=true when done (even if empty) so the queue
@@ -419,10 +590,40 @@ export default function DashboardScreen() {
     return name;
   }, [profileMap]);
 
-  // Build modal queue once after swaygers load.
-  // Waits for seenAcceptedLoaded so the persistent filter is ready before we build.
+  // Check whether the results modal should show this session.
+  // Runs once lastNightData arrives (undefined = still loading, null = no data).
+  // Sets resultsWillShow.current before setting resultsLoaded so the Swayger
+  // queue build effect reads the correct value.
   useEffect(() => {
-    if (!user?.id || swaygers.length === 0 || modalBuilt.current || !seenAcceptedLoaded) return;
+    if (lastNightData === undefined) return;
+    (async () => {
+      let should = false;
+      if (
+        lastNightData?.ok &&
+        lastNightData.night &&
+        lastNightData.pick &&
+        lastNightData.night.status === "resolved"
+      ) {
+        const nightDate = new Date(lastNightData.night.date + "T12:00:00");
+        const diffMs = Date.now() - nightDate.getTime();
+        if (diffMs <= 48 * 60 * 60 * 1000) {
+          const seen = await AsyncStorage.getItem(RESULTS_MODAL_KEY(lastNightData.night.id));
+          if (!seen) {
+            should = true;
+            setResultsData({ night: lastNightData.night, pick: lastNightData.pick });
+          }
+        }
+      }
+      resultsWillShow.current = should;
+      setResultsLoaded(true);
+    })();
+  }, [lastNightData]);
+
+  // Build modal queue once after swaygers load.
+  // Waits for seenAcceptedLoaded AND resultsLoaded so we know whether to
+  // suppress auto-show (results modal takes priority this session).
+  useEffect(() => {
+    if (!user?.id || swaygers.length === 0 || modalBuilt.current || !seenAcceptedLoaded || !resultsLoaded) return;
     modalBuilt.current = true;
 
     (async () => {
@@ -486,12 +687,57 @@ export default function DashboardScreen() {
 
       if (items.length > 0) {
         setModalQueue(items);
-        setModalIndex(0);
+        // If the results modal is firing this session, defer Swayger modals
+        // to the bell — don't chain them immediately after celebration.
+        if (!resultsWillShow.current) {
+          setModalIndex(0);
+        }
+        // else: modalIndex stays at items.length (past end) — bell is the trigger
       }
     })();
-  }, [swaygers, user?.id, seenAcceptedLoaded]);
+  }, [swaygers, user?.id, seenAcceptedLoaded, resultsLoaded]);
 
   const handleBellPress = useCallback(() => setModalIndex(0), []);
+
+  const handleResultsDismiss = useCallback(async () => {
+    if (!resultsData) return;
+    await AsyncStorage.setItem(RESULTS_MODAL_KEY(resultsData.night.id), "1");
+    resultsShownThisSession = true;
+    setResultsData(null);
+  }, [resultsData]);
+
+  const handleResultsShare = useCallback(async () => {
+    if (!resultsData) return;
+    const { night, pick } = resultsData;
+    const activePropCount = night.props.filter((p) => p.status !== "voided").length;
+    const picksMap: Record<string, "over" | "under"> = {};
+    for (const p of pick.picks) picksMap[p.prop_id] = p.pick;
+    const dateStr = new Date(night.date + "T12:00:00").toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+    });
+    const lines: string[] = [`🏀 ${pick.correct_count}/${activePropCount} on Swayger Picks – ${dateStr}`];
+    for (const prop of night.props) {
+      if (prop.status === "voided") continue;
+      const choice = picksMap[prop.id];
+      if (!choice) continue;
+      const emoji = choice === "over" ? "📈" : "📉";
+      const label = `${prop.player_name} ${choice.toUpperCase()} ${prop.line} ${prop.stat_label.toLowerCase()}`;
+      const correct = prop.result ? prop.result === choice : null;
+      const result = correct === true ? "✅" : correct === false ? "❌" : "";
+      lines.push(`${emoji} ${label} ${result}`);
+    }
+    lines.push(`\nThink you can beat that? 👉 https://www.swayger.app/picks`);
+    const message = lines.join("\n");
+    await AsyncStorage.setItem(RESULTS_MODAL_KEY(night.id), "1");
+    resultsShownThisSession = true;
+    setResultsData(null);
+    try {
+      await Share.share({ message });
+    } catch {
+      // user dismissed share sheet
+    }
+  }, [resultsData]);
 
   const OTHER_STATUSES = ["canceled", "declined", "expired", "invite_expired", "settlement_expired"];
 
@@ -649,8 +895,18 @@ export default function DashboardScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
 
+      {/* ─── Results Modal (celebration first) ───────────────────────────── */}
+      {resultsData && (
+        <ResultsModal
+          night={resultsData.night}
+          pick={resultsData.pick}
+          onShare={handleResultsShare}
+          onDismiss={handleResultsDismiss}
+        />
+      )}
+
       {/* ─── Action Modal ─────────────────────────────────────────────────── */}
-      {!modalSuppressed && currentModalItem && (
+      {!modalSuppressed && !resultsData && currentModalItem && (
         <SwaygerActionModal
           key={`modal-${modalIndex}-${currentModalItem.swayger.id}`}
           item={currentModalItem}
@@ -1548,5 +1804,58 @@ const modalStyles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     paddingVertical: 4,
     marginBottom: 4,
+  },
+});
+
+const resultsStyles = StyleSheet.create({
+  scorePill: {
+    alignItems: "center",
+    marginVertical: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(255,199,44,0.08)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,199,44,0.22)",
+    width: "100%",
+  },
+  scoreMain: {
+    fontSize: 46,
+    fontWeight: "800",
+    color: NBA_GOLD,
+    letterSpacing: -1,
+    lineHeight: 52,
+  },
+  scoreDenom: {
+    fontSize: 28,
+    fontWeight: "500",
+    color: "rgba(255,199,44,0.55)",
+  },
+  scoreLabel: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    marginTop: 4,
+    letterSpacing: 0.3,
+  },
+  pickList: {
+    width: "100%",
+    marginBottom: 16,
+    gap: 8,
+  },
+  pickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  pickResult: {
+    fontSize: 15,
+    width: 24,
+    textAlign: "center",
+  },
+  pickLabel: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    flex: 1,
+    lineHeight: 18,
   },
 });
