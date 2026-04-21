@@ -4,11 +4,14 @@ import {
   useRouter,
   useSegments,
   useRootNavigationState,
+  usePathname,
+  useGlobalSearchParams,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import Constants from "expo-constants";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -32,6 +35,8 @@ import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
+export const PENDING_AUTH_REDIRECT_KEY = "swayger_pending_auth_redirect";
+
 const inExpoGo = Constants.appOwnership === "expo";
 
 if (Platform.OS !== "web" && !inExpoGo) {
@@ -51,6 +56,8 @@ function useProtectedRoute() {
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
+  const pathname = usePathname();
+  const searchParams = useGlobalSearchParams();
 
   useEffect(() => {
     if (isLoading) return;
@@ -69,11 +76,33 @@ function useProtectedRoute() {
     if (inInvite && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
+      // Save the intended destination so we can return there after sign-in
+      const ignoredPaths = ["/", "/auth", "/username-setup", "/auth-callback"];
+      if (!ignoredPaths.includes(pathname)) {
+        const paramEntries = Object.entries(searchParams).filter(
+          ([k]) => k !== undefined && !["_sitemap"].includes(k)
+        );
+        const queryString = paramEntries
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join("&");
+        const redirectPath = queryString ? `${pathname}?${queryString}` : pathname;
+        AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, redirectPath).catch(() => {});
+      }
       router.replace("/auth");
     } else if (session && needsUsername && !profileError && !inUsernameSetup) {
       router.replace("/username-setup");
     } else if (session && !needsUsername && (inAuthGroup || inUsernameSetup)) {
-      router.replace("/(tabs)");
+      // Returning user (already has username) — check for saved redirect
+      AsyncStorage.getItem(PENDING_AUTH_REDIRECT_KEY)
+        .then((redirect) => {
+          AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
+          if (redirect) {
+            router.replace(redirect as never);
+          } else {
+            router.replace("/(tabs)");
+          }
+        })
+        .catch(() => router.replace("/(tabs)"));
     } else if (session && profileError && (inAuthGroup || inUsernameSetup)) {
       router.replace("/(tabs)");
     }
