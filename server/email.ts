@@ -1910,7 +1910,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
 
     <p style="margin:0 0 32px;">
       <a href="${hqChallengeUrl}"
-         style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
+         style="display:inline-block;background:#ffffff;color:#111111;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;border:2px solid #111111;">
         Accept the Challenge &rarr;
       </a>
     </p>
@@ -1929,7 +1929,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
 
     <p style="margin:0 0 32px;">
       <a href="${picksUrl}"
-         style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
+         style="display:inline-block;background:#ffffff;color:#111111;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;border:2px solid #111111;">
         Challenge a Friend
       </a>
     </p>
