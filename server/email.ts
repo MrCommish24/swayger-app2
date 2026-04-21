@@ -1901,7 +1901,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
     </p>
 
     <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
-      We built you an NBA picks challenge. Make your calls. See if you've got it.
+      The Swayger NBA Challenge is live and we made an NBA picks Swayger just for you. It&rsquo;s right here waiting. The only question is whether you&rsquo;re going to show up or leave HQ hanging.
     </p>
 
     <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
@@ -1920,7 +1920,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
     </p>
 
     <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
-      Your group chat is right there. Your buddy who&rsquo;s always got the hot NBA take? He needs a Swayger in his inbox. Your coworker who&rsquo;s been bragging about their basketball instincts? Make them prove it.
+      Your group chat is right there. Your buddy who thinks his NBA takes are heat? He needs a Swayger in his inbox. Your coworker who&rsquo;s been bragging about their basketball instincts? Make them prove it.
     </p>
 
     <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
@@ -1930,7 +1930,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
     <p style="margin:0 0 32px;">
       <a href="${picksUrl}"
          style="display:inline-block;background:#111;color:#fff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
-        Challenge a Friend &rarr;
+        Challenge a Friend
       </a>
     </p>
 
@@ -1962,7 +1962,7 @@ export async function sendNightlyPicksChallenge(opts: NightlyPicksChallengeOpts)
   const subject = `Someone at Swayger HQ Thinks They Know More NBA Than You`;
   const text = `Hey.
 
-We built you an NBA picks challenge. Make your calls. See if you've got it.
+The Swayger NBA Challenge is live and we made an NBA picks Swayger just for you. It's right here waiting. The only question is whether you're going to show up or leave HQ hanging.
 
 Accept it, make your picks, and see who gets more right tonight.
 
@@ -1971,7 +1971,7 @@ ${opts.hqChallengeUrl}
 
 Then — and this is important — immediately go challenge someone you know.
 
-Your group chat is right there. Your buddy who's always got the hot NBA take? He needs a Swayger in his inbox. Your coworker who's been bragging about their basketball instincts? Make them prove it.
+Your group chat is right there. Your buddy who thinks his NBA takes are heat? He needs a Swayger in his inbox. Your coworker who's been bragging about their basketball instincts? Make them prove it.
 
 Challenge a friend to beat your score tonight. Whoever gets more correct wins the Swayger.
 
