@@ -68,12 +68,15 @@ function useProtectedRoute() {
     const inAuthCallback = segments[0] === "auth-callback";
     const inMMPickLanding = segments[0] === "mm-pick";
     const inInvite = segments[0] === "invite"; // Preview-first: let invite screen handle its own auth
+    const inPicks = segments[0] === "picks";   // Browse-first: auth wall fires at submit time
 
     if (inAuthCallback) return;
     if (inMMPickLanding) return;
     // Unauthenticated invite visitors get preview mode — no redirect to /auth.
     // Authenticated visitors with needsUsername still fall through to /username-setup.
     if (inInvite && !session) return;
+    // Unauthenticated picks visitors can browse props — auth wall fires at submit time.
+    if (inPicks && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       // Save the intended destination so we can return there after sign-in

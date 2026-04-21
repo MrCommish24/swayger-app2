@@ -24,6 +24,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
 import { createSwayger, fetchSwaygerInvite } from "@/lib/swayger";
 import { peekPendingInvite, storePendingInvite } from "@/lib/pending-invite";
+import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 
 const NBA_BLUE = "#1D428A";
@@ -1314,13 +1315,17 @@ export default function PicksScreen() {
           {!isLocked && !user && (
             <View style={styles.signInWall}>
               <Ionicons name="lock-closed" size={22} color={NBA_GOLD} />
-              <Text style={styles.signInWallTitle}>Sign in to lock in your picks</Text>
-              <Text style={styles.signInWallSub}>Browse freely — create an account when ready.</Text>
+              <Text style={styles.signInWallTitle}>Sign up to lock in your picks</Text>
+              <Text style={styles.signInWallSub}>Browse freely — create an account when you're ready.</Text>
               <Pressable
                 style={({ pressed }) => [styles.signInBtn, pressed && { opacity: 0.85 }]}
-                onPress={() => router.push("/auth/sign-in")}
+                onPress={async () => {
+                  const redirectPath = hqMode ? "/picks?hq=1" : "/picks";
+                  await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, redirectPath).catch(() => {});
+                  router.replace("/auth");
+                }}
               >
-                <Text style={styles.signInBtnText}>Sign In / Sign Up</Text>
+                <Text style={styles.signInBtnText}>Sign Up / Sign In</Text>
               </Pressable>
             </View>
           )}

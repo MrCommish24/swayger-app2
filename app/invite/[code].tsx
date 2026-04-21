@@ -177,12 +177,6 @@ export default function InviteScreen() {
     router.push("/picks" as never);
   }
 
-  async function handleSignInToMakePicks() {
-    if (!code) return;
-    await storePendingInvite({ code, intent: "picks_challenge" });
-    router.replace("/auth");
-  }
-
   // Auto-join when user lands on this screen authenticated (came back from auth).
   // Also clear any stored pending invite so it doesn't carry over to future sessions.
   useEffect(() => {
@@ -455,21 +449,15 @@ export default function InviteScreen() {
         {isPicksChallenge && isNightLocked ? (
           <View style={inviteStyles.lockedBox}>
             <Ionicons name="lock-closed" size={20} color={Colors.dark.textSecondary} />
-            <Text style={inviteStyles.lockedTitle}>This challenge is closed</Text>
-            <Text style={inviteStyles.lockedSub}>Picks locked at tip-off. This one's done.</Text>
-            <Pressable
-              style={({ pressed }) => [styles.primaryButton, { marginTop: 8 }, pressed && styles.btnPressed]}
-              onPress={() => router.replace("/auth")}
-            >
-              <Text style={styles.primaryButtonText}>Sign In to Swayger</Text>
-            </Pressable>
+            <Text style={inviteStyles.lockedTitle}>Tonight's picks are closed</Text>
+            <Text style={inviteStyles.lockedSub}>This challenge is no longer open.</Text>
           </View>
         ) : isPicksChallenge ? (
           <View style={inviteStyles.picksCta}>
             <View style={inviteStyles.stepsRow}>
               <View style={inviteStyles.stepItem}>
                 <View style={inviteStyles.stepNum}><Text style={inviteStyles.stepNumText}>1</Text></View>
-                <Text style={inviteStyles.stepLabel}>Lock in tonight's picks</Text>
+                <Text style={inviteStyles.stepLabel}>Lock in tonight's NBA props</Text>
               </View>
               <View style={inviteStyles.stepDivider} />
               <View style={inviteStyles.stepItem}>
@@ -479,13 +467,13 @@ export default function InviteScreen() {
             </View>
             <Pressable
               style={({ pressed }) => [inviteStyles.makePicksBtn, pressed && { opacity: 0.85 }]}
-              onPress={handleSignInToMakePicks}
+              onPress={handleGoMakePicks}
             >
               <Ionicons name="basketball-outline" size={20} color="#000000" />
-              <Text style={inviteStyles.makePicksBtnText}>Make Tonight's Picks →</Text>
+              <Text style={inviteStyles.makePicksBtnText}>See Tonight's Props →</Text>
             </Pressable>
             <Text style={inviteStyles.picksChallengeHint}>
-              Sign in to compete — then come back to accept
+              Make your picks, then come back to accept
             </Text>
           </View>
         ) : (
