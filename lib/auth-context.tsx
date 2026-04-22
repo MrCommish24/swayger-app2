@@ -43,25 +43,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileFetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (__DEV__) console.log("[auth-context] getSession result:", s ? "session exists" : "no session");
-      setSession(s);
-      if (s?.user) {
-        fetchProfile(s.user.id);
-      } else {
-        setIsLoading(false);
-      }
-    });
-
+    // In Supabase v2, onAuthStateChange fires immediately with INITIAL_SESSION
+    // carrying whatever is in storage — calling getSession() separately creates
+    // a race condition (double profile fetch) and is redundant.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, s) => {
         if (__DEV__) console.log("[auth-context] onAuthStateChange:", event, s ? "session exists" : "no session");
-        setSession(s);
+
         if (s?.user) {
+          setSession(s);
           if (profileFetchedRef.current !== s.user.id) {
             fetchProfile(s.user.id);
           }
-        } else {
+        } else if (event === "SIGNED_OUT") {
+          // Verify the sign-out is real before clearing state.
+          // Supabase can fire a transient SIGNED_OUT on web during token
+          // refresh races or storage read timing issues. Confirm with
+          // getSession() before wiping profile/session state.
+          supabase.auth.getSession().then(({ data: { session: current } }) => {
+            if (current) {
+              // Session still valid — this was a spurious SIGNED_OUT event.
+              if (__DEV__) console.log("[auth-context] Spurious SIGNED_OUT ignored — session still valid");
+              setSession(current);
+            } else {
+              setSession(null);
+              setProfile(null);
+              setNeedsUsername(false);
+              setProfileError(null);
+              profileFetchedRef.current = null;
+              setIsLoading(false);
+            }
+          }).catch(() => {
+            setSession(null);
+            setProfile(null);
+            setNeedsUsername(false);
+            setProfileError(null);
+            profileFetchedRef.current = null;
+            setIsLoading(false);
+          });
+        } else if (!s) {
+          // Non-SIGNED_OUT event with null session (e.g. INITIAL_SESSION on first load)
+          setSession(null);
           setProfile(null);
           setNeedsUsername(false);
           setProfileError(null);

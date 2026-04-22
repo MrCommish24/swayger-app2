@@ -91,7 +91,14 @@ export default function AuthScreen() {
         type: "email",
       });
       if (error) {
-        showError(error.message);
+        // On web, a PKCE verifier mismatch can cause verifyOtp to error even
+        // when the token is valid (e.g. the user reloaded the page after
+        // requesting the code). If a session was established anyway, suppress
+        // the error — the auth context will handle the redirect.
+        const { data: { session: existing } } = await supabase.auth.getSession();
+        if (!existing) {
+          showError(error.message);
+        }
       }
     } catch {
       showError("Something went wrong. Try again.");
