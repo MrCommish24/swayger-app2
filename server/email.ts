@@ -275,6 +275,81 @@ export async function sendNotificationEmail(
 }
 
 
+// ─── Picks Challenge settled email ───────────────────────────────────────────
+
+export interface PicksChallengeSettledPayload {
+  swayger: { id: string; title: string; category: string; stakeUnits: number; stakeNote?: string | null };
+  recipientEmail: string;
+  recipientName: string;
+  myScore: number | null;
+  theirScore: number | null;
+  theirName: string;
+  outcome: "creator" | "opponent" | "draw" | "no_contest";
+  isCreator: boolean;
+}
+
+export async function sendPicksChallengeSettledEmail(p: PicksChallengeSettledPayload): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const swaygerUrl = `${APP_URL}/swayger/${p.swayger.id}`;
+  const denom = 4;
+  const myStr = p.myScore !== null ? `${p.myScore}/${denom}` : "?";
+  const theirStr = p.theirScore !== null ? `${p.theirScore}/${denom}` : "?";
+
+  const isWinner = (p.isCreator && p.outcome === "creator") || (!p.isCreator && p.outcome === "opponent");
+  const isDraw = p.outcome === "draw";
+  const isNoContest = p.outcome === "no_contest";
+
+  let subject: string;
+  let headline: string;
+  let resultLine: string;
+
+  if (isNoContest) {
+    subject = `⚖️ Picks Challenge — No Contest`;
+    headline = `No contest on "${p.swayger.title}"`;
+    resultLine = `Not enough data to determine a winner. Your Swayger Points have been returned.`;
+  } else if (isDraw) {
+    subject = `🤝 Picks Challenge — It's a Draw`;
+    headline = `You both went ${myStr}. Nobody takes the bag.`;
+    resultLine = `You went <strong style="color:#FFFFFF;">${myStr}</strong>. @${p.theirName} went <strong style="color:#FFFFFF;">${theirStr}</strong>. Dead heat.`;
+  } else if (isWinner) {
+    subject = `🏆 You won the Picks Challenge`;
+    headline = `You went ${myStr}. @${p.theirName} went ${theirStr}. The bag is yours.`;
+    resultLine = `Collect from @${p.theirName}.`;
+  } else {
+    subject = `📊 Picks Challenge settled — Settle up`;
+    headline = `You went ${myStr}. @${p.theirName} went ${theirStr}.`;
+    resultLine = `@${p.theirName} got the better of you tonight. Time to settle up.`;
+  }
+
+  const scoreBoard = `
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:12px;">
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+          <span style="font-size:13px;color:#8B95A5;">Your score</span>
+          <span style="float:right;font-size:20px;font-weight:800;color:${isWinner || isDraw ? "#6C63FF" : "#FFFFFF"};">${myStr}</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:12px 0;">
+          <span style="font-size:13px;color:#8B95A5;">@${p.theirName}</span>
+          <span style="float:right;font-size:20px;font-weight:800;color:${(!isWinner && !isDraw && !isNoContest) ? "#6C63FF" : "#FFFFFF"};">${theirStr}</span>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:14px;color:#8B95A5;">${resultLine}</p>
+  `;
+
+  const html = buildEmailHtml(subject, headline, scoreBoard, isWinner ? "Claim the Receipt" : "See Results", swaygerUrl);
+
+  try {
+    await resend.emails.send({ from: FROM, to: p.recipientEmail, subject, html });
+    console.log(`[email] picks-challenge-settled sent to ${p.recipientEmail}`);
+  } catch (e) {
+    console.error(`[email] picks-challenge-settled failed for ${p.recipientEmail}:`, e);
+  }
+}
+
 // ─── March Madness emails ─────────────────────────────────────────────────────
 
 export async function sendMMScoreUpdateEmail({

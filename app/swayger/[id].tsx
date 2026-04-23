@@ -47,6 +47,7 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError, showMessage, formatDate, formatDateTime } from "@/lib/helpers";
 import { sendPushNotification } from "@/lib/notifications";
+import { getApiUrl } from "@/lib/query-client";
 import {
   SwaygerData,
   SwaygerInvite,
@@ -532,6 +533,19 @@ export default function SwaygerDetailScreen() {
     queryKey: ["settlement-proposals", id],
     queryFn: () => fetchSettlementProposals(id!),
     enabled: !!id && (swayger?.status === "active" || swayger?.status === "settlement_proposed" || swayger?.status === "settled" || swayger?.status === "expired"),
+  });
+
+  const isPicksChallenge = !!(swayger?.category === "NBA Picks" || swayger?.description?.includes("[night:"));
+  const { data: challengeResult } = useQuery<{ ok: boolean; creator_score: number | null; opp_score: number | null } | null>({
+    queryKey: ["challenge-result", id],
+    queryFn: async () => {
+      const url = new URL(`api/props/challenge-result`, getApiUrl());
+      url.searchParams.set("swayger_id", id!);
+      const res = await fetch(url.toString());
+      return res.json();
+    },
+    enabled: !!id && swayger?.status === "settled" && isPicksChallenge,
+    staleTime: Infinity,
   });
 
   useEffect(() => {
@@ -1035,6 +1049,26 @@ export default function SwaygerDetailScreen() {
             <View style={styles.expiryRow}>
               <Ionicons name="checkmark-circle-outline" size={14} color={Colors.dark.tabIconDefault} />
               <Text style={styles.expiryText}>Settled {formatDate(swayger.settled_at)}</Text>
+            </View>
+          )}
+          {isPicksChallenge && challengeResult?.ok && (challengeResult.creator_score !== null || challengeResult.opp_score !== null) && (
+            <View style={styles.picksScorePanel}>
+              <Text style={styles.picksSectionLabel}>Picks Scores</Text>
+              <View style={styles.picksScoreRow}>
+                <View style={styles.picksScoreCell}>
+                  <Text style={styles.picksScoreName}>@{profiles?.creator?.username ?? "Creator"}</Text>
+                  <Text style={[styles.picksScoreVal, swayger.settled_outcome === "creator" && styles.picksScoreWinner]}>
+                    {challengeResult.creator_score ?? "?"}/4
+                  </Text>
+                </View>
+                <Text style={styles.picksScoreVs}>vs</Text>
+                <View style={[styles.picksScoreCell, { alignItems: "flex-end" }]}>
+                  <Text style={styles.picksScoreName}>@{profiles?.opponent?.username ?? "Opponent"}</Text>
+                  <Text style={[styles.picksScoreVal, swayger.settled_outcome === "opponent" && styles.picksScoreWinner]}>
+                    {challengeResult.opp_score ?? "?"}/4
+                  </Text>
+                </View>
+              </View>
             </View>
           )}
           {(isCreator || isOpponent) && (
@@ -1631,6 +1665,17 @@ const styles = StyleSheet.create({
     borderRadius: 12, padding: 16, borderWidth: 1, borderColor: "rgba(245, 166, 35, 0.2)",
   },
   resultText: { fontSize: 18, fontWeight: "bold" as const, color: Colors.dark.accentGold },
+  picksScorePanel: {
+    marginTop: 14, backgroundColor: "rgba(108,99,255,0.08)", borderRadius: 12,
+    borderWidth: 1, borderColor: "rgba(108,99,255,0.2)", padding: 14,
+  },
+  picksSectionLabel: { fontSize: 11, fontWeight: "700" as const, color: Colors.dark.tabIconDefault, textTransform: "uppercase" as const, letterSpacing: 0.8, marginBottom: 10 },
+  picksScoreRow: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const },
+  picksScoreCell: { alignItems: "flex-start" as const },
+  picksScoreName: { fontSize: 12, color: Colors.dark.tabIconDefault, marginBottom: 2 },
+  picksScoreVal: { fontSize: 28, fontWeight: "800" as const, color: Colors.dark.text },
+  picksScoreWinner: { color: "#6C63FF" },
+  picksScoreVs: { fontSize: 13, color: Colors.dark.tabIconDefault, marginBottom: 4 },
   input: {
     backgroundColor: Colors.dark.surface, borderWidth: 1, borderColor: Colors.dark.border,
     borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: Colors.dark.text,

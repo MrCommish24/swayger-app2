@@ -10,6 +10,168 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+// ─── Server-side Expo push helper ────────────────────────────
+
+async function sendExpoPush(userId: string, title: string, body: string): Promise<void> {
+  const supabase = getSupabase();
+  try {
+    const { data: tokenRow } = await supabase
+      .from("push_tokens")
+      .select("token")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const token = (tokenRow as { token?: string } | null)?.token;
+    if (!token) return;
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ to: token, title, body, sound: "default" }),
+    });
+    console.log(`[push] sent to user ${userId}: "${title}"`);
+  } catch (e) {
+    console.warn(`[push] failed for user ${userId}:`, e);
+  }
+}
+
+// ─── Auto-settle picks challenge swaygers ────────────────────
+
+type NotifProfile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+
+async function autoSettlePicksChallenges(nightId: string, label: string): Promise<void> {
+  const supabase = getSupabase();
+  const { data: challengeSwaygers } = await supabase
+    .from("swaygers")
+    .select("id, creator_id, opponent_id, title, stake_units, stake_note, status")
+    .eq("status", "active")
+    .ilike("description", `%[night:${nightId}]%`);
+
+  if (!challengeSwaygers?.length) return;
+
+  // Fetch notification profiles once for all users
+  const { data: allProfiles } = await supabase.rpc("get_auth_only_profiles");
+  const profileMap = new Map<string, NotifProfile>();
+  for (const p of (allProfiles ?? []) as NotifProfile[]) {
+    profileMap.set(p.id, p);
+  }
+
+  for (const sw of challengeSwaygers as Array<{ id: string; creator_id: string; opponent_id: string | null; title: string; stake_units: number; stake_note: string | null; status: string }>) {
+    if (!sw.opponent_id) continue;
+
+    const { data: creatorRow } = await supabase
+      .from("prop_user_picks")
+      .select("correct_count")
+      .eq("night_id", nightId)
+      .eq("user_id", sw.creator_id)
+      .maybeSingle();
+
+    const { data: oppRow } = await supabase
+      .from("prop_user_picks")
+      .select("correct_count")
+      .eq("night_id", nightId)
+      .eq("user_id", sw.opponent_id)
+      .maybeSingle();
+
+    const creatorScore: number | null = (creatorRow as { correct_count?: number } | null)?.correct_count ?? null;
+    const oppScore: number | null = (oppRow as { correct_count?: number } | null)?.correct_count ?? null;
+
+    let outcome: "creator" | "opponent" | "draw" | "no_contest";
+    if (creatorScore === null || oppScore === null) outcome = "no_contest";
+    else if (creatorScore > oppScore) outcome = "creator";
+    else if (oppScore > creatorScore) outcome = "opponent";
+    else outcome = "draw";
+
+    const { error: settleErr } = await supabase
+      .from("swaygers")
+      .update({ status: "settled", settled_outcome: outcome, settled_at: new Date().toISOString() })
+      .eq("id", sw.id);
+
+    if (settleErr) {
+      console.warn(`[props] ${label}: could not settle swayger ${sw.id}:`, settleErr.message);
+      continue;
+    }
+
+    console.log(`[props] ${label}: settled picks challenge ${sw.id}: ${outcome} (${creatorScore ?? "?"}–${oppScore ?? "?"})`);
+
+    // ── Notifications ──
+    const creatorProfile = profileMap.get(sw.creator_id);
+    const oppProfile = profileMap.get(sw.opponent_id);
+    const creatorName = creatorProfile?.username ?? "Creator";
+    const oppName = oppProfile?.username ?? "Opponent";
+
+    const denom = 4;
+
+    // Build personalized push copy
+    const buildPushCopy = (myScore: number | null, theirScore: number | null, theirName: string, isWinner: boolean, isDraw: boolean): { title: string; body: string } => {
+      const myStr = myScore !== null ? `${myScore}/${denom}` : "?";
+      const theirStr = theirScore !== null ? `${theirScore}/${denom}` : "?";
+      if (isDraw) {
+        return { title: "Picks Challenge — It's a Draw 🤝", body: `You both went ${myStr}. No one takes the bag tonight.` };
+      }
+      if (outcome === "no_contest") {
+        return { title: "Picks Challenge — No Contest", body: "Not enough data to settle your challenge. Points returned." };
+      }
+      if (isWinner) {
+        return { title: "Picks settled. You won. 🏆", body: `You went ${myStr}. @${theirName} went ${theirStr}. The bag is yours.` };
+      }
+      return { title: "Picks settled.", body: `You went ${myStr}. @${theirName} went ${theirStr}. Settle up.` };
+    };
+
+    const isDraw = outcome === "draw";
+    const creatorWins = outcome === "creator";
+    const oppWins = outcome === "opponent";
+
+    const creatorPush = buildPushCopy(creatorScore, oppScore, oppName, creatorWins, isDraw);
+    const oppPush = buildPushCopy(oppScore, creatorScore, creatorName, oppWins, isDraw);
+
+    await Promise.allSettled([
+      sendExpoPush(sw.creator_id, creatorPush.title, creatorPush.body),
+      sendExpoPush(sw.opponent_id, oppPush.title, oppPush.body),
+    ]);
+
+    // ── Email notifications ──
+    try {
+      const { sendPicksChallengeSettledEmail } = await import("./email.js");
+      const swaygerMeta = { id: sw.id, title: sw.title, category: "NBA Picks", stakeUnits: sw.stake_units, stakeNote: sw.stake_note };
+
+      const notifPromises: Promise<void>[] = [];
+
+      if (creatorProfile && !creatorProfile.email_unsubscribed) {
+        notifPromises.push(
+          sendPicksChallengeSettledEmail({
+            swayger: swaygerMeta,
+            recipientEmail: creatorProfile.notification_email,
+            recipientName: creatorProfile.display_name ?? creatorProfile.username,
+            myScore: creatorScore,
+            theirScore: oppScore,
+            theirName: oppProfile?.display_name ?? oppName,
+            outcome,
+            isCreator: true,
+          })
+        );
+      }
+
+      if (oppProfile && !oppProfile.email_unsubscribed) {
+        notifPromises.push(
+          sendPicksChallengeSettledEmail({
+            swayger: swaygerMeta,
+            recipientEmail: oppProfile.notification_email,
+            recipientName: oppProfile.display_name ?? oppProfile.username,
+            myScore: oppScore,
+            theirScore: creatorScore,
+            theirName: creatorProfile?.display_name ?? creatorName,
+            outcome,
+            isCreator: false,
+          })
+        );
+      }
+
+      await Promise.allSettled(notifPromises);
+    } catch (emailErr) {
+      console.warn(`[props] ${label}: email error for swayger ${sw.id}:`, emailErr);
+    }
+  }
+}
+
 // ─── Admin guard ─────────────────────────────────────────────
 
 function requireAdmin(req: Request, res: Response): boolean {
@@ -711,73 +873,9 @@ export function registerPropsRoutes(app: Express) {
           .eq("id", userPick.id);
       }
 
-      // ── Auto-propose settlement for active Picks Challenge swaygers tied to this night ──
+      // ── Auto-settle Picks Challenge swaygers tied to this night ──
       try {
-        const { data: challengeSwaygers } = await supabase
-          .from("swaygers")
-          .select("id, creator_id, opponent_id, status")
-          .eq("status", "active")
-          .ilike("description", `%[night:${nightId}]%`);
-
-        for (const sw of (challengeSwaygers ?? []) as Array<{ id: string; creator_id: string; opponent_id: string | null; status: string }>) {
-          if (!sw.opponent_id) continue;
-
-          // Look up each user's correct_count for this night
-          const { data: creatorRow } = await supabase
-            .from("prop_user_picks")
-            .select("correct_count")
-            .eq("night_id", nightId)
-            .eq("user_id", sw.creator_id)
-            .maybeSingle();
-
-          const { data: oppRow } = await supabase
-            .from("prop_user_picks")
-            .select("correct_count")
-            .eq("night_id", nightId)
-            .eq("user_id", sw.opponent_id)
-            .maybeSingle();
-
-          const creatorScore: number | null = (creatorRow as { correct_count?: number } | null)?.correct_count ?? null;
-          const oppScore: number | null = (oppRow as { correct_count?: number } | null)?.correct_count ?? null;
-
-          let outcome: "creator" | "opponent" | "draw" | "no_contest";
-          if (creatorScore === null || oppScore === null) {
-            outcome = "no_contest";
-          } else if (creatorScore > oppScore) {
-            outcome = "creator";
-          } else if (oppScore > creatorScore) {
-            outcome = "opponent";
-          } else {
-            outcome = "draw";
-          }
-
-          const proposedBy = outcome === "creator" ? sw.creator_id
-            : outcome === "opponent" ? sw.opponent_id
-            : sw.creator_id;
-
-          // Attempt direct writes — may be blocked by RLS in which case we log and skip
-          const { error: insertErr } = await supabase
-            .from("settlement_proposals")
-            .insert({
-              swayger_id: sw.id,
-              proposed_by: proposedBy,
-              outcome,
-              creator_confirmed: proposedBy === sw.creator_id,
-              opponent_confirmed: proposedBy === sw.opponent_id,
-            });
-
-          if (insertErr) {
-            console.warn(`[props] auto-settle: could not insert proposal for swayger ${sw.id}:`, insertErr.message);
-            continue;
-          }
-
-          await supabase
-            .from("swaygers")
-            .update({ status: "settlement_proposed" })
-            .eq("id", sw.id);
-
-          console.log(`[props] auto-settled picks challenge swayger ${sw.id}: ${outcome} (${creatorScore ?? "?"}–${oppScore ?? "?"})`);
-        }
+        await autoSettlePicksChallenges(nightId, "auto-resolve");
       } catch (autoErr) {
         console.error("[props] auto-settle picks challenge error:", autoErr);
       }
@@ -853,71 +951,52 @@ export function registerPropsRoutes(app: Express) {
           .eq("id", userPick.id);
       }
 
-      // Auto-propose settlements for active Picks Challenge swaygers tied to this night
+      // ── Auto-settle Picks Challenge swaygers tied to this night ──
       try {
-        const { data: challengeSwaygers } = await supabase
-          .from("swaygers")
-          .select("id, creator_id, opponent_id, status")
-          .eq("status", "active")
-          .ilike("description", `%[night:${nightId}]%`);
-
-        for (const sw of (challengeSwaygers ?? []) as Array<{ id: string; creator_id: string; opponent_id: string | null; status: string }>) {
-          if (!sw.opponent_id) continue;
-
-          const { data: creatorRow } = await supabase
-            .from("prop_user_picks")
-            .select("correct_count")
-            .eq("night_id", nightId)
-            .eq("user_id", sw.creator_id)
-            .maybeSingle();
-
-          const { data: oppRow } = await supabase
-            .from("prop_user_picks")
-            .select("correct_count")
-            .eq("night_id", nightId)
-            .eq("user_id", sw.opponent_id)
-            .maybeSingle();
-
-          const creatorScore: number | null = (creatorRow as { correct_count?: number } | null)?.correct_count ?? null;
-          const oppScore: number | null = (oppRow as { correct_count?: number } | null)?.correct_count ?? null;
-
-          let outcome: "creator" | "opponent" | "draw" | "no_contest";
-          if (creatorScore === null || oppScore === null) outcome = "no_contest";
-          else if (creatorScore > oppScore) outcome = "creator";
-          else if (oppScore > creatorScore) outcome = "opponent";
-          else outcome = "draw";
-
-          const proposedBy = outcome === "creator" ? sw.creator_id
-            : outcome === "opponent" ? sw.opponent_id
-            : sw.creator_id;
-
-          const { error: insertErr } = await supabase
-            .from("settlement_proposals")
-            .insert({
-              swayger_id: sw.id,
-              proposed_by: proposedBy,
-              outcome,
-              creator_confirmed: proposedBy === sw.creator_id,
-              opponent_confirmed: proposedBy === sw.opponent_id,
-            });
-
-          if (insertErr) {
-            console.warn(`[props] manual auto-settle: could not insert proposal for swayger ${sw.id}:`, insertErr.message);
-            continue;
-          }
-
-          await supabase
-            .from("swaygers")
-            .update({ status: "settlement_proposed" })
-            .eq("id", sw.id);
-
-          console.log(`[props] manual-resolve auto-settled picks challenge ${sw.id}: ${outcome} (${creatorScore ?? "?"}–${oppScore ?? "?"})`);
-        }
+        await autoSettlePicksChallenges(nightId, "manual-resolve");
       } catch (autoErr) {
         console.error("[props] manual-resolve auto-settle error:", autoErr);
       }
 
       res.json({ ok: true, resolvedProps, picksScored: (userPicks ?? []).length });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // GET /api/props/challenge-result?swayger_id= — returns both users' pick scores for a settled picks challenge
+  app.get("/api/props/challenge-result", async (req: Request, res: Response) => {
+    try {
+      const supabase = getSupabase();
+      const { swayger_id } = req.query as { swayger_id?: string };
+      if (!swayger_id) return res.status(400).json({ ok: false, error: "swayger_id required" });
+
+      const { data: sw } = await supabase
+        .from("swaygers")
+        .select("id, creator_id, opponent_id, description, settled_outcome")
+        .eq("id", swayger_id)
+        .maybeSingle();
+
+      if (!sw) return res.status(404).json({ ok: false, error: "Swayger not found" });
+
+      const nightMatch = (sw.description ?? "").match(/\[night:([^\]]+)\]/);
+      const nightId = nightMatch?.[1] ?? null;
+      if (!nightId) return res.json({ ok: true, nightId: null, creator_score: null, opp_score: null });
+
+      const [{ data: creatorRow }, { data: oppRow }] = await Promise.all([
+        supabase.from("prop_user_picks").select("correct_count").eq("night_id", nightId).eq("user_id", sw.creator_id).maybeSingle(),
+        sw.opponent_id
+          ? supabase.from("prop_user_picks").select("correct_count").eq("night_id", nightId).eq("user_id", sw.opponent_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      res.json({
+        ok: true,
+        nightId,
+        creator_score: (creatorRow as { correct_count?: number } | null)?.correct_count ?? null,
+        opp_score: (oppRow as { correct_count?: number } | null)?.correct_count ?? null,
+        settled_outcome: sw.settled_outcome ?? null,
+      });
     } catch (err: unknown) {
       res.status(500).json({ ok: false, error: String(err) });
     }
