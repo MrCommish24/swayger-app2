@@ -79,9 +79,12 @@ function useProtectedRoute() {
     if (inPicks && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
-      // Save the intended destination so we can return there after sign-in
+      // Save the intended destination so we can return there after sign-in.
+      // Skip tab routes (profile, home, etc.) — they're always accessible after
+      // login and restoring them just causes confusing landings on the wrong tab.
+      const inTabsGroup = segments[0] === "(tabs)";
       const ignoredPaths = ["/", "/auth", "/username-setup", "/auth-callback"];
-      if (!ignoredPaths.includes(pathname)) {
+      if (!inTabsGroup && !ignoredPaths.includes(pathname)) {
         const paramEntries = Object.entries(searchParams).filter(
           ([k]) => k !== undefined && !["_sitemap"].includes(k)
         );

@@ -13,7 +13,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { peekPendingInvite, consumePendingInvite } from "@/lib/pending-invite";
+import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 
 type CallbackStatus = "processing" | "success" | "error";
 
@@ -205,6 +207,9 @@ export default function AuthCallbackScreen() {
   }
 
   async function navigateHome() {
+    // Clear any stale layout redirect — auth-callback owns navigation from here,
+    // so we don't want _layout.tsx to re-redirect on the next sign-in.
+    await AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
     // Peek (don't consume) so the invite survives if username-setup is needed first
     const pending = await peekPendingInvite();
     setTimeout(() => {
@@ -224,6 +229,7 @@ export default function AuthCallbackScreen() {
   }
 
   async function handleContinue() {
+    await AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
     const pending = await peekPendingInvite();
     if (pending?.code) {
       router.replace(`/invite/${pending.code}` as never);

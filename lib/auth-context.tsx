@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (s?.user) {
           setSession(s);
           if (profileFetchedRef.current !== s.user.id) {
+            setIsLoading(true);
             fetchProfile(s.user.id);
           }
         } else if (event === "SIGNED_OUT") {
