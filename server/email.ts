@@ -2087,62 +2087,70 @@ function buildWeekendPicksBlastHtml(opts: {
 }): string {
   const { displayName, picksUrl } = opts;
 
-  const body = `
-    <p style="margin:0 0 20px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      Hey ${displayName},
-    </p>
+  const unsubLine = opts.unsubscribeUrl
+    ? `<p style="margin:32px 0 0;font-size:11px;color:#999999;">You're receiving this because you have a Swayger account. <a href="${opts.unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
+    : "";
 
-    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      Thank you for being one of Swayger's early users.
-    </p>
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Let's finish the week strong</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+    <tr><td align="center" style="padding:40px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
 
-    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      We know the early days have had a few rough patches — including more emails than we wanted going out — and we appreciate you sticking with us and taking a look anyway.
-    </p>
+        <tr>
+          <td style="padding-bottom:24px;">
+            <span style="font-size:13px;font-weight:700;color:#111111;letter-spacing:1.5px;text-transform:uppercase;">SWAYGER</span>
+          </td>
+        </tr>
 
-    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      That early participation matters. It's helping us shape the product and make Swayger better.
-    </p>
+        <tr>
+          <td style="font-size:15px;color:#222222;line-height:1.7;">
 
-    <div style="border-left:3px solid #6C63FF;padding:12px 16px;margin:0 0 22px;background:#13131D;border-radius:0 8px 8px 0;">
-      <p style="margin:0 0 10px;font-size:16px;font-weight:700;color:#FFFFFF;line-height:1.4;">Let's finish the week strong.</p>
-      <p style="margin:0 0 10px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-        This weekend, jump into the NBA Picks Challenge — lock in your picks, challenge a friend, settle it, and post the result.
-      </p>
-      <p style="margin:0;font-size:15px;color:#FFFFFF;font-weight:600;line-height:1.5;">
-        That's the heart of Swayger: make your call, back it up, and keep the receipt.
-      </p>
-    </div>
+            <p style="margin:0 0 18px;">Hey ${displayName},</p>
 
-    <p style="margin:0 0 22px;font-size:13px;color:#8B95A5;line-height:1.5;">
-      Tonight's props lock at <strong style="color:#FFFFFF;">6:30 PM ET</strong> — you've still got time.
-    </p>
+            <p style="margin:0 0 18px;">Thank you for being one of Swayger's early users.</p>
 
-    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      We'll have another HQ challenge coming next week, so keep an eye out for that too.
-    </p>
+            <p style="margin:0 0 18px;">We know the early days have had a few rough patches — including more emails than we wanted going out — and we appreciate you sticking with us and taking a look anyway.</p>
 
-    <div style="background:#13131D;border-radius:10px;padding:16px 18px;margin-bottom:22px;border:1px solid #2A2A3A;">
-      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:1px;color:#6C63FF;text-transform:uppercase;">Beta Testers Wanted</p>
-      <p style="margin:0;font-size:14px;color:#C8D0DC;line-height:1.6;">
-        We're looking for <strong style="color:#FFFFFF;">20 highly engaged users</strong> to help beta test some new features we're building. If that sounds like you, just reply to this email and let us know.
-      </p>
-    </div>
+            <p style="margin:0 0 18px;">That early participation matters. It's helping us shape the product and make Swayger better.</p>
 
-    <p style="margin:0 0 6px;font-size:15px;color:#C8D0DC;line-height:1.65;">
-      Appreciate you being here early.
-    </p>
-    <p style="margin:0;font-size:15px;color:#8B95A5;">— Swayger HQ</p>
-  `;
+            <p style="margin:0 0 18px;">Let's finish the week strong.</p>
 
-  const subject = "Let's finish the week strong";
-  let html = buildEmailHtml(subject, "Early access. Let's make it count.", body, "Make Your Weekend Picks →", picksUrl);
+            <p style="margin:0 0 18px;">This weekend, jump into the NBA Picks Challenge — lock in your picks, challenge a friend, settle it, and post the result. That's the heart of Swayger: make your call, back it up, and keep the receipt.</p>
 
-  if (opts.unsubscribeUrl) {
-    html = addUnsubFooter(html, opts.unsubscribeUrl);
-  }
+            <p style="margin:0 0 24px;color:#555555;font-size:14px;">Tonight's picks lock at <strong style="color:#222222;">5:45 PM CT</strong> — you've still got time.</p>
 
-  return html;
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background:#111111;border-radius:8px;">
+                  <a href="${picksUrl}" style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Make your picks →</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;">We'll have another HQ challenge coming next week, so keep an eye out for that too.</p>
+
+            <p style="margin:0 0 18px;">We're also looking for 20 highly engaged users to help beta test some new features we're building. If that sounds like you, just reply to this email and let us know.</p>
+
+            <p style="margin:0 0 6px;">Appreciate you being here early.</p>
+            <p style="margin:0;color:#555555;">— Swayger HQ</p>
+
+            ${unsubLine}
+
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }
 
 export async function sendWeekendPicksBlast(opts: {
