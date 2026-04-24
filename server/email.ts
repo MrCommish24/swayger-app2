@@ -2078,6 +2078,97 @@ export function buildNightlyPicksChallengePreview(): string {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Weekend Picks Blast ─────────────────────────────────────────────────────
+
+function buildWeekendPicksBlastHtml(opts: {
+  displayName: string;
+  picksUrl: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { displayName, picksUrl } = opts;
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      Hey ${displayName},
+    </p>
+
+    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      Thank you for being one of Swayger's early users.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      We know the early days have had a few rough patches — including more emails than we wanted going out — and we appreciate you sticking with us and taking a look anyway.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      That early participation matters. It's helping us shape the product and make Swayger better.
+    </p>
+
+    <div style="border-left:3px solid #6C63FF;padding:12px 16px;margin:0 0 22px;background:#13131D;border-radius:0 8px 8px 0;">
+      <p style="margin:0 0 10px;font-size:16px;font-weight:700;color:#FFFFFF;line-height:1.4;">Let's finish the week strong.</p>
+      <p style="margin:0 0 10px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+        This weekend, jump into the NBA Picks Challenge — lock in your picks, challenge a friend, settle it, and post the result.
+      </p>
+      <p style="margin:0;font-size:15px;color:#FFFFFF;font-weight:600;line-height:1.5;">
+        That's the heart of Swayger: make your call, back it up, and keep the receipt.
+      </p>
+    </div>
+
+    <p style="margin:0 0 22px;font-size:13px;color:#8B95A5;line-height:1.5;">
+      Tonight's props lock at <strong style="color:#FFFFFF;">6:30 PM ET</strong> — you've still got time.
+    </p>
+
+    <p style="margin:0 0 18px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      We'll have another HQ challenge coming next week, so keep an eye out for that too.
+    </p>
+
+    <div style="background:#13131D;border-radius:10px;padding:16px 18px;margin-bottom:22px;border:1px solid #2A2A3A;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:1px;color:#6C63FF;text-transform:uppercase;">Beta Testers Wanted</p>
+      <p style="margin:0;font-size:14px;color:#C8D0DC;line-height:1.6;">
+        We're looking for <strong style="color:#FFFFFF;">20 highly engaged users</strong> to help beta test some new features we're building. If that sounds like you, just reply to this email and let us know.
+      </p>
+    </div>
+
+    <p style="margin:0 0 6px;font-size:15px;color:#C8D0DC;line-height:1.65;">
+      Appreciate you being here early.
+    </p>
+    <p style="margin:0;font-size:15px;color:#8B95A5;">— Swayger HQ</p>
+  `;
+
+  const subject = "Let's finish the week strong";
+  let html = buildEmailHtml(subject, "Early access. Let's make it count.", body, "Make Your Weekend Picks →", picksUrl);
+
+  if (opts.unsubscribeUrl) {
+    html = addUnsubFooter(html, opts.unsubscribeUrl);
+  }
+
+  return html;
+}
+
+export async function sendWeekendPicksBlast(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  picksUrl: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const subject = "Let's finish the week strong";
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildWeekendPicksBlastHtml({
+    displayName: opts.displayName,
+    picksUrl: opts.picksUrl,
+    unsubscribeUrl,
+  });
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}
+
+export function buildWeekendPicksBlastPreview(): string {
+  return buildWeekendPicksBlastHtml({
+    displayName: "Jordan",
+    picksUrl: "https://www.swayger.app/picks",
+  });
+}
+
 export function buildThankyouEmailPreview(): string {
   const sampleLeaderboard: LeaderboardEntry[] = [
     { rank: 1, username: "dgrand2",    displayName: "Mr Roarke",  totalPoints: 83 },

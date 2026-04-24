@@ -747,6 +747,108 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // ─── Weekend Picks Blast routes ───────────────────────────────────────────
+
+  // GET /admin/props/email-preview/weekend-picks — render email HTML for review
+  app.get("/admin/props/email-preview/weekend-picks", (_req: Request, res: Response) => {
+    const { buildWeekendPicksBlastPreview } = require("./email.js");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildWeekendPicksBlastPreview());
+  });
+
+  // GET /api/admin/props/blast-weekend-picks/dry-run — show who would receive it
+  app.get("/api/admin/props/blast-weekend-picks/dry-run", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Profile[]),
+        ...((authProfiles ?? []) as Profile[]),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res.json({
+        ok: true,
+        total_eligible: eligible.length,
+        recipients: eligible.map((u) => ({
+          user_id: u.id,
+          email: u.notification_email,
+          display_name: u.display_name || u.username,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-weekend-picks/test — send one test copy to a specific email
+  app.post("/api/admin/props/blast-weekend-picks/test", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email, name } = req.body as { email?: string; name?: string };
+    if (!email) { res.status(400).json({ ok: false, error: "email is required" }); return; }
+    try {
+      const { sendWeekendPicksBlast } = await import("./email.js");
+      await sendWeekendPicksBlast({
+        to: email,
+        displayName: name || "Friend",
+        userId: "test-preview",
+        picksUrl: "https://www.swayger.app/picks",
+      });
+      res.json({ ok: true, sent_to: email });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-weekend-picks — send to all eligible users
+  app.post("/api/admin/props/blast-weekend-picks", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      return;
+    }
+    try {
+      const { sendWeekendPicksBlast } = await import("./email.js");
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [
+        ...((emailProfiles ?? []) as Profile[]),
+        ...((authProfiles ?? []) as Profile[]),
+      ];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendWeekendPicksBlast({
+            to: user.notification_email,
+            displayName: user.display_name || user.username,
+            userId: user.id,
+            picksUrl: "https://www.swayger.app/picks",
+          });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[weekend-blast] failed for ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[weekend-blast] complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[weekend-blast] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // POST /api/admin/props/lock/:nightId — manually lock a night
   app.post("/api/admin/props/lock/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
