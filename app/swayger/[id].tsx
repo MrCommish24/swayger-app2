@@ -65,11 +65,13 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+const APP_WEB_URL = "https://www.swayger.app";
+
 function buildInviteLink(inviteCode: string): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return `${window.location.origin}/join?code=${inviteCode}`;
   }
-  return Linking.createURL(`/invite/${inviteCode}`);
+  return `${APP_WEB_URL}/join?code=${inviteCode}`;
 }
 
 function buildSwaygerLink(swaygerIdParam: string, baseUrl: string): string {
@@ -77,21 +79,10 @@ function buildSwaygerLink(swaygerIdParam: string, baseUrl: string): string {
 }
 
 async function fetchAppBaseUrl(): Promise<string> {
-  if (process.env.EXPO_PUBLIC_APP_URL) {
-    return process.env.EXPO_PUBLIC_APP_URL;
-  }
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return window.location.origin;
   }
-  try {
-    const { getApiUrl } = await import("@/lib/query-client");
-    const res = await fetch(`${getApiUrl()}api/config`);
-    const data = await res.json();
-    if (data.appUrl) return data.appUrl;
-  } catch {
-  }
-  const domain = (process.env.EXPO_PUBLIC_DOMAIN || "").replace(/:\d+$/, "");
-  return domain ? `https://${domain}` : "";
+  return APP_WEB_URL;
 }
 
 function buildShareMessage(
