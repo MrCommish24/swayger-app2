@@ -2301,13 +2301,32 @@ export async function sendRoundWinnerEmail(opts: {
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
   const leaderboardUrl = `${APP_URL}/picks`;
-  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
-  const html = buildRoundWinnerEmailHtml({ ...opts, leaderboardUrl, unsubscribeUrl });
+  const html = buildRoundWinnerEmailHtml({ ...opts, leaderboardUrl });
+  const text = [
+    `Hi ${opts.displayName},`,
+    ``,
+    `You won Round ${opts.round} of the NBA Playoffs Picks Challenge.`,
+    ``,
+    `Round ${opts.round} Score: ${opts.totalScore.toLocaleString()} points`,
+    `Props Correct: ${opts.correctCount}`,
+    `Nights Played: ${opts.nightsPlayed}`,
+    `Rank: #${opts.rank} out of ${opts.totalPlayers} players`,
+    ``,
+    `Your $15 prize is yours — we'll be in touch to send it your way.`,
+    ``,
+    `Round 2 is live now. $85 is still up for grabs across the remaining rounds.`,
+    ``,
+    `Make your picks: ${leaderboardUrl}`,
+    ``,
+    `— Swayger HQ`,
+  ].join("\n");
   await resend.emails.send({
     from: FROM,
     to: opts.to,
-    subject: `🏆 You won Round ${opts.round}. $15 is yours.`,
+    reply_to: "hq@swayger.app",
+    subject: `You won the Round ${opts.round} picks challenge`,
     html,
+    text,
   });
   console.log(`[email] round-winner sent to ${opts.to}`);
 }
@@ -2398,7 +2417,37 @@ export async function sendRoundLaunchBlast(opts: {
   if (!process.env.RESEND_API_KEY) return;
   const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
   const html = buildRoundLaunchBlastHtml({ ...opts, unsubscribeUrl });
-  await resend.emails.send({ from: FROM, to: opts.to, subject: "Round 2 is live 🏀", html });
+  const text = [
+    `${opts.displayName},`,
+    ``,
+    `Missed Round 1? Doesn't matter.`,
+    ``,
+    `Round 2 is live and the board is fresh. Jump in now — you're still in the running for $85 across the last 3 rounds.`,
+    ``,
+    `Prize pool left: $85`,
+    `Rounds remaining: 3 (including this one)`,
+    `Cost to play: Free`,
+    ``,
+    `No download required. Pick OVER or UNDER on 4 props before tipoff each night. Highest score at the end of the round wins. Takes 30 seconds.`,
+    ``,
+    `Make tonight's picks: ${opts.picksUrl}`,
+    ``,
+    `— Swayger HQ`,
+    ``,
+    `Unsubscribe: ${unsubscribeUrl}`,
+  ].join("\n");
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    reply_to: "hq@swayger.app",
+    subject: "Round 2 is live 🏀",
+    html,
+    text,
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  });
 }
 
 export function buildRoundLaunchBlastPreview(): string {
