@@ -2338,9 +2338,9 @@ export function buildRoundLaunchBlastHtml(opts: {
   picksUrl: string;
   unsubscribeUrl?: string;
 }): string {
-  const { picksUrl } = opts;
+  const { displayName, picksUrl } = opts;
   const unsubLine = opts.unsubscribeUrl
-    ? `<p style="margin:24px 0 0;font-size:11px;color:#3A3A4A;text-align:center;"><a href="${opts.unsubscribeUrl}" style="color:#4A4A5A;text-decoration:underline;">Unsubscribe</a></p>`
+    ? `<p style="margin:32px 0 0;font-size:11px;color:#999999;"><a href="${opts.unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
     : "";
 
   return `<!DOCTYPE html>
@@ -2349,61 +2349,29 @@ export function buildRoundLaunchBlastHtml(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Round 2 is live</title>
 </head>
-<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
-            <div style="display:inline-block;background:#0F2744;border:1px solid #1D428A;border-radius:8px;padding:6px 14px;margin-bottom:20px;">
-              <span style="font-size:11px;font-weight:700;color:#1DA1F2;letter-spacing:1.2px;text-transform:uppercase;">🏀 NBA Playoffs — Round 2</span>
-            </div>
-            <p style="margin:0 0 16px;font-size:24px;font-weight:800;color:#FFFFFF;line-height:1.3;">Missed Round 1?<br>Doesn't matter.</p>
-            <p style="margin:0 0 20px;font-size:15px;color:#D1D5DB;line-height:1.7;">Round 2 is live and the board is fresh. Jump in now — you're still in the running for <strong style="color:#F5A623;">$85 across the last 3 rounds</strong>.</p>
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:24px;">
-              <tr>
-                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
-                  <span style="font-size:13px;color:#8B95A5;">Prize pool left</span>
-                  <span style="float:right;font-size:15px;font-weight:800;color:#F5A623;">$85</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
-                  <span style="font-size:13px;color:#8B95A5;">Rounds remaining</span>
-                  <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">3 (including this one)</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding:12px 0;">
-                  <span style="font-size:13px;color:#8B95A5;">Cost to play</span>
-                  <span style="float:right;font-size:13px;font-weight:700;color:#34D399;">Free</span>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:0 0 24px;font-size:14px;color:#8B95A5;line-height:1.6;">No excuses. No download. No cost. Pick OVER or UNDER on 4 props before tipoff each night. Highest score at the end of the round wins. It takes 30 seconds.</p>
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td align="center">
-                  <a href="${picksUrl}" style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">Make Tonight's Picks →</a>
-                </td>
-              </tr>
-            </table>
-            ${unsubLine}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
+<body style="margin:0;padding:0;background:#f6f6f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:32px 16px;">
+    <div style="background:#ffffff;border-radius:8px;padding:36px 40px;">
+
+      <p style="margin:0 0 24px;font-size:13px;font-weight:600;color:#888888;letter-spacing:0.5px;text-transform:uppercase;">🏀 Swayger · NBA Playoffs</p>
+
+      <p style="margin:0 0 20px;font-size:22px;font-weight:700;color:#111111;line-height:1.3;">Missed Round 1? Doesn't matter.</p>
+
+      <p style="margin:0 0 16px;font-size:16px;color:#333333;line-height:1.6;">Hey ${displayName} —</p>
+
+      <p style="margin:0 0 16px;font-size:16px;color:#333333;line-height:1.6;">Round 2 is live and the board is completely fresh. <strong>$85 is still up for grabs</strong> across the last 3 rounds. Jump in now and you're right back in it.</p>
+
+      <p style="margin:0 0 16px;font-size:16px;color:#333333;line-height:1.6;">No download. No cost. Pick OVER or UNDER on 4 props before tipoff. Highest cumulative score at the end of Round 2 wins. Takes 30 seconds.</p>
+
+      <p style="margin:28px 0;font-size:16px;"><a href="${picksUrl}" style="background:#111111;color:#ffffff;font-size:15px;font-weight:600;padding:13px 28px;border-radius:6px;text-decoration:none;display:inline-block;">Make tonight's picks →</a></p>
+
+      <p style="margin:0 0 6px;font-size:15px;color:#555555;line-height:1.6;">No excuses. See you on the board.</p>
+
+      <p style="margin:0;font-size:15px;color:#555555;">— Swayger HQ</p>
+
+      ${unsubLine}
+    </div>
+  </div>
 </body>
 </html>`;
 }
