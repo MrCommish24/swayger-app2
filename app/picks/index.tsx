@@ -948,21 +948,65 @@ function PropCard({
   );
 }
 
+type RoundFilter = "all" | 1 | 2 | 3 | 4;
+
+const ROUND_TABS: { key: RoundFilter; label: string }[] = [
+  { key: 1, label: "Round 1" },
+  { key: 2, label: "Round 2" },
+  { key: "all", label: "All-Time" },
+];
+
 function LeaderboardView({ nightId }: { nightId: string }) {
+  const [roundFilter, setRoundFilter] = useState<RoundFilter>(2);
+
   const { data, isLoading } = useQuery<{ ok: boolean; leaderboard: LeaderboardEntry[] }>({
-    queryKey: ["/api/props/leaderboard"],
+    queryKey: ["/api/props/leaderboard", roundFilter],
+    queryFn: async () => {
+      const url = new URL("/api/props/leaderboard", getApiUrl());
+      if (roundFilter !== "all") url.searchParams.set("round", String(roundFilter));
+      const res = await fetch(url.toString());
+      return res.json();
+    },
     staleTime: 60_000,
   });
 
-  if (isLoading) return <ActivityIndicator color={NBA_GOLD} style={{ marginTop: 24 }} />;
-
   const entries = data?.leaderboard ?? [];
+
+  const roundLabel =
+    roundFilter === 1 ? "Round 1" :
+    roundFilter === 2 ? "Round 2" :
+    "All-Time";
 
   return (
     <View style={styles.leaderboardSection}>
       <Text style={styles.sectionTitle}>Picks Leaderboard</Text>
-      {entries.length === 0 ? (
-        <Text style={styles.emptyText}>No scores yet this season.</Text>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.roundTabsScroll}
+        contentContainerStyle={styles.roundTabsContent}
+      >
+        {ROUND_TABS.map((tab) => {
+          const isActive = roundFilter === tab.key;
+          return (
+            <Pressable
+              key={String(tab.key)}
+              style={[styles.roundTab, isActive && styles.roundTabActive]}
+              onPress={() => setRoundFilter(tab.key)}
+            >
+              <Text style={[styles.roundTabText, isActive && styles.roundTabTextActive]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {isLoading ? (
+        <ActivityIndicator color={NBA_GOLD} style={{ marginTop: 16 }} />
+      ) : entries.length === 0 ? (
+        <Text style={styles.emptyText}>No scores yet for {roundLabel}.</Text>
       ) : (
         entries.slice(0, 20).map((entry, i) => (
           <View key={entry.user_id} style={styles.lbRow}>
@@ -1687,6 +1731,19 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
+  roundTabsScroll: { flexGrow: 0, marginBottom: 4 },
+  roundTabsContent: { flexDirection: "row", gap: 8, paddingVertical: 4 },
+  roundTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  roundTabActive: { backgroundColor: NBA_BLUE, borderColor: NBA_BLUE },
+  roundTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
+  roundTabTextActive: { color: "#FFFFFF" },
   lbRow: {
     flexDirection: "row",
     alignItems: "center",

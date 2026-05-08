@@ -2195,3 +2195,212 @@ export function buildThankyouEmailPreview(): string {
     feedbackUrl,
   });
 }
+
+// ─── Round Winner Email ───────────────────────────────────────────────────────
+
+export function buildRoundWinnerEmailHtml(opts: {
+  displayName: string;
+  round: number;
+  totalScore: number;
+  correctCount: number;
+  nightsPlayed: number;
+  rank: number;
+  totalPlayers: number;
+  leaderboardUrl: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { displayName, round, totalScore, correctCount, nightsPlayed, rank, totalPlayers, leaderboardUrl } = opts;
+  const unsubLine = opts.unsubscribeUrl
+    ? `<p style="margin:24px 0 0;font-size:11px;color:#3A3A4A;text-align:center;"><a href="${opts.unsubscribeUrl}" style="color:#4A4A5A;text-decoration:underline;">Unsubscribe</a></p>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>You won Round ${round}</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <div style="text-align:center;margin-bottom:24px;">
+              <div style="display:inline-block;background:linear-gradient(135deg,#2a1f00 0%,#3d2e00 100%);border:1px solid rgba(245,166,35,0.5);border-radius:12px;padding:12px 24px;">
+                <span style="font-size:28px;">🏆</span>
+                <p style="margin:6px 0 0;font-size:13px;font-weight:700;color:#F5A623;letter-spacing:1.2px;text-transform:uppercase;">Round ${round} Winner</p>
+              </div>
+            </div>
+            <p style="margin:0 0 8px;font-size:20px;font-weight:800;color:#FFFFFF;text-align:center;">${displayName}, you took Round ${round}.</p>
+            <p style="margin:0 0 24px;font-size:14px;color:#8B95A5;text-align:center;line-height:1.6;">You finished #${rank} out of ${totalPlayers} players with the highest score of the round.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:20px;">
+              <tr>
+                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+                  <span style="font-size:13px;color:#8B95A5;">Round ${round} Score</span>
+                  <span style="float:right;font-size:20px;font-weight:800;color:#F5A623;">${totalScore.toLocaleString()} pts</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+                  <span style="font-size:13px;color:#8B95A5;">Props Correct</span>
+                  <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${correctCount} correct</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 0;">
+                  <span style="font-size:13px;color:#8B95A5;">Nights Played</span>
+                  <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">${nightsPlayed} ${nightsPlayed === 1 ? "night" : "nights"}</span>
+                </td>
+              </tr>
+            </table>
+            <div style="background:linear-gradient(135deg,#1a1200 0%,#2a1f00 100%);border:1px solid rgba(245,166,35,0.35);border-radius:12px;padding:16px 20px;margin-bottom:24px;text-align:center;">
+              <p style="margin:0 0 4px;font-size:24px;font-weight:800;color:#F5A623;">$15 prize</p>
+              <p style="margin:0;font-size:13px;color:#C8A84B;">We'll be in touch to send this your way.</p>
+            </div>
+            <p style="margin:0 0 24px;font-size:14px;color:#8B95A5;text-align:center;line-height:1.6;">Round 2 is live. Keep the momentum going — <strong style="color:#FFFFFF;">$85 is still up for grabs</strong> across the remaining rounds.</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center">
+                  <a href="${leaderboardUrl}" style="display:inline-block;background:#F5A623;color:#000000;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">See Round 2 Leaderboard →</a>
+                </td>
+              </tr>
+            </table>
+            ${unsubLine}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+  return html;
+}
+
+export async function sendRoundWinnerEmail(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  round: number;
+  roundLabel: string;
+  totalScore: number;
+  correctCount: number;
+  nightsPlayed: number;
+  rank: number;
+  totalPlayers: number;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const leaderboardUrl = `${APP_URL}/picks`;
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildRoundWinnerEmailHtml({ ...opts, leaderboardUrl, unsubscribeUrl });
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject: `🏆 You won Round ${opts.round}. $15 is yours.`,
+    html,
+  });
+  console.log(`[email] round-winner sent to ${opts.to}`);
+}
+
+// ─── Round Launch Re-engagement Blast ────────────────────────────────────────
+
+export function buildRoundLaunchBlastHtml(opts: {
+  displayName: string;
+  picksUrl: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { picksUrl } = opts;
+  const unsubLine = opts.unsubscribeUrl
+    ? `<p style="margin:24px 0 0;font-size:11px;color:#3A3A4A;text-align:center;"><a href="${opts.unsubscribeUrl}" style="color:#4A4A5A;text-decoration:underline;">Unsubscribe</a></p>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Round 2 is live</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 32px;">
+            <div style="display:inline-block;background:#0F2744;border:1px solid #1D428A;border-radius:8px;padding:6px 14px;margin-bottom:20px;">
+              <span style="font-size:11px;font-weight:700;color:#1DA1F2;letter-spacing:1.2px;text-transform:uppercase;">🏀 NBA Playoffs — Round 2</span>
+            </div>
+            <p style="margin:0 0 16px;font-size:24px;font-weight:800;color:#FFFFFF;line-height:1.3;">Missed Round 1?<br>Doesn't matter.</p>
+            <p style="margin:0 0 20px;font-size:15px;color:#D1D5DB;line-height:1.7;">Round 2 is live and the board is fresh. Jump in now — you're still in the running for <strong style="color:#F5A623;">$85 across the last 3 rounds</strong>.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:10px;padding:4px 16px;margin-bottom:24px;">
+              <tr>
+                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+                  <span style="font-size:13px;color:#8B95A5;">Prize pool left</span>
+                  <span style="float:right;font-size:15px;font-weight:800;color:#F5A623;">$85</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 0;border-bottom:1px solid #2A2A3A;">
+                  <span style="font-size:13px;color:#8B95A5;">Rounds remaining</span>
+                  <span style="float:right;font-size:13px;font-weight:600;color:#FFFFFF;">3 (including this one)</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 0;">
+                  <span style="font-size:13px;color:#8B95A5;">Cost to play</span>
+                  <span style="float:right;font-size:13px;font-weight:700;color:#34D399;">Free</span>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0 0 24px;font-size:14px;color:#8B95A5;line-height:1.6;">No excuses. No download. No cost. Pick OVER or UNDER on 4 props before tipoff each night. Highest score at the end of the round wins. It takes 30 seconds.</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center">
+                  <a href="${picksUrl}" style="display:inline-block;background:#1DA1F2;color:#FFFFFF;font-size:15px;font-weight:800;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.3px;">Make Tonight's Picks →</a>
+                </td>
+              </tr>
+            </table>
+            ${unsubLine}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Social wager contracts, for fun</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendRoundLaunchBlast(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  picksUrl: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildRoundLaunchBlastHtml({ ...opts, unsubscribeUrl });
+  await resend.emails.send({ from: FROM, to: opts.to, subject: "Round 2 is live 🏀", html });
+}
+
+export function buildRoundLaunchBlastPreview(): string {
+  return buildRoundLaunchBlastHtml({ displayName: "Jordan", picksUrl: "https://www.swayger.app/picks" });
+}

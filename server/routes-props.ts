@@ -10,6 +10,16 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+// ─── Picks challenge rounds ───────────────────────────────────
+// Date ranges define which prop_nights belong to each round.
+// No DB migration needed — filtering is done by night date.
+const PICK_ROUNDS: Record<number, { label: string; start: string; end: string }> = {
+  1: { label: "Round 1 — NBA First Round",       start: "2026-04-19", end: "2026-05-03" },
+  2: { label: "Round 2 — Conference Semifinals", start: "2026-05-04", end: "2026-05-19" },
+  3: { label: "Round 3 — Conference Finals",     start: "2026-05-20", end: "2026-06-01" },
+  4: { label: "Round 4 — NBA Finals",            start: "2026-06-02", end: "2026-06-25" },
+};
+
 // ─── Server-side Expo push helper ────────────────────────────
 
 async function sendExpoPush(userId: string, title: string, body: string): Promise<void> {
@@ -458,16 +468,35 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
-  // GET /api/props/leaderboard — season-long prop points leaderboard
-  app.get("/api/props/leaderboard", async (_req: Request, res: Response) => {
+  // GET /api/props/leaderboard — prop points leaderboard; ?round=1 filters to a specific round
+  app.get("/api/props/leaderboard", async (req: Request, res: Response) => {
     try {
       const supabase = getSupabase();
+      const roundParam = req.query.round ? Number(req.query.round) : null;
 
-      const { data: picks, error } = await supabase
-        .from("prop_user_picks")
-        .select("user_id, score, correct_count");
-
-      if (error) throw error;
+      let picks;
+      if (roundParam && PICK_ROUNDS[roundParam]) {
+        const { start, end } = PICK_ROUNDS[roundParam];
+        const { data: nights } = await supabase
+          .from("prop_nights")
+          .select("id")
+          .gte("date", start)
+          .lte("date", end);
+        const nightIds = (nights ?? []).map((n: { id: string }) => n.id);
+        if (nightIds.length === 0) return res.json({ ok: true, leaderboard: [], round: roundParam });
+        const { data: p, error } = await supabase
+          .from("prop_user_picks")
+          .select("user_id, score, correct_count")
+          .in("night_id", nightIds);
+        if (error) throw error;
+        picks = p;
+      } else {
+        const { data: p, error } = await supabase
+          .from("prop_user_picks")
+          .select("user_id, score, correct_count");
+        if (error) throw error;
+        picks = p;
+      }
 
       // Aggregate by user
       const userMap: Record<string, { total_score: number; total_correct: number; nights_played: number }> = {};
@@ -482,7 +511,7 @@ export function registerPropsRoutes(app: Express) {
 
       // Fetch usernames for all user IDs
       const userIds = Object.keys(userMap);
-      if (userIds.length === 0) return res.json({ ok: true, leaderboard: [] });
+      if (userIds.length === 0) return res.json({ ok: true, leaderboard: [], round: roundParam ?? null });
 
       // Use SECURITY DEFINER RPC to bypass RLS on profiles table
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -502,10 +531,10 @@ export function registerPropsRoutes(app: Express) {
           display_name: profileMap[user_id]?.display_name ?? "",
           ...stats,
         }))
-        .sort((a, b) => b.total_score - a.total_score)
+        .sort((a, b) => b.total_score - a.total_score || b.total_correct - a.total_correct)
         .slice(0, 50);
 
-      res.json({ ok: true, leaderboard });
+      res.json({ ok: true, leaderboard, round: roundParam ?? null });
     } catch (err: unknown) {
       res.status(500).json({ ok: false, error: String(err) });
     }
@@ -1126,6 +1155,199 @@ export function registerPropsRoutes(app: Express) {
       await supabase.from("prop_nights").update({ props }).eq("id", nightId);
       res.json({ ok: true });
     } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ─── Round leaderboard + winner email ─────────────────────────────────────
+
+  // Helper: build round leaderboard (reused by multiple endpoints)
+  async function getRoundLeaderboard(roundNum: number): Promise<{
+    leaderboard: Array<{ user_id: string; username: string; display_name: string; email: string; total_score: number; total_correct: number; nights_played: number }>;
+    nightsInRound: number;
+    roundLabel: string;
+    error?: string;
+  }> {
+    const roundConfig = PICK_ROUNDS[roundNum];
+    if (!roundConfig) return { leaderboard: [], nightsInRound: 0, roundLabel: "", error: `Unknown round: ${roundNum}` };
+
+    const supabase = getSupabase();
+    const { start, end } = roundConfig;
+
+    const { data: nights } = await supabase.from("prop_nights").select("id").gte("date", start).lte("date", end);
+    const nightIds = (nights ?? []).map((n: { id: string }) => n.id);
+    if (nightIds.length === 0) return { leaderboard: [], nightsInRound: 0, roundLabel: roundConfig.label };
+
+    const { data: picks, error } = await supabase.from("prop_user_picks").select("user_id, score, correct_count").in("night_id", nightIds);
+    if (error) return { leaderboard: [], nightsInRound: nightIds.length, roundLabel: roundConfig.label, error: error.message };
+
+    const userMap: Record<string, { total_score: number; total_correct: number; nights_played: number }> = {};
+    for (const p of (picks ?? [])) {
+      if (!userMap[p.user_id]) userMap[p.user_id] = { total_score: 0, total_correct: 0, nights_played: 0 };
+      userMap[p.user_id].total_score += p.score ?? 0;
+      userMap[p.user_id].total_correct += p.correct_count ?? 0;
+      userMap[p.user_id].nights_played += 1;
+    }
+
+    const userIds = Object.keys(userMap);
+    if (userIds.length === 0) return { leaderboard: [], nightsInRound: nightIds.length, roundLabel: roundConfig.label };
+
+    const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
+    type ProfileRow = { id: string; username: string; display_name?: string | null; notification_email?: string };
+    const profileMap: Record<string, { username: string; display_name: string; email: string }> = {};
+    for (const p of ((allProfiles ?? []) as ProfileRow[])) {
+      if (userIds.includes(p.id)) {
+        profileMap[p.id] = { username: p.username, display_name: p.display_name ?? "", email: p.notification_email ?? "" };
+      }
+    }
+
+    const leaderboard = Object.entries(userMap)
+      .map(([user_id, stats]) => ({
+        user_id,
+        username: profileMap[user_id]?.username ?? "—",
+        display_name: profileMap[user_id]?.display_name ?? "",
+        email: profileMap[user_id]?.email ?? "",
+        ...stats,
+      }))
+      .sort((a, b) => b.total_score - a.total_score || b.total_correct - a.total_correct);
+
+    return { leaderboard, nightsInRound: nightIds.length, roundLabel: roundConfig.label };
+  }
+
+  // GET /api/admin/props/round/:roundNum/leaderboard — standings for a specific round
+  app.get("/api/admin/props/round/:roundNum/leaderboard", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const roundNum = Number(req.params.roundNum);
+      if (!PICK_ROUNDS[roundNum]) return res.status(400).json({ ok: false, error: `Unknown round: ${roundNum}` });
+      const result = await getRoundLeaderboard(roundNum);
+      if (result.error) return res.status(500).json({ ok: false, error: result.error });
+      res.json({ ok: true, round: roundNum, round_label: result.roundLabel, nights_in_round: result.nightsInRound, leaderboard: result.leaderboard });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/send-round-winner-email — send winner email to #1 scorer of a round
+  // Body: { round: 1 }
+  app.post("/api/admin/props/send-round-winner-email", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { round } = req.body as { round?: number };
+    if (!round) return res.status(400).json({ ok: false, error: "round is required in body" });
+    if (!PICK_ROUNDS[round]) return res.status(400).json({ ok: false, error: `Unknown round: ${round}` });
+    try {
+      const result = await getRoundLeaderboard(round);
+      if (result.error) return res.status(500).json({ ok: false, error: result.error });
+      if (result.leaderboard.length === 0) return res.json({ ok: false, error: "No participants found for this round." });
+
+      const winner = result.leaderboard[0];
+      if (!winner.email) return res.status(404).json({ ok: false, error: `Winner (${winner.username}) has no email on file.` });
+
+      const { sendRoundWinnerEmail } = await import("./email.js");
+      await sendRoundWinnerEmail({
+        to: winner.email,
+        displayName: winner.display_name || winner.username,
+        userId: winner.user_id,
+        round,
+        roundLabel: result.roundLabel,
+        totalScore: winner.total_score,
+        correctCount: winner.total_correct,
+        nightsPlayed: winner.nights_played,
+        rank: 1,
+        totalPlayers: result.leaderboard.length,
+      });
+
+      res.json({
+        ok: true,
+        sent_to: winner.email,
+        winner: { username: winner.username, score: winner.total_score, correct: winner.total_correct, nights: winner.nights_played },
+        total_players: result.leaderboard.length,
+      });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // ─── Round launch (re-engagement) blast ───────────────────────────────────
+
+  // GET /admin/props/email-preview/round-launch — render Round 2 blast email HTML for preview
+  app.get("/admin/props/email-preview/round-launch", (_req: Request, res: Response) => {
+    import("./email.js").then(({ buildRoundLaunchBlastPreview }) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(buildRoundLaunchBlastPreview());
+    }).catch((err) => res.status(500).send(String(err)));
+  });
+
+  // GET /api/admin/props/blast-round-launch/dry-run — preview who receives the blast
+  app.get("/api/admin/props/blast-round-launch/dry-run", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res.json({ ok: true, total_eligible: eligible.length, recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username })) });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-round-launch/test — send one test copy
+  app.post("/api/admin/props/blast-round-launch/test", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email, name } = req.body as { email?: string; name?: string };
+    if (!email) return res.status(400).json({ ok: false, error: "email is required" });
+    try {
+      const { sendRoundLaunchBlast } = await import("./email.js");
+      await sendRoundLaunchBlast({ to: email, displayName: name || "Friend", userId: "test-preview", picksUrl: "https://www.swayger.app/picks" });
+      res.json({ ok: true, sent_to: email });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-round-launch — send Round 2 re-engagement blast to all users
+  app.post("/api/admin/props/blast-round-launch", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      return;
+    }
+    try {
+      const { sendRoundLaunchBlast } = await import("./email.js");
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendRoundLaunchBlast({
+            to: user.notification_email,
+            displayName: user.display_name || user.username,
+            userId: user.id,
+            picksUrl: "https://www.swayger.app/picks",
+          });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[round-launch-blast] failed for ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[round-launch-blast] complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+    } catch (err: unknown) {
+      console.error("[round-launch-blast] error:", err);
       res.status(500).json({ ok: false, error: String(err) });
     }
   });
