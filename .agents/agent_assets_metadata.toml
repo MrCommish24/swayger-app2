@@ -263,3 +263,9 @@ id = "6DVX1Qpwm3VTRf2vuxV4o"
 uri = "file://attached_assets/generated_images/swayger-arena-slash-wide.png"
 type = "image"
 title = "Arena Slash Wide — Full hero banner (social cover / header)"
+
+[[outputs]]
+id = "gkVH6nggTgCr-A0Zvg7IK"
+uri = "file://HANDOFF.md"
+type = "text"
+title = "Swayger — Full Project Handoff Document"
