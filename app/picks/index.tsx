@@ -405,7 +405,7 @@ function buildNightInviteLink(inviteCode: string): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return `${window.location.origin}/join?code=${inviteCode}`;
   }
-  return Linking.createURL(`/invite/${inviteCode}`);
+  return `https://www.swayger.app/join?code=${inviteCode}`;
 }
 
 function PicksChallengeCard({
