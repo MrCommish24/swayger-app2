@@ -226,6 +226,7 @@ async function fetchSGOEventMap(eventIDs: string[], nightDate?: string): Promise
       url.searchParams.set("sportID", "BASKETBALL");
       url.searchParams.set("leagueID", "NBA");
       url.searchParams.set("startsAfter", windowStart);
+      url.searchParams.set("includeResults", "true");
       if (cursor) url.searchParams.set("cursor", cursor);
 
       const res = await fetch(url.toString(), { headers: { "X-Api-Key": apiKey } });
@@ -268,6 +269,16 @@ function extractStat(playerData: unknown, statName: string): number | null {
       const p = obj["points"], r = obj["rebounds"], a = obj["assists"];
       if (typeof p !== "number" || typeof r !== "number" || typeof a !== "number") return null;
       return p + r + a;
+    }
+    if (statName === "pa" || statName === "PA") {
+      const p = obj["points"], a = obj["assists"];
+      if (typeof p !== "number" || typeof a !== "number") return null;
+      return p + a;
+    }
+    if (statName === "prb" || statName === "PRB") {
+      const p = obj["points"], r = obj["rebounds"], b = obj["blocks"];
+      if (typeof p !== "number" || typeof r !== "number" || typeof b !== "number") return null;
+      return p + r + b;
     }
     const val = obj[statName];
     return typeof val === "number" ? val : null;
