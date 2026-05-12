@@ -30,6 +30,7 @@ import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { registerPushToken } from "@/lib/notifications";
+import { identifyUser, resetUser } from "@/lib/posthog";
 
 import Colors from "@/constants/colors";
 
@@ -129,6 +130,9 @@ function RootLayoutNav() {
   useEffect(() => {
     if (session) {
       registerPushToken();
+      identifyUser(session.user.id, { email: session.user.email });
+    } else {
+      resetUser();
     }
   }, [session?.user?.id]);
 

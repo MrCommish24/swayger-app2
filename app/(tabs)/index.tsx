@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { formatDate, getAvatarColor } from "@/lib/helpers";
+import { Analytics } from "@/lib/posthog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -499,6 +500,8 @@ export default function DashboardScreen() {
   const isWeb = Platform.OS === "web";
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+
+  useFocusEffect(useCallback(() => { Analytics.dashboardViewed(); }, []));
 
   const {
     data: swaygers = [],

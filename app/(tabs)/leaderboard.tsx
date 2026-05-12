@@ -5,12 +5,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useState, useMemo, useCallback } from "react";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
 import { categoryIcon, fetchAllBalances } from "@/lib/swayger";
+import { Analytics } from "@/lib/posthog";
 import Colors from "@/constants/colors";
 
 interface SettledRow {
@@ -348,6 +349,8 @@ export default function LeaderboardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ category?: string }>();
   const [selectedCategory, setSelectedCategory] = useState(params.category || "All");
+
+  useFocusEffect(useCallback(() => { Analytics.leaderboardViewed("all"); }, []));
 
   const { data, isLoading } = useQuery<AllSettledData>({
     queryKey: ["leaderboard-all"],

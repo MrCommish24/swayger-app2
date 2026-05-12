@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -23,6 +23,7 @@ import Colors from "@/constants/colors";
 import type { Profile } from "@/types";
 import { verifyGameplaySchema } from "@/lib/verify-schema";
 import { fetchMyBalance, claimBankruptcy } from "@/lib/swayger";
+import { Analytics, resetUser } from "@/lib/posthog";
 import FeedbackSheet from "@/components/FeedbackSheet";
 
 interface SchemaCheck {
@@ -36,6 +37,8 @@ export default function ProfileScreen() {
   const isWeb = Platform.OS === "web";
   const router = useRouter();
   const { user, profile, setProfile, retryProfileFetch, isLoading, profileError, signOut } = useAuth();
+
+  useEffect(() => { Analytics.profileViewed(); }, []);
 
   const [showEditName, setShowEditName] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
@@ -498,7 +501,7 @@ export default function ProfileScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
-            onPress={signOut}
+            onPress={() => { Analytics.signedOut(); resetUser(); signOut(); }}
           >
             <Ionicons name="log-out-outline" size={20} color="#EF4444" />
             <Text style={styles.signOutText}>Sign Out</Text>

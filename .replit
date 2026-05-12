@@ -83,3 +83,4 @@ ensurePreviewReachable = "/status"
 [userenv.shared]
 EXPO_PUBLIC_APP_URL = "https://www.swayger.app"
 RESEND_FROM_EMAIL = "Swayger <noreply@swayger.app>"
+EXPO_PUBLIC_POSTHOG_KEY = "phc_r37vsKWdxVK4b4oFSPYr3a7qChnEtT2kNn8emKHAPJry"

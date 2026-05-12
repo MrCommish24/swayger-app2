@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
+import { Analytics } from "@/lib/posthog";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
 
@@ -98,7 +99,11 @@ export default function AuthScreen() {
         const { data: { session: existing } } = await supabase.auth.getSession();
         if (!existing) {
           showError(error.message);
+        } else {
+          Analytics.signedIn("otp");
         }
+      } else {
+        Analytics.signedIn("otp");
       }
     } catch {
       showError("Something went wrong. Try again.");
@@ -125,6 +130,8 @@ export default function AuthScreen() {
       });
       if (error) {
         showError(error.message);
+      } else {
+        Analytics.signedIn("password");
       }
     } catch {
       showError("Something went wrong. Try again.");

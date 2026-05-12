@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,7 +12,8 @@ import {
   Modal,
   KeyboardAvoidingView,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { Analytics } from "@/lib/posthog";
 import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -409,6 +410,10 @@ export default function SwaygerDetailScreen() {
   const isWeb = Platform.OS === "web";
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+
+  useFocusEffect(useCallback(() => {
+    if (id) Analytics.swaygerViewed(id as string, "unknown");
+  }, [id]));
 
   const [opponentPick, setOpponentPick] = useState("");
   const [opponentPickPrefilled, setOpponentPickPrefilled] = useState(false);

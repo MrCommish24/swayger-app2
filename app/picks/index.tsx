@@ -24,6 +24,8 @@ import { useAuth } from "@/lib/auth-context";
 import { getApiUrl } from "@/lib/query-client";
 import { createSwayger, fetchSwaygerInvite } from "@/lib/swayger";
 import { peekPendingInvite, storePendingInvite } from "@/lib/pending-invite";
+import { Analytics } from "@/lib/posthog";
+import { useFocusEffect } from "expo-router";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 
@@ -1039,6 +1041,8 @@ export default function PicksScreen() {
   const { hq } = useLocalSearchParams<{ hq?: string }>();
   const hqMode = hq === "1";
 
+  useEffect(() => { Analytics.picksScreenViewed(); }, []);
+
   const [pendingPicks, setPendingPicks] = useState<Record<string, "over" | "under">>({});
   const [submitted, setSubmitted] = useState(false);
   const [activeTab, setActiveTab] = useState<"picks" | "leaderboard">("picks");
@@ -1126,6 +1130,7 @@ export default function PicksScreen() {
     },
     onSuccess: async () => {
       setSubmitted(true);
+      Analytics.pickSubmitted(night?.id ?? "", Object.keys(picks).length);
       queryClient.invalidateQueries({ queryKey: ["/api/props/my-picks", night?.id, user?.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/props/leaderboard"] });
       // Check if user came from a picks challenge invite

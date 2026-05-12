@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { createSwayger, fetchMyBalance, CATEGORIES, categoryIcon } from "@/lib/swayger";
+import { Analytics } from "@/lib/posthog";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
@@ -121,6 +122,7 @@ export default function CreateSwaygerScreen() {
         showError(result.error);
         return;
       }
+      Analytics.swaygerCreated(category, stakeUnits);
       if (result.swayger && params.lockedOpponentId) {
         const updates: Record<string, unknown> = { opponent_id: params.lockedOpponentId };
         if (params.sourceSwaygerIdForEdit) {
