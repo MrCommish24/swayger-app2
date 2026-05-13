@@ -3,10 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { BLAST_EMAILS_PAUSED } from "./routes-mm-admin.js";
 
 // ─── Supabase client ─────────────────────────────────────────
+// Server uses the service role key so it can bypass RLS for admin operations
+// (scoring, leaderboard reads across all users, night management).
+// The anon key is for frontend/user-scoped access only.
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-  const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key);
 }
 
