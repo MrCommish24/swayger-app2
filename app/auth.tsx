@@ -12,12 +12,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import { Analytics } from "@/lib/posthog";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
+
+WebBrowser.maybeCompleteAuthSession();
 
 const RESEND_COOLDOWN_SECONDS = 30;
 
@@ -33,6 +37,18 @@ export default function AuthScreen() {
   const [cooldown, setCooldown] = useState(0);
   const [step, setStep] = useState<AuthStep>("enter-email");
 
+  // ── Funnel: screen viewed ──────────────────────────────────────────────────
+  useEffect(() => {
+    Analytics.authScreenViewed(Platform.OS);
+  }, []);
+
+  // ── Funnel: code screen reached ───────────────────────────────────────────
+  useEffect(() => {
+    if (step === "enter-code") {
+      Analytics.authCodeScreenViewed();
+    }
+  }, [step]);
+
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setInterval(() => {
@@ -45,12 +61,50 @@ export default function AuthScreen() {
     return Linking.createURL("auth-callback", { scheme: "swayger" });
   }, []);
 
+  const getOAuthRedirectUrl = useCallback(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      return `${window.location.origin}/auth-callback`;
+    }
+    return Linking.createURL("auth-callback", { scheme: "swayger" });
+  }, []);
+
+  async function handleGoogleSignIn() {
+    Analytics.authGoogleTapped();
+    setLoading(true);
+    try {
+      const redirectTo = getOAuthRedirectUrl();
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          skipBrowserRedirect: Platform.OS !== "web",
+        },
+      });
+
+      if (error) {
+        showError(error.message);
+        return;
+      }
+
+      if (Platform.OS !== "web" && data?.url) {
+        await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      }
+      // On web Supabase handles the full-page redirect automatically
+    } catch {
+      showError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSendCode() {
     const trimmed = email.trim().toLowerCase();
     if (!trimmed) {
       showError("Please enter your email address.");
       return;
     }
+    Analytics.authEmailSubmitted();
     setLoading(true);
     try {
       const redirectTo = getRedirectUrl();
@@ -84,6 +138,7 @@ export default function AuthScreen() {
       showError("Please enter the code from your email.");
       return;
     }
+    Analytics.authVerifyAttempted();
     setLoading(true);
     try {
       const { error } = await supabase.auth.verifyOtp({
@@ -92,12 +147,9 @@ export default function AuthScreen() {
         type: "email",
       });
       if (error) {
-        // On web, a PKCE verifier mismatch can cause verifyOtp to error even
-        // when the token is valid (e.g. the user reloaded the page after
-        // requesting the code). If a session was established anyway, suppress
-        // the error — the auth context will handle the redirect.
         const { data: { session: existing } } = await supabase.auth.getSession();
         if (!existing) {
+          Analytics.authFailed(error.message);
           showError(error.message);
         } else {
           Analytics.signedIn("otp");
@@ -129,6 +181,7 @@ export default function AuthScreen() {
         password,
       });
       if (error) {
+        Analytics.authFailed(error.message);
         showError(error.message);
       } else {
         Analytics.signedIn("password");
@@ -188,6 +241,34 @@ export default function AuthScreen() {
 
           {step === "enter-email" && (
             <View style={styles.form}>
+              {/* ── Google sign-in ── */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.googleButton,
+                  pressed && styles.googleButtonPressed,
+                  loading && styles.buttonDisabled,
+                ]}
+                onPress={handleGoogleSignIn}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={Colors.dark.text} />
+                ) : (
+                  <>
+                    <FontAwesome name="google" size={18} color="#EA4335" style={styles.googleIcon} />
+                    <Text style={styles.googleButtonText}>Continue with Google</Text>
+                  </>
+                )}
+              </Pressable>
+
+              {/* ── Divider ── */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* ── Email / OTP ── */}
               <TextInput
                 style={styles.input}
                 placeholder="Email address"
@@ -213,6 +294,13 @@ export default function AuthScreen() {
                 ) : (
                   <Text style={styles.buttonText}>SEND SIGN-IN CODE</Text>
                 )}
+              </Pressable>
+
+              <Pressable
+                style={styles.linkButton}
+                onPress={() => setStep("password-login")}
+              >
+                <Text style={styles.linkText}>Sign in with password</Text>
               </Pressable>
             </View>
           )}
@@ -502,6 +590,44 @@ const styles = StyleSheet.create({
   form: {
     width: "100%",
     gap: 16,
+  },
+  googleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: 15,
+    borderRadius: 10,
+    gap: 10,
+  },
+  googleButtonPressed: {
+    backgroundColor: Colors.dark.surfaceAlt ?? Colors.dark.surface,
+    opacity: 0.85,
+  },
+  googleIcon: {
+    marginRight: 2,
+  },
+  googleButtonText: {
+    fontFamily: "DMSans_500Medium",
+    fontSize: 16,
+    color: Colors.dark.text,
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.dark.border,
+  },
+  dividerText: {
+    fontFamily: "DMSans_400Regular",
+    fontSize: 13,
+    color: Colors.dark.textMuted,
   },
   sentContainer: {
     alignItems: "center",

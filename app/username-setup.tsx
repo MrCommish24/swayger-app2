@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { showError } from "@/lib/helpers";
 import { validateUsername } from "@/lib/helpers";
+import { Analytics } from "@/lib/posthog";
 import { Profile } from "@/types";
 import Colors from "@/constants/colors";
 import type { PendingReferral } from "@/app/mm-pick/[matchupId]";
@@ -33,6 +34,11 @@ export default function UsernameSetupScreen() {
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // ── Funnel: new user reached username setup ───────────────────────────────
+  useEffect(() => {
+    Analytics.usernameSetupViewed();
+  }, []);
 
   function handleUsernameChange(text: string) {
     const lower = text.toLowerCase().replace(/[^a-z0-9_]/g, "");
@@ -67,6 +73,11 @@ export default function UsernameSetupScreen() {
           showError(error.message);
         }
       } else if (data) {
+        // ── Funnel: signed_up — this screen only shows for brand-new users ──
+        const provider = (user.app_metadata?.provider as string) ?? "email";
+        const method = provider === "google" ? "google" : provider === "email" ? "otp" : provider;
+        Analytics.signedUp(method);
+
         setProfile(data as Profile);
         setNeedsUsername(false);
 

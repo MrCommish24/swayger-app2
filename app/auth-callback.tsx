@@ -16,6 +16,7 @@ import Colors from "@/constants/colors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { peekPendingInvite, consumePendingInvite } from "@/lib/pending-invite";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
+import { Analytics } from "@/lib/posthog";
 
 type CallbackStatus = "processing" | "success" | "error";
 
@@ -198,6 +199,11 @@ export default function AuthCallbackScreen() {
     if (__DEV__) console.log("[auth-callback] Verified session:", !!session, session?.user?.email ? "user: " + session.user.email.substring(0, 3) + "..." : "");
 
     if (session) {
+      // Track sign-in with the provider (google, email/magic-link, etc.)
+      const provider = (session.user.app_metadata?.provider as string) ?? "email";
+      const method = provider === "google" ? "google" : "magic_link";
+      Analytics.signedIn(method);
+
       setStatus("success");
       navigateHome();
     } else {
