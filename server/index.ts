@@ -207,7 +207,11 @@ function configureExpoAndLanding(app: express.Application) {
     if (req.path === "/") {
       const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
       if (fs.existsSync(webIndexPath)) {
-        return res.sendFile(webIndexPath);
+        let html = fs.readFileSync(webIndexPath, "utf-8");
+        const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
+        html = html.replace("</body>", `${privacyFooter}</body>`);
+        res.setHeader("Content-Type", "text/html");
+        return res.send(html);
       }
       return serveLandingPage({
         req,
