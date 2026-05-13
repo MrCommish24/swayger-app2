@@ -181,6 +181,11 @@ function configureExpoAndLanding(app: express.Application) {
     res.status(200).send(privacyPolicyHtml);
   });
 
+  app.get("/robots.txt", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/plain");
+    res.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
+  });
+
   registerUnsubscribeRoutes(app);
 
   log("Serving static Expo files with dynamic manifest routing");
