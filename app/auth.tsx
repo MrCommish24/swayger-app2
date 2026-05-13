@@ -74,6 +74,11 @@ export default function AuthScreen() {
     try {
       const redirectTo = getOAuthRedirectUrl();
 
+      // Temporary debug — logs which Supabase project is being hit
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+      console.log("[auth] Supabase project ref:", supabaseUrl.replace("https://", "").replace(".supabase.co", "").split(".")[0]);
+      console.log("[auth] OAuth redirectTo:", redirectTo);
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
