@@ -74,28 +74,34 @@ export default function AuthScreen() {
     try {
       const redirectTo = getOAuthRedirectUrl();
 
-      // Temporary debug — logs which Supabase project is being hit
+      // Debug — logs which Supabase project is being hit
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-      console.log("[auth] Supabase project ref:", supabaseUrl.replace("https://", "").replace(".supabase.co", "").split(".")[0]);
+      const projectRef = supabaseUrl.replace("https://", "").split(".")[0];
+      console.log("[auth] Supabase project ref:", projectRef);
       console.log("[auth] OAuth redirectTo:", redirectTo);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
-          skipBrowserRedirect: Platform.OS !== "web",
+          skipBrowserRedirect: true, // handle redirect manually on all platforms
         },
       });
+
+      console.log("[auth] signInWithOAuth result — error:", error?.message ?? "none", "url:", data?.url ? "received" : "missing");
 
       if (error) {
         showError(error.message);
         return;
       }
 
-      if (Platform.OS !== "web" && data?.url) {
-        await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (data?.url) {
+        if (Platform.OS === "web") {
+          window.location.href = data.url; // manual redirect — logs appear before this
+        } else {
+          await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        }
       }
-      // On web Supabase handles the full-page redirect automatically
     } catch {
       showError("Something went wrong. Try again.");
     } finally {
