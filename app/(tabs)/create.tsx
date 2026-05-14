@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -20,32 +20,12 @@ import { Analytics } from "@/lib/posthog";
 import { supabase } from "@/lib/supabase";
 import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
-import CreateOnboardingBanner from "@/components/CreateOnboardingBanner";
 
 const CONFIDENCE_TIERS = [
-  {
-    label: "Gut Feeling",
-    points: 10,
-    description: "Worth calling out",
-    icon: "help-circle-outline" as const,
-  },
-  {
-    label: "Pretty Sure",
-    points: 25,
-    description: "I'd stand on this",
-    icon: "checkmark-circle-outline" as const,
-  },
-  {
-    label: "No Doubt",
-    points: 50,
-    description: "Lock it in",
-    icon: "lock-closed-outline" as const,
-  },
+  { label: "Gut Feeling", points: 10, icon: "help-circle-outline" as const },
+  { label: "Pretty Sure", points: 25, icon: "checkmark-circle-outline" as const },
+  { label: "No Doubt",    points: 50, icon: "lock-closed-outline" as const },
 ];
-
-function getConfidenceTier(units: number) {
-  return CONFIDENCE_TIERS.find((t) => t.points === units) ?? null;
-}
 
 export default function CreateSwaygerScreen() {
   const router = useRouter();
@@ -53,6 +33,8 @@ export default function CreateSwaygerScreen() {
   const isWeb = Platform.OS === "web";
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const pickRef = useRef<TextInput>(null);
+
   const params = useLocalSearchParams<{
     counterTitle?: string;
     counterCategory?: string;
@@ -65,8 +47,6 @@ export default function CreateSwaygerScreen() {
     rematchTypeForEdit?: string;
     creatorPickPrefill?: string;
     openChallenge?: string;
-    // March Madness quick-create — pre-fills the form without triggering any
-    // special mode (isCounter / isOpenChallenge), so the title stays "Create Swayger"
     prefillTitle?: string;
     prefillCategory?: string;
     prefillDescription?: string;
@@ -76,15 +56,17 @@ export default function CreateSwaygerScreen() {
   const isCounter = !!params.counterTitle && !params.lockedOpponentId && !isOpenChallenge;
   const isRematch = !!params.lockedOpponentId;
 
+  const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
   const [title, setTitle] = useState(params.prefillTitle || params.counterTitle || "");
-  const [description, setDescription] = useState(params.prefillDescription || params.counterDescription || "");
   const [category, setCategory] = useState(params.prefillCategory || params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(
     params.counterStake ? Math.max(10, parseInt(params.counterStake, 10)) : 10
   );
+  const [description, setDescription] = useState(params.prefillDescription || params.counterDescription || "");
   const [stakeNote, setStakeNote] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
   const [showCustomStake, setShowCustomStake] = useState(false);
-  const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
+  const [titleTouched, setTitleTouched] = useState(!!params.prefillTitle || !!params.counterTitle);
 
   const { data: balanceData } = useQuery({
     queryKey: ["balance", user?.id],
@@ -108,9 +90,20 @@ export default function CreateSwaygerScreen() {
     }
   }, [params.prefillTitle, params.counterTitle]);
 
+  // Auto-fill title from pick if user hasn't manually touched it
+  function handlePickChange(text: string) {
+    setCreatorPick(text);
+    if (!titleTouched && text.trim().length > 0) {
+      setTitle(text.length > 50 ? text.slice(0, 50) : text);
+    }
+    if (!titleTouched && text.trim().length === 0) {
+      setTitle("");
+    }
+  }
+
   const canSubmit =
-    title.trim().length >= 2 &&
     creatorPick.trim().length > 0 &&
+    title.trim().length >= 2 &&
     stakeUnits >= 10 &&
     (balanceData == null || stakeUnits <= myBalance);
 
@@ -118,10 +111,7 @@ export default function CreateSwaygerScreen() {
     mutationFn: () =>
       createSwayger(title, category, stakeUnits, creatorPick, user!.id, description, stakeNote),
     onSuccess: async (result) => {
-      if (result.error) {
-        showError(result.error);
-        return;
-      }
+      if (result.error) { showError(result.error); return; }
       Analytics.swaygerCreated(category, stakeUnits);
       if (result.swayger && params.lockedOpponentId) {
         const updates: Record<string, unknown> = { opponent_id: params.lockedOpponentId };
@@ -133,13 +123,9 @@ export default function CreateSwaygerScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
-      setTitle("");
-      setDescription("");
-      setCategory("Sports");
-      setStakeUnits(10);
-      setShowCustomStake(false);
-      setStakeNote("");
-      setCreatorPick("");
+      setCreatorPick(""); setTitle(""); setCategory("Sports");
+      setStakeUnits(10); setDescription(""); setStakeNote("");
+      setShowDetails(false); setShowCustomStake(false); setTitleTouched(false);
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}?feedback=1`);
       } else {
@@ -150,20 +136,25 @@ export default function CreateSwaygerScreen() {
   });
 
   function handleCreate() {
-    if (!title.trim()) {
-      showError("Please enter a title.");
-      return;
-    }
-    if (!creatorPick.trim()) {
-      showError("Please enter your pick/prediction.");
-      return;
-    }
+    if (!creatorPick.trim()) { showError("Enter your take first."); return; }
+    if (!title.trim() || title.trim().length < 2) { showError("Add a bet title."); return; }
     mutation.mutate();
   }
 
+  const screenTitle = isRematch
+    ? (params.rematchTypeForEdit === "double_or_nothing" ? "Double or Nothing" : "Run it Back")
+    : isOpenChallenge ? "Same Swayger, New Opponent"
+    : isCounter ? "Counter Offer" : "New Swayger";
+
+  const screenSub = isRematch
+    ? `vs @${params.lockedOpponentUsername || "opponent"}`
+    : isCounter && params.counterOpponentUsername
+    ? `Countering @${params.counterOpponentUsername}`
+    : "Say what you think. Set the stakes.";
+
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}
+      style={[styles.container, { paddingTop: isWeb ? 67 : insets.top }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
@@ -171,150 +162,124 @@ export default function CreateSwaygerScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>
-            {isRematch
-              ? (params.rematchTypeForEdit === "double_or_nothing" ? "Double or Nothing" : "Run it Back")
-              : isOpenChallenge ? "Same Swayger, New Opponent"
-              : isCounter ? "Counter Offer" : "Create Swayger"}
-          </Text>
-          <Text style={styles.subtitle}>
-            {isRematch
-              ? `vs @${params.lockedOpponentUsername || "opponent"}`
-              : isOpenChallenge ? "Adjust any terms, then send it"
-              : isCounter && params.counterOpponentUsername
-              ? `Countering @${params.counterOpponentUsername}'s invite`
-              : "Set up a 1v1 wager"}
-          </Text>
+          <Text style={styles.screenTitle}>{screenTitle}</Text>
+          <Text style={styles.screenSub}>{screenSub}</Text>
         </View>
 
-        {isCounter && (
-          <View style={styles.counterBanner}>
-            <Ionicons name="swap-horizontal" size={16} color={Colors.dark.tint} />
-            <Text style={styles.counterBannerText}>
-              Terms pre-filled from the original invite. Adjust anything you want, then share your counter.
+        {/* Context banners */}
+        {(isCounter || isOpenChallenge) && (
+          <View style={styles.contextBanner}>
+            <Ionicons
+              name={isCounter ? "swap-horizontal" : "person-add-outline"}
+              size={15}
+              color={Colors.dark.tint}
+            />
+            <Text style={styles.contextBannerText}>
+              {isCounter
+                ? "Pre-filled from the original invite. Adjust anything."
+                : "Same terms, new opponent. Adjust before you send."}
             </Text>
           </View>
         )}
-
-        {isOpenChallenge && (
-          <View style={styles.counterBanner}>
-            <Ionicons name="person-add-outline" size={16} color={Colors.dark.tint} />
-            <Text style={styles.counterBannerText}>
-              Same terms, new opponent. Adjust anything before you send it.
-            </Text>
-          </View>
-        )}
-
         {isRematch && (
-          <View style={styles.lockedOpponentBanner}>
-            <View style={styles.lockedOpponentLeft}>
-              <Ionicons
-                name={params.rematchTypeForEdit === "double_or_nothing" ? "flame" : "refresh"}
-                size={16}
-                color={params.rematchTypeForEdit === "double_or_nothing" ? Colors.dark.accentGold : Colors.dark.tint}
-              />
-              <Text style={styles.lockedOpponentText}>
-                Rematch vs{" "}
-                <Text style={styles.lockedOpponentName}>@{params.lockedOpponentUsername}</Text>
-                {" "}— edit any terms before sending.
+          <View style={styles.contextBanner}>
+            <Ionicons
+              name={params.rematchTypeForEdit === "double_or_nothing" ? "flame" : "refresh"}
+              size={15}
+              color={params.rematchTypeForEdit === "double_or_nothing"
+                ? Colors.dark.accentGold : Colors.dark.tint}
+            />
+            <Text style={styles.contextBannerText}>
+              Rematch vs{" "}
+              <Text style={{ color: Colors.dark.text, fontWeight: "600" }}>
+                @{params.lockedOpponentUsername}
               </Text>
-            </View>
+              {" "}— edit any terms before sending.
+            </Text>
           </View>
         )}
-
-        {!isCounter && !isRematch && !isOpenChallenge ? (
-          <CreateOnboardingBanner />
-        ) : null}
 
         <View style={styles.form}>
+
+          {/* ── Field 1: Your Take (pick) ── */}
           <View>
-            <Text style={styles.label}>What's the Swayger?</Text>
+            <Text style={styles.fieldLabel}>Your take</Text>
             <TextInput
-              style={styles.input}
-              placeholder="e.g. Bills vs Chiefs Winner"
+              ref={pickRef}
+              style={styles.takeInput}
+              placeholder={"e.g. OKC wins the series in 6"}
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={creatorPick}
+              onChangeText={handlePickChange}
+              editable={!mutation.isPending}
+              maxLength={200}
+              autoFocus={!isRematch && !isCounter}
+            />
+            <Text style={styles.fieldHint}>
+              Your opponent will enter their counter-take when they accept.
+            </Text>
+          </View>
+
+          {/* ── Field 2: Bet Title ── */}
+          <View>
+            <Text style={styles.fieldLabel}>Bet title</Text>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="e.g. Thunder vs Wolves — Series"
               placeholderTextColor={Colors.dark.tabIconDefault}
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(t) => { setTitle(t); setTitleTouched(true); }}
               editable={!mutation.isPending}
               maxLength={60}
             />
           </View>
 
+          {/* ── Field 3: Category chips ── */}
           <View>
-            <Text style={styles.label}>Description (optional)</Text>
-            <TextInput
-              style={[styles.input, styles.inputMultiline]}
-              placeholder="Add context or rules..."
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={description}
-              onChangeText={setDescription}
-              editable={!mutation.isPending}
-              maxLength={280}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
-
-          <View>
-            <Text style={styles.label}>Category</Text>
-            {params.prefillCategory ? (
-              <View style={styles.categoryLocked}>
-                <Ionicons
-                  name={categoryIcon(category) as keyof typeof Ionicons.glyphMap}
-                  size={16}
-                  color={Colors.dark.tint}
-                />
-                <Text style={styles.categoryLockedText}>{category}</Text>
-                <Ionicons name="lock-closed-outline" size={13} color={Colors.dark.tabIconDefault} />
-              </View>
-            ) : (
-              <View style={styles.categoryGrid}>
-                {CATEGORIES.map((cat) => (
+            <Text style={styles.fieldLabel}>Category</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {CATEGORIES.map((cat) => {
+                const active = category === cat.value;
+                return (
                   <Pressable
                     key={cat.value}
-                    style={[
-                      styles.categoryOption,
-                      category === cat.value && styles.categoryOptionActive,
-                    ]}
+                    style={[styles.chip, active && styles.chipActive]}
                     onPress={() => setCategory(cat.value)}
+                    disabled={!!params.prefillCategory || mutation.isPending}
                   >
                     <Ionicons
                       name={cat.icon}
-                      size={18}
-                      color={
-                        category === cat.value
-                          ? Colors.dark.tint
-                          : Colors.dark.textSecondary
-                      }
+                      size={15}
+                      color={active ? Colors.dark.tint : Colors.dark.textSecondary}
                     />
-                    <Text
-                      style={[
-                        styles.categoryLabel,
-                        category === cat.value && styles.categoryLabelActive,
-                      ]}
-                    >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
                       {cat.value}
                     </Text>
                   </Pressable>
-                ))}
-              </View>
-            )}
+                );
+              })}
+            </ScrollView>
           </View>
 
+          {/* ── Field 4: Confidence / stake ── */}
           <View>
             <View style={styles.stakeLabelRow}>
-              <Text style={styles.label}>How sure are you?</Text>
+              <Text style={styles.fieldLabel}>Confidence</Text>
               {balanceData != null && (
                 <View style={styles.balancePill}>
-                  <Ionicons name="wallet-outline" size={12} color={Colors.dark.accentGold} />
-                  <Text style={styles.balancePillText}>{myBalance.toLocaleString()} SP available</Text>
+                  <Ionicons name="wallet-outline" size={11} color={Colors.dark.accentGold} />
+                  <Text style={styles.balancePillText}>{myBalance.toLocaleString()} SP</Text>
                 </View>
               )}
             </View>
 
-            {/* Confidence tier cards */}
-            <View style={styles.tierList}>
+            <View style={styles.tierRow}>
               {CONFIDENCE_TIERS.map((tier) => {
                 const isSelected = stakeUnits === tier.points && !showCustomStake;
                 const insufficient = balanceData != null && tier.points > myBalance;
@@ -322,33 +287,20 @@ export default function CreateSwaygerScreen() {
                   <Pressable
                     key={tier.label}
                     style={[
-                      styles.tierCard,
-                      isSelected && styles.tierCardSelected,
-                      insufficient && styles.tierCardDisabled,
+                      styles.tierChip,
+                      isSelected && styles.tierChipSelected,
+                      insufficient && styles.tierChipDisabled,
                     ]}
                     onPress={() => {
-                      if (!insufficient) {
-                        setStakeUnits(tier.points);
-                        setShowCustomStake(false);
-                      }
+                      if (!insufficient) { setStakeUnits(tier.points); setShowCustomStake(false); }
                     }}
                     disabled={insufficient || mutation.isPending}
                   >
-                    <View style={styles.tierLeft}>
-                      <Ionicons
-                        name={tier.icon}
-                        size={20}
-                        color={isSelected ? Colors.dark.tint : Colors.dark.textSecondary}
-                      />
-                      <View>
-                        <Text style={[styles.tierLabel, isSelected && styles.tierLabelSelected]}>
-                          {tier.label}
-                        </Text>
-                        <Text style={styles.tierDescription}>{tier.description}</Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.tierPoints, isSelected && styles.tierPointsSelected]}>
+                    <Text style={[styles.tierChipSP, isSelected && styles.tierChipSPSelected]}>
                       {tier.points} SP
+                    </Text>
+                    <Text style={[styles.tierChipLabel, isSelected && styles.tierChipLabelSelected]}>
+                      {tier.label}
                     </Text>
                   </Pressable>
                 );
@@ -356,92 +308,93 @@ export default function CreateSwaygerScreen() {
             </View>
 
             {balanceData != null && stakeUnits > myBalance && (
-              <Text style={styles.stakeError}>
-                Not enough SP — you have {myBalance.toLocaleString()}
-              </Text>
+              <Text style={styles.stakeError}>Not enough SP — you have {myBalance.toLocaleString()}</Text>
             )}
 
-            {/* Custom amount escape hatch */}
             {!showCustomStake ? (
-              <Pressable
-                style={styles.customToggle}
-                onPress={() => setShowCustomStake(true)}
-              >
-                <Ionicons name="create-outline" size={13} color={Colors.dark.tabIconDefault} />
-                <Text style={styles.customToggleText}>Enter custom amount</Text>
+              <Pressable style={styles.customToggle} onPress={() => setShowCustomStake(true)}>
+                <Ionicons name="create-outline" size={12} color={Colors.dark.tabIconDefault} />
+                <Text style={styles.customToggleText}>Custom amount</Text>
               </Pressable>
             ) : (
-              <View style={styles.customSection}>
-                <View style={styles.customInputRow}>
-                  <TextInput
-                    style={styles.customInput}
-                    placeholder="Min 10 SP"
-                    placeholderTextColor={Colors.dark.tabIconDefault}
-                    keyboardType="numeric"
-                    value={stakeUnits > 0 ? String(stakeUnits) : ""}
-                    onChangeText={(v) => {
-                      const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
-                      if (!isNaN(n)) {
-                        setStakeUnits(
-                          balanceData != null
-                            ? Math.min(myBalance, Math.max(10, n))
-                            : Math.max(10, n)
-                        );
-                      } else if (v === "") {
-                        setStakeUnits(10);
-                      }
-                    }}
-                    editable={!mutation.isPending}
-                    maxLength={6}
-                  />
-                  <Text style={styles.customSPLabel}>SP</Text>
-                  <Pressable
-                    onPress={() => { setShowCustomStake(false); setStakeUnits(10); }}
-                    style={styles.customClear}
-                  >
-                    <Text style={styles.customClearText}>Use tiers</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.hint}>Min: 10 SP</Text>
+              <View style={styles.customRow}>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="10+"
+                  placeholderTextColor={Colors.dark.tabIconDefault}
+                  keyboardType="numeric"
+                  value={stakeUnits > 0 ? String(stakeUnits) : ""}
+                  onChangeText={(v) => {
+                    const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+                    if (!isNaN(n)) {
+                      setStakeUnits(balanceData != null
+                        ? Math.min(myBalance, Math.max(10, n))
+                        : Math.max(10, n));
+                    } else if (v === "") setStakeUnits(10);
+                  }}
+                  editable={!mutation.isPending}
+                  maxLength={6}
+                />
+                <Text style={styles.customSPLabel}>SP</Text>
+                <Pressable onPress={() => { setShowCustomStake(false); setStakeUnits(10); }}>
+                  <Text style={styles.customClear}>Use tiers</Text>
+                </Pressable>
               </View>
             )}
           </View>
 
-          <View>
-            <Text style={styles.label}>Stake Note (optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder='e.g. "bragging rights" or "pizza"'
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={stakeNote}
-              onChangeText={setStakeNote}
-              editable={!mutation.isPending}
-              maxLength={80}
+          {/* ── Optional details ── */}
+          <Pressable
+            style={styles.detailsToggle}
+            onPress={() => setShowDetails((v) => !v)}
+          >
+            <Ionicons
+              name={showDetails ? "chevron-up" : "chevron-down"}
+              size={14}
+              color={Colors.dark.tabIconDefault}
             />
-            <Text style={styles.hint}>Add social flavor — what's on the line beyond points.</Text>
-          </View>
-
-          <View>
-            <Text style={styles.label}>Your Pick</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Bills win by 7+"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={creatorPick}
-              onChangeText={setCreatorPick}
-              editable={!mutation.isPending}
-              maxLength={200}
-            />
-            <Text style={styles.hint}>
-              Your opponent will set their pick when they accept.
+            <Text style={styles.detailsToggleText}>
+              {showDetails ? "Hide details" : "Add details (optional)"}
             </Text>
-          </View>
+          </Pressable>
 
+          {showDetails && (
+            <View style={styles.detailsSection}>
+              <View>
+                <Text style={styles.fieldLabel}>Description</Text>
+                <TextInput
+                  style={[styles.titleInput, styles.multiline]}
+                  placeholder="Add context or rules..."
+                  placeholderTextColor={Colors.dark.tabIconDefault}
+                  value={description}
+                  onChangeText={setDescription}
+                  editable={!mutation.isPending}
+                  maxLength={280}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+              <View>
+                <Text style={styles.fieldLabel}>What's at stake</Text>
+                <TextInput
+                  style={styles.titleInput}
+                  placeholder='e.g. "bragging rights" or "dinner"'
+                  placeholderTextColor={Colors.dark.tabIconDefault}
+                  value={stakeNote}
+                  onChangeText={setStakeNote}
+                  editable={!mutation.isPending}
+                  maxLength={80}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ── Create button ── */}
           <Pressable
             style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              (mutation.isPending || !canSubmit) && styles.buttonDisabled,
+              styles.createBtn,
+              pressed && canSubmit && styles.createBtnPressed,
+              (!canSubmit || mutation.isPending) && styles.createBtnDisabled,
             ]}
             onPress={handleCreate}
             disabled={mutation.isPending || !canSubmit}
@@ -450,11 +403,12 @@ export default function CreateSwaygerScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Ionicons name="flash" size={20} color="#FFFFFF" />
-                <Text style={styles.buttonText}>Create Swayger</Text>
+                <Ionicons name="flash" size={19} color="#FFFFFF" />
+                <Text style={styles.createBtnText}>Create Swayger</Text>
               </>
             )}
           </Pressable>
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -469,238 +423,132 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 120,
   },
+
+  // Header
   header: {
     paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingTop: 20,
+    paddingBottom: 12,
     gap: 4,
   },
-  title: {
+  screenTitle: {
     fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 32,
+    fontSize: 30,
     color: Colors.dark.text,
     textTransform: "uppercase" as const,
     letterSpacing: 1,
   },
-  subtitle: {
+  screenSub: {
     fontFamily: "DMSans_400Regular",
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.dark.textSecondary,
   },
-  counterBanner: {
+
+  // Context banners
+  contextBanner: {
     flexDirection: "row" as const,
     alignItems: "flex-start" as const,
     gap: 8,
-    backgroundColor: `${Colors.dark.tint}15`,
+    backgroundColor: `${Colors.dark.tint}12`,
     borderWidth: 1,
-    borderColor: `${Colors.dark.tint}40`,
+    borderColor: `${Colors.dark.tint}35`,
     borderRadius: 10,
-    padding: 12,
+    padding: 11,
     marginHorizontal: 24,
     marginBottom: 4,
   },
-  counterBannerText: {
+  contextBannerText: {
     flex: 1,
     fontSize: 13,
     color: Colors.dark.tint,
     lineHeight: 18,
   },
-  lockedOpponentBanner: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderRadius: 10,
-    padding: 12,
-    marginHorizontal: 24,
-    marginBottom: 4,
-  },
-  lockedOpponentLeft: {
-    flex: 1,
-    flexDirection: "row" as const,
-    alignItems: "flex-start" as const,
-    gap: 8,
-  },
-  lockedOpponentText: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.dark.textSecondary,
-    lineHeight: 18,
-  },
-  lockedOpponentName: {
-    fontWeight: "600" as const,
-    color: Colors.dark.text,
-  },
+
+  // Form
   form: {
     paddingHorizontal: 24,
-    gap: 24,
-    marginTop: 8,
+    paddingTop: 12,
+    gap: 22,
   },
-  label: {
+
+  // Field labels
+  fieldLabel: {
     fontFamily: "DMSans_500Medium",
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.dark.textSecondary,
-    marginBottom: 8,
     textTransform: "uppercase" as const,
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
+    marginBottom: 8,
   },
-  hint: {
+  fieldHint: {
     fontSize: 12,
     color: Colors.dark.tabIconDefault,
-    marginTop: 6,
+    marginTop: 5,
+    lineHeight: 16,
   },
-  input: {
+
+  // Take (pick) input — hero field
+  takeInput: {
     fontFamily: "DMSans_400Regular",
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    fontSize: 18,
     color: Colors.dark.text,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.tint,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    minHeight: 56,
   },
-  inputMultiline: {
-    minHeight: 80,
-    textAlignVertical: "top",
-  },
-  categoryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  categoryOption: {
-    flexBasis: "46%",
-    flexGrow: 1,
+
+  // Title input — secondary
+  titleInput: {
+    fontFamily: "DMSans_400Regular",
+    fontSize: 15,
+    color: Colors.dark.text,
     backgroundColor: Colors.dark.surface,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    gap: 6,
-    flexDirection: "row",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
-  categoryOptionActive: {
-    backgroundColor: "rgba(67, 97, 238, 0.08)",
+  multiline: {
+    minHeight: 76,
+    textAlignVertical: "top" as const,
+  },
+
+  // Category chips
+  chipRow: {
+    flexDirection: "row" as const,
+    gap: 8,
+    paddingRight: 8,
+  },
+  chip: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  chipActive: {
+    backgroundColor: `${Colors.dark.tint}15`,
     borderColor: Colors.dark.tint,
   },
-  categoryLabel: {
+  chipText: {
     fontSize: 13,
     color: Colors.dark.textSecondary,
     fontWeight: "500" as const,
   },
-  categoryLabelActive: {
+  chipTextActive: {
     color: Colors.dark.tint,
   },
-  categoryLocked: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(67, 97, 238, 0.08)",
-    borderWidth: 1,
-    borderColor: Colors.dark.tint,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    alignSelf: "flex-start" as const,
-  },
-  categoryLockedText: {
-    fontSize: 14,
-    fontWeight: "600" as const,
-    color: Colors.dark.tint,
-  },
-  tierList: {
-    gap: 10,
-  },
-  tierCard: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1.5,
-    borderColor: Colors.dark.border,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  tierCardSelected: {
-    borderColor: Colors.dark.tint,
-    backgroundColor: "rgba(67, 97, 238, 0.08)",
-  },
-  tierCardDisabled: {
-    opacity: 0.4,
-  },
-  tierLeft: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 12,
-  },
-  tierLabel: {
-    fontFamily: "DMSans_500Medium",
-    fontSize: 15,
-    color: Colors.dark.text,
-  },
-  tierLabelSelected: {
-    color: Colors.dark.tint,
-  },
-  tierDescription: {
-    fontSize: 12,
-    color: Colors.dark.tabIconDefault,
-    marginTop: 1,
-  },
-  tierPoints: {
-    fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 19,
-    color: Colors.dark.textSecondary,
-  },
-  tierPointsSelected: {
-    color: Colors.dark.tint,
-  },
-  customToggle: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 5,
-    marginTop: 12,
-    alignSelf: "flex-start" as const,
-  },
-  customToggleText: {
-    fontSize: 12,
-    color: Colors.dark.tabIconDefault,
-  },
-  customSection: {
-    marginTop: 12,
-  },
-  customInputRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 10,
-  },
-  customInput: {
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: Colors.dark.text,
-    minWidth: 90,
-  },
-  customSPLabel: {
-    fontSize: 14,
-    color: Colors.dark.textSecondary,
-    fontWeight: "600" as const,
-  },
-  customClear: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  customClearText: {
-    fontSize: 12,
-    color: Colors.dark.tabIconDefault,
-  },
+
+  // Stake / confidence
   stakeLabelRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
@@ -711,44 +559,144 @@ const styles = StyleSheet.create({
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 4,
-    backgroundColor: `${Colors.dark.accentGold}18`,
-    borderWidth: 1,
-    borderColor: `${Colors.dark.accentGold}40`,
+    backgroundColor: `${Colors.dark.accentGold}15`,
     borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   balancePillText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
+    fontSize: 11,
     color: Colors.dark.accentGold,
+    fontWeight: "600" as const,
   },
+
+  // Compact tier chips
+  tierRow: {
+    flexDirection: "row" as const,
+    gap: 10,
+  },
+  tierChip: {
+    flex: 1,
+    alignItems: "center" as const,
+    gap: 3,
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+  },
+  tierChipSelected: {
+    borderColor: Colors.dark.tint,
+    backgroundColor: `${Colors.dark.tint}12`,
+  },
+  tierChipDisabled: {
+    opacity: 0.35,
+  },
+  tierChipSP: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 20,
+    color: Colors.dark.textSecondary,
+  },
+  tierChipSPSelected: {
+    color: Colors.dark.tint,
+  },
+  tierChipLabel: {
+    fontSize: 11,
+    color: Colors.dark.tabIconDefault,
+    fontWeight: "500" as const,
+    textAlign: "center" as const,
+  },
+  tierChipLabelSelected: {
+    color: Colors.dark.tint,
+  },
+
   stakeError: {
     fontSize: 12,
-    color: "#EF4444",
+    color: Colors.dark.danger,
     marginTop: 6,
   },
-  button: {
-    backgroundColor: Colors.dark.accent,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+
+  // Custom stake
+  customToggle: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+    marginTop: 10,
+    alignSelf: "flex-start" as const,
+  },
+  customToggleText: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+  },
+  customRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 10,
+    marginTop: 10,
+  },
+  customInput: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: Colors.dark.text,
+    width: 80,
+    textAlign: "center" as const,
+  },
+  customSPLabel: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    fontWeight: "600" as const,
+  },
+  customClear: {
+    fontSize: 12,
+    color: Colors.dark.tabIconDefault,
+    textDecorationLine: "underline" as const,
+  },
+
+  // Optional details
+  detailsToggle: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+    alignSelf: "flex-start" as const,
+    marginTop: -6,
+  },
+  detailsToggleText: {
+    fontSize: 13,
+    color: Colors.dark.tabIconDefault,
+  },
+  detailsSection: {
+    gap: 18,
+    marginTop: -4,
+  },
+
+  // Create button
+  createBtn: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     gap: 8,
+    backgroundColor: Colors.dark.tint,
+    borderRadius: 14,
     paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 8,
+    marginTop: 4,
   },
-  buttonPressed: {
-    opacity: 0.8,
+  createBtnPressed: {
+    opacity: 0.85,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  createBtnDisabled: {
+    opacity: 0.45,
   },
-  buttonText: {
+  createBtnText: {
     fontFamily: "BarlowCondensed_800ExtraBold",
-    color: "#FFFFFF",
     fontSize: 18,
-    letterSpacing: 1.5,
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
     textTransform: "uppercase" as const,
   },
 });
