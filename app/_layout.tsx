@@ -30,7 +30,7 @@ import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { registerPushToken } from "@/lib/notifications";
-import { identifyUser, resetUser } from "@/lib/posthog";
+import { identifyUser, resetUser, capture } from "@/lib/posthog";
 
 import Colors from "@/constants/colors";
 
@@ -151,6 +151,16 @@ function RootLayoutNav() {
       });
     }
   }, [profile?.username]);
+
+  // Fire $pageview on every route change on web so PostHog DAU/WAU counts work.
+  // The React Native SDK never auto-fires $pageview, but PostHog's built-in
+  // DAU/WAU insights count $pageview by default.
+  const pathname = usePathname();
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      capture("$pageview", { $current_url: window.location.href });
+    }
+  }, [pathname]);
 
   return (
     <>
