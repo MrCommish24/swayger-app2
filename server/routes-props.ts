@@ -336,26 +336,47 @@ interface UserPickEntry {
 
 export function registerPropsRoutes(app: Express) {
 
-  // GET /api/props/tonight — returns tonight's open or locked prop night.
-  // Searches today AND yesterday in UTC to handle games that run past UTC midnight
-  // while still being "tonight" in US Eastern time (NBA home timezone).
+  // GET /api/props/tonight — returns the active prop night for the picks screen.
+  // Priority 1: any open or locked night (upcoming or today) — ordered soonest first
+  // Priority 2: most recently resolved night from today or yesterday (show results)
   app.get("/api/props/tonight", async (_req: Request, res: Response) => {
     try {
       const supabase = getSupabase();
+
+      // Step 1: find the next open or locked night within a 3-day window
+      // (yesterday through tomorrow+1) — excludes ancient stale "open" nights
+      // while still surfacing picks that were scheduled for tomorrow
       const todayUTC = new Date().toISOString().slice(0, 10);
       const yesterdayUTC = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const tomorrowUTC = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const dayAfterTomorrowUTC = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      const { data, error } = await supabase
+      const { data: upcoming, error: upcomingErr } = await supabase
+        .from("prop_nights")
+        .select("*")
+        .in("status", ["open", "locked"])
+        .gte("date", yesterdayUTC)
+        .lte("date", dayAfterTomorrowUTC)
+        .order("date", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (upcomingErr) throw upcomingErr;
+      if (upcoming) return res.json({ ok: true, night: upcoming });
+
+      // Step 2: fall back to the most recently resolved night (today/yesterday)
+      // so the results + share card remain visible after a night wraps up
+      const { data: recent, error: recentErr } = await supabase
         .from("prop_nights")
         .select("*")
         .in("date", [todayUTC, yesterdayUTC])
-        .in("status", ["open", "locked", "resolved"])
+        .eq("status", "resolved")
         .order("date", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (error) throw error;
-      res.json({ ok: true, night: data ?? null });
+      if (recentErr) throw recentErr;
+      res.json({ ok: true, night: recent ?? null });
     } catch (err: unknown) {
       res.status(500).json({ ok: false, error: String(err) });
     }
