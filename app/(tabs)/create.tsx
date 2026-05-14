@@ -22,9 +22,9 @@ import { showError } from "@/lib/helpers";
 import Colors from "@/constants/colors";
 
 const CONFIDENCE_TIERS = [
-  { label: "Gut Feeling", points: 10, icon: "help-circle-outline" as const },
-  { label: "Pretty Sure", points: 25, icon: "checkmark-circle-outline" as const },
-  { label: "No Doubt",    points: 50, icon: "lock-closed-outline" as const },
+  { label: "Gut Feeling", points: 10,  icon: "help-circle-outline" as const,    tagline: "just a hunch" },
+  { label: "Pretty Sure", points: 25, icon: "checkmark-circle-outline" as const, tagline: "solid take" },
+  { label: "No Doubt",    points: 50, icon: "lock-closed-outline" as const,      tagline: "certified lock" },
 ];
 
 export default function CreateSwaygerScreen() {
@@ -64,7 +64,7 @@ export default function CreateSwaygerScreen() {
   );
   const [description, setDescription] = useState(params.prefillDescription || params.counterDescription || "");
   const [stakeNote, setStakeNote] = useState("");
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
   const [showCustomStake, setShowCustomStake] = useState(false);
   const [titleTouched, setTitleTouched] = useState(!!params.prefillTitle || !!params.counterTitle);
 
@@ -125,7 +125,7 @@ export default function CreateSwaygerScreen() {
       queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
       setCreatorPick(""); setTitle(""); setCategory("Sports");
       setStakeUnits(10); setDescription(""); setStakeNote("");
-      setShowDetails(false); setShowCustomStake(false); setTitleTouched(false);
+      setShowDescription(false); setShowCustomStake(false); setTitleTouched(false);
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}?feedback=1`);
       } else {
@@ -296,11 +296,19 @@ export default function CreateSwaygerScreen() {
                     }}
                     disabled={insufficient || mutation.isPending}
                   >
+                    <Ionicons
+                      name={tier.icon}
+                      size={18}
+                      color={isSelected ? Colors.dark.tint : Colors.dark.tabIconDefault}
+                    />
                     <Text style={[styles.tierChipSP, isSelected && styles.tierChipSPSelected]}>
                       {tier.points} SP
                     </Text>
                     <Text style={[styles.tierChipLabel, isSelected && styles.tierChipLabelSelected]}>
                       {tier.label}
+                    </Text>
+                    <Text style={[styles.tierChipTagline, isSelected && styles.tierChipTaglineSelected]}>
+                      {tier.tagline}
                     </Text>
                   </Pressable>
                 );
@@ -343,50 +351,48 @@ export default function CreateSwaygerScreen() {
             )}
           </View>
 
-          {/* ── Optional details ── */}
+          {/* ── What's at stake (always visible) ── */}
+          <View>
+            <Text style={styles.fieldLabel}>What's at stake</Text>
+            <TextInput
+              style={styles.titleInput}
+              placeholder="dinner? bragging rights? loser buys drinks?"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={stakeNote}
+              onChangeText={setStakeNote}
+              editable={!mutation.isPending}
+              maxLength={80}
+            />
+            <Text style={styles.fieldHint}>Add social flavor — what's really on the line?</Text>
+          </View>
+
+          {/* ── Add description (optional, collapsed) ── */}
           <Pressable
             style={styles.detailsToggle}
-            onPress={() => setShowDetails((v) => !v)}
+            onPress={() => setShowDescription((v) => !v)}
           >
             <Ionicons
-              name={showDetails ? "chevron-up" : "chevron-down"}
-              size={14}
+              name={showDescription ? "chevron-up" : "chevron-down"}
+              size={13}
               color={Colors.dark.tabIconDefault}
             />
             <Text style={styles.detailsToggleText}>
-              {showDetails ? "Hide details" : "Add details (optional)"}
+              {showDescription ? "Hide description" : "Add description"}
             </Text>
           </Pressable>
 
-          {showDetails && (
-            <View style={styles.detailsSection}>
-              <View>
-                <Text style={styles.fieldLabel}>Description</Text>
-                <TextInput
-                  style={[styles.titleInput, styles.multiline]}
-                  placeholder="Add context or rules..."
-                  placeholderTextColor={Colors.dark.tabIconDefault}
-                  value={description}
-                  onChangeText={setDescription}
-                  editable={!mutation.isPending}
-                  maxLength={280}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-              <View>
-                <Text style={styles.fieldLabel}>What's at stake</Text>
-                <TextInput
-                  style={styles.titleInput}
-                  placeholder='e.g. "bragging rights" or "dinner"'
-                  placeholderTextColor={Colors.dark.tabIconDefault}
-                  value={stakeNote}
-                  onChangeText={setStakeNote}
-                  editable={!mutation.isPending}
-                  maxLength={80}
-                />
-              </View>
-            </View>
+          {showDescription && (
+            <TextInput
+              style={[styles.titleInput, styles.multiline]}
+              placeholder="Add context or rules..."
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={description}
+              onChangeText={setDescription}
+              editable={!mutation.isPending}
+              maxLength={280}
+              multiline
+              numberOfLines={3}
+            />
           )}
 
           {/* ── Create button ── */}
@@ -570,7 +576,7 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
 
-  // Compact tier chips
+  // Confidence tier chips
   tierRow: {
     flexDirection: "row" as const,
     gap: 10,
@@ -578,12 +584,12 @@ const styles = StyleSheet.create({
   tierChip: {
     flex: 1,
     alignItems: "center" as const,
-    gap: 3,
+    gap: 4,
     backgroundColor: Colors.dark.surface,
     borderWidth: 1.5,
     borderColor: Colors.dark.border,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 6,
   },
   tierChipSelected: {
@@ -597,6 +603,7 @@ const styles = StyleSheet.create({
     fontFamily: "BarlowCondensed_800ExtraBold",
     fontSize: 20,
     color: Colors.dark.textSecondary,
+    marginTop: 2,
   },
   tierChipSPSelected: {
     color: Colors.dark.tint,
@@ -604,11 +611,21 @@ const styles = StyleSheet.create({
   tierChipLabel: {
     fontSize: 11,
     color: Colors.dark.tabIconDefault,
-    fontWeight: "500" as const,
+    fontWeight: "600" as const,
     textAlign: "center" as const,
   },
   tierChipLabelSelected: {
     color: Colors.dark.tint,
+  },
+  tierChipTagline: {
+    fontSize: 10,
+    color: Colors.dark.textMuted ?? Colors.dark.tabIconDefault,
+    textAlign: "center" as const,
+    fontStyle: "italic" as const,
+  },
+  tierChipTaglineSelected: {
+    color: `${Colors.dark.tint}99`,
+    fontStyle: "italic" as const,
   },
 
   stakeError: {
