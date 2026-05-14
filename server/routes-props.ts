@@ -622,6 +622,68 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // POST /api/admin/props/manual-night — create a prediction night with free-text yes/no questions
+  // Body: { date: "YYYY-MM-DD", lock_time: ISO string, questions: string[] }
+  app.post("/api/admin/props/manual-night", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const { date, lock_time, questions } = req.body as {
+        date: string;
+        lock_time: string;
+        questions: string[];
+      };
+
+      if (!date || !lock_time || !Array.isArray(questions) || questions.length === 0) {
+        return res.status(400).json({ ok: false, error: "date, lock_time, questions[] required" });
+      }
+
+      const props = questions.map((q, i) => ({
+        id: `prop_${i + 1}`,
+        source: "manual",
+        stat: "yn",
+        stat_label: "Prediction",
+        player_name: q.trim(),
+        player_id: "manual",
+        team: "",
+        line: 0.5,
+        game: "",
+        event_id: "manual",
+        odd_id: `manual_${i + 1}`,
+        status: "open",
+        result: null,
+      }));
+
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("prop_nights")
+        .insert({ date, lock_time, props, status: "open" })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      res.json({ ok: true, id: data.id, props });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // GET /api/admin/props/open-nights — list open/locked nights with their props (for admin resolve UI)
+  app.get("/api/admin/props/open-nights", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("prop_nights")
+        .select("id, date, lock_time, status, props")
+        .in("status", ["open", "locked"])
+        .order("date", { ascending: true });
+      if (error) throw error;
+      res.json({ ok: true, nights: data ?? [] });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // GET /api/admin/props/hq-challenge-link — returns the shareable HQ challenge URL for tonight (or a specific night)
   app.get("/api/admin/props/hq-challenge-link", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;

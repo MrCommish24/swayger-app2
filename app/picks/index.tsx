@@ -81,7 +81,12 @@ function statIcon(stat: string): keyof typeof Ionicons.glyphMap {
   if (stat === "points") return "basketball-outline";
   if (stat === "rebounds") return "sync-outline";
   if (stat === "assists") return "git-network-outline";
+  if (stat === "yn") return "help-circle-outline";
   return "stats-chart-outline";
+}
+
+function isManualProp(prop: PropDef): boolean {
+  return prop.stat === "yn";
 }
 
 function formatLockTime(iso: string): string {
@@ -125,13 +130,24 @@ function buildShareText(
     if (prop.status === "voided") continue;
     const choice = picksMap[prop.id];
     if (!choice) continue;
-    const emoji = pickEmoji(choice);
-    const label = `${prop.player_name} ${choice.toUpperCase()} ${prop.line} ${prop.stat_label.toLowerCase()}`;
-    if (resolved && prop.result) {
-      const correct = prop.result === choice;
-      lines.push(`${emoji} ${label} ${correct ? "✓" : "✗"}`);
+    const manual = isManualProp(prop);
+    if (manual) {
+      const picked = choice === "over" ? "YES" : "NO";
+      if (resolved && prop.result) {
+        const correct = prop.result === choice;
+        lines.push(`${correct ? "✅" : "❌"} ${prop.player_name} → ${picked}`);
+      } else {
+        lines.push(`🤔 ${prop.player_name} → ${picked}`);
+      }
     } else {
-      lines.push(`${emoji} ${label}`);
+      const emoji = pickEmoji(choice);
+      const label = `${prop.player_name} ${choice.toUpperCase()} ${prop.line} ${prop.stat_label.toLowerCase()}`;
+      if (resolved && prop.result) {
+        const correct = prop.result === choice;
+        lines.push(`${emoji} ${label} ${correct ? "✓" : "✗"}`);
+      } else {
+        lines.push(`${emoji} ${label}`);
+      }
     }
   }
 
@@ -894,12 +910,14 @@ function PropCard({
     return styles.pickBtnText;
   }
 
+  const manual = isManualProp(prop);
+
   return (
     <View style={[styles.propCard, voided && styles.propCardVoided]}>
       <View style={styles.propCardHeader}>
         <View style={styles.propStatBadge}>
           <Ionicons name={statIcon(prop.stat)} size={12} color={NBA_GOLD} />
-          <Text style={styles.propStatLabel}>{prop.stat_label}</Text>
+          <Text style={styles.propStatLabel}>{manual ? "PREDICTION" : prop.stat_label}</Text>
         </View>
         {voided && (
           <View style={styles.voidedBadge}>
@@ -908,13 +926,19 @@ function PropCard({
         )}
       </View>
 
-      <Text style={styles.propPlayerName}>{prop.player_name}</Text>
-      <Text style={styles.propGame} numberOfLines={1}>{prop.game}</Text>
+      <Text style={[styles.propPlayerName, manual && styles.propQuestionText]}>
+        {prop.player_name}
+      </Text>
 
-      <View style={styles.lineRow}>
-        <Text style={styles.lineLabel}>O/U</Text>
-        <Text style={styles.lineValue}>{prop.line}</Text>
-      </View>
+      {!manual && (
+        <>
+          <Text style={styles.propGame} numberOfLines={1}>{prop.game}</Text>
+          <View style={styles.lineRow}>
+            <Text style={styles.lineLabel}>O/U</Text>
+            <Text style={styles.lineValue}>{prop.line}</Text>
+          </View>
+        </>
+      )}
 
       {!voided && (
         <View style={styles.pickRow}>
@@ -929,7 +953,7 @@ function PropCard({
             {showResult && prop.result !== "over" && myPick === "over" && (
               <Ionicons name="close" size={12} color={Colors.dark.danger} />
             )}
-            <Text style={getTextStyle("over")}>Over</Text>
+            <Text style={getTextStyle("over")}>{manual ? "YES" : "Over"}</Text>
           </Pressable>
           <Pressable
             style={getOverStyle("under")}
@@ -942,7 +966,7 @@ function PropCard({
             {showResult && prop.result !== "under" && myPick === "under" && (
               <Ionicons name="close" size={12} color={Colors.dark.danger} />
             )}
-            <Text style={getTextStyle("under")}>Under</Text>
+            <Text style={getTextStyle("under")}>{manual ? "NO" : "Under"}</Text>
           </Pressable>
         </View>
       )}
@@ -1637,6 +1661,7 @@ const styles = StyleSheet.create({
   voidedText: { fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary },
 
   propPlayerName: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, marginTop: 2 },
+  propQuestionText: { fontSize: 15, fontWeight: "600", lineHeight: 20 },
   propGame: { fontSize: 12, color: Colors.dark.textSecondary },
 
   lineRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 },

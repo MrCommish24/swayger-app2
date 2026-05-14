@@ -500,6 +500,14 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
+            style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push("/admin")}
+          >
+            <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.tabIconDefault} />
+            <Text style={styles.adminButtonText}>Admin Panel</Text>
+          </Pressable>
+
+          <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
             onPress={() => { Analytics.signedOut(); resetUser(); signOut(); }}
           >
@@ -692,6 +700,12 @@ const styles = StyleSheet.create({
   bottomArea: { paddingHorizontal: 24, marginTop: "auto", paddingTop: 24, gap: 12 },
   versionRow: { alignItems: "center", paddingVertical: 4 },
   versionText: { fontSize: 12, color: Colors.dark.tabIconDefault },
+  adminButton: {
+    flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "center" as const,
+    gap: 8, paddingVertical: 14, borderRadius: 14,
+    borderWidth: 1, borderColor: Colors.dark.border, backgroundColor: Colors.dark.surface,
+  },
+  adminButtonText: { color: Colors.dark.tabIconDefault, fontSize: 15, fontWeight: "500" as const },
   signOutButton: {
     flexDirection: "row" as const, alignItems: "center", justifyContent: "center", gap: 8,
     paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: "#EF4444",
