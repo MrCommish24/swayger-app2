@@ -1239,7 +1239,7 @@ export default function PicksScreen() {
     night &&
     night.props.filter((p) => p.status !== "voided").every((p) => pendingPicks[p.id]);
 
-  const hasPriorPicks = !!myPick;
+  const hasPriorPicks = !!myPick || submitted;
 
   // Determine if we should show the last night results window
   // (no tonight AND last night exists and is resolved)
