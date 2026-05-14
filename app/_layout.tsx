@@ -117,7 +117,7 @@ function useProtectedRoute() {
 }
 
 function RootLayoutNav() {
-  const { isLoading, session } = useAuth();
+  const { isLoading, session, profile } = useAuth();
 
   useProtectedRoute();
 
@@ -127,6 +127,8 @@ function RootLayoutNav() {
     }
   }, [isLoading]);
 
+  // Identify as soon as we have a session — gives PostHog a user ID
+  // to link events to even before the profile loads.
   useEffect(() => {
     if (session) {
       registerPushToken();
@@ -135,6 +137,20 @@ function RootLayoutNav() {
       resetUser();
     }
   }, [session?.user?.id]);
+
+  // Re-identify once the profile loads so PostHog gets username + display name.
+  // This merges the anonymous pre-session events with the real person profile.
+  useEffect(() => {
+    if (session?.user?.id && profile) {
+      identifyUser(session.user.id, {
+        email: session.user.email,
+        username: profile.username,
+        display_name: profile.display_name ?? profile.username,
+        $name: profile.display_name ?? profile.username,
+        $email: session.user.email,
+      });
+    }
+  }, [profile?.username]);
 
   return (
     <>
