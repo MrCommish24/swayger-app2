@@ -31,6 +31,10 @@ function setupCors(app: express.Application) {
       });
     }
 
+    // Always allow the custom production domains
+    origins.add("https://swayger.app");
+    origins.add("https://www.swayger.app");
+
     const origin = req.header("origin");
 
     // Allow localhost origins for Expo web development (any port)
