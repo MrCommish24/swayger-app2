@@ -278,6 +278,11 @@ function extractStat(playerData: unknown, statName: string): number | null {
       if (typeof p !== "number" || typeof a !== "number") return null;
       return p + a;
     }
+    if (statName === "pr" || statName === "PR") {
+      const p = obj["points"], r = obj["rebounds"];
+      if (typeof p !== "number" || typeof r !== "number") return null;
+      return p + r;
+    }
     if (statName === "prb" || statName === "PRB") {
       const p = obj["points"], r = obj["rebounds"], b = obj["blocks"];
       if (typeof p !== "number" || typeof r !== "number" || typeof b !== "number") return null;
