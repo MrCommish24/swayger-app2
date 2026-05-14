@@ -57,7 +57,6 @@ export default function CreateSwaygerScreen() {
   const isRematch = !!params.lockedOpponentId;
 
   const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
-  const [title, setTitle] = useState(params.prefillTitle || params.counterTitle || "");
   const [category, setCategory] = useState(params.prefillCategory || params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(
     params.counterStake ? Math.max(10, parseInt(params.counterStake, 10)) : 10
@@ -66,7 +65,9 @@ export default function CreateSwaygerScreen() {
   const [stakeNote, setStakeNote] = useState("");
   const [showDescription, setShowDescription] = useState(false);
   const [showCustomStake, setShowCustomStake] = useState(false);
-  const [titleTouched, setTitleTouched] = useState(!!params.prefillTitle || !!params.counterTitle);
+  const [rawStake, setRawStake] = useState(
+    params.counterStake ? String(Math.max(10, parseInt(params.counterStake, 10))) : "10"
+  );
 
   const { data: balanceData } = useQuery({
     queryKey: ["balance", user?.id],
@@ -78,38 +79,26 @@ export default function CreateSwaygerScreen() {
 
   useEffect(() => {
     if (params.prefillTitle) {
-      setTitle(params.prefillTitle);
       setDescription(params.prefillDescription || "");
       setCategory(params.prefillCategory || "Sports");
     } else if (params.counterTitle) {
-      setTitle(params.counterTitle);
       setDescription(params.counterDescription || "");
       setCategory(params.counterCategory || "Sports");
-      setStakeUnits(params.counterStake ? Math.max(5, parseInt(params.counterStake, 10)) : 5);
+      const units = params.counterStake ? Math.max(10, parseInt(params.counterStake, 10)) : 10;
+      setStakeUnits(units);
+      setRawStake(String(units));
       setCreatorPick(params.creatorPickPrefill || "");
     }
   }, [params.prefillTitle, params.counterTitle]);
 
-  // Auto-fill title from pick if user hasn't manually touched it
-  function handlePickChange(text: string) {
-    setCreatorPick(text);
-    if (!titleTouched && text.trim().length > 0) {
-      setTitle(text.length > 50 ? text.slice(0, 50) : text);
-    }
-    if (!titleTouched && text.trim().length === 0) {
-      setTitle("");
-    }
-  }
-
   const canSubmit =
     creatorPick.trim().length > 0 &&
-    title.trim().length >= 2 &&
     stakeUnits >= 10 &&
     (balanceData == null || stakeUnits <= myBalance);
 
   const mutation = useMutation({
     mutationFn: () =>
-      createSwayger(title, category, stakeUnits, creatorPick, user!.id, description, stakeNote),
+      createSwayger(creatorPick.trim().slice(0, 60), category, stakeUnits, creatorPick, user!.id, description, stakeNote),
     onSuccess: async (result) => {
       if (result.error) { showError(result.error); return; }
       Analytics.swaygerCreated(category, stakeUnits);
@@ -123,9 +112,9 @@ export default function CreateSwaygerScreen() {
       }
       queryClient.invalidateQueries({ queryKey: ["swaygers"] });
       queryClient.invalidateQueries({ queryKey: ["balance", user?.id] });
-      setCreatorPick(""); setTitle(""); setCategory("Sports");
-      setStakeUnits(10); setDescription(""); setStakeNote("");
-      setShowDescription(false); setShowCustomStake(false); setTitleTouched(false);
+      setCreatorPick(""); setCategory("Sports");
+      setStakeUnits(10); setRawStake("10"); setDescription(""); setStakeNote("");
+      setShowDescription(false); setShowCustomStake(false);
       if (result.swayger) {
         router.push(`/swayger/${result.swayger.id}?feedback=1`);
       } else {
@@ -137,7 +126,6 @@ export default function CreateSwaygerScreen() {
 
   function handleCreate() {
     if (!creatorPick.trim()) { showError("Enter your take first."); return; }
-    if (!title.trim() || title.trim().length < 2) { showError("Add a bet title."); return; }
     mutation.mutate();
   }
 
@@ -212,7 +200,7 @@ export default function CreateSwaygerScreen() {
               placeholder={"e.g. OKC wins the series in 6"}
               placeholderTextColor={Colors.dark.tabIconDefault}
               value={creatorPick}
-              onChangeText={handlePickChange}
+              onChangeText={setCreatorPick}
               editable={!mutation.isPending}
               maxLength={200}
               autoFocus={!isRematch && !isCounter}
@@ -222,21 +210,7 @@ export default function CreateSwaygerScreen() {
             </Text>
           </View>
 
-          {/* ── Field 2: Bet Title ── */}
-          <View>
-            <Text style={styles.fieldLabel}>Bet title</Text>
-            <TextInput
-              style={styles.titleInput}
-              placeholder="e.g. Thunder vs Wolves — Series"
-              placeholderTextColor={Colors.dark.tabIconDefault}
-              value={title}
-              onChangeText={(t) => { setTitle(t); setTitleTouched(true); }}
-              editable={!mutation.isPending}
-              maxLength={60}
-            />
-          </View>
-
-          {/* ── Field 3: Category chips ── */}
+          {/* ── Field 2: Category chips ── */}
           <View>
             <Text style={styles.fieldLabel}>Category</Text>
             <ScrollView
@@ -320,7 +294,13 @@ export default function CreateSwaygerScreen() {
             )}
 
             {!showCustomStake ? (
-              <Pressable style={styles.customToggle} onPress={() => setShowCustomStake(true)}>
+              <Pressable
+                style={styles.customToggle}
+                onPress={() => {
+                  setShowCustomStake(true);
+                  setRawStake(String(stakeUnits));
+                }}
+              >
                 <Ionicons name="create-outline" size={12} color={Colors.dark.tabIconDefault} />
                 <Text style={styles.customToggleText}>Custom amount</Text>
               </Pressable>
@@ -331,20 +311,31 @@ export default function CreateSwaygerScreen() {
                   placeholder="10+"
                   placeholderTextColor={Colors.dark.tabIconDefault}
                   keyboardType="numeric"
-                  value={stakeUnits > 0 ? String(stakeUnits) : ""}
+                  value={rawStake}
                   onChangeText={(v) => {
-                    const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
-                    if (!isNaN(n)) {
-                      setStakeUnits(balanceData != null
-                        ? Math.min(myBalance, Math.max(10, n))
-                        : Math.max(10, n));
-                    } else if (v === "") setStakeUnits(10);
+                    // Allow digits only, no clamping mid-type
+                    const digits = v.replace(/[^0-9]/g, "");
+                    setRawStake(digits);
+                  }}
+                  onBlur={() => {
+                    // Only clamp when the user finishes typing
+                    const n = parseInt(rawStake, 10);
+                    if (isNaN(n) || n < 10) {
+                      setStakeUnits(10);
+                      setRawStake("10");
+                    } else if (balanceData != null && n > myBalance) {
+                      setStakeUnits(myBalance);
+                      setRawStake(String(myBalance));
+                    } else {
+                      setStakeUnits(n);
+                      setRawStake(String(n));
+                    }
                   }}
                   editable={!mutation.isPending}
                   maxLength={6}
                 />
                 <Text style={styles.customSPLabel}>SP</Text>
-                <Pressable onPress={() => { setShowCustomStake(false); setStakeUnits(10); }}>
+                <Pressable onPress={() => { setShowCustomStake(false); setStakeUnits(10); setRawStake("10"); }}>
                   <Text style={styles.customClear}>Use tiers</Text>
                 </Pressable>
               </View>
