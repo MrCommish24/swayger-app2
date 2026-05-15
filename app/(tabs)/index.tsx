@@ -504,20 +504,14 @@ export default function DashboardScreen() {
 
   useFocusEffect(useCallback(() => { Analytics.dashboardViewed(); }, []));
 
-  // Check OneSignal permission status on web — show banner if not granted
+  // Check native Notification.permission — show banner if not yet asked
   useEffect(() => {
     if (!isWeb || !user) return;
-    const check = () => {
-      const w = window as any;
-      if (w.OneSignal && w.OneSignal.Notifications) {
-        const granted = w.OneSignal.Notifications.permission;
-        setShowNotifBanner(!granted);
-      } else {
-        // SDK not ready yet — check again shortly
-        setTimeout(check, 1500);
-      }
-    };
-    check();
+    const w = window as any;
+    if (typeof w.Notification === "undefined") return; // browser doesn't support notifications
+    if (w.Notification.permission === "default") {
+      setShowNotifBanner(true);
+    }
   }, [isWeb, user?.id]);
 
   const {
@@ -844,11 +838,13 @@ export default function DashboardScreen() {
   // Enable web push notifications — called from a user tap to satisfy Chrome's gesture requirement
   const handleEnableNotifications = useCallback(async () => {
     const w = window as any;
-    if (!w.OneSignal?.Notifications) return;
     try {
-      await w.OneSignal.Notifications.requestPermission();
-      setShowNotifBanner(false);
-    } catch (e) {
+      if (w.OneSignal?.Notifications) {
+        await w.OneSignal.Notifications.requestPermission();
+      } else if (w.Notification) {
+        await w.Notification.requestPermission();
+      }
+    } finally {
       setShowNotifBanner(false);
     }
   }, []);
