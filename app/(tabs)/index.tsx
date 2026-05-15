@@ -500,8 +500,25 @@ export default function DashboardScreen() {
   const isWeb = Platform.OS === "web";
   const { user, profile } = useAuth();
   const queryClient = useQueryClient();
+  const [showNotifBanner, setShowNotifBanner] = useState<boolean>(false);
 
   useFocusEffect(useCallback(() => { Analytics.dashboardViewed(); }, []));
+
+  // Check OneSignal permission status on web — show banner if not granted
+  useEffect(() => {
+    if (!isWeb || !user) return;
+    const check = () => {
+      const w = window as any;
+      if (w.OneSignal && w.OneSignal.Notifications) {
+        const granted = w.OneSignal.Notifications.permission;
+        setShowNotifBanner(!granted);
+      } else {
+        // SDK not ready yet — check again shortly
+        setTimeout(check, 1500);
+      }
+    };
+    check();
+  }, [isWeb, user?.id]);
 
   const {
     data: swaygers = [],
@@ -824,6 +841,18 @@ export default function DashboardScreen() {
     router.push(`/swayger/${swayger.id}`);
   }, [currentModalItem, modalIndex, modalQueue, markAcceptedSeen, router]);
 
+  // Enable web push notifications — called from a user tap to satisfy Chrome's gesture requirement
+  const handleEnableNotifications = useCallback(async () => {
+    const w = window as any;
+    if (!w.OneSignal?.Notifications) return;
+    try {
+      await w.OneSignal.Notifications.requestPermission();
+      setShowNotifBanner(false);
+    } catch (e) {
+      setShowNotifBanner(false);
+    }
+  }, []);
+
   // Re-enable the modal overlay when the user returns to this screen.
   // Does NOT auto-show anything — the bell is the only replay trigger.
   useFocusEffect(
@@ -959,6 +988,15 @@ export default function DashboardScreen() {
         <StatsStrip swaygers={swaygers} userId={user.id} spBalance={spBalance} />
       )}
 
+
+      {/* ─── Notification permission banner (web only) ────────────────────── */}
+      {isWeb && showNotifBanner && (
+        <Pressable style={styles.notifBanner} onPress={handleEnableNotifications}>
+          <Ionicons name="notifications-outline" size={18} color={Colors.dark.tint} />
+          <Text style={styles.notifBannerText}>Enable notifications to get challenge alerts</Text>
+          <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+      )}
 
       <ChallengeCards
         onPressPlayoffs={() => router.push("/playoffs")}
@@ -1134,6 +1172,24 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
+  notifBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(29,161,242,0.10)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(29,161,242,0.25)",
+  },
+  notifBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.dark.text,
+  },
   header: {
     paddingHorizontal: 24,
     paddingVertical: 16,

@@ -16,10 +16,6 @@ export async function registerOneSignalUser(userId: string): Promise<void> {
     w.OneSignalDeferred.push(async (OneSignal: any) => {
       try {
         await OneSignal.login(userId);
-        const hasPermission = OneSignal.Notifications.permission;
-        if (!hasPermission) {
-          await OneSignal.Notifications.requestPermission();
-        }
         console.log("[notifications] OneSignal user linked:", userId.slice(0, 8));
       } catch (e) {
         console.error("[notifications] OneSignal login error:", e);
