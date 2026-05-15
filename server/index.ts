@@ -105,6 +105,26 @@ function setupRequestLogging(app: express.Application) {
   });
 }
 
+const ONESIGNAL_SNIPPET = `
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "6c7fe969-e694-4977-819a-f10fbc4159c6",
+        notifyButton: { enable: false },
+        allowLocalhostAsSecureOrigin: true,
+        serviceWorkerParam: { scope: "/" },
+        serviceWorkerPath: "/OneSignalSDKWorker.js",
+      });
+    });
+  </script>`;
+
+function injectOneSignal(html: string): string {
+  if (html.includes("OneSignalSDK")) return html; // already present, skip
+  return html.replace("</head>", `${ONESIGNAL_SNIPPET}\n</head>`);
+}
+
 function getAppName(): string {
   try {
     const appJsonPath = path.resolve(process.cwd(), "app.json");
@@ -219,6 +239,7 @@ function configureExpoAndLanding(app: express.Application) {
       const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
       if (fs.existsSync(webIndexPath)) {
         let html = fs.readFileSync(webIndexPath, "utf-8");
+        html = injectOneSignal(html);
         const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
         html = html.replace("</body>", `${privacyFooter}</body>`);
         res.setHeader("Content-Type", "text/html");
@@ -248,7 +269,10 @@ function configureExpoAndLanding(app: express.Application) {
     }
     const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
     if (fs.existsSync(webIndexPath)) {
-      return res.sendFile(webIndexPath);
+      let html = fs.readFileSync(webIndexPath, "utf-8");
+      html = injectOneSignal(html);
+      res.setHeader("Content-Type", "text/html");
+      return res.send(html);
     }
     next();
   });
