@@ -190,6 +190,13 @@ function configureExpoAndLanding(app: express.Application) {
     res.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
   });
 
+  // OneSignal service worker — required for web push subscriptions in Chrome/Edge/Firefox
+  app.get("/OneSignalSDKWorker.js", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/javascript");
+    res.setHeader("Service-Worker-Allowed", "/");
+    res.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
+  });
+
   registerUnsubscribeRoutes(app);
 
   log("Serving static Expo files with dynamic manifest routing");
