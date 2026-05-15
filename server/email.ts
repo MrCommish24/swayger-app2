@@ -2421,3 +2421,117 @@ export async function sendRoundLaunchBlast(opts: {
 export function buildRoundLaunchBlastPreview(): string {
   return buildRoundLaunchBlastHtml({ displayName: "Jordan", picksUrl: "https://www.swayger.app/picks" });
 }
+
+// ─── Game Six Blast — Tonight's two Game 6s ──────────────────────────────────
+
+function buildGameSixBlastHtml(opts: {
+  displayName: string;
+  picksUrl: string;
+  swaygerUrl: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { displayName, picksUrl, swaygerUrl } = opts;
+  const unsubLine = opts.unsubscribeUrl
+    ? `<p style="margin:32px 0 0;font-size:11px;color:#999999;">You're receiving this because you have a Swayger account. <a href="${opts.unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Two Game 6s tonight — your picks are live</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+    <tr><td align="center" style="padding:40px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+
+        <tr>
+          <td style="padding-bottom:24px;">
+            <span style="font-size:13px;font-weight:700;color:#111111;letter-spacing:1.5px;text-transform:uppercase;">SWAYGER</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="font-size:15px;color:#222222;line-height:1.7;">
+
+            <p style="margin:0 0 18px;">Hey ${displayName},</p>
+
+            <p style="margin:0 0 18px;">Two Game 6 series are on the line tonight:</p>
+
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;width:100%;">
+              <tr>
+                <td style="background:#f5f5f5;border-radius:8px;padding:14px 18px;">
+                  <p style="margin:0 0 8px;font-size:15px;font-weight:700;color:#111111;">🏀 Detroit Pistons vs Cleveland Cavaliers</p>
+                  <p style="margin:0;font-size:15px;font-weight:700;color:#111111;">🐺 Minnesota Timberwolves vs San Antonio Spurs</p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;">Drop your picks before lock and see if your read on tonight holds up.</p>
+
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background:#111111;border-radius:8px;">
+                  <a href="${picksUrl}" style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Make your picks tonight →</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;">Every game night, NBA picks are live. And on the nights between games — we run quick props to keep the debate going. There's always something on.</p>
+
+            <p style="margin:0 0 18px;">Got a friend with a take on tonight? Put it in writing. A Swayger is a 1v1 wager between two people — no house, just receipts.</p>
+
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background:#ffffff;border:2px solid #111111;border-radius:8px;">
+                  <a href="${swaygerUrl}" style="display:inline-block;padding:11px 28px;font-size:15px;font-weight:600;color:#111111;text-decoration:none;">Challenge a friend →</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;">You're one of the people who gave Swayger a real shot early. That means everything — what you use, what you skip, what you wish existed — is directly shaping where this goes. Keep the feedback coming.</p>
+
+            <p style="margin:0 0 6px;">See you in the app tonight.</p>
+            <p style="margin:0;color:#555555;">— Darius from Swayger</p>
+
+            ${unsubLine}
+
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendGameSixBlast(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  picksUrl: string;
+  swaygerUrl: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const subject = "Two Game 6s tonight — your picks are live 🏀";
+  const darFrom = FROM.includes("<") ? FROM.replace(/^.*?</, "Darius from Swayger <") : FROM;
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildGameSixBlastHtml({
+    displayName: opts.displayName,
+    picksUrl: opts.picksUrl,
+    swaygerUrl: opts.swaygerUrl,
+    unsubscribeUrl,
+  });
+  await resend.emails.send({ from: darFrom, to: opts.to, subject, html });
+}
+
+export function buildGameSixBlastPreview(): string {
+  return buildGameSixBlastHtml({
+    displayName: "Jordan",
+    picksUrl: "https://www.swayger.app/picks",
+    swaygerUrl: "https://www.swayger.app",
+  });
+}

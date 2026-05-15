@@ -980,6 +980,93 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // GET /api/admin/props/blast-game-six/preview — view email in browser
+  app.get("/api/admin/props/blast-game-six/preview", (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { buildGameSixBlastPreview } = require("./email.js");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildGameSixBlastPreview());
+  });
+
+  // GET /api/admin/props/blast-game-six/dry-run — show who would receive it
+  app.get("/api/admin/props/blast-game-six/dry-run", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res.json({
+        ok: true,
+        total_eligible: eligible.length,
+        recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username })),
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-game-six/test — send one test copy to a specific email
+  app.post("/api/admin/props/blast-game-six/test", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email, name } = req.body as { email?: string; name?: string };
+    if (!email) { res.status(400).json({ ok: false, error: "email is required" }); return; }
+    try {
+      const { sendGameSixBlast } = await import("./email.js");
+      await sendGameSixBlast({
+        to: email,
+        displayName: name || "there",
+        userId: "test-user",
+        picksUrl: "https://www.swayger.app/picks",
+        swaygerUrl: "https://www.swayger.app",
+      });
+      res.json({ ok: true, sent_to: email });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-game-six — send to all eligible users
+  app.post("/api/admin/props/blast-game-six", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const { sendGameSixBlast } = await import("./email.js");
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendGameSixBlast({
+            to: user.notification_email,
+            displayName: user.display_name || user.username,
+            userId: user.id,
+            picksUrl: "https://www.swayger.app/picks",
+            swaygerUrl: "https://www.swayger.app",
+          });
+          sent++;
+        } catch (e) {
+          console.error(`[game-six-blast] failed for ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[game-six-blast] complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[game-six-blast] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // POST /api/admin/props/lock/:nightId — manually lock a night
   app.post("/api/admin/props/lock/:nightId", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
