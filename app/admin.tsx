@@ -43,10 +43,29 @@ function formatLock(iso: string) {
   });
 }
 
-// ── Default lock time: 5:45 PM CDT on whatever date is selected ──
-function defaultLockTime(date: string): string {
-  return `${date}T22:45:00.000Z`;
+// ── Convert "7:30 PM" CDT + date string → ISO UTC string ──
+// CDT = UTC−5, so UTC = CDT + 5 hours
+function cdtTimeToISO(date: string, timeStr: string): string {
+  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) {
+    // fallback: 5:45 PM CDT = 22:45 UTC
+    return `${date}T22:45:00.000Z`;
+  }
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+  const utcHours = hours + 5; // CDT → UTC
+  const dayOffset = utcHours >= 24 ? 1 : 0;
+  const utcH = utcHours % 24;
+  const baseDate = new Date(date + "T00:00:00Z");
+  baseDate.setUTCDate(baseDate.getUTCDate() + dayOffset);
+  const finalDate = baseDate.toISOString().slice(0, 10);
+  return `${finalDate}T${String(utcH).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00.000Z`;
 }
+
+const DEFAULT_CDT_TIME = "5:45 PM";
 
 export default function AdminScreen() {
   const insets = useSafeAreaInsets();
@@ -59,7 +78,7 @@ export default function AdminScreen() {
 
   // Create night form
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [lockTime, setLockTime] = useState(() => defaultLockTime(new Date().toISOString().slice(0, 10)));
+  const [lockTimeCDT, setLockTimeCDT] = useState(DEFAULT_CDT_TIME);
   const [questions, setQuestions] = useState<string[]>(["", ""]);
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
@@ -134,7 +153,7 @@ export default function AdminScreen() {
       const res = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": savedToken! },
-        body: JSON.stringify({ date, lock_time: lockTime, questions: validQs }),
+        body: JSON.stringify({ date, lock_time: cdtTimeToISO(date, lockTimeCDT), questions: validQs }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -262,16 +281,16 @@ export default function AdminScreen() {
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Lock Time (ISO)</Text>
+          <Text style={styles.label}>Lock Time (CDT)</Text>
           <TextInput
             style={styles.input}
-            value={lockTime}
-            onChangeText={setLockTime}
-            placeholder="2026-05-15T22:45:00.000Z"
+            value={lockTimeCDT}
+            onChangeText={setLockTimeCDT}
+            placeholder="e.g. 7:30 PM"
             placeholderTextColor={Colors.dark.tabIconDefault}
             autoCapitalize="none"
           />
-          <Text style={styles.hint}>Default: 5:45 PM CDT · Edit for different times.</Text>
+          <Text style={styles.hint}>Enter time in CDT — e.g. "5:45 PM" or "8:00 PM"</Text>
         </View>
 
         <View style={styles.fieldGroup}>
