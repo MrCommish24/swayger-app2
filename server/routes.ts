@@ -94,6 +94,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/push/send — server-side OneSignal web push (keeps REST key private)
+  app.post("/api/push/send", async (req: Request, res: Response) => {
+    try {
+      const { toUserId, title, body, data } = req.body as {
+        toUserId: string;
+        title: string;
+        body: string;
+        data?: Record<string, string>;
+      };
+      if (!toUserId || !title || !body) {
+        res.status(400).json({ ok: false, error: "Missing fields" });
+        return;
+      }
+      const appId = process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID;
+      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+      if (!appId || !apiKey) {
+        res.status(500).json({ ok: false, error: "OneSignal not configured" });
+        return;
+      }
+      const response = await fetch("https://api.onesignal.com/notifications", {
+        method: "POST",
+        headers: {
+          "Authorization": `Key ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          app_id: appId,
+          target_channel: "push",
+          include_aliases: { external_id: [toUserId] },
+          headings: { en: title },
+          contents: { en: body },
+          data: data || {},
+        }),
+      });
+      const json = await response.json() as any;
+      if (!response.ok) {
+        console.error("[push] OneSignal error:", json);
+        res.status(500).json({ ok: false, error: "OneSignal send failed" });
+        return;
+      }
+      res.json({ ok: true, recipients: json.recipients ?? 0 });
+    } catch (err) {
+      console.error("[push] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   app.post("/api/notify", async (req: Request, res: Response) => {
     try {
       const payload = req.body as NotifyPayload;

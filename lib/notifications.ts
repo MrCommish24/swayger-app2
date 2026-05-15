@@ -1,11 +1,37 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { getApiUrl } from "@/lib/query-client";
 
 function isExpoGo(): boolean {
   return Constants.appOwnership === "expo";
 }
 
+// ── Web: register OneSignal user (links browser to Supabase UUID) ─────────────
+export async function registerOneSignalUser(userId: string): Promise<void> {
+  if (Platform.OS !== "web") return;
+  try {
+    const w = window as any;
+    w.OneSignalDeferred = w.OneSignalDeferred || [];
+    w.OneSignalDeferred.push(async (OneSignal: any) => {
+      try {
+        await OneSignal.login(userId);
+        const hasPermission = OneSignal.Notifications.permission;
+        if (!hasPermission) {
+          await OneSignal.Notifications.requestPermission();
+        }
+        console.log("[notifications] OneSignal user linked:", userId.slice(0, 8));
+      } catch (e) {
+        console.error("[notifications] OneSignal login error:", e);
+      }
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[notifications] registerOneSignalUser error:", msg);
+  }
+}
+
+// ── Native: register Expo push token ─────────────────────────────────────────
 export async function registerPushToken(): Promise<void> {
   if (Platform.OS === "web") return;
 
@@ -18,7 +44,6 @@ export async function registerPushToken(): Promise<void> {
   }
 
   try {
-    // Lazy require so the module never initializes in Expo Go
     const Notifications = require("expo-notifications");
 
     const { status: existing } = await Notifications.getPermissionsAsync();
@@ -65,13 +90,30 @@ export async function registerPushToken(): Promise<void> {
   }
 }
 
+// ── Send push notification ────────────────────────────────────────────────────
+// On web: calls our server → OneSignal REST API (REST key stays server-side)
+// On native: calls Expo Push API directly with token from Supabase
 export async function sendPushNotification(
   toUserId: string,
   title: string,
   body: string,
   data?: Record<string, string>
 ): Promise<void> {
-  if (Platform.OS === "web") return;
+  // Web: route through server so the OneSignal REST key stays private
+  if (Platform.OS === "web") {
+    try {
+      await fetch(new URL("/api/push/send", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId, title, body, data: data || {} }),
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[notifications] web push error:", msg);
+    }
+    return;
+  }
+
   if (isExpoGo()) return;
 
   try {

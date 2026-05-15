@@ -29,7 +29,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import ToastContainer from "@/components/ToastContainer";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
-import { registerPushToken } from "@/lib/notifications";
+import { registerPushToken, registerOneSignalUser } from "@/lib/notifications";
 import { identifyUser, resetUser, capture } from "@/lib/posthog";
 
 import Colors from "@/constants/colors";
@@ -132,6 +132,7 @@ function RootLayoutNav() {
   useEffect(() => {
     if (session) {
       registerPushToken();
+      if (Platform.OS === "web") registerOneSignalUser(session.user.id);
       identifyUser(session.user.id, { email: session.user.email });
     } else {
       resetUser();
