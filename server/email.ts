@@ -2469,7 +2469,7 @@ function buildGameSixBlastHtml(opts: {
               </tr>
             </table>
 
-            <p style="margin:0 0 18px;">Drop your picks before lock and see if your read on tonight holds up.</p>
+            <p style="margin:0 0 18px;">Get your picks in before they lock at <strong>5:45 PM CDT</strong>.</p>
 
             <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
               <tr>
@@ -2481,7 +2481,7 @@ function buildGameSixBlastHtml(opts: {
 
             <p style="margin:0 0 18px;">Every game night, NBA picks are live. And on the nights between games — we run quick props to keep the debate going. There's always something on.</p>
 
-            <p style="margin:0 0 18px;">Got a friend with a take on tonight? Put it in writing. A Swayger is a 1v1 wager between two people — no house, just receipts.</p>
+            <p style="margin:0 0 18px;">Got a friend with a take on tonight? Put it in writing. A Swayger is a 1v1 challenge between two people — no house, just receipts.</p>
 
             <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
               <tr>
