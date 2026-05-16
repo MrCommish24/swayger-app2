@@ -988,9 +988,16 @@ export default function DashboardScreen() {
       {/* ─── Notification permission banner (web only) ────────────────────── */}
       {isWeb && showNotifBanner && (
         <Pressable style={styles.notifBanner} onPress={handleEnableNotifications}>
-          <Ionicons name="notifications-outline" size={18} color={Colors.dark.tint} />
-          <Text style={styles.notifBannerText}>Enable notifications to get challenge alerts</Text>
-          <Ionicons name="chevron-forward" size={16} color={Colors.dark.textSecondary} />
+          <View style={styles.notifBannerIcon}>
+            <Ionicons name="notifications" size={22} color="#FFFFFF" />
+          </View>
+          <View style={styles.notifBannerBody}>
+            <Text style={styles.notifBannerTitle}>Don't miss a challenge</Text>
+            <Text style={styles.notifBannerSub}>Tap to enable push notifications</Text>
+          </View>
+          <View style={styles.notifBannerCta}>
+            <Text style={styles.notifBannerCtaText}>Enable</Text>
+          </View>
         </Pressable>
       )}
 
@@ -1171,20 +1178,45 @@ const styles = StyleSheet.create({
   notifBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     marginHorizontal: 16,
-    marginBottom: 10,
-    paddingVertical: 10,
+    marginBottom: 12,
+    paddingVertical: 14,
     paddingHorizontal: 14,
-    backgroundColor: "rgba(29,161,242,0.10)",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(29,161,242,0.25)",
+    backgroundColor: Colors.dark.tint,
+    borderRadius: 14,
   },
-  notifBannerText: {
+  notifBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.20)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifBannerBody: {
     flex: 1,
+    gap: 2,
+  },
+  notifBannerTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  notifBannerSub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+  },
+  notifBannerCta: {
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+  },
+  notifBannerCtaText: {
     fontSize: 13,
-    color: Colors.dark.text,
+    fontWeight: "700",
+    color: Colors.dark.tint,
   },
   header: {
     paddingHorizontal: 24,
