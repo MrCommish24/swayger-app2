@@ -133,7 +133,7 @@ const ONESIGNAL_SNIPPET = `
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
       // Ping 1: confirm the deferred callback is actually running
-      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "callback_start" }) }).catch(function(){});
+      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "callback_start", href: window.location.href }) }).catch(function(){});
 
       try {
         await OneSignal.init({
