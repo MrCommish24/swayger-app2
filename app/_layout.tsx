@@ -136,11 +136,16 @@ function RootLayoutNav() {
         // Store userId in localStorage so the server-injected OneSignal init
         // script can call login() + optIn() without depending on this bundle.
         try { localStorage.setItem("swayger_uid", session.user.id); } catch (_) {}
+        if (session.user.email) {
+          try { localStorage.setItem("swayger_email", session.user.email); } catch (_) {}
+        }
         // Dispatch event in case the OneSignal init callback has already run
         // and is now listening for late-arriving session data.
         try {
           window.dispatchEvent(
-            new CustomEvent("swayger:session", { detail: { userId: session.user.id } })
+            new CustomEvent("swayger:session", {
+              detail: { userId: session.user.id, email: session.user.email },
+            })
           );
         } catch (_) {}
         registerOneSignalUser(session.user.id);
@@ -150,6 +155,8 @@ function RootLayoutNav() {
       resetUser();
       if (Platform.OS === "web") {
         try { localStorage.removeItem("swayger_uid"); } catch (_) {}
+        try { localStorage.removeItem("swayger_email"); } catch (_) {}
+        try { localStorage.removeItem("swayger_username"); } catch (_) {}
       }
     }
   }, [session?.user?.id]);
@@ -165,6 +172,22 @@ function RootLayoutNav() {
         $name: profile.display_name ?? profile.username,
         $email: session.user.email,
       });
+      if (Platform.OS === "web") {
+        // Store username so page-load OneSignal path can tag the user
+        try { localStorage.setItem("swayger_username", profile.username ?? ""); } catch (_) {}
+        // Re-dispatch with username so OneSignal tags are always up to date
+        try {
+          window.dispatchEvent(
+            new CustomEvent("swayger:session", {
+              detail: {
+                userId: session.user.id,
+                email: session.user.email,
+                username: profile.username,
+              },
+            })
+          );
+        } catch (_) {}
+      }
     }
   }, [profile?.username]);
 

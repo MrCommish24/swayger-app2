@@ -159,9 +159,11 @@ const ONESIGNAL_SNIPPET = `
         });
       } catch (_) { return; }
 
-      var storedId = localStorage.getItem("swayger_uid");
+      var storedId       = localStorage.getItem("swayger_uid");
+      var storedEmail    = localStorage.getItem("swayger_email");
+      var storedUsername = localStorage.getItem("swayger_username");
 
-      async function swaygerSubscribe(userId) {
+      async function swaygerSubscribe(userId, username, email) {
         if (!userId) return;
         try {
           if (navigator.serviceWorker) { await navigator.serviceWorker.ready; }
@@ -170,21 +172,30 @@ const ONESIGNAL_SNIPPET = `
           await new Promise(function(r) { setTimeout(r, 300); });
           await OneSignal.User.PushSubscription.optIn();
           await OneSignal.login(userId);
+          // Tag user so Swayger username + email are visible in OneSignal dashboard
+          var tags = {};
+          if (username) tags.username = username;
+          if (email)    tags.email    = email;
+          if (Object.keys(tags).length) {
+            try { OneSignal.User.addTags(tags); } catch (_) {}
+          }
         } catch (_) {}
       }
 
       if (storedId && window.Notification && window.Notification.permission === "granted") {
-        swaygerSubscribe(storedId);
+        swaygerSubscribe(storedId, storedUsername, storedEmail);
       }
 
       window.addEventListener("swayger:session", function(e) {
         if (window.Notification && window.Notification.permission === "granted") {
-          swaygerSubscribe(e.detail && e.detail.userId);
+          var d = e.detail || {};
+          swaygerSubscribe(d.userId, d.username, d.email);
         }
       });
 
       window.addEventListener("swayger:permission", function(e) {
-        swaygerSubscribe(e.detail && e.detail.userId);
+        var d = e.detail || {};
+        swaygerSubscribe(d.userId, d.username, d.email);
       });
     });
   </script>`;
