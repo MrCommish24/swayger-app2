@@ -105,6 +105,28 @@ function setupRequestLogging(app: express.Application) {
   });
 }
 
+const SEO_SNIPPET = `
+  <meta name="robots" content="index, follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Swayger" />
+  <meta property="og:title" content="Swayger — Social Wager Contracts" />
+  <meta property="og:description" content="Make 1v1 social wager contracts with friends. Lock in your pick, challenge someone, and settle it. Join the NBA picks challenge — no real money, just bragging rights." />
+  <meta property="og:image" content="https://www.swayger.app/assets/images/icon.png" />
+  <meta property="og:url" content="https://www.swayger.app" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Swayger — Social Wager Contracts" />
+  <meta name="twitter:description" content="Lock in your takes and prove who was right. 1v1 social wagers with friends, NBA picks challenge, and a full receipt of every outcome." />
+  <meta name="twitter:image" content="https://www.swayger.app/assets/images/icon.png" />`;
+
+function injectSeoTags(html: string): string {
+  if (html.includes('og:title')) return html; // already present
+  let result = html;
+  // Update bare title if present
+  result = result.replace(/<title>Swayger<\/title>/, '<title>Swayger — Social Wager Contracts</title>');
+  result = result.replace('</head>', `${SEO_SNIPPET}\n</head>`);
+  return result;
+}
+
 const ONESIGNAL_SNIPPET = `
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
@@ -239,6 +261,7 @@ function configureExpoAndLanding(app: express.Application) {
       const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
       if (fs.existsSync(webIndexPath)) {
         let html = fs.readFileSync(webIndexPath, "utf-8");
+        html = injectSeoTags(html);
         html = injectOneSignal(html);
         const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
         html = html.replace("</body>", `${privacyFooter}</body>`);
@@ -270,6 +293,7 @@ function configureExpoAndLanding(app: express.Application) {
     const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
     if (fs.existsSync(webIndexPath)) {
       let html = fs.readFileSync(webIndexPath, "utf-8");
+      html = injectSeoTags(html);
       html = injectOneSignal(html);
       res.setHeader("Content-Type", "text/html");
       return res.send(html);
