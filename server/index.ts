@@ -146,6 +146,20 @@ const ONESIGNAL_SNIPPET = `
       // Ping 1: confirm the deferred callback is actually running
       fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "callback_start", href: window.location.href }) }).catch(function(){});
 
+      // Unregister any stale service workers from a different origin (e.g. old broken registrations)
+      if (navigator.serviceWorker) {
+        try {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          for (var reg of regs) {
+            var swUrl = (reg.active || reg.installing || reg.waiting);
+            if (swUrl && swUrl.scriptURL && !swUrl.scriptURL.startsWith(window.location.origin)) {
+              console.log("[onesignal] Unregistering stale SW:", swUrl.scriptURL);
+              await reg.unregister();
+            }
+          }
+        } catch (_) {}
+      }
+
       try {
         await OneSignal.init({
           appId: "6c7fe969-e694-4977-819a-f10fbc4159c6",
