@@ -479,6 +479,15 @@ async function runSettlementExpiry() {
   setupBodyParsing(app);
   setupRequestLogging(app);
 
+  // Redirect bare domain → www so OneSignal (configured for www.swayger.app) works correctly
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const host = req.headers.host || "";
+    if (host === "swayger.app") {
+      return res.redirect(301, `https://www.swayger.app${req.originalUrl}`);
+    }
+    next();
+  });
+
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
