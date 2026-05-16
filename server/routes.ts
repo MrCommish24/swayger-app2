@@ -141,6 +141,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/push/tag-user — set OneSignal data tags by external_id (Supabase UUID)
+  app.post("/api/push/tag-user", async (req: Request, res: Response) => {
+    try {
+      const { userId, username, email } = req.body as {
+        userId: string;
+        username?: string;
+        email?: string;
+      };
+      if (!userId) { res.status(400).json({ ok: false, error: "Missing userId" }); return; }
+      const appId  = "6c7fe969-e694-4977-819a-f10fbc4159c6";
+      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+      if (!apiKey) { res.status(500).json({ ok: false, error: "OneSignal REST key not configured" }); return; }
+      const tags: Record<string, string> = {};
+      if (username) tags.username = username;
+      if (email)    tags.email    = email;
+      if (!Object.keys(tags).length) { res.json({ ok: true, skipped: true }); return; }
+      // OneSignal v10 Users API — PATCH by external_id
+      const response = await fetch(
+        `https://api.onesignal.com/apps/${appId}/users/by/external_id/${encodeURIComponent(userId)}`,
+        {
+          method: "PATCH",
+          headers: { "Authorization": `Key ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ properties: { tags } }),
+        }
+      );
+      const json = await response.json() as any;
+      if (!response.ok) {
+        console.error("[push/tag-user] OneSignal error:", json);
+        res.status(500).json({ ok: false, error: "OneSignal tag update failed" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[push/tag-user] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   app.post("/api/notify", async (req: Request, res: Response) => {
     try {
       const payload = req.body as NotifyPayload;

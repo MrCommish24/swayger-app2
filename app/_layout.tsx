@@ -175,7 +175,7 @@ function RootLayoutNav() {
       if (Platform.OS === "web") {
         // Store username so page-load OneSignal path can tag the user
         try { localStorage.setItem("swayger_username", profile.username ?? ""); } catch (_) {}
-        // Re-dispatch with username so OneSignal tags are always up to date
+        // Re-dispatch with username so client-side OneSignal SDK tags are always up to date
         try {
           window.dispatchEvent(
             new CustomEvent("swayger:session", {
@@ -187,6 +187,16 @@ function RootLayoutNav() {
             })
           );
         } catch (_) {}
+        // Server-side tag update via REST API — reliable regardless of SDK timing
+        fetch("/api/push/tag-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.user.id,
+            username: profile.username,
+            email: session.user.email,
+          }),
+        }).catch(() => {});
       }
     }
   }, [profile?.username]);
