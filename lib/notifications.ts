@@ -15,8 +15,19 @@ export async function registerOneSignalUser(userId: string): Promise<void> {
     w.OneSignalDeferred = w.OneSignalDeferred || [];
     w.OneSignalDeferred.push(async (OneSignal: any) => {
       try {
+        console.log("[notifications] OneSignal SDK ready, linking user:", userId.slice(0, 8));
         await OneSignal.login(userId);
-        console.log("[notifications] OneSignal user linked:", userId.slice(0, 8));
+        console.log("[notifications] OneSignal login OK");
+        // If permission already granted (e.g. user allowed before SDK linked them),
+        // explicitly request again so OneSignal creates/refreshes the subscription.
+        const permission = OneSignal.Notifications?.permission;
+        console.log("[notifications] Notification permission:", permission);
+        if (permission === true || (w.Notification && w.Notification.permission === "granted")) {
+          try {
+            await OneSignal.Notifications.requestPermission();
+            console.log("[notifications] Push subscription refreshed for existing permission");
+          } catch (_) {}
+        }
       } catch (e) {
         console.error("[notifications] OneSignal login error:", e);
       }

@@ -838,16 +838,40 @@ export default function DashboardScreen() {
   // Enable web push notifications — called from a user tap to satisfy Chrome's gesture requirement
   const handleEnableNotifications = useCallback(async () => {
     const w = window as any;
+    const userId = user?.id;
+    setShowNotifBanner(false);
     try {
-      if (w.OneSignal?.Notifications) {
-        await w.OneSignal.Notifications.requestPermission();
-      } else if (w.Notification) {
-        await w.Notification.requestPermission();
+      // Wait up to 5s for OneSignal SDK to be ready
+      let os = w.OneSignal;
+      if (!os?.Notifications) {
+        await new Promise<void>((resolve) => {
+          let attempts = 0;
+          const poll = () => {
+            if (w.OneSignal?.Notifications || attempts >= 10) { resolve(); return; }
+            attempts++;
+            setTimeout(poll, 500);
+          };
+          poll();
+        });
+        os = w.OneSignal;
       }
-    } finally {
-      setShowNotifBanner(false);
+
+      if (os?.Notifications) {
+        // OneSignal path: login to link userId, then request permission
+        if (userId) {
+          try { await os.login(userId); } catch (_) {}
+        }
+        await os.Notifications.requestPermission();
+        console.log("[notifications] OneSignal permission granted, linked:", userId?.slice(0, 8));
+      } else if (w.Notification) {
+        // Fallback: native browser API
+        await w.Notification.requestPermission();
+        console.log("[notifications] Native notification permission granted");
+      }
+    } catch (e) {
+      console.error("[notifications] handleEnableNotifications error:", e);
     }
-  }, []);
+  }, [user?.id]);
 
   // Re-enable the modal overlay when the user returns to this screen.
   // Does NOT auto-show anything — the bell is the only replay trigger.
