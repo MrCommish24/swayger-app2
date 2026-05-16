@@ -835,38 +835,33 @@ export default function DashboardScreen() {
     router.push(`/swayger/${swayger.id}`);
   }, [currentModalItem, modalIndex, modalQueue, markAcceptedSeen, router]);
 
-  // Enable web push notifications — called from a user tap to satisfy Chrome's gesture requirement
+  // Enable web push notifications — must call requestPermission synchronously
+  // within the user gesture to satisfy Chrome's security requirement.
   const handleEnableNotifications = useCallback(async () => {
     const w = window as any;
     const userId = user?.id;
     setShowNotifBanner(false);
     try {
-      // Wait up to 5s for OneSignal SDK to be ready
-      let os = w.OneSignal;
-      if (!os?.Notifications) {
-        await new Promise<void>((resolve) => {
-          let attempts = 0;
-          const poll = () => {
-            if (w.OneSignal?.Notifications || attempts >= 10) { resolve(); return; }
-            attempts++;
-            setTimeout(poll, 500);
-          };
-          poll();
-        });
-        os = w.OneSignal;
+      // Always use the native Notification API for the actual permission request —
+      // it is guaranteed to be available and works synchronously within the gesture.
+      let result: NotificationPermission = "default";
+      if (w.Notification) {
+        result = await w.Notification.requestPermission();
+        console.log("[notifications] Notification.requestPermission result:", result);
       }
-
-      if (os?.Notifications) {
-        // OneSignal path: login to link userId, then request permission
-        if (userId) {
-          try { await os.login(userId); } catch (_) {}
+      // After permission is granted, link the user in OneSignal so it can
+      // create the push subscription. OneSignal detects the granted permission
+      // and registers the web push endpoint automatically.
+      if (result === "granted" && userId) {
+        const os = w.OneSignal;
+        if (os?.login) {
+          try {
+            await os.login(userId);
+            console.log("[notifications] OneSignal login after grant OK:", userId.slice(0, 8));
+          } catch (e) {
+            console.error("[notifications] OneSignal login after grant failed:", e);
+          }
         }
-        await os.Notifications.requestPermission();
-        console.log("[notifications] OneSignal permission granted, linked:", userId?.slice(0, 8));
-      } else if (w.Notification) {
-        // Fallback: native browser API
-        await w.Notification.requestPermission();
-        console.log("[notifications] Native notification permission granted");
       }
     } catch (e) {
       console.error("[notifications] handleEnableNotifications error:", e);
