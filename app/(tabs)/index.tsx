@@ -852,24 +852,15 @@ export default function DashboardScreen() {
 
       if (result !== "granted" || !userId) return;
 
-      // Step 2: Use the OneSignalDeferred queue to ensure the SDK is fully ready,
-      // then: (a) login to link this Supabase UUID, (b) call OneSignal's own
-      // requestPermission() — this does NOT re-prompt (permission already granted)
-      // but DOES register the web push subscription endpoint with OneSignal.
-      w.OneSignalDeferred = w.OneSignalDeferred || [];
-      w.OneSignalDeferred.push(async (os: any) => {
-        try {
-          await os.login(userId);
-          console.log("[notifications] OneSignal login OK:", userId.slice(0, 8));
-          // In SDK v16, optIn() is what actually creates the push subscription
-          // endpoint. requestPermission() only handles the browser dialog.
-          // Since we already have permission, optIn() registers silently.
-          await os.User.PushSubscription.optIn();
-          console.log("[notifications] OneSignal push subscription registered via optIn");
-        } catch (e) {
-          console.error("[notifications] OneSignal subscribe error:", e);
-        }
-      });
+      // Step 2: Store userId so the server-injected OneSignal script can pick
+      // it up, then fire swayger:permission — the init script listens for this
+      // event and calls login() + optIn() to complete the subscription.
+      try { localStorage.setItem("swayger_uid", userId); } catch (_) {}
+      try {
+        window.dispatchEvent(
+          new CustomEvent("swayger:permission", { detail: { userId } })
+        );
+      } catch (_) {}
     } catch (e) {
       console.error("[notifications] handleEnableNotifications error:", e);
     }

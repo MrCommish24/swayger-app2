@@ -132,10 +132,25 @@ function RootLayoutNav() {
   useEffect(() => {
     if (session) {
       registerPushToken();
-      if (Platform.OS === "web") registerOneSignalUser(session.user.id);
+      if (Platform.OS === "web") {
+        // Store userId in localStorage so the server-injected OneSignal init
+        // script can call login() + optIn() without depending on this bundle.
+        try { localStorage.setItem("swayger_uid", session.user.id); } catch (_) {}
+        // Dispatch event in case the OneSignal init callback has already run
+        // and is now listening for late-arriving session data.
+        try {
+          window.dispatchEvent(
+            new CustomEvent("swayger:session", { detail: { userId: session.user.id } })
+          );
+        } catch (_) {}
+        registerOneSignalUser(session.user.id);
+      }
       identifyUser(session.user.id, { email: session.user.email });
     } else {
       resetUser();
+      if (Platform.OS === "web") {
+        try { localStorage.removeItem("swayger_uid"); } catch (_) {}
+      }
     }
   }, [session?.user?.id]);
 

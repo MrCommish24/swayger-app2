@@ -139,6 +139,42 @@ const ONESIGNAL_SNIPPET = `
         serviceWorkerParam: { scope: "/" },
         serviceWorkerPath: "/OneSignalSDKWorker.js",
       });
+
+      // After init, subscribe the user if we already know their ID.
+      // React stores the Supabase UUID in localStorage as soon as a session starts.
+      // We also listen for a swayger:session event in case React fires it after init completes.
+      async function swaygerSubscribe(userId) {
+        if (!userId) return;
+        try {
+          console.log("[onesignal] Subscribing user:", userId.slice(0, 8));
+          await OneSignal.login(userId);
+          await OneSignal.User.PushSubscription.optIn();
+          console.log("[onesignal] Subscription created for", userId.slice(0, 8));
+        } catch (e) {
+          console.error("[onesignal] Subscribe error:", e);
+        }
+      }
+
+      // Try immediately with whatever userId is already stored
+      var storedId = localStorage.getItem("swayger_uid");
+      if (storedId && window.Notification && window.Notification.permission === "granted") {
+        swaygerSubscribe(storedId);
+      }
+
+      // Also handle late-arriving session events (React bundle loaded after init),
+      // but only subscribe if the user has already granted browser permission —
+      // we don't want to auto-prompt new users who haven't seen the banner yet.
+      window.addEventListener("swayger:session", function(e) {
+        if (window.Notification && window.Notification.permission === "granted") {
+          swaygerSubscribe(e.detail && e.detail.userId);
+        }
+      });
+
+      // swayger:permission fires from the banner handler after the user clicks Allow.
+      // At this point permission is guaranteed to be "granted".
+      window.addEventListener("swayger:permission", function(e) {
+        swaygerSubscribe(e.detail && e.detail.userId);
+      });
     });
   </script>`;
 
