@@ -842,27 +842,34 @@ export default function DashboardScreen() {
     const userId = user?.id;
     setShowNotifBanner(false);
     try {
-      // Always use the native Notification API for the actual permission request —
-      // it is guaranteed to be available and works synchronously within the gesture.
+      // Step 1: Request browser permission synchronously within the gesture.
+      // This is the only call Chrome allows outside a user activation context.
       let result: NotificationPermission = "default";
       if (w.Notification) {
         result = await w.Notification.requestPermission();
         console.log("[notifications] Notification.requestPermission result:", result);
       }
-      // After permission is granted, link the user in OneSignal so it can
-      // create the push subscription. OneSignal detects the granted permission
-      // and registers the web push endpoint automatically.
-      if (result === "granted" && userId) {
-        const os = w.OneSignal;
-        if (os?.login) {
-          try {
-            await os.login(userId);
-            console.log("[notifications] OneSignal login after grant OK:", userId.slice(0, 8));
-          } catch (e) {
-            console.error("[notifications] OneSignal login after grant failed:", e);
-          }
+
+      if (result !== "granted" || !userId) return;
+
+      // Step 2: Use the OneSignalDeferred queue to ensure the SDK is fully ready,
+      // then: (a) login to link this Supabase UUID, (b) call OneSignal's own
+      // requestPermission() — this does NOT re-prompt (permission already granted)
+      // but DOES register the web push subscription endpoint with OneSignal.
+      w.OneSignalDeferred = w.OneSignalDeferred || [];
+      w.OneSignalDeferred.push(async (os: any) => {
+        try {
+          await os.login(userId);
+          console.log("[notifications] OneSignal login OK:", userId.slice(0, 8));
+          // In SDK v16, optIn() is what actually creates the push subscription
+          // endpoint. requestPermission() only handles the browser dialog.
+          // Since we already have permission, optIn() registers silently.
+          await os.User.PushSubscription.optIn();
+          console.log("[notifications] OneSignal push subscription registered via optIn");
+        } catch (e) {
+          console.error("[notifications] OneSignal subscribe error:", e);
         }
-      }
+      });
     } catch (e) {
       console.error("[notifications] handleEnableNotifications error:", e);
     }

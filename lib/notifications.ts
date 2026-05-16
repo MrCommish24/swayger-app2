@@ -18,15 +18,19 @@ export async function registerOneSignalUser(userId: string): Promise<void> {
         console.log("[notifications] OneSignal SDK ready, linking user:", userId.slice(0, 8));
         await OneSignal.login(userId);
         console.log("[notifications] OneSignal login OK");
-        // If permission already granted (e.g. user allowed before SDK linked them),
-        // explicitly request again so OneSignal creates/refreshes the subscription.
-        const permission = OneSignal.Notifications?.permission;
-        console.log("[notifications] Notification permission:", permission);
-        if (permission === true || (w.Notification && w.Notification.permission === "granted")) {
+
+        // In OneSignal Web SDK v16, requestPermission() only handles the browser
+        // dialog. The actual push subscription is created via optIn(). If browser
+        // permission is already granted, optIn() silently registers without prompting.
+        const browserPermission = w.Notification?.permission;
+        console.log("[notifications] Browser permission state:", browserPermission);
+        if (browserPermission === "granted") {
           try {
-            await OneSignal.Notifications.requestPermission();
-            console.log("[notifications] Push subscription refreshed for existing permission");
-          } catch (_) {}
+            await OneSignal.User.PushSubscription.optIn();
+            console.log("[notifications] Push subscription opted in (existing permission)");
+          } catch (e) {
+            console.error("[notifications] optIn error:", e);
+          }
         }
       } catch (e) {
         console.error("[notifications] OneSignal login error:", e);
