@@ -113,10 +113,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ ok: false, error: "Missing fields" });
         return;
       }
-      const appId = process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID;
+      const appId = "6c7fe969-e694-4977-819a-f10fbc4159c6";
       const apiKey = process.env.ONESIGNAL_REST_API_KEY;
-      if (!appId || !apiKey) {
-        res.status(500).json({ ok: false, error: "OneSignal not configured" });
+      if (!apiKey) {
+        res.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
         return;
       }
       const response = await fetch("https://api.onesignal.com/notifications", {

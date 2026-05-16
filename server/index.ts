@@ -174,10 +174,13 @@ const ONESIGNAL_SNIPPET = `
       async function swaygerSubscribe(userId) {
         if (!userId) return;
         try {
-          await OneSignal.login(userId);
+          // optIn first — creates the push subscription token
           if (navigator.serviceWorker) { await navigator.serviceWorker.ready; }
           await OneSignal.User.PushSubscription.optIn();
-          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_ok", userId: userId.slice(0,8), optedIn: OneSignal.User.PushSubscription.optedIn }) }).catch(function(){});
+          // login after — links the existing subscription to the external_id
+          await OneSignal.login(userId);
+          var token = OneSignal.User.PushSubscription.token;
+          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_ok", userId: userId.slice(0,8), optedIn: OneSignal.User.PushSubscription.optedIn, hasToken: !!token }) }).catch(function(){});
         } catch (e) {
           var msg = e && e.message ? e.message : String(e);
           fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_error", userId: userId.slice(0,8), error: msg }) }).catch(function(){});
