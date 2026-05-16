@@ -132,63 +132,51 @@ const ONESIGNAL_SNIPPET = `
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "6c7fe969-e694-4977-819a-f10fbc4159c6",
-        notifyButton: { enable: false },
-        allowLocalhostAsSecureOrigin: true,
-        serviceWorkerParam: { scope: "/" },
-        serviceWorkerPath: "/OneSignalSDKWorker.js",
-      });
+      // Ping 1: confirm the deferred callback is actually running
+      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "callback_start" }) }).catch(function(){});
 
-      // After init, subscribe the user if we already know their ID.
-      // React stores the Supabase UUID in localStorage as soon as a session starts.
-      // We also listen for a swayger:session event in case React fires it after init completes.
-      async function swaygerSubscribe(userId) {
-        if (!userId) return;
-        try {
-          console.log("[onesignal] Subscribing user:", userId.slice(0, 8));
-          await OneSignal.login(userId);
-          console.log("[onesignal] login OK, optedIn before:", OneSignal.User.PushSubscription.optedIn);
-
-          // Wait for service worker to be fully active before pushing subscription
-          if (navigator.serviceWorker) {
-            await navigator.serviceWorker.ready;
-            console.log("[onesignal] ServiceWorker ready");
-          }
-
-          await OneSignal.User.PushSubscription.optIn();
-          console.log("[onesignal] optIn complete, optedIn after:", OneSignal.User.PushSubscription.optedIn, "token:", OneSignal.User.PushSubscription.token);
-          // Report success to server
-          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "ok", userId: userId.slice(0,8), optedIn: OneSignal.User.PushSubscription.optedIn }) }).catch(function(){});
-        } catch (e) {
-          var msg = e && e.message ? e.message : String(e);
-          console.error("[onesignal] Subscribe error:", msg);
-          // Report error to server so we can see it in server logs
-          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "error", userId: userId.slice(0,8), error: msg }) }).catch(function(){});
-        }
+      try {
+        await OneSignal.init({
+          appId: "6c7fe969-e694-4977-819a-f10fbc4159c6",
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: true,
+          serviceWorkerParam: { scope: "/" },
+          serviceWorkerPath: "/OneSignalSDKWorker.js",
+        });
+      } catch (initErr) {
+        var initMsg = initErr && initErr.message ? initErr.message : String(initErr);
+        fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "init_error", error: initMsg }) }).catch(function(){});
+        return;
       }
 
-      // Diagnostic ping — always fires so we can see actual browser state
+      // Ping 2: init completed — report actual browser state
       var storedId = localStorage.getItem("swayger_uid");
       var notifPerm = window.Notification ? window.Notification.permission : "unsupported";
       fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "init_complete", storedId: storedId ? storedId.slice(0,8) : null, notifPerm: notifPerm }) }).catch(function(){});
 
-      // Try immediately with whatever userId is already stored
+      async function swaygerSubscribe(userId) {
+        if (!userId) return;
+        try {
+          await OneSignal.login(userId);
+          if (navigator.serviceWorker) { await navigator.serviceWorker.ready; }
+          await OneSignal.User.PushSubscription.optIn();
+          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_ok", userId: userId.slice(0,8), optedIn: OneSignal.User.PushSubscription.optedIn }) }).catch(function(){});
+        } catch (e) {
+          var msg = e && e.message ? e.message : String(e);
+          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_error", userId: userId.slice(0,8), error: msg }) }).catch(function(){});
+        }
+      }
+
       if (storedId && window.Notification && window.Notification.permission === "granted") {
         swaygerSubscribe(storedId);
       }
 
-      // Also handle late-arriving session events (React bundle loaded after init),
-      // but only subscribe if the user has already granted browser permission —
-      // we don't want to auto-prompt new users who haven't seen the banner yet.
       window.addEventListener("swayger:session", function(e) {
         if (window.Notification && window.Notification.permission === "granted") {
           swaygerSubscribe(e.detail && e.detail.userId);
         }
       });
 
-      // swayger:permission fires from the banner handler after the user clicks Allow.
-      // At this point permission is guaranteed to be "granted".
       window.addEventListener("swayger:permission", function(e) {
         swaygerSubscribe(e.detail && e.detail.userId);
       });
