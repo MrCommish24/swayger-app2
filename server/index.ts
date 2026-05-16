@@ -148,10 +148,23 @@ const ONESIGNAL_SNIPPET = `
         try {
           console.log("[onesignal] Subscribing user:", userId.slice(0, 8));
           await OneSignal.login(userId);
+          console.log("[onesignal] login OK, optedIn before:", OneSignal.User.PushSubscription.optedIn);
+
+          // Wait for service worker to be fully active before pushing subscription
+          if (navigator.serviceWorker) {
+            await navigator.serviceWorker.ready;
+            console.log("[onesignal] ServiceWorker ready");
+          }
+
           await OneSignal.User.PushSubscription.optIn();
-          console.log("[onesignal] Subscription created for", userId.slice(0, 8));
+          console.log("[onesignal] optIn complete, optedIn after:", OneSignal.User.PushSubscription.optedIn, "token:", OneSignal.User.PushSubscription.token);
+          // Report success to server
+          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "ok", userId: userId.slice(0,8), optedIn: OneSignal.User.PushSubscription.optedIn }) }).catch(function(){});
         } catch (e) {
-          console.error("[onesignal] Subscribe error:", e);
+          var msg = e && e.message ? e.message : String(e);
+          console.error("[onesignal] Subscribe error:", msg);
+          // Report error to server so we can see it in server logs
+          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ status: "error", userId: userId.slice(0,8), error: msg }) }).catch(function(){});
         }
       }
 
