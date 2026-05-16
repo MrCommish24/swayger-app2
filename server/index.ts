@@ -143,10 +143,7 @@ const ONESIGNAL_SNIPPET = `
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
-      // Ping 1: confirm the deferred callback is actually running
-      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "callback_start", href: window.location.href }) }).catch(function(){});
-
-      // Unregister ALL service workers so a stale registration can't block OneSignal
+      // Unregister any stale service workers that could block OneSignal's own registration
       if (navigator.serviceWorker) {
         try {
           var regs = await navigator.serviceWorker.getRegistrations();
@@ -160,35 +157,20 @@ const ONESIGNAL_SNIPPET = `
           notifyButton: { enable: false },
           allowLocalhostAsSecureOrigin: true,
         });
-      } catch (initErr) {
-        var initMsg = initErr && initErr.message ? initErr.message : String(initErr);
-        fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "init_error", error: initMsg }) }).catch(function(){});
-        return;
-      }
+      } catch (_) { return; }
 
-      // Ping 2: init completed — report actual browser state
       var storedId = localStorage.getItem("swayger_uid");
-      var notifPerm = window.Notification ? window.Notification.permission : "unsupported";
-      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "init_complete", storedId: storedId ? storedId.slice(0,8) : null, notifPerm: notifPerm }) }).catch(function(){});
 
       async function swaygerSubscribe(userId) {
         if (!userId) return;
         try {
           if (navigator.serviceWorker) { await navigator.serviceWorker.ready; }
-          // Force a clean subscription cycle: opt out first to clear any stale opted-out state,
-          // then opt in to create a fresh push subscription token
+          // Cycle opt-out → opt-in to clear any stale opted-out state in OneSignal
           try { await OneSignal.User.PushSubscription.optOut(); } catch (_) {}
           await new Promise(function(r) { setTimeout(r, 300); });
           await OneSignal.User.PushSubscription.optIn();
-          // login links the fresh subscription to the external_id
           await OneSignal.login(userId);
-          var token = OneSignal.User.PushSubscription.token;
-          var optedIn = OneSignal.User.PushSubscription.optedIn;
-          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_ok", userId: userId.slice(0,8), optedIn: optedIn, hasToken: !!token }) }).catch(function(){});
-        } catch (e) {
-          var msg = e && e.message ? e.message : String(e);
-          fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "subscribe_error", userId: userId.slice(0,8), error: msg }) }).catch(function(){});
-        }
+        } catch (_) {}
       }
 
       if (storedId && window.Notification && window.Notification.permission === "granted") {
