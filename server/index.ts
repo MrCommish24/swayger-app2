@@ -168,8 +168,12 @@ const ONESIGNAL_SNIPPET = `
         }
       }
 
-      // Try immediately with whatever userId is already stored
+      // Diagnostic ping — always fires so we can see actual browser state
       var storedId = localStorage.getItem("swayger_uid");
+      var notifPerm = window.Notification ? window.Notification.permission : "unsupported";
+      fetch("/api/debug/onesignal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ event: "init_complete", storedId: storedId ? storedId.slice(0,8) : null, notifPerm: notifPerm }) }).catch(function(){});
+
+      // Try immediately with whatever userId is already stored
       if (storedId && window.Notification && window.Notification.permission === "granted") {
         swaygerSubscribe(storedId);
       }
