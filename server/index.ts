@@ -60,6 +60,17 @@ function setupCors(app: express.Application) {
   });
 }
 
+function setupWwwRedirect(app: express.Application) {
+  app.use((req, res, next) => {
+    const host = req.headers.host || "";
+    // Redirect bare swayger.app → www.swayger.app (canonical origin for OneSignal + SEO)
+    if (host === "swayger.app" || host === "swayger.app:443") {
+      return res.redirect(301, `https://www.swayger.app${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
 function setupBodyParsing(app: express.Application) {
   app.use(
     express.json({
@@ -540,18 +551,10 @@ async function runSettlementExpiry() {
 }
 
 (async () => {
+  setupWwwRedirect(app);
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
-
-  // Redirect bare domain → www so OneSignal (configured for www.swayger.app) works correctly
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const host = req.headers.host || "";
-    if (host === "swayger.app") {
-      return res.redirect(301, `https://www.swayger.app${req.originalUrl}`);
-    }
-    next();
-  });
 
   configureExpoAndLanding(app);
 
