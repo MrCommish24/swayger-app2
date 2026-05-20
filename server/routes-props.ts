@@ -296,6 +296,124 @@ function extractStat(playerData: unknown, statName: string): number | null {
   return isNaN(num) ? null : num;
 }
 
+// ─── MLB Stats API helper ──────────────────────────────────────
+// Uses the free MLB Stats API (no key required) to fetch player box-score
+// stats for any completed MLB game date.
+
+type MLBPlayerStats = {
+  hits?: number;
+  atBats?: number;
+  totalBases?: number;
+  homeRuns?: number;
+  rbi?: number;
+  stolenBases?: number;
+  runs?: number;
+  strikeouts?: number; // pitching Ks
+  walks?: number;
+  inningsPitched?: number;
+};
+
+async function fetchMLBStatsMap(
+  date: string // "YYYY-MM-DD"
+): Promise<Record<string, MLBPlayerStats>> {
+  const MLB_API = "https://statsapi.mlb.com/api/v1";
+  const playerMap: Record<string, MLBPlayerStats> = {};
+
+  try {
+    const schedRes = await fetch(
+      `${MLB_API}/schedule?sportId=1&date=${date}&hydrate=linescore`
+    );
+    if (!schedRes.ok) return playerMap;
+    const sched = await schedRes.json() as { dates?: { games?: { gamePk: number; status?: { detailedState?: string } }[] }[] };
+    const games = sched.dates?.[0]?.games ?? [];
+
+    for (const game of games) {
+      if (!game.status?.detailedState?.toLowerCase().includes("final")) continue;
+
+      const boxRes = await fetch(`${MLB_API}/game/${game.gamePk}/boxscore`);
+      if (!boxRes.ok) continue;
+      const box = await boxRes.json() as {
+        teams?: {
+          home?: { players?: Record<string, unknown> };
+          away?: { players?: Record<string, unknown> };
+        };
+      };
+
+      const allPlayers = [
+        ...Object.values(box.teams?.home?.players ?? {}),
+        ...Object.values(box.teams?.away?.players ?? {}),
+      ] as Array<{ person?: { fullName?: string }; stats?: { batting?: Record<string, number>; pitching?: Record<string, number> } }>;
+
+      for (const p of allPlayers) {
+        const name = p.person?.fullName;
+        if (!name) continue;
+        const b = p.stats?.batting ?? {};
+        const pit = p.stats?.pitching ?? {};
+        playerMap[name] = {
+          hits: b.hits,
+          atBats: b.atBats,
+          totalBases: b.totalBases,
+          homeRuns: b.homeRuns,
+          rbi: b.rbi,
+          stolenBases: b.stolenBases,
+          runs: b.runs,
+          strikeouts: typeof pit.strikeOuts === "number" ? pit.strikeOuts : undefined,
+          walks: b.baseOnBalls,
+          inningsPitched: typeof pit.outs === "number" ? +(pit.outs / 3).toFixed(1) : undefined,
+        };
+      }
+    }
+  } catch (err) {
+    console.error("[MLB] fetchMLBStatsMap error:", err);
+  }
+
+  console.log(`[MLB] fetchMLBStatsMap: found ${Object.keys(playerMap).length} players for ${date}`);
+  return playerMap;
+}
+
+// Resolve a single MLB prop using the player stats map.
+// Stat names mirror the prop.stat values stored when MLB nights are created.
+function resolveMLBProp(
+  prop: PropDef,
+  playerMap: Record<string, MLBPlayerStats>
+): PropDef {
+  if (prop.status === "voided") return prop;
+
+  const playerName = prop.player_name;
+  if (!playerName) {
+    console.warn(`[MLB] no player_name on prop ${prop.id}, voiding`);
+    return { ...prop, status: "voided" as const };
+  }
+
+  const stats = playerMap[playerName];
+  if (!stats) {
+    console.warn(`[MLB] player "${playerName}" not found in box scores, voiding`);
+    return { ...prop, status: "voided" as const };
+  }
+
+  const statMap: Record<string, number | undefined> = {
+    hits: stats.hits,
+    totalBases: stats.totalBases,
+    homeRuns: stats.homeRuns,
+    rbi: stats.rbi,
+    stolenBases: stats.stolenBases,
+    runs: stats.runs,
+    strikeouts: stats.strikeouts,
+    walks: stats.walks,
+    inningsPitched: stats.inningsPitched,
+  };
+
+  const actual = statMap[prop.stat];
+  if (actual === undefined || actual === null) {
+    console.warn(`[MLB] stat "${prop.stat}" not found for ${playerName}, voiding`);
+    return { ...prop, status: "voided" as const };
+  }
+
+  const result: "over" | "under" = actual > prop.line ? "over" : "under";
+  console.log(`[MLB] ${playerName} ${prop.stat}: ${actual} vs line ${prop.line} → ${result}`);
+  return { ...prop, result };
+}
+
 // ─── Scoring helper ───────────────────────────────────────────
 
 function computeScore(correctCount: number, totalProps: number): number {
@@ -1123,43 +1241,50 @@ export function registerPropsRoutes(app: Express) {
       if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
 
       const props = night.props as PropDef[];
+      const nightSport = (night.sport as string | undefined) ?? "NBA";
 
-      // Batch-fetch all events from SGO using the list endpoint with startsAfter.
-      // Pass the night's date so the window starts 1 day before, keeping page count low.
-      const eventIds = [...new Set(props.map((p) => p.event_id))];
-      const eventMap = await fetchSGOEventMap(eventIds, night.date as string);
-      console.log(`[props/resolve] fetched ${Object.keys(eventMap).length}/${eventIds.length} events from SGO`);
+      let resolvedProps: PropDef[];
 
-      // Resolve each prop
-      const resolvedProps: PropDef[] = props.map((prop) => {
-        if (prop.status === "voided") return prop;
+      if (nightSport === "MLB") {
+        // ── MLB path: use free MLB Stats API box scores ──
+        console.log(`[props/resolve] MLB night — fetching box scores from MLB Stats API`);
+        const playerMap = await fetchMLBStatsMap(night.date as string);
+        resolvedProps = props.map((prop) => resolveMLBProp(prop, playerMap));
+      } else {
+        // ── Default path: use SportsGameOdds (NBA + others) ──
+        const eventIds = [...new Set(props.map((p) => p.event_id))];
+        const eventMap = await fetchSGOEventMap(eventIds, night.date as string);
+        console.log(`[props/resolve] fetched ${Object.keys(eventMap).length}/${eventIds.length} events from SGO`);
 
-        const event = eventMap[prop.event_id];
-        if (!event) {
-          console.warn(`[props/resolve] no SGO event found for event_id=${prop.event_id}, prop=${prop.id}`);
-          return prop;
-        }
+        resolvedProps = props.map((prop) => {
+          if (prop.status === "voided") return prop;
 
-        const gameResults = (event.results as Record<string, unknown> | undefined)?.game as Record<string, unknown> | undefined;
-        if (!gameResults) return prop;
+          const event = eventMap[prop.event_id];
+          if (!event) {
+            console.warn(`[props/resolve] no SGO event found for event_id=${prop.event_id}, prop=${prop.id}`);
+            return prop;
+          }
 
-        const playerData = gameResults[prop.player_id];
-        if (playerData === undefined || playerData === null) {
-          // Player didn't appear in game data — void the prop
-          console.warn(`[props/resolve] player ${prop.player_id} not in results, voiding`);
-          return { ...prop, status: "voided" as const };
-        }
+          const gameResults = (event.results as Record<string, unknown> | undefined)?.game as Record<string, unknown> | undefined;
+          if (!gameResults) return prop;
 
-        const actualScore = extractStat(playerData, prop.stat);
-        if (actualScore === null) {
-          console.warn(`[props/resolve] stat "${prop.stat}" not found for ${prop.player_id}, voiding`);
-          return { ...prop, status: "voided" as const };
-        }
+          const playerData = gameResults[prop.player_id];
+          if (playerData === undefined || playerData === null) {
+            console.warn(`[props/resolve] player ${prop.player_id} not in results, voiding`);
+            return { ...prop, status: "voided" as const };
+          }
 
-        const result: "over" | "under" = actualScore > prop.line ? "over" : "under";
-        console.log(`[props/resolve] ${prop.player_name} ${prop.stat}: ${actualScore} vs line ${prop.line} → ${result}`);
-        return { ...prop, result };
-      });
+          const actualScore = extractStat(playerData, prop.stat);
+          if (actualScore === null) {
+            console.warn(`[props/resolve] stat "${prop.stat}" not found for ${prop.player_id}, voiding`);
+            return { ...prop, status: "voided" as const };
+          }
+
+          const result: "over" | "under" = actualScore > prop.line ? "over" : "under";
+          console.log(`[props/resolve] ${prop.player_name} ${prop.stat}: ${actualScore} vs line ${prop.line} → ${result}`);
+          return { ...prop, result };
+        });
+      }
 
       // Update night with resolved props
       await supabase
