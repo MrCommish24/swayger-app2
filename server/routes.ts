@@ -7,6 +7,7 @@ import { registerMMAdminRoutes } from "./routes-mm-admin";
 import { registerMMSpecialRoutes } from "./routes-mm-special";
 import { registerNBARoutes } from "./routes-nba";
 import { registerPropsRoutes } from "./routes-props";
+import { registerGamedayRoutes } from "./routes-gameday";
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -250,6 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerMMSpecialRoutes(app);
   registerNBARoutes(app);
   registerPropsRoutes(app);
+  registerGamedayRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

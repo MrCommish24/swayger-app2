@@ -1,0 +1,942 @@
+Replit Build Prompt: Game Day Swayger V1 — Core Testable MVP
+Start Here: Build Plan Required Before Coding
+
+IMPORTANT: Do not start coding yet.
+
+First, inspect the existing Swayger.app codebase and return a build plan for review.
+
+Your build plan should include:
+
+Current app architecture summary
+Relevant existing files/routes/components/auth/database tables
+Existing Swayger Points/SP system summary
+Proposed Game Day Swayger architecture
+Proposed new files/components/routes/tables
+Existing files you plan to modify
+State model for rooms/cards/props/participants
+Host/admin permission approach
+Participant/guest flow implementation plan
+Leaderboard/scoring approach
+Analytics/event tracking plan
+What you are intentionally not building in V1
+Key risks or ambiguity
+Estimated milestone order
+
+Do not implement anything until I approve the plan.
+
+If there are multiple implementation options, recommend the simplest option that gets to a working, testable MVP fastest, even if it is less scalable.
+
+Product Summary
+
+You are working inside the existing Swayger.app project. I want to add a new modular beta feature called Game Day Swayger.
+
+Do not rebuild the existing app.
+Do not refactor unrelated flows.
+Do not modify unrelated existing Swayger functionality.
+
+Game Day Swayger is a mobile-first private prediction room for friends watching NBA playoff games.
+
+A host creates a Game Day Room, shares one link in a group chat, participants join as logged-in users or guests, make NBA picks during scheduled game moments, earn room-level Swayger Points for correct picks, see picks revealed after each card locks, and follow a leaderboard during the game.
+
+The positioning is:
+
+Keep your group chat. Use Swayger to track the picks, leaderboard, and receipts.
+
+The group chat remains the conversation layer. Swayger is only the structured picks, reveal, leaderboard, and final standings layer.
+
+Core MVP Hypothesis
+
+This build should validate:
+
+Will private friend groups return for structured pick moments during live NBA games?
+
+The MVP only needs to prove:
+
+People join quickly.
+People submit picks quickly.
+People care about reveal moments.
+People check leaderboard movement.
+Hosts can run rooms without too much friction.
+People react to final standings.
+
+Do not overbuild beyond this.
+
+Phase 1 Build Priority
+
+For the first implementation, prioritize only the core testable loop:
+
+Admin creates a Game Day Room.
+Host enters teams and star players.
+Host selects props.
+Participant joins as guest.
+Participant submits picks.
+Host locks card.
+Picks reveal after lock.
+Host settles props.
+Leaderboard updates.
+
+Do not proceed to final standings polish, analytics polish, account CTA, guest claiming, or history until this core loop works.
+
+The first usable version should let me run a real test room with 5–8 people during an NBA playoff game.
+
+V1 Scope
+
+Build the smallest functional version that supports:
+
+Admin/host creates a private NBA Game Day Room.
+Host enters actual team names and star player names.
+Host selects 2–4 props per pick card from a preset NBA Playoff Template.
+App generates one persistent room link.
+Participants click the link and join the room.
+Logged-in users enter directly if their session exists.
+Logged-out users can either sign in/create account or continue as guest.
+Guests enter a unique display name and can make picks without account creation.
+Picks are grouped into three cards:
+Pregame
+Halftime
+4Q Clutch
+Host manually opens and locks each card.
+Participants can submit picks only while a card is open.
+Everyone’s picks are revealed only after the card locks.
+Host manually settles props.
+Correct picks are worth 10 Game Day SP each.
+Leaderboard updates when props are settled.
+Final standings page can be added after the core loop works.
+Game Day engagement data should be tracked separately from the rest of Swayger, but do not let analytics delay the core loop.
+Important V1 Guardrails
+
+Do not build the following in V1:
+
+full chat
+real-money wagers
+betting language
+odds
+payment functionality
+Swayger Points staking
+sportsbook-style mechanics
+push notifications
+SMS notifications
+sports data API integration
+automated settlement
+AI-generated props
+native app-only functionality
+public room discovery
+creator rooms
+sponsor dashboard
+global leaderboard
+multi-sport templates
+complex social profiles
+follow/friend system
+full rivalry profiles
+guest-account merge logic
+advanced recap generation
+WebSockets or complex real-time infrastructure
+new role-management system
+major changes to existing auth
+major changes to the existing SP economy
+
+Use Swayger Points as a Game Day score mechanic only.
+
+Avoid language like:
+
+bet
+stake
+odds
+payout
+cash
+wager
+
+Use language like:
+
+make your pick
+earn 10 SP
+leaderboard
+receipts
+final standings
+Game Day record
+Critical Clarification: Game Day SP
+
+For V1, Game Day SP is a room-level score only.
+
+Do not update the existing Swayger Points ledger, balances, escrow, bankruptcy logic, wallet, or real user SP balance.
+
+Correct picks earn 10 Game Day SP toward that room’s leaderboard only.
+
+Store/calculate Game Day SP separately from the main SP economy.
+
+In the UI, you may label this as “SP” to stay on brand, but the backend should treat it as isolated Game Day scoring.
+
+Suggested UI language:
+
+Correct picks earn 10 SP for this Game Day Room.
+
+Avoid implying that Game Day SP is credited to a user’s main wallet or account balance.
+
+Critical Clarification: Admin/Host Access
+
+For V1, only configured admins can create and host Game Day Rooms.
+
+Use the simplest admin gating compatible with the current auth system, such as:
+
+allowlist of admin user IDs
+allowlist of admin emails
+environment variable/config value
+
+Do not build a new role-management system.
+
+Do not create a broad admin dashboard.
+
+For V1, this feature is intended for me/admins to host private test rooms.
+
+Eventually other users may be able to create rooms, but that is not part of V1.
+
+Critical Simplifications
+Guest claiming
+
+Do not implement guest-account merge logic in V1.
+
+Guests can play without accounts.
+
+After final standings are eventually added, show a CTA encouraging guests to create an account for future Game Day records.
+
+Preserve database fields that could support future guest claiming later, but do not build the merge/claim flow now.
+
+Example CTA:
+
+Want to save future Game Day records? Create your Swayger account.
+
+Recap / Final Standings
+
+Do not build advanced recap logic in V1.
+
+After the core loop works, create a simple Final Standings page with:
+
+winner
+final leaderboard
+total props
+total participants
+editable host note
+shareable final standings text
+
+The host can manually add a short note before publishing.
+
+Example host note:
+
+Mike folded in the 4th. Darius walked away with the receipts.
+
+Do not build “best call,” “coldest take,” “4Q collapse,” or advanced narrative logic in V1.
+
+Rivalry/profile history
+
+Do not build full rivalry history in V1.
+
+Save only:
+
+room result
+participant final score
+winner
+number of props answered
+final standings
+
+If easy, track for logged-in users:
+
+total Game Day rooms played
+total Game Day wins
+total Game Day SP earned
+
+Do not build head-to-head rivalry records, streaks, public profiles, global rankings, or social graphs.
+
+Realtime updates
+
+For MVP, refresh-based updates or lightweight polling are acceptable.
+
+Full real-time infrastructure, WebSockets, live subscriptions, and push updates are not required.
+
+Correctness and simplicity matter more than real-time elegance.
+
+User Types
+1. Host/Admin
+
+Only configured admin/host users can create and manage Game Day Rooms in V1.
+
+The host can:
+
+create room
+enter matchup details
+enter Team A name
+enter Team B name
+enter Team A star player
+enter Team B star player
+select active props from the NBA template
+open pick cards
+lock pick cards
+settle props manually
+edit settled results if simple
+view leaderboard
+publish final standings after the core loop works
+optionally edit final standings host note after the core loop works
+2. Logged-in Participant
+
+A logged-in user clicks the room link and enters directly into the room.
+
+Their picks may attach to their Swayger account if feasible within the existing auth/data structure.
+
+Important: Game Day SP should still remain separate from the main SP economy.
+
+3. Guest Participant
+
+A guest user clicks the room link and can continue without account creation.
+
+Guest flow:
+
+click room link
+choose “Continue as Guest”
+enter display name
+join room
+make picks
+view revealed picks after lock
+view leaderboard
+view final standings after added
+
+Guest display names must be unique within each room.
+
+If “Mike” already exists, show:
+
+Mike is already taken in this room. Try Mike G. or another name.
+
+Use localStorage/session storage or the simplest reliable approach to preserve the guest participant identity on refresh in the same browser.
+
+Do not overbuild cross-device guest identity.
+
+Account Flow
+
+When a user clicks a Game Day Room link:
+
+If logged in
+
+Take them directly into the room.
+
+If logged out
+
+Show a join screen:
+
+Headline:
+
+Join Game Day Swayger
+
+Subtext:
+
+Make NBA picks, track the leaderboard, and see who walks away with the receipts.
+
+Buttons:
+
+Continue as Guest
+Sign In / Create Account
+
+If they sign in or create an account, redirect them back to the exact Game Day Room, not the homepage.
+
+If they continue as guest, create a guest participant record connected to that room.
+
+Do not block guests from making picks.
+
+Room Link Behavior
+
+Each Game Day Room should have one persistent link.
+
+Example:
+
+/gameday/room/:roomId
+
+The same link should route users based on current room/card state.
+
+If a card is open
+
+Show the current open pick card.
+
+If no card is open
+
+Show leaderboard and message:
+
+No picks are open right now. Keep watching the game and check the group chat for the next drop.
+
+If the room is final
+
+Show final standings, once final standings are implemented.
+
+State Model
+
+Keep room states simple.
+
+Room status
+
+Use only:
+
+draft
+active
+final
+Pick card status
+
+Use:
+
+closed
+open
+locked
+settled
+Prop status
+
+Use:
+
+pending
+settled
+
+Do not create unnecessary room states like pregame, live, halftime, or fourth. The current active card should determine what the user sees.
+
+Pick Cards
+
+Each room should have three pick cards:
+
+Pregame Picks
+Halftime Picks
+4Q Clutch Picks
+
+The host should be able to select 2–4 active props per card from the preset NBA Playoff Template.
+
+Ideal first room: 8–10 total props.
+
+For the absolute first core loop test, it is acceptable if only one card fully works first, as long as the architecture supports the three-card flow.
+
+NBA Playoff Template
+
+Build one default NBA Playoff Template.
+
+Use Team A, Team B, Team A Star, and Team B Star as variables that are replaced with the host’s actual entries.
+
+Pregame Card Options
+Who wins the game?
+Team A
+Team B
+Who wins the 1st quarter?
+Team A
+Team B
+Will either team lead by 10+ at any point?
+Yes
+No
+Which team makes more threes?
+Team A
+Team B
+Tie
+Which star player scores more points?
+Team A Star
+Team B Star
+Will the game be within 7 points with 2 minutes left?
+Yes
+No
+Final margin?
+1–5
+6–10
+11–15
+16+
+Will there be a technical foul?
+Yes
+No
+Halftime Card Options
+Does the halftime leader win the game?
+Yes
+No
+Who wins the 3rd quarter?
+Team A
+Team B
+Will the losing team cut the deficit to one possession?
+Yes
+No
+Which team scores first in the 2nd half?
+Team A
+Team B
+Which star player scores more in the 2nd half?
+Team A Star
+Team B Star
+Will either team go on a 10–0 run in the 2nd half?
+Yes
+No
+4Q Clutch Card Options
+Who wins the 4th quarter?
+Team A
+Team B
+Will the game be within 5 points in the final 2 minutes?
+Yes
+No
+Will either team miss a clutch free throw?
+Yes
+No
+Which team scores first in the 4th quarter?
+Team A
+Team B
+Which star player scores more in the 4th quarter?
+Team A Star
+Team B Star
+Will there be a lead change in the 4th quarter?
+Yes
+No
+Who makes the biggest play?
+Team A Star
+Team B Star
+Role player
+Coach
+Recommended Default Test Setup
+
+When creating a room, allow the host to use this recommended default of 9 props:
+
+Pregame — 4
+Who wins the game?
+Who wins the 1st quarter?
+Which star player scores more points?
+Will the game be within 7 points with 2 minutes left?
+Halftime — 3
+Does the halftime leader win the game?
+Who wins the 3rd quarter?
+Which star player scores more in the 2nd half?
+4Q — 2
+Who wins the 4th quarter?
+Will the game be within 5 points in the final 2 minutes?
+
+The host should be able to change these selections before publishing the room.
+
+Scoring
+
+Use Game Day Swayger Points.
+
+Correct pick = 10 Game Day SP
+Incorrect pick = 0 Game Day SP
+Pending pick = pending
+Tiebreaker = most correct 4Q picks
+If still tied = shared rank
+
+The leaderboard should show:
+
+Rank
+Display name
+Current SP
+Correct picks
+Pending picks
+
+Leaderboard can be recalculated server-side after settlement actions. It does not need complex real-time syncing.
+
+Do not update main user balances or existing SP ledger.
+
+Pick Reveal Rules
+
+Participants should not see everyone else’s picks while the card is open.
+
+After a participant submits their picks, show:
+
+Picks submitted. Picks reveal after this card locks.
+
+After the host locks the card, reveal:
+
+each prop
+who picked each answer
+user’s own pick
+status: pending or settled
+
+This reveal moment is important. Prioritize it.
+
+Host Control Room
+
+Create a host/admin route.
+
+Example:
+
+/gameday/room/:roomId/host
+
+This must work on both desktop and mobile, but prioritize functional UI over polished UI.
+
+Use simple reusable card/list/button patterns. Do not create a custom design system.
+
+The Host Control Room should include only the essential controls first.
+
+Required Host Controls for Core Loop
+Room overview
+Room link
+Copy room link button
+Participant count
+Pick card list
+Open card button
+Lock card button
+Prop settlement controls
+Leaderboard
+Add After Core Loop Works
+Publish final standings button
+Editable host note for final standings
+Optional reminder copy buttons
+Prop Settlement
+
+For each prop:
+
+Question
+Answer options
+Count of picks per answer
+Correct answer selector
+Settle button
+Edit result button if simple
+Recalculate leaderboard after edits
+
+If editing results becomes complex, allow editing only before final standings are published.
+
+Optional Reminder Copy Buttons
+
+Add copy reminder buttons only if simple and only after the core loop works.
+
+If implemented, use:
+
+Pregame Invite
+
+I made a Game Day Swayger room for tonight. Make your NBA picks before tipoff, track the leaderboard, and get receipts after the game. Join here: [room link]
+
+Halftime Reminder
+
+Halftime picks are live. Same Swayger room. Takes 30 seconds. Locking at start of 3Q: [room link]
+
+4Q Reminder
+
+4Q clutch picks are live. Make your picks before they lock: [room link]
+
+Final Standings
+
+Final Game Day Swayger standings are ready. See who won and who has receipts: [room link]
+
+Do not let reminder buttons delay the MVP.
+
+Participant Room Page
+
+The participant page should be mobile-first.
+
+Route:
+
+/gameday/room/:roomId
+
+It should show:
+
+room name
+matchup
+current status
+current open pick card, if any
+submitted picks
+locked/revealed picks
+leaderboard
+final standings when room is final, once implemented
+reminder that chat remains in group text
+
+Add copy somewhere on the room page:
+
+Keep talking in your group chat. Swayger tracks the picks, leaderboard, and receipts.
+
+If no card is open, show:
+
+No picks are open right now. Check the leaderboard and watch your group chat for the next drop.
+
+If a card is locked and user missed it, show:
+
+This pick card is locked. You can still follow the leaderboard and join the next pick window.
+
+If room is final, show final standings, once implemented.
+
+Final Standings Page
+
+Only build this after the core loop works.
+
+After the host publishes final standings, the room should display:
+
+winner
+final leaderboard
+total props
+total participants
+total Game Day SP earned by each participant
+editable host note
+shareable final standings text
+account CTA for guests
+
+Guest CTA:
+
+Want to save future Game Day records? Create your Swayger account.
+
+Do not implement account merge/claim logic in V1.
+
+Engagement Analytics
+
+Track Game Day engagement separately from the rest of the app, but do not let analytics delay the core loop.
+
+If there is already an analytics/event system, use it. If not, create a lightweight Game Day events table.
+
+Track, at minimum:
+
+room created
+participant joined
+guest participant joined
+logged-in participant joined
+pick submitted
+card opened
+card locked
+prop settled
+leaderboard viewed
+
+After core loop works, optionally add:
+
+room activated
+final standings viewed
+guest clicked create account CTA
+
+Do not overbuild analytics dashboards. Capturing the events is enough.
+
+Suggested Data Models
+
+Adapt to the existing stack and naming conventions.
+
+Create modular Game Day-specific tables/entities.
+
+GameDayRoom
+id
+room_name
+team_a_name
+team_b_name
+team_a_star
+team_b_star
+game_date
+host_user_id
+status: draft, active, final
+is_private
+created_at
+updated_at
+GameDayPickCard
+id
+room_id
+title
+phase: pregame, halftime, fourth
+status: closed, open, locked, settled
+lock_label
+display_order
+created_at
+updated_at
+GameDayProp
+id
+card_id
+question
+answer_options
+correct_answer
+status: pending, settled
+display_order
+created_at
+updated_at
+GameDayParticipant
+id
+room_id
+user_id nullable
+guest_session_id nullable
+display_name
+is_guest
+claimed_by_user_id nullable for future use only
+created_at
+updated_at
+GameDayPick
+id
+prop_id
+participant_id
+selected_answer
+is_correct nullable
+submitted_at
+GameDayFinalStandings
+
+Build only after core loop works.
+
+id
+room_id
+host_note nullable
+winner_participant_id
+is_published
+published_at
+created_at
+updated_at
+GameDayEvent
+id
+room_id
+participant_id nullable
+user_id nullable
+event_type
+metadata json/jsonb
+created_at
+
+Leaderboard can be calculated dynamically from settled picks.
+
+Remember: Game Day SP must stay separate from the main SP ledger/user balance system.
+
+Security / Permissions
+Only configured admin/host can create rooms.
+Only configured admin/host can access Host Control Room.
+Participants can only submit picks for themselves.
+Participants can only submit picks while a card is open.
+Participants cannot change picks after card locks.
+Participants cannot see others’ picks until the card locks.
+Host can settle results.
+Prevent duplicate display names within a room.
+Private rooms should only be accessible by direct link for V1.
+Do not create a new role-management system.
+Mobile-First Design
+
+Participant pages should prioritize:
+
+Current pick card
+Submit picks
+Reveal after lock
+Leaderboard
+Final standings later
+
+Host pages should be usable on both mobile and desktop.
+
+Use existing Swayger styling/components where possible.
+
+Avoid creating a custom design system.
+
+Build Process
+
+Before coding:
+
+Inspect the existing app structure.
+Identify current framework, routes, auth, database, styling, and deployment setup.
+Identify existing SP system and confirm Game Day SP will not touch it.
+Produce a concise implementation plan.
+Produce a dependency/risk summary.
+Confirm the files/tables/routes you will modify or create.
+Then wait for my approval before implementation.
+Do not modify unrelated existing Swayger functionality.
+Requested Milestones
+Milestone 1: Architecture inspection + implementation plan
+Inspect existing project.
+Identify tech stack and relevant files.
+Identify where Game Day should live.
+Identify auth/database approach.
+Identify existing SP system.
+Explain how Game Day SP will be kept separate.
+Explain admin/host gating approach.
+Summarize implementation risks.
+Do not code until this is complete.
+
+Checkpoint after this milestone.
+
+Milestone 2: Core data model + routes
+Create Game Day-specific data structures.
+Add routes.
+Add NBA template seed/config.
+Create basic host room creation flow.
+Keep data modular and separate from main Swayger flows.
+
+Checkpoint after this milestone.
+
+Milestone 3: Core participant loop
+Join room.
+Guest display name.
+Preserve guest session in same browser.
+Logged-in user flow.
+View current open card.
+Submit picks.
+Show submitted state.
+Show locked/revealed state.
+Show basic leaderboard.
+
+Checkpoint after this milestone.
+
+Milestone 4: Core host control loop
+Open cards.
+Lock cards.
+Settle props.
+Recalculate leaderboard.
+View participant counts.
+Copy room link.
+
+Checkpoint after this milestone.
+
+At this point, stop and confirm whether the core testable loop works before proceeding.
+
+Milestone 5: Final standings + basic analytics
+
+Only proceed after Milestones 2–4 work.
+
+Track basic Game Day events separately.
+Build final standings view.
+Add editable host note.
+Add guest account CTA.
+Add shareable final standings text.
+
+Checkpoint after this milestone.
+
+Milestone 6: QA polish
+Mobile responsiveness.
+Error states.
+Empty states.
+Duplicate display name handling.
+Late joiner handling.
+Locked card handling.
+Test/demo room.
+Confirm existing app flows still work.
+
+Checkpoint after this milestone.
+
+Final Acceptance Criteria for Core Loop
+
+The core loop is successful if I can:
+
+Log in as admin/host.
+Create a private NBA Game Day Room.
+Enter actual team and star player names.
+Select 2–4 props for at least one card.
+Share one persistent room link.
+Join that link as a guest.
+Submit picks.
+Lock the card as host.
+Reveal everyone’s picks after lock.
+Settle props as host.
+See leaderboard update with 10 Game Day SP per correct pick.
+Confirm Game Day SP did not touch the main SP ledger or user balance.
+Confirm existing Swayger functionality still works.
+Final Acceptance Criteria for Full V1
+
+The full V1 is successful if I can:
+
+Log in as admin/host.
+Create a private NBA Game Day Room.
+Enter actual team and star player names.
+Select 2–4 props per card.
+Share one persistent room link.
+Join that link as a guest.
+Submit pregame picks.
+Lock pregame card as host.
+Reveal everyone’s picks after lock.
+Settle props as host.
+See leaderboard update with 10 Game Day SP per correct pick.
+Open halftime card.
+Submit halftime picks.
+Lock and settle halftime props.
+Open 4Q card.
+Submit 4Q picks.
+Lock and settle 4Q props.
+Publish final standings.
+View final standings as participant.
+See guest CTA to create an account for future Game Day records.
+View Game Day engagement data separately from the rest of the app.
+Confirm Game Day SP did not touch the main SP ledger or user balance.
+Confirm existing Swayger functionality still works.
+Final Reminder
+
+Do not overbuild.
+
+Do not add features outside this MVP without asking.
+
+If a requested feature requires a major architectural change, stop and explain before implementing.
+
+Build the core testable loop first.
+
+The reveal moment is the product.
+
+The leaderboard reinforces it.
+
+The group chat distributes it.
+
+Everything else is supporting infrastructure.

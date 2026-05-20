@@ -78,6 +78,9 @@ function useProtectedRoute() {
     if (inInvite && !session) return;
     // Unauthenticated picks visitors can browse props — auth wall fires at submit time.
     if (inPicks && !session) return;
+    // Game Day rooms are accessible to guests — join flow handles auth inline.
+    const inGameday = segments[0] === "gameday";
+    if (inGameday && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       // Save the intended destination so we can return there after sign-in.
