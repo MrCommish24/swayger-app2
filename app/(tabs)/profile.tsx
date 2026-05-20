@@ -508,6 +508,14 @@ export default function ProfileScreen() {
           </Pressable>
 
           <Pressable
+            style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
+            onPress={() => router.push("/gameday/create")}
+          >
+            <Ionicons name="basketball-outline" size={18} color={Colors.dark.tabIconDefault} />
+            <Text style={styles.adminButtonText}>Game Day Swayger</Text>
+          </Pressable>
+
+          <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
             onPress={() => { Analytics.signedOut(); resetUser(); signOut(); }}
           >
