@@ -15,8 +15,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
-import Constants from "expo-constants";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   fetchLeaderboard,
   fetchNBAGames,
@@ -283,51 +281,114 @@ function MyPicksSummary({
   );
 }
 
-// ── Push Notification Nudge Banner ───────────────────────────────────────────
-const PUSH_NUDGE_KEY = "push-nudge-v1-dismissed";
+// ── Push Notification Nudge Banner (web-only) ─────────────────────────────────
+const PUSH_NUDGE_KEY = "swayger-push-nudge-v2-dismissed";
+type PushNudgeState = "checking" | "granted" | "ios-no-pwa" | "needs-prompt" | "denied";
 
 function PushNotificationBanner() {
-  const [permStatus, setPermStatus] = useState<string | null>(null);
+  const [nudgeState, setNudgeState] = useState<PushNudgeState>("checking");
   const [dismissed, setDismissed] = useState(false);
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS === "web") return;
-    if (Constants.appOwnership === "expo") return; // Expo Go — push not supported
+    if (Platform.OS !== "web") return;
+    try { if (window.localStorage.getItem(PUSH_NUDGE_KEY)) { setDismissed(true); return; } } catch {}
 
-    (async () => {
-      const wasDismissed = await AsyncStorage.getItem(PUSH_NUDGE_KEY);
-      if (wasDismissed) { setDismissed(true); return; }
-      const Notifications = require("expo-notifications");
-      const { status } = await Notifications.getPermissionsAsync();
-      setPermStatus(status);
-    })();
+    const NotifAPI = (window as any).Notification;
+    if (!NotifAPI) return; // browser doesn't support push at all
+
+    if (NotifAPI.permission === "granted") { setNudgeState("granted"); return; }
+    if (NotifAPI.permission === "denied")  { setNudgeState("denied");  return; }
+
+    // permission is "default" — figure out platform
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+    const isPWA = window.matchMedia?.("(display-mode: standalone)").matches
+      || !!(navigator as any).standalone;
+
+    if (isIOS && isSafari && !isPWA) {
+      setNudgeState("ios-no-pwa"); // needs Add to Home Screen first
+    } else {
+      setNudgeState("needs-prompt");
+    }
   }, []);
 
-  async function handlePress() {
-    const Notifications = require("expo-notifications");
-    if (permStatus === "denied" && Platform.OS === "ios") {
-      // iOS: can't re-prompt — send them straight to Swayger's notification settings
-      Linking.openURL("app-settings:");
+  function handleDismiss() {
+    try { window.localStorage.setItem(PUSH_NUDGE_KEY, "1"); } catch {}
+    setDismissed(true);
+    setShowIOSGuide(false);
+  }
+
+  async function handleEnablePress() {
+    if (nudgeState === "ios-no-pwa" || nudgeState === "denied") {
+      setShowIOSGuide(true);
       return;
     }
-    // Android (denied or undetermined) or iOS undetermined: fire the native prompt
-    const { status } = await Notifications.requestPermissionsAsync();
-    setPermStatus(status);
+    // Chrome / Android / Firefox / Safari PWA — fire the browser permission prompt
+    try {
+      const w = window as any;
+      if (w.OneSignal) {
+        // OneSignal handles the prompt + subscription registration in one call
+        await w.OneSignal.User.PushSubscription.optIn();
+        const perm = w.Notification?.permission;
+        if (perm === "granted") setNudgeState("granted");
+        else if (perm === "denied") setNudgeState("denied");
+      } else if (w.Notification) {
+        // Fallback: raw browser API (dev mode where OneSignal isn't loaded)
+        const result = await w.Notification.requestPermission();
+        setNudgeState(result === "granted" ? "granted" : result === "denied" ? "denied" : "needs-prompt");
+      }
+    } catch (e) {
+      console.error("[push-nudge] error:", e);
+    }
   }
 
-  async function handleDismiss() {
-    await AsyncStorage.setItem(PUSH_NUDGE_KEY, "1");
-    setDismissed(true);
+  if (Platform.OS !== "web") return null;
+  if (nudgeState === "checking" || nudgeState === "granted" || dismissed) return null;
+
+  // Expanded iOS / denied guide
+  if (showIOSGuide) {
+    const steps = nudgeState === "denied"
+      ? [
+          "Tap the lock icon (🔒) in your browser's address bar",
+          'Find "Notifications" and change it to "Allow"',
+          "Reload the page — Swayger will register your device",
+        ]
+      : [
+          "Open Swayger in Safari (not Chrome or another browser)",
+          "Tap the Share icon ⎙ at the bottom of the screen",
+          'Tap "Add to Home Screen" and confirm',
+          "Open Swayger from the Home Screen icon",
+          "Tap Allow when asked about notifications",
+        ];
+
+    return (
+      <View style={styles.pushBanner}>
+        <View style={styles.pushBannerLeft}>
+          <View style={styles.pushBannerIcon}>
+            <Ionicons name="information-circle-outline" size={20} color={NBA_GOLD} />
+          </View>
+          <View style={styles.pushBannerBody}>
+            <Text style={styles.pushBannerTitle}>
+              {nudgeState === "denied" ? "Re-enable notifications" : "Enable on iPhone"}
+            </Text>
+            {steps.map((step, i) => (
+              <Text key={i} style={[styles.pushBannerSub, { marginTop: 4 }]}>
+                {i + 1}. {step}
+              </Text>
+            ))}
+          </View>
+        </View>
+        <Pressable onPress={handleDismiss} hitSlop={12} style={styles.pushBannerClose}>
+          <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+      </View>
+    );
   }
-
-  // Hide if: web, Expo Go (permStatus never set), already granted, or user dismissed
-  if (Platform.OS === "web") return null;
-  if (permStatus === null || permStatus === "granted" || dismissed) return null;
-
-  const isDeniedIOS = permStatus === "denied" && Platform.OS === "ios";
 
   return (
-    <Pressable onPress={handlePress} style={styles.pushBanner}>
+    <Pressable onPress={handleEnablePress} style={styles.pushBanner}>
       <View style={styles.pushBannerLeft}>
         <View style={styles.pushBannerIcon}>
           <Ionicons name="notifications-outline" size={20} color={NBA_GOLD} />
@@ -335,12 +396,16 @@ function PushNotificationBanner() {
         <View style={styles.pushBannerBody}>
           <Text style={styles.pushBannerTitle}>Never miss a lock time</Text>
           <Text style={styles.pushBannerSub}>
-            {isDeniedIOS
-              ? "Tap to open Settings — flip the Notifications toggle for Swayger."
-              : "Enable push notifications for pick reminders and score alerts."}
+            {nudgeState === "denied"
+              ? "Notifications are blocked. Tap to see how to re-enable them."
+              : nudgeState === "ios-no-pwa"
+              ? "Tap to see how to get pick alerts on your iPhone."
+              : "Get pick reminders and score alerts straight to this device."}
           </Text>
           <Text style={styles.pushBannerCta}>
-            {isDeniedIOS ? "Open Settings →" : "Enable notifications →"}
+            {nudgeState === "denied" || nudgeState === "ios-no-pwa"
+              ? "See instructions →"
+              : "Enable notifications →"}
           </Text>
         </View>
       </View>
