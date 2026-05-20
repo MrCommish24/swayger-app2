@@ -42,7 +42,7 @@ export const ROUND_PRIZES: Record<string, { amount: string; label: string }> = {
 export const ROUND_LOCK_DATES: Record<string, string> = {
   round1:      "2026-04-18T11:45:00-05:00",  // 11:45am CDT Saturday April 18
   round2:      "2026-05-10T13:30:00-05:00",  // May 10 1:30pm CDT — reopened mid-round
-  conf_finals: "2026-05-26T12:00:00-05:00",  // ~May 26 CDT
+  conf_finals: "2026-05-21T18:00:00-05:00",  // May 21 6pm CDT — opened late, locks before Game 2
   finals:      "2026-06-09T12:00:00-05:00",  // ~June 9 CDT
 };
 

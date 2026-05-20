@@ -587,11 +587,12 @@ export function registerPropsRoutes(app: Express) {
     if (!requireAdmin(req, res)) return;
 
     try {
-      const { date, lock_time, props, id } = req.body as {
+      const { date, lock_time, props, id, sport } = req.body as {
         date: string;
         lock_time: string;
         props: PropDef[];
         id?: string;
+        sport?: string;
       };
 
       if (!date || !lock_time || !Array.isArray(props)) {
@@ -601,9 +602,11 @@ export function registerPropsRoutes(app: Express) {
       const supabase = getSupabase();
 
       if (id) {
+        const updatePayload: Record<string, unknown> = { date, lock_time, props };
+        if (sport) updatePayload.sport = sport;
         const { error } = await supabase
           .from("prop_nights")
-          .update({ date, lock_time, props })
+          .update(updatePayload)
           .eq("id", id);
         if (error) throw error;
         return res.json({ ok: true, updated: true });
@@ -611,7 +614,7 @@ export function registerPropsRoutes(app: Express) {
 
       const { data, error } = await supabase
         .from("prop_nights")
-        .insert({ date, lock_time, props, status: "open" })
+        .insert({ date, lock_time, props, status: "open", sport: sport ?? "NBA" })
         .select("id")
         .single();
 
@@ -627,10 +630,11 @@ export function registerPropsRoutes(app: Express) {
   app.post("/api/admin/props/manual-night", async (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const { date, lock_time, questions } = req.body as {
+      const { date, lock_time, questions, sport } = req.body as {
         date: string;
         lock_time: string;
         questions: string[];
+        sport?: string;
       };
 
       if (!date || !lock_time || !Array.isArray(questions) || questions.length === 0) {
@@ -656,7 +660,7 @@ export function registerPropsRoutes(app: Express) {
       const supabase = getSupabase();
       const { data, error } = await supabase
         .from("prop_nights")
-        .insert({ date, lock_time, props, status: "open" })
+        .insert({ date, lock_time, props, status: "open", sport: sport ?? "Other" })
         .select("id")
         .single();
 
@@ -674,7 +678,7 @@ export function registerPropsRoutes(app: Express) {
       const supabase = getSupabase();
       const { data, error } = await supabase
         .from("prop_nights")
-        .select("id, date, lock_time, status, props")
+        .select("id, date, lock_time, status, props, sport")
         .in("status", ["open", "locked"])
         .order("date", { ascending: true });
       if (error) throw error;

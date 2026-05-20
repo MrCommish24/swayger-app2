@@ -6,7 +6,7 @@ import { sendNBALaunchBlast, sendNBAReminderBlast } from "./email";
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-  const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key);
 }
 
@@ -217,9 +217,21 @@ async function recomputeScores(supabase: ReturnType<typeof getSupabase>): Promis
   }));
 
   if (upsertRows.length > 0) {
+    // Delete existing season scores then re-insert (avoids onConflict key ambiguity)
     await supabase
       .from("nba_playoff_scores")
-      .upsert(upsertRows, { onConflict: "user_id" });
+      .delete()
+      .eq("season", "2026");
+
+    const { error: upsertErr } = await supabase
+      .from("nba_playoff_scores")
+      .insert(upsertRows);
+
+    if (upsertErr) {
+      console.error("[nba/recompute] upsert error:", upsertErr);
+    } else {
+      console.log(`[nba/recompute] scored ${upsertRows.length} users`);
+    }
   }
 }
 

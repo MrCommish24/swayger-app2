@@ -29,7 +29,17 @@ interface Night {
   lock_time: string;
   status: "open" | "locked" | "resolved";
   props: PropDef[];
+  sport?: string;
 }
+
+const SPORT_OPTIONS = ["NBA", "MLB", "Other"] as const;
+type SportOption = typeof SPORT_OPTIONS[number];
+
+const SPORT_COLORS: Record<SportOption | string, string> = {
+  NBA: "#FFC72C",
+  MLB: "#10B981",
+  Other: "#6B7280",
+};
 
 function formatDate(iso: string) {
   return new Date(iso + "T12:00:00").toLocaleDateString("en-US", {
@@ -79,6 +89,7 @@ export default function AdminScreen() {
   // Create night form
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [lockTimeCDT, setLockTimeCDT] = useState(DEFAULT_CDT_TIME);
+  const [sport, setSport] = useState<string>("NBA");
   const [questions, setQuestions] = useState<string[]>(["", ""]);
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
@@ -153,7 +164,7 @@ export default function AdminScreen() {
       const res = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-token": savedToken! },
-        body: JSON.stringify({ date, lock_time: cdtTimeToISO(date, lockTimeCDT), questions: validQs }),
+        body: JSON.stringify({ date, lock_time: cdtTimeToISO(date, lockTimeCDT), questions: validQs, sport }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -294,6 +305,25 @@ export default function AdminScreen() {
         </View>
 
         <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Sport</Text>
+          <View style={styles.sportRow}>
+            {SPORT_OPTIONS.map((s) => {
+              const active = sport === s;
+              const color = SPORT_COLORS[s];
+              return (
+                <Pressable
+                  key={s}
+                  style={[styles.sportBtn, active && { borderColor: color, backgroundColor: color + "18" }]}
+                  onPress={() => setSport(s)}
+                >
+                  <Text style={[styles.sportBtnText, active && { color }]}>{s}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.fieldGroup}>
           <Text style={styles.label}>Prediction Questions</Text>
           {questions.map((q, i) => (
             <View key={i} style={styles.questionRow}>
@@ -354,7 +384,14 @@ export default function AdminScreen() {
             return (
               <View key={night.id} style={styles.nightCard}>
                 <View style={styles.nightCardHeader}>
-                  <Text style={styles.nightDate}>{formatDate(night.date)}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={styles.nightDate}>{formatDate(night.date)}</Text>
+                    {night.sport && (
+                      <View style={[styles.sportBadge, { borderColor: (SPORT_COLORS[night.sport] || "#6B7280") + "55", backgroundColor: (SPORT_COLORS[night.sport] || "#6B7280") + "18" }]}>
+                        <Text style={[styles.sportBadgeText, { color: SPORT_COLORS[night.sport] || "#6B7280" }]}>{night.sport}</Text>
+                      </View>
+                    )}
+                  </View>
                   <View style={[styles.statusPill, night.status === "locked" && styles.statusPillLocked]}>
                     <Text style={styles.statusPillText}>{night.status.toUpperCase()}</Text>
                   </View>
@@ -522,6 +559,18 @@ const styles = StyleSheet.create({
   statusPillLocked: { backgroundColor: `${Colors.dark.accentGold}20` },
   statusPillText: { fontSize: 10, color: Colors.dark.tint, fontWeight: "700" },
   nightLock: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: -8 },
+  sportBadge: {
+    borderRadius: 6, borderWidth: 1,
+    paddingHorizontal: 7, paddingVertical: 2,
+  },
+  sportBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  sportRow: { flexDirection: "row", gap: 8, marginTop: 6 },
+  sportBtn: {
+    paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8,
+    borderWidth: 1.5, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surface,
+  },
+  sportBtnText: { fontSize: 13, fontWeight: "600", color: Colors.dark.textSecondary },
 
   // Prop rows
   propRow: { gap: 6 },

@@ -56,6 +56,7 @@ interface PropNight {
   lock_time: string;
   status: "open" | "locked" | "resolved";
   props: PropDef[];
+  sport?: string;
 }
 
 interface UserPick {
@@ -1342,7 +1343,19 @@ export default function PicksScreen() {
           {/* Night header */}
           <View style={styles.nightHeader}>
             <View style={styles.nightHeaderLeft}>
-              <Text style={styles.nightDate}>{formatNightDate(night.date)}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={styles.nightDate}>{formatNightDate(night.date)}</Text>
+                {night.sport && night.sport !== "NBA" && (
+                  <View style={[styles.sportBadge, {
+                    backgroundColor: night.sport === "MLB" ? "rgba(16,185,129,0.12)" : "rgba(107,114,128,0.12)",
+                    borderColor: night.sport === "MLB" ? "rgba(16,185,129,0.35)" : "rgba(107,114,128,0.35)",
+                  }]}>
+                    <Text style={[styles.sportBadgeText, {
+                      color: night.sport === "MLB" ? "#10B981" : "#9CA3AF",
+                    }]}>{night.sport}</Text>
+                  </View>
+                )}
+              </View>
               {isResolved ? (
                 <View style={[styles.statusPill, styles.statusPillResolved]}>
                   <Ionicons name="checkmark-circle" size={12} color={Colors.dark.success} />
@@ -1587,6 +1600,11 @@ const styles = StyleSheet.create({
   },
   nightHeaderLeft: { gap: 8, flex: 1 },
   nightDate: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  sportBadge: {
+    borderRadius: 6, borderWidth: 1,
+    paddingHorizontal: 7, paddingVertical: 2,
+  },
+  sportBadgeText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
