@@ -66,7 +66,7 @@ export const SCORE_EMAILS_PAUSED = true;
 
 // Set to true to pause all bulk blast emails (S16 launch, R32 picks, leaderboard,
 // reminders). Transactional wager notification emails are NOT affected.
-export const BLAST_EMAILS_PAUSED = true;
+export const BLAST_EMAILS_PAUSED = false;
 
 // ─── Scoring computation ─────────────────────────────────────────────────────
 

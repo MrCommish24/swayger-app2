@@ -2581,14 +2581,14 @@ function buildCFBracketBlastHtml(opts: {
                 <td style="padding:14px 18px;border-bottom:1px solid #eeeeee;">
                   <span style="font-size:12px;font-weight:700;color:#888888;text-transform:uppercase;letter-spacing:1px;">West</span><br>
                   <span style="font-size:15px;font-weight:600;color:#111111;">Spurs vs Thunder</span>
-                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 2 is tonight — lock your pick before tip-off</span>
+                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 2 is tonight — picks lock at 7:15 PM CDT</span>
                 </td>
               </tr>
               <tr>
                 <td style="padding:14px 18px;">
                   <span style="font-size:12px;font-weight:700;color:#888888;text-transform:uppercase;letter-spacing:1px;">East</span><br>
                   <span style="font-size:15px;font-weight:600;color:#111111;">Cavaliers vs Knicks</span>
-                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 1 tips tomorrow — picks lock at 6 PM CDT</span>
+                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 2 tips tomorrow — picks lock at 6 PM CDT May 21</span>
                 </td>
               </tr>
             </table>
