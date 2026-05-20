@@ -1102,6 +1102,95 @@ export function registerPropsRoutes(app: Express) {
     }
   });
 
+  // ─── CF Bracket Blast routes ──────────────────────────────────────────────────
+
+  // GET /admin/props/email-preview/cf-bracket — view email in browser
+  app.get("/admin/props/email-preview/cf-bracket", (_req: Request, res: Response) => {
+    const { buildCFBracketBlastPreview } = require("./email.js");
+    res.setHeader("Content-Type", "text/html");
+    res.send(buildCFBracketBlastPreview());
+  });
+
+  // GET /api/admin/props/blast-cf-bracket/dry-run — preview recipients
+  app.get("/api/admin/props/blast-cf-bracket/dry-run", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res.json({ ok: true, total_eligible: eligible.length, recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, name: u.display_name || u.username })) });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-cf-bracket/test — send one test copy
+  app.post("/api/admin/props/blast-cf-bracket/test", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const { email, name } = req.body as { email?: string; name?: string };
+    if (!email) { res.status(400).json({ ok: false, error: "email is required" }); return; }
+    try {
+      const { sendCFBracketBlast } = await import("./email.js");
+      await sendCFBracketBlast({
+        to: email,
+        displayName: name || "there",
+        userId: "test-user",
+        bracketUrl: "https://www.swayger.app/playoffs/bracket",
+        picksUrl: "https://www.swayger.app/picks",
+      });
+      res.json({ ok: true, sent_to: email });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
+  // POST /api/admin/props/blast-cf-bracket — send to all eligible users
+  app.post("/api/admin/props/blast-cf-bracket", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    if (BLAST_EMAILS_PAUSED) {
+      res.status(403).json({ ok: false, error: "Blast emails are paused" });
+      return;
+    }
+    try {
+      const supabase = getSupabase();
+      const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
+      const { data: authProfiles } = await supabase.rpc("get_auth_only_profiles");
+      type Profile = { id: string; username: string; display_name: string | null; notification_email: string; email_unsubscribed: boolean };
+      const allProfiles = [...((emailProfiles ?? []) as Profile[]), ...((authProfiles ?? []) as Profile[])];
+      const seen = new Set<string>();
+      const deduped = allProfiles.filter((p) => { if (seen.has(p.id)) return false; seen.add(p.id); return true; });
+      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const { sendCFBracketBlast } = await import("./email.js");
+      let sent = 0; let failed = 0;
+      for (const user of eligible) {
+        try {
+          await sendCFBracketBlast({
+            to: user.notification_email,
+            displayName: user.display_name || user.username,
+            userId: user.id,
+            bracketUrl: "https://www.swayger.app/playoffs/bracket",
+            picksUrl: "https://www.swayger.app/picks",
+          });
+          sent++;
+          await new Promise((r) => setTimeout(r, 300));
+        } catch (e) {
+          console.error(`[cf-bracket-blast] failed for ${user.notification_email}:`, e);
+          failed++;
+        }
+      }
+      console.log(`[cf-bracket-blast] complete: ${sent} sent, ${failed} failed`);
+      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+    } catch (err) {
+      console.error("[cf-bracket-blast] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   // GET /api/admin/props/blast-game-six/preview — view email in browser
   app.get("/api/admin/props/blast-game-six/preview", (req: Request, res: Response) => {
     if (!requireAdmin(req, res)) return;

@@ -179,6 +179,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/admin/push/broadcast — send a push to all OneSignal subscribers at once
+  // Requires x-admin-token header. Uses OneSignal segment "All" so no user looping needed.
+  app.post("/api/admin/push/broadcast", async (req: Request, res: Response) => {
+    const adminToken = process.env.MM_ADMIN_TOKEN;
+    if (!adminToken || req.headers["x-admin-token"] !== adminToken) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    try {
+      const { title, body, data, segment } = req.body as {
+        title: string;
+        body: string;
+        data?: Record<string, string>;
+        segment?: string; // defaults to "All" — can pass "Subscribed Users" etc.
+      };
+      if (!title || !body) {
+        res.status(400).json({ ok: false, error: "title and body are required" });
+        return;
+      }
+      const appId  = "6c7fe969-e694-4977-819a-f10fbc4159c6";
+      const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+      if (!apiKey) { res.status(500).json({ ok: false, error: "OneSignal REST key not configured" }); return; }
+
+      const response = await fetch("https://api.onesignal.com/notifications", {
+        method: "POST",
+        headers: {
+          "Authorization": `Key ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          app_id: appId,
+          target_channel: "push",
+          included_segments: [segment ?? "All"],
+          headings: { en: title },
+          contents: { en: body },
+          data: data || {},
+        }),
+      });
+      const json = await response.json() as { id?: string; recipients?: number; errors?: unknown };
+      if (!response.ok) {
+        console.error("[push/broadcast] OneSignal error:", json);
+        res.status(500).json({ ok: false, error: "OneSignal send failed", details: json });
+        return;
+      }
+      console.log(`[push/broadcast] sent — id=${json.id} recipients=${json.recipients}`);
+      res.json({ ok: true, notification_id: json.id, recipients: json.recipients ?? 0 });
+    } catch (err) {
+      console.error("[push/broadcast] error:", err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   app.post("/api/notify", async (req: Request, res: Response) => {
     try {
       const payload = req.body as NotifyPayload;

@@ -2535,3 +2535,124 @@ export function buildGameSixBlastPreview(): string {
     swaygerUrl: "https://www.swayger.app",
   });
 }
+
+// ─── CF Bracket Blast ─────────────────────────────────────────────────────────
+
+function buildCFBracketBlastHtml(opts: {
+  displayName: string;
+  bracketUrl: string;
+  picksUrl: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { displayName, bracketUrl, picksUrl } = opts;
+  const unsubLine = opts.unsubscribeUrl
+    ? `<p style="margin:32px 0 0;font-size:11px;color:#999999;">You're receiving this because you have a Swayger account. <a href="${opts.unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
+    : "";
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lock in your Conference Finals picks</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+    <tr><td align="center" style="padding:40px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+
+        <tr>
+          <td style="padding-bottom:24px;">
+            <span style="font-size:13px;font-weight:700;color:#111111;letter-spacing:1.5px;text-transform:uppercase;">SWAYGER</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="font-size:15px;color:#222222;line-height:1.7;">
+
+            <p style="margin:0 0 18px;">Hey ${displayName},</p>
+
+            <p style="margin:0 0 18px;">The Conference Finals are here — and it's not too late to jump up the leaderboard.</p>
+
+            <p style="margin:0 0 18px;"><strong>Round 3 bracket picks are open now</strong> and lock tomorrow, May 21 at 6 PM CDT. Pick your series winners for both matchups and call the number of games for a bonus. Each correct pick is worth <strong>1,000 points</strong>.</p>
+
+            <table cellpadding="0" cellspacing="0" style="margin:0 0 20px;width:100%;border:1px solid #eeeeee;border-radius:8px;">
+              <tr>
+                <td style="padding:14px 18px;border-bottom:1px solid #eeeeee;">
+                  <span style="font-size:12px;font-weight:700;color:#888888;text-transform:uppercase;letter-spacing:1px;">West</span><br>
+                  <span style="font-size:15px;font-weight:600;color:#111111;">Spurs vs Thunder</span>
+                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 2 is tonight — lock your pick before tip-off</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:14px 18px;">
+                  <span style="font-size:12px;font-weight:700;color:#888888;text-transform:uppercase;letter-spacing:1px;">East</span><br>
+                  <span style="font-size:15px;font-weight:600;color:#111111;">Cavaliers vs Knicks</span>
+                  <span style="font-size:13px;color:#555555;display:block;margin-top:2px;">Game 1 tips tomorrow — picks lock at 6 PM CDT</span>
+                </td>
+              </tr>
+            </table>
+
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:12px;">
+              <tr>
+                <td style="background:#111111;border-radius:8px;">
+                  <a href="${bracketUrl}" style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Lock in my picks →</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;"></p>
+
+            <p style="margin:0 0 18px;"><strong>Nightly Props are also live.</strong> Tonight's game has player props available — head to the Picks tab and lock them in before the game starts. More points on the table.</p>
+
+            <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+              <tr>
+                <td style="background:#1a1a2e;border-radius:8px;border:1px solid #333366;">
+                  <a href="${picksUrl}" style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#6699ff;text-decoration:none;">Tonight's Nightly Props →</a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 18px;color:#555555;font-size:14px;">The leaderboard resets each round — even if you're behind, a strong Conference Finals run can put you in cash prize territory.</p>
+
+            <p style="margin:0 0 6px;">Good luck tonight.</p>
+            <p style="margin:0;color:#555555;">— Swayger HQ</p>
+
+            ${unsubLine}
+
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+export async function sendCFBracketBlast(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  bracketUrl: string;
+  picksUrl: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const subject = "Lock in your Conference Finals picks — cash on the line 🏀";
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildCFBracketBlastHtml({
+    displayName: opts.displayName,
+    bracketUrl: opts.bracketUrl,
+    picksUrl: opts.picksUrl,
+    unsubscribeUrl,
+  });
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}
+
+export function buildCFBracketBlastPreview(): string {
+  return buildCFBracketBlastHtml({
+    displayName: "Jordan",
+    bracketUrl: "https://www.swayger.app/playoffs/bracket",
+    picksUrl: "https://www.swayger.app/picks",
+  });
+}
