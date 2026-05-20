@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
+import { PushNotificationBanner } from "@/components/PushNotificationBanner";
 import {
   fetchLeaderboard,
   fetchNBAGames,
@@ -277,141 +278,6 @@ function MyPicksSummary({
           </View>
         );
       })}
-    </Pressable>
-  );
-}
-
-// ── Push Notification Nudge Banner (web-only) ─────────────────────────────────
-const PUSH_NUDGE_KEY = "swayger-push-nudge-v2-dismissed";
-type PushNudgeState = "checking" | "granted" | "ios-no-pwa" | "needs-prompt" | "denied";
-
-function PushNotificationBanner() {
-  const [nudgeState, setNudgeState] = useState<PushNudgeState>("checking");
-  const [dismissed, setDismissed] = useState(false);
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    try { if (window.localStorage.getItem(PUSH_NUDGE_KEY)) { setDismissed(true); return; } } catch {}
-
-    const NotifAPI = (window as any).Notification;
-    if (!NotifAPI) return; // browser doesn't support push at all
-
-    if (NotifAPI.permission === "granted") { setNudgeState("granted"); return; }
-    if (NotifAPI.permission === "denied")  { setNudgeState("denied");  return; }
-
-    // permission is "default" — figure out platform
-    const ua = navigator.userAgent;
-    const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
-    const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
-    const isPWA = window.matchMedia?.("(display-mode: standalone)").matches
-      || !!(navigator as any).standalone;
-
-    if (isIOS && isSafari && !isPWA) {
-      setNudgeState("ios-no-pwa"); // needs Add to Home Screen first
-    } else {
-      setNudgeState("needs-prompt");
-    }
-  }, []);
-
-  function handleDismiss() {
-    try { window.localStorage.setItem(PUSH_NUDGE_KEY, "1"); } catch {}
-    setDismissed(true);
-    setShowIOSGuide(false);
-  }
-
-  async function handleEnablePress() {
-    if (nudgeState === "ios-no-pwa" || nudgeState === "denied") {
-      setShowIOSGuide(true);
-      return;
-    }
-    // Chrome / Android / Firefox / Safari PWA — fire the browser permission prompt
-    try {
-      const w = window as any;
-      if (w.OneSignal) {
-        // OneSignal handles the prompt + subscription registration in one call
-        await w.OneSignal.User.PushSubscription.optIn();
-        const perm = w.Notification?.permission;
-        if (perm === "granted") setNudgeState("granted");
-        else if (perm === "denied") setNudgeState("denied");
-      } else if (w.Notification) {
-        // Fallback: raw browser API (dev mode where OneSignal isn't loaded)
-        const result = await w.Notification.requestPermission();
-        setNudgeState(result === "granted" ? "granted" : result === "denied" ? "denied" : "needs-prompt");
-      }
-    } catch (e) {
-      console.error("[push-nudge] error:", e);
-    }
-  }
-
-  if (Platform.OS !== "web") return null;
-  if (nudgeState === "checking" || nudgeState === "granted" || dismissed) return null;
-
-  // Expanded iOS / denied guide
-  if (showIOSGuide) {
-    const steps = nudgeState === "denied"
-      ? [
-          "Tap the lock icon (🔒) in your browser's address bar",
-          'Find "Notifications" and change it to "Allow"',
-          "Reload the page — Swayger will register your device",
-        ]
-      : [
-          "Open Swayger in Safari (not Chrome or another browser)",
-          "Tap the Share icon ⎙ at the bottom of the screen",
-          'Tap "Add to Home Screen" and confirm',
-          "Open Swayger from the Home Screen icon",
-          "Tap Allow when asked about notifications",
-        ];
-
-    return (
-      <View style={styles.pushBanner}>
-        <View style={styles.pushBannerLeft}>
-          <View style={styles.pushBannerIcon}>
-            <Ionicons name="information-circle-outline" size={20} color={NBA_GOLD} />
-          </View>
-          <View style={styles.pushBannerBody}>
-            <Text style={styles.pushBannerTitle}>
-              {nudgeState === "denied" ? "Re-enable notifications" : "Enable on iPhone"}
-            </Text>
-            {steps.map((step, i) => (
-              <Text key={i} style={[styles.pushBannerSub, { marginTop: 4 }]}>
-                {i + 1}. {step}
-              </Text>
-            ))}
-          </View>
-        </View>
-        <Pressable onPress={handleDismiss} hitSlop={12} style={styles.pushBannerClose}>
-          <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
-        </Pressable>
-      </View>
-    );
-  }
-
-  return (
-    <Pressable onPress={handleEnablePress} style={styles.pushBanner}>
-      <View style={styles.pushBannerLeft}>
-        <View style={styles.pushBannerIcon}>
-          <Ionicons name="notifications-outline" size={20} color={NBA_GOLD} />
-        </View>
-        <View style={styles.pushBannerBody}>
-          <Text style={styles.pushBannerTitle}>Never miss a lock time</Text>
-          <Text style={styles.pushBannerSub}>
-            {nudgeState === "denied"
-              ? "Notifications are blocked. Tap to see how to re-enable them."
-              : nudgeState === "ios-no-pwa"
-              ? "Tap to see how to get pick alerts on your iPhone."
-              : "Get pick reminders and score alerts straight to this device."}
-          </Text>
-          <Text style={styles.pushBannerCta}>
-            {nudgeState === "denied" || nudgeState === "ios-no-pwa"
-              ? "See instructions →"
-              : "Enable notifications →"}
-          </Text>
-        </View>
-      </View>
-      <Pressable onPress={handleDismiss} hitSlop={12} style={styles.pushBannerClose}>
-        <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
-      </Pressable>
     </Pressable>
   );
 }
@@ -831,55 +697,6 @@ const styles = StyleSheet.create({
   },
   gameSwaygerText: { fontSize: 13, fontWeight: "600" as const, color: NBA_GOLD },
 
-  pushBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: Colors.dark.surface,
-    borderWidth: 1,
-    borderColor: `${NBA_GOLD}40`,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    gap: 10,
-  },
-  pushBannerLeft: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-    flex: 1,
-  },
-  pushBannerIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: `${NBA_GOLD}18`,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  pushBannerBody: { flex: 1, gap: 2 },
-  pushBannerTitle: {
-    fontSize: 14,
-    fontWeight: "700" as const,
-    color: Colors.dark.text,
-  },
-  pushBannerSub: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  pushBannerCta: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    color: NBA_GOLD,
-    marginTop: 6,
-  },
-  pushBannerClose: {
-    padding: 2,
-    flexShrink: 0,
-  },
 
   noGamesCard: {
     backgroundColor: Colors.dark.surface,

@@ -32,6 +32,7 @@ import { MARCH_MADNESS_ACTIVE } from "@/lib/march-madness";
 import { NBA_PLAYOFFS_ACTIVE } from "@/lib/nba-playoffs";
 import { SwaygerData } from "@/types";
 import Colors from "@/constants/colors";
+import { PushNotificationBanner } from "@/components/PushNotificationBanner";
 
 const MM_ORANGE = "#E8590A";
 const NBA_BLUE = "#1D428A";
@@ -1179,6 +1180,11 @@ export default function DashboardScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>{section.title}</Text>
               <Text style={styles.sectionHeaderCount}>{section.data.length}</Text>
+            </View>
+          )}
+          ListHeaderComponent={() => (
+            <View style={{ marginHorizontal: 16, marginTop: 8 }}>
+              <PushNotificationBanner />
             </View>
           )}
           contentContainerStyle={styles.listContent}
