@@ -2615,6 +2615,22 @@ function buildCFBracketBlastHtml(opts: {
 
             <p style="margin:0 0 18px;color:#555555;font-size:14px;">The leaderboard resets each round — even if you're behind, a strong Conference Finals run can put you in cash prize territory.</p>
 
+            <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;width:100%;background:#f7f7f7;border-radius:8px;border:1px solid #e8e8e8;">
+              <tr>
+                <td style="padding:16px 18px;">
+                  <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#111111;">🔔 Get instant alerts</p>
+                  <p style="margin:0 0 12px;font-size:13px;color:#555555;line-height:1.5;">Enable push notifications on swayger.app and we'll ping you when picks lock, settlements land, or a Swayger needs your attention.</p>
+                  <table cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="background:#111111;border-radius:6px;">
+                        <a href="https://www.swayger.app" style="display:inline-block;padding:9px 20px;font-size:13px;font-weight:600;color:#ffffff;text-decoration:none;">Enable notifications →</a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
             <p style="margin:0 0 6px;">Good luck tonight.</p>
             <p style="margin:0;color:#555555;">— Swayger HQ</p>
 
