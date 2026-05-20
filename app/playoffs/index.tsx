@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import Colors from "@/constants/colors";
+import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   fetchLeaderboard,
   fetchNBAGames,
@@ -281,6 +283,74 @@ function MyPicksSummary({
   );
 }
 
+// ── Push Notification Nudge Banner ───────────────────────────────────────────
+const PUSH_NUDGE_KEY = "push-nudge-v1-dismissed";
+
+function PushNotificationBanner() {
+  const [permStatus, setPermStatus] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (Constants.appOwnership === "expo") return; // Expo Go — push not supported
+
+    (async () => {
+      const wasDismissed = await AsyncStorage.getItem(PUSH_NUDGE_KEY);
+      if (wasDismissed) { setDismissed(true); return; }
+      const Notifications = require("expo-notifications");
+      const { status } = await Notifications.getPermissionsAsync();
+      setPermStatus(status);
+    })();
+  }, []);
+
+  async function handlePress() {
+    const Notifications = require("expo-notifications");
+    if (permStatus === "denied" && Platform.OS === "ios") {
+      // iOS: can't re-prompt — send them straight to Swayger's notification settings
+      Linking.openURL("app-settings:");
+      return;
+    }
+    // Android (denied or undetermined) or iOS undetermined: fire the native prompt
+    const { status } = await Notifications.requestPermissionsAsync();
+    setPermStatus(status);
+  }
+
+  async function handleDismiss() {
+    await AsyncStorage.setItem(PUSH_NUDGE_KEY, "1");
+    setDismissed(true);
+  }
+
+  // Hide if: web, Expo Go (permStatus never set), already granted, or user dismissed
+  if (Platform.OS === "web") return null;
+  if (permStatus === null || permStatus === "granted" || dismissed) return null;
+
+  const isDeniedIOS = permStatus === "denied" && Platform.OS === "ios";
+
+  return (
+    <Pressable onPress={handlePress} style={styles.pushBanner}>
+      <View style={styles.pushBannerLeft}>
+        <View style={styles.pushBannerIcon}>
+          <Ionicons name="notifications-outline" size={20} color={NBA_GOLD} />
+        </View>
+        <View style={styles.pushBannerBody}>
+          <Text style={styles.pushBannerTitle}>Never miss a lock time</Text>
+          <Text style={styles.pushBannerSub}>
+            {isDeniedIOS
+              ? "Tap to open Settings — flip the Notifications toggle for Swayger."
+              : "Enable push notifications for pick reminders and score alerts."}
+          </Text>
+          <Text style={styles.pushBannerCta}>
+            {isDeniedIOS ? "Open Settings →" : "Enable notifications →"}
+          </Text>
+        </View>
+      </View>
+      <Pressable onPress={handleDismiss} hitSlop={12} style={styles.pushBannerClose}>
+        <Ionicons name="close" size={16} color={Colors.dark.textSecondary} />
+      </Pressable>
+    </Pressable>
+  );
+}
+
 export default function PlayoffsHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -349,6 +419,9 @@ export default function PlayoffsHubScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Push notification nudge */}
+        <PushNotificationBanner />
+
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.heroBadge}>
@@ -692,6 +765,56 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   gameSwaygerText: { fontSize: 13, fontWeight: "600" as const, color: NBA_GOLD },
+
+  pushBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: `${NBA_GOLD}40`,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    gap: 10,
+  },
+  pushBannerLeft: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    flex: 1,
+  },
+  pushBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: `${NBA_GOLD}18`,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  pushBannerBody: { flex: 1, gap: 2 },
+  pushBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    color: Colors.dark.text,
+  },
+  pushBannerSub: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  pushBannerCta: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: NBA_GOLD,
+    marginTop: 6,
+  },
+  pushBannerClose: {
+    padding: 2,
+    flexShrink: 0,
+  },
 
   noGamesCard: {
     backgroundColor: Colors.dark.surface,
