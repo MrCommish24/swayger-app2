@@ -47,8 +47,10 @@ export default function GameDayRoomScreen() {
   const [pendingPicks, setPendingPicks] = useState<Record<string, string>>({});
   const [submittingPicks, setSubmittingPicks] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
-  // Track which card ID was submitted so the flag resets when a new card opens.
+  // Track which card the user has successfully submitted picks for this session.
   const [submittedCardId, setSubmittedCardId] = useState<string | null>(null);
+  // Ref to detect open-card changes so we can re-sync pendingPicks from the server.
+  const openCardIdRef = useRef<string | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -72,9 +74,23 @@ export default function GameDayRoomScreen() {
       setRoomData(data);
       setError(null);
 
-      // Initialize pending picks from existing picks
-      if (data.my_picks && Object.keys(pendingPicks).length === 0) {
-        setPendingPicks(data.my_picks);
+      // Sync pendingPicks when the open card changes (new card) or on first load.
+      // This pre-fills any picks already saved on the server so returning users
+      // see their current selections and can update them while the card is open.
+      const newOpenCard = (data.cards as GDCard[]).find((c) => c.status === "open");
+      const newOpenCardId = newOpenCard?.id ?? null;
+      if (newOpenCardId !== openCardIdRef.current) {
+        openCardIdRef.current = newOpenCardId;
+        if (newOpenCard) {
+          // Seed pendingPicks with whatever the server has saved for this card.
+          const seeded: Record<string, string> = {};
+          newOpenCard.gameday_props.forEach((p) => {
+            if (data.my_picks[p.id]) seeded[p.id] = data.my_picks[p.id];
+          });
+          setPendingPicks(seeded);
+        } else {
+          setPendingPicks({});
+        }
       }
 
       // If participant was null before but now exists: clear join flow
@@ -324,9 +340,11 @@ export default function GameDayRoomScreen() {
 
   // ── Main room view ─────────────────────────────────────────────────────────
   const openCard = cards.find((c) => c.status === "open");
-  const allSubmitted =
-    openCard &&
-    openCard.gameday_props.every((p) => my_picks[p.id] !== undefined);
+  // Has the user saved picks for this card (either this session or from a previous visit)?
+  const hasSubmittedOpenCard =
+    !!openCard &&
+    (submittedCardId === openCard.id ||
+      openCard.gameday_props.every((p) => my_picks[p.id] !== undefined));
 
   return (
     <ScrollView
@@ -354,8 +372,8 @@ export default function GameDayRoomScreen() {
         </Text>
       </View>
 
-      {/* Open card: pick submission */}
-      {openCard && !(submittedCardId === openCard.id) && !allSubmitted ? (
+      {/* Open card — always visible while card is open; hidden once locked */}
+      {openCard ? (
         <PickCard
           card={openCard}
           myPicks={pendingPicks}
@@ -365,17 +383,8 @@ export default function GameDayRoomScreen() {
           onSubmit={() => handleSubmitPicks(openCard)}
           submitting={submittingPicks}
           pickError={pickError}
+          hasSubmitted={hasSubmittedOpenCard}
         />
-      ) : null}
-
-      {/* Submitted state */}
-      {openCard && (submittedCardId === openCard.id || allSubmitted) && !["locked", "settled"].includes(openCard.status) ? (
-        <View style={styles.submittedBanner}>
-          <Text style={styles.submittedTitle}>Picks submitted ✓</Text>
-          <Text style={styles.submittedSub}>
-            Picks reveal after this card locks.
-          </Text>
-        </View>
       ) : null}
 
       {/* No card open */}
@@ -414,6 +423,7 @@ function PickCard({
   onSubmit,
   submitting,
   pickError,
+  hasSubmitted,
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
@@ -421,9 +431,11 @@ function PickCard({
   onSubmit: () => void;
   submitting: boolean;
   pickError: string | null;
+  hasSubmitted: boolean;
 }) {
   const answered = card.gameday_props.filter((p) => myPicks[p.id]).length;
   const total = card.gameday_props.length;
+  const allAnswered = answered === total;
 
   return (
     <View style={styles.card}>
@@ -436,6 +448,15 @@ function PickCard({
           {answered}/{total} answered
         </Text>
       </View>
+
+      {/* Submitted confirmation — visible once picks are saved */}
+      {hasSubmitted ? (
+        <View style={styles.submittedInline}>
+          <Text style={styles.submittedInlineText}>
+            ✓ Picks submitted. You can change them until this card locks.
+          </Text>
+        </View>
+      ) : null}
 
       {card.gameday_props.map((prop) => (
         <PropPicker
@@ -451,14 +472,19 @@ function PickCard({
       ) : null}
 
       <TouchableOpacity
-        style={[styles.submitBtn, submitting && styles.btnDisabled]}
+        style={[
+          styles.submitBtn,
+          (submitting || (!hasSubmitted && !allAnswered)) && styles.btnDisabled,
+        ]}
         onPress={onSubmit}
         disabled={submitting}
       >
         {submitting ? (
           <ActivityIndicator color="#fff" size="small" />
         ) : (
-          <Text style={styles.submitBtnText}>Lock in my picks →</Text>
+          <Text style={styles.submitBtnText}>
+            {hasSubmitted ? "Update my picks →" : "Lock in my picks →"}
+          </Text>
         )}
       </TouchableOpacity>
     </View>
@@ -780,6 +806,18 @@ const styles = StyleSheet.create({
   },
   submittedTitle: { fontSize: 16, fontWeight: "700", color: C.success, marginBottom: 4 },
   submittedSub: { fontSize: 13, color: C.textSecondary },
+
+  // Inline submitted confirmation (inside the pick card)
+  submittedInline: {
+    backgroundColor: C.success + "18",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.success + "44",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  submittedInlineText: { fontSize: 13, color: C.success, fontWeight: "600" },
 
   // Waiting
   waitingBanner: {
