@@ -16,7 +16,6 @@ import Colors from "@/constants/colors";
 
 const C = Colors.dark;
 
-const GAMEDAY_HOST_EMAILS = ["darius@leagueswype.com"];
 
 interface RoomSummary {
   id: string;
@@ -50,13 +49,10 @@ function formatDate(iso: string | null): string {
 export default function GameDayHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
 
-  const isHost = session
-    ? GAMEDAY_HOST_EMAILS.map((e) => e.toLowerCase()).includes(
-        (session.user.email ?? "").toLowerCase()
-      )
-    : null;
+  // Resolved server-side so GAMEDAY_HOST_EMAILS is the single source of truth.
+  const [isHost, setIsHost] = useState<boolean | null>(null);
 
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +91,22 @@ export default function GameDayHub() {
       setRefreshing(false);
     }
   }, [session]);
+
+  // Resolve host status server-side once auth finishes initialising.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session) {
+      setIsHost(false);
+      setLoading(false);
+      return;
+    }
+    gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
+      .then((d) => setIsHost(d.isHost))
+      .catch(() => {
+        setIsHost(false);
+        setLoading(false);
+      });
+  }, [authLoading, session?.access_token]);
 
   useEffect(() => {
     if (isHost === null) return;

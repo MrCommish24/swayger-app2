@@ -65,16 +65,12 @@ export default function HostControlRoom() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
 
-  // Host check: client-side using session email (same pattern as create.tsx).
-  // All actual data mutations are re-verified server-side via requireGamedayHost().
-  const GAMEDAY_HOST_EMAILS = ["darius@leagueswype.com"];
-  const isHost = session
-    ? GAMEDAY_HOST_EMAILS.map((e) => e.toLowerCase()).includes(
-        (session.user.email ?? "").toLowerCase()
-      )
-    : null;
+  // Host status is resolved server-side via GET /api/gameday/is-host.
+  // This means adding/removing emails from GAMEDAY_HOST_EMAILS on the server
+  // takes effect immediately, and the check works identically on every device.
+  const [isHost, setIsHost] = useState<boolean | null>(null);
 
   const [hostData, setHostData] = useState<HostData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +78,25 @@ export default function HostControlRoom() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Resolve host status from server once auth finishes initialising.
+  // Using the backend endpoint means GAMEDAY_HOST_EMAILS is the single source of
+  // truth and the check is identical regardless of device or browser.
+  useEffect(() => {
+    if (authLoading) return; // wait for AsyncStorage / Supabase to restore session
+    if (!session) {
+      // Auth is done loading but there's no session — not a host.
+      setIsHost(false);
+      setLoading(false);
+      return;
+    }
+    gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
+      .then((d) => setIsHost(d.isHost))
+      .catch(() => {
+        setIsHost(false);
+        setLoading(false);
+      });
+  }, [authLoading, session?.access_token]);
 
   const roomUrl =
     typeof window !== "undefined"

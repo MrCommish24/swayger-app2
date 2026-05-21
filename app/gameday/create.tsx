@@ -27,16 +27,10 @@ interface TemplateResponse {
 export default function CreateGameDayRoom() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
 
-  // Host check is done client-side using the session email — no round-trip needed.
-  // The server enforces this again when the room is actually created.
-  const GAMEDAY_HOST_EMAILS = ["darius@leagueswype.com"];
-  const isHost = session
-    ? GAMEDAY_HOST_EMAILS.map((e) => e.toLowerCase()).includes(
-        (session.user.email ?? "").toLowerCase()
-      )
-    : null; // null = still loading (no session yet)
+  // Host status resolved server-side — consistent with GAMEDAY_HOST_EMAILS env var.
+  const [isHost, setIsHost] = useState<boolean | null>(null);
 
   const [template, setTemplate] = useState<GDPropTemplate[]>([]);
   const [defaultPropIds, setDefaultPropIds] = useState<string[]>([]);
@@ -51,6 +45,18 @@ export default function CreateGameDayRoom() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve host status server-side once auth finishes initialising.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session) {
+      setIsHost(false);
+      return;
+    }
+    gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
+      .then((d) => setIsHost(d.isHost))
+      .catch(() => setIsHost(false));
+  }, [authLoading, session?.access_token]);
 
   useEffect(() => {
     gamedayFetch<TemplateResponse>("/api/gameday/template")

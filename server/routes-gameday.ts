@@ -130,7 +130,7 @@ export function registerGamedayRoutes(app: Express) {
     }
     const payload = decodeJwtPayload(auth.slice(7));
     const email = payload?.email ?? "";
-    const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "")
+    const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
