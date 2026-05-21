@@ -49,9 +49,9 @@ async function requireGamedayHost(
   }
   const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "")
     .split(",")
-    .map((e) => e.trim())
+    .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  if (!allowedEmails.includes(user.email ?? "")) {
+  if (!allowedEmails.includes((user.email ?? "").toLowerCase())) {
     res.status(403).json({ error: "Not authorized as Game Day host" });
     return null;
   }

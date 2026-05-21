@@ -67,7 +67,15 @@ export default function HostControlRoom() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
 
-  const [isHost, setIsHost] = useState<boolean | null>(null);
+  // Host check: client-side using session email (same pattern as create.tsx).
+  // All actual data mutations are re-verified server-side via requireGamedayHost().
+  const GAMEDAY_HOST_EMAILS = ["darius@leagueswype.com"];
+  const isHost = session
+    ? GAMEDAY_HOST_EMAILS.map((e) => e.toLowerCase()).includes(
+        (session.user.email ?? "").toLowerCase()
+      )
+    : null;
+
   const [hostData, setHostData] = useState<HostData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,20 +111,17 @@ export default function HostControlRoom() {
     }
   }, [roomId, session]);
 
+  // Initial load: once we know the session and host status, fetch data.
   useEffect(() => {
-    if (!session) return;
-    gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
-      .then((r) => {
-        setIsHost(r.isHost);
-        if (r.isHost) fetchHostData();
-        else setLoading(false);
-      })
-      .catch(() => {
-        setIsHost(false);
-        setLoading(false);
-      });
-  }, [session]);
+    if (isHost === null) return; // still loading session
+    if (!isHost) {
+      setLoading(false);
+      return;
+    }
+    fetchHostData();
+  }, [isHost]);
 
+  // Polling while confirmed host.
   useEffect(() => {
     if (!isHost) return;
     pollingRef.current = setInterval(fetchHostData, 10_000);
@@ -407,17 +412,20 @@ function HostCard({
                 <View key={ans} style={styles.propAnswerRow}>
                   <View style={styles.propAnswerLeft}>
                     <Text style={styles.propAns}>{ans}</Text>
+                    {/* Flex-based bar — works on native + web */}
                     <View style={styles.barTrack}>
-                      <View
-                        style={[
-                          styles.barFill,
-                          {
-                            width: `${pct}%` as any,
+                      <View style={{ flex: 1, flexDirection: "row" }}>
+                        <View
+                          style={{
+                            flex: Math.max(pct, 0),
+                            height: 4,
+                            borderRadius: 2,
                             backgroundColor:
                               prop.correct_answer === ans ? C.success : C.tint,
-                          },
-                        ]}
-                      />
+                          }}
+                        />
+                        <View style={{ flex: Math.max(100 - pct, 0), height: 4 }} />
+                      </View>
                     </View>
                   </View>
                   <Text style={styles.propCount}>{count}</Text>

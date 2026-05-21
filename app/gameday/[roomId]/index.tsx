@@ -47,7 +47,8 @@ export default function GameDayRoomScreen() {
   const [pendingPicks, setPendingPicks] = useState<Record<string, string>>({});
   const [submittingPicks, setSubmittingPicks] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  // Track which card ID was submitted so the flag resets when a new card opens.
+  const [submittedCardId, setSubmittedCardId] = useState<string | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -194,7 +195,7 @@ export default function GameDayRoomScreen() {
           { session, guestSessionId }
         );
       }
-      setSubmitted(true);
+      setSubmittedCardId(openCard.id);
       await fetchRoom();
     } catch (e: any) {
       setPickError(e.message);
@@ -351,7 +352,7 @@ export default function GameDayRoomScreen() {
       </View>
 
       {/* Open card: pick submission */}
-      {openCard && !submitted && !allSubmitted ? (
+      {openCard && !(submittedCardId === openCard.id) && !allSubmitted ? (
         <PickCard
           card={openCard}
           myPicks={pendingPicks}
@@ -365,7 +366,7 @@ export default function GameDayRoomScreen() {
       ) : null}
 
       {/* Submitted state */}
-      {openCard && (submitted || allSubmitted) && !["locked", "settled"].includes(openCard.status) ? (
+      {openCard && (submittedCardId === openCard.id || allSubmitted) && !["locked", "settled"].includes(openCard.status) ? (
         <View style={styles.submittedBanner}>
           <Text style={styles.submittedTitle}>Picks submitted ✓</Text>
           <Text style={styles.submittedSub}>
