@@ -28,6 +28,27 @@ function decodeJwtPayload(token: string): { sub?: string; email?: string } | nul
   }
 }
 
+/** Characters used in short room codes — avoids visually ambiguous 0/O and 1/I. */
+const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** Generate a unique GDS-XXXXX short code, retrying on collision. */
+async function generateUniqueRoomCode(supabase: ReturnType<typeof createClient>): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    let suffix = "";
+    for (let i = 0; i < 5; i++) {
+      suffix += ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)];
+    }
+    const code = `GDS-${suffix}`;
+    const { data } = await supabase
+      .from("gameday_rooms")
+      .select("id")
+      .eq("room_code", code)
+      .maybeSingle();
+    if (!data) return code; // code is unique
+  }
+  throw new Error("Failed to generate a unique room code after 10 attempts");
+}
+
 /** Current year in CDT (America/Chicago). Avoids UTC year mismatch near midnight. */
 function currentYearCDT(): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -221,20 +242,45 @@ export function registerGamedayRoutes(app: Express) {
     const propIds = selected_prop_ids ?? DEFAULT_PROP_IDS;
     const supabase = getServiceSupabase();
 
-    const { data: room, error: roomError } = await supabase
+    // Generate a short room code; gracefully skip if DB column doesn't exist yet
+    // (run supabase/gameday-room-code-migration.sql to enable short links).
+    let roomCode: string | undefined;
+    try {
+      roomCode = await generateUniqueRoomCode(supabase);
+    } catch (e) {
+      console.warn("[gameday] room_code generation skipped:", e);
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      room_name: room_name.trim(),
+      team_a_name: team_a_name.trim(),
+      team_b_name: team_b_name.trim(),
+      team_a_star: team_a_star.trim(),
+      team_b_star: team_b_star.trim(),
+      game_date: parseGameDate(game_date),
+      host_user_id: hostId,
+      status: "active",
+    };
+    if (roomCode) insertPayload.room_code = roomCode;
+
+    let { data: room, error: roomError } = await supabase
       .from("gameday_rooms")
-      .insert({
-        room_name: room_name.trim(),
-        team_a_name: team_a_name.trim(),
-        team_b_name: team_b_name.trim(),
-        team_a_star: team_a_star.trim(),
-        team_b_star: team_b_star.trim(),
-        game_date: parseGameDate(game_date),
-        host_user_id: hostId,
-        status: "active",
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    // If insert failed because room_code column doesn't exist, retry without it.
+    if (roomError && roomCode && roomError.message?.includes("room_code")) {
+      console.warn("[gameday] room_code column missing — retrying without it (run migration)");
+      delete insertPayload.room_code;
+      const retry = await supabase
+        .from("gameday_rooms")
+        .insert(insertPayload)
+        .select()
+        .single();
+      room = retry.data;
+      roomError = retry.error;
+    }
 
     if (roomError || !room) {
       console.error("[gameday] create room error:", roomError);
@@ -289,6 +335,28 @@ export function registerGamedayRoutes(app: Express) {
     await logEvent(supabase, room.id, null, hostId, "room_created");
     console.log(`[gameday] room created: ${room.id} "${room_name}"`);
     res.json({ ok: true, room_id: room.id, room });
+  });
+
+  // ── GET /api/gameday/rooms/by-code/:roomCode ────────────────────────────
+  // Resolves a short GDS-XXXXX code to the internal room UUID.
+  // Must be registered BEFORE /rooms/:roomId so "by-code" isn't captured as a roomId.
+  app.get("/api/gameday/rooms/by-code/:roomCode", async (req: Request, res: Response) => {
+    const roomCode = (req.params.roomCode ?? "").toUpperCase().trim();
+    if (!roomCode) {
+      res.status(400).json({ error: "Missing room code" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: room } = await supabase
+      .from("gameday_rooms")
+      .select("id")
+      .eq("room_code", roomCode)
+      .maybeSingle();
+    if (!room) {
+      res.status(404).json({ error: "Room not found" });
+      return;
+    }
+    res.json({ room_id: room.id });
   });
 
   // ── GET /api/gameday/rooms/:roomId ──────────────────────────────────────
@@ -941,6 +1009,18 @@ export function registerGamedayRoutes(app: Express) {
       if (!room || (room as any).host_user_id !== hostId) {
         res.status(403).json({ error: "Not your room" });
         return;
+      }
+
+      // Backfill room_code for rooms created before the short-code feature launched.
+      if (!(room as any).room_code) {
+        try {
+          const newCode = await generateUniqueRoomCode(supabase);
+          await supabase.from("gameday_rooms").update({ room_code: newCode }).eq("id", roomId);
+          (room as any).room_code = newCode;
+          console.log(`[gameday] backfilled room_code ${newCode} for room ${roomId}`);
+        } catch (e) {
+          console.warn("[gameday] room_code backfill failed (non-fatal):", e);
+        }
       }
 
       const { data: rawCards } = await supabase

@@ -1,0 +1,112 @@
+Update Game Day Swayger room links and invite/reminder copy so the links are shorter, cleaner, and more branded.
+
+Current issue:
+The participant invite link is using the long Replit dev server URL plus the full room UUID, which looks too long and messy for group texts.
+
+Example current link:
+https://abfe5336-334e-471e-ad27-99fb3e9622a1-00-2zj4mz95vokuh.kirk.replit.dev/gameday/2492a153-b0bc-48ef-ab47-3886f83b3f61
+
+Goal:
+Create short Game Day Swayger room links using a short room code.
+
+Preferred final production format:
+https://swayger.app/g/GDS-8F3K2
+
+For local/dev testing, the base domain can still be the current Replit/dev domain, but the path should be short:
+https://[dev-domain]/g/GDS-8F3K2
+
+Requirements:
+
+1. Add a unique room_code field to gameday_rooms.
+
+2. Keep the existing internal room id/UUID for database relationships.
+
+3. Generate a short unique room_code when a Game Day room is created.
+
+4. Preferred room_code format:
+   GDS- followed by 5 or 6 uppercase letters/numbers.
+   Example:
+   GDS-8F3K2
+
+5. Use room_code in participant-facing public links.
+
+6. Add or update route support so public participant links can use:
+   /g/:roomCode
+
+7. Keep the existing /gameday/:roomId route working as a fallback if simple.
+
+8. Host/admin routes can continue using the existing roomId internally if that is simpler, but the host dashboard should display and copy the short public participant link.
+
+9. Update room lookup logic so /g/:roomCode loads the correct Game Day Room.
+
+10. Update all copy-ready invite/reminder messages to use the short public link.
+
+11. Do not change existing Swayger flows.
+
+12. Do not touch NBA picks, NBA bracket challenge, March Madness history, 1v1 challenge flow, main SP balances, or existing Swayger Points ledger.
+
+13. Do not add a full link shortener system. This is only for Game Day room codes.
+
+14. Make sure room_code is unique. If a generated code already exists, generate another one.
+
+15. If a room already exists without a room_code, either generate one on first load or provide a safe fallback so the room can still be shared.
+
+Cleaner copy requirements:
+
+Replace the current long invite/reminder copy with shorter copy.
+
+Pregame invite:
+
+“Game Day Swayger is live for tonight. Make your picks before tipoff and track the leaderboard here:
+[short link]”
+
+Halftime reminder:
+
+“Halftime picks are live. Same room:
+[short link]”
+
+4Q reminder:
+
+“4Q picks are live. Lock in here:
+[short link]”
+
+Final standings / receipt:
+
+“Final Game Day Swayger standings are ready. See who won and who has receipts:
+[short link]”
+
+Host dashboard requirements:
+
+In the host control room, show:
+- Short public link
+- Copy short link button
+- Copy Pregame Invite button
+- Copy Halftime Reminder button
+- Copy 4Q Reminder button
+- Copy Final Standings button
+
+The copied messages should include the short /g/:roomCode link.
+
+Participant route behavior:
+
+When a user opens /g/:roomCode:
+- If a card is open, show the current open pick card.
+- If no card is open, show leaderboard and the “No picks are open right now” message.
+- If the room is final, show final standings once that feature exists.
+
+Acceptance criteria:
+
+1. Creating a new Game Day Room generates a unique room_code.
+2. The host dashboard shows a short public room link.
+3. The short public room link uses /g/:roomCode.
+4. Opening /g/:roomCode loads the correct participant room.
+5. Pregame invite copy uses the short link.
+6. Halftime reminder copy uses the short link.
+7. 4Q reminder copy uses the short link.
+8. Final standings copy uses the short link.
+9. Existing UUID-based room links still work if simple.
+10. Existing Swayger features are not affected.
+11. Game Day SP remains separate from the main SP ledger and balances.
+12. Host/admin controls continue working after this change.
+
+Please implement this as a focused update only. Do not add unrelated features.

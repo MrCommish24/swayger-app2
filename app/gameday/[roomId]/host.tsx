@@ -43,6 +43,7 @@ interface Room {
   team_a_star: string;
   team_b_star: string;
   status: string;
+  room_code?: string | null;
 }
 
 interface LbEntry {
@@ -101,11 +102,19 @@ export default function HostControlRoom() {
   const roomUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/gameday/${roomId}`
-      : `https://www.swayger.app/gameday/${roomId}`;
+      : `https://swayger.app/gameday/${roomId}`;
+
+  // Returns the short /g/:roomCode URL when available, falls back to long UUID URL.
+  const getShareUrl = useCallback(() => {
+    const code = hostData?.room?.room_code;
+    if (!code) return roomUrl;
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://swayger.app";
+    return `${origin}/g/${code}`;
+  }, [hostData, roomUrl]);
 
   const copyLink = () => {
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(roomUrl).catch(() => {});
+      navigator.clipboard.writeText(getShareUrl()).catch(() => {});
     }
   };
 
@@ -207,11 +216,12 @@ export default function HostControlRoom() {
   };
 
   const copyShareText = (phase: "pregame" | "halftime" | "fourth" | "final") => {
+    const url = getShareUrl();
     const texts: Record<string, string> = {
-      pregame: `I made a Game Day Swayger room for tonight. Make your NBA picks before tipoff, track the leaderboard, and get receipts after the game. Join here: ${roomUrl}`,
-      halftime: `Halftime picks are live. Same Swayger room. Takes 30 seconds. Locking at start of 3Q: ${roomUrl}`,
-      fourth: `4Q clutch picks are live. Make your picks before they lock: ${roomUrl}`,
-      final: `Final Game Day Swayger standings are ready. See who won and who has receipts: ${roomUrl}`,
+      pregame: `Game Day Swayger is live for tonight. Make your picks before tipoff and track the leaderboard here:\n${url}`,
+      halftime: `Halftime picks are live. Same room:\n${url}`,
+      fourth: `4Q picks are live. Lock in here:\n${url}`,
+      final: `Final Game Day Swayger standings are ready. See who won and who has receipts:\n${url}`,
     };
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
       navigator.clipboard.writeText(texts[phase]).catch(() => {});
@@ -289,9 +299,16 @@ export default function HostControlRoom() {
       {/* Room link */}
       <View style={styles.linkBox}>
         <Text style={styles.linkLabel}>ROOM LINK</Text>
-        <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">
-          {roomUrl}
-        </Text>
+        {room.room_code ? (
+          <>
+            <Text style={styles.linkCode}>{getShareUrl()}</Text>
+            <Text style={styles.linkCodeBadge}>{room.room_code}</Text>
+          </>
+        ) : (
+          <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">
+            {roomUrl}
+          </Text>
+        )}
         <View style={styles.linkActions}>
           <TouchableOpacity style={styles.copyBtn} onPress={copyLink}>
             <Text style={styles.copyBtnText}>Copy Link</Text>
@@ -321,6 +338,12 @@ export default function HostControlRoom() {
           onPress={() => copyShareText("fourth")}
         >
           <Text style={styles.reminderBtnText}>Copy 4Q Reminder</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.reminderBtn}
+          onPress={() => copyShareText("final")}
+        >
+          <Text style={styles.reminderBtnText}>Copy Final Standings</Text>
         </TouchableOpacity>
       </View>
 
@@ -644,6 +667,19 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   linkUrl: { fontSize: 13, color: C.textSecondary, marginBottom: 10 },
+  linkCode: { fontSize: 13, color: C.text, marginBottom: 4 },
+  linkCodeBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: C.tint + "22",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 10,
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.tint,
+    letterSpacing: 1,
+  },
   linkActions: {
     flexDirection: "row",
     alignItems: "center",

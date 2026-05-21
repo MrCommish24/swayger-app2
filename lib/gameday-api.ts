@@ -48,6 +48,7 @@ export interface GDRoom {
   game_date: string | null;
   host_user_id: string;
   status: "draft" | "active" | "final";
+  room_code?: string | null;
 }
 
 export interface GDProp {
