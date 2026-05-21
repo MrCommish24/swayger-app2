@@ -14,6 +14,20 @@ function getServiceSupabase() {
   return createClient(url, key);
 }
 
+/** Fast JWT decode — no signature verification. Used only for the is-host UI check. */
+function decodeJwtPayload(token: string): { sub?: string; email?: string } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // base64url → base64 → Buffer → string
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "==".slice(0, (4 - (b64.length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 async function requireGamedayHost(
   req: Request,
   res: Response
@@ -81,25 +95,21 @@ async function logEvent(
 
 export function registerGamedayRoutes(app: Express) {
   // ── GET /api/gameday/is-host ────────────────────────────────────────────
-  app.get("/api/gameday/is-host", async (req: Request, res: Response) => {
+  app.get("/api/gameday/is-host", (req: Request, res: Response) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       res.json({ isHost: false });
       return;
     }
-    const supabase = getServiceSupabase();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser(auth.slice(7));
-    if (!user) {
-      res.json({ isHost: false });
-      return;
-    }
+    const payload = decodeJwtPayload(auth.slice(7));
+    const email = payload?.email ?? "";
     const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "")
       .split(",")
-      .map((e) => e.trim())
+      .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
-    res.json({ isHost: allowedEmails.includes(user.email ?? "") });
+    const isHost = allowedEmails.includes(email.toLowerCase());
+    console.log(`[gameday] is-host: jwt_email="${email}" allowed=${JSON.stringify(allowedEmails)} → ${isHost}`);
+    res.json({ isHost });
   });
 
   // ── GET /api/gameday/template ───────────────────────────────────────────
