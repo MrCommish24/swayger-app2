@@ -1,0 +1,91 @@
+Update the Game Day Swayger finalization flow.
+
+Current issue:
+After clicking “Finalize Standings,” the host can continue clicking the Finalize Standings button repeatedly and gets the same confirmation message. This creates confusion. Also, the browser confirmation popup displays the long Replit dev URL because it uses the native browser confirm dialog.
+
+Desired behavior:
+
+1. Finalization should be one-time only.
+Once the host confirms finalization and the room is finalized:
+- room status should update to final
+- results become read-only
+- participants see the final leaderboard/final standings
+- host should no longer see an active “Finalize Standings” button
+- host should instead see a clear status message:
+  “Game Day standings finalized. This room is now read-only.”
+
+2. Disable or hide the Finalize Standings button after finalization.
+If the room status is final:
+- hide the Finalize Standings button, or
+- show it disabled with text:
+  “Standings Finalized”
+
+3. Prevent duplicate finalization server-side.
+The backend finalize endpoint should be idempotent:
+- if the room is already final, do not re-finalize it
+- return a clear response like:
+  “Room already finalized”
+- do not create duplicate final standings records
+- do not duplicate analytics events
+
+4. Replace the native browser confirm dialog.
+Do not use window.confirm() for finalization.
+
+Use an in-app custom confirmation modal instead so the popup does not show the long Replit dev URL.
+
+Modal copy:
+
+Title:
+“Finalize Game Day standings?”
+
+Body:
+“Results will become read-only and participants will see the final leaderboard.”
+
+Buttons:
+- Cancel
+- Finalize Standings
+
+5. Finalization readiness still applies.
+Only allow finalization when:
+- all selected/active cards are locked or settled
+- all active props are settled
+- there are no pending props remaining
+
+If the room is not ready, keep the button disabled and show:
+“Finalize available after all active props are settled.”
+
+If helpful, show:
+- Cards locked: X/Y
+- Props settled: X/Y
+- Pending props: X
+
+6. Host view after finalization.
+After finalization, the host control room should show:
+- Finalized status
+- final leaderboard
+- participant count
+- final room link / short share link
+- no active open/lock/settle controls unless intentionally read-only
+- no active Finalize Standings button
+
+7. Participant view after finalization.
+The participant room should show:
+- final standings
+- winner
+- final leaderboard
+- all revealed picks/results
+- no ability to submit or edit picks
+
+8. Public link behavior.
+Any copy-ready links should use the short branded public link if configured:
+PUBLIC_APP_URL=https://swayger.app
+
+Example:
+https://swayger.app/g/GDS-8F3K2
+
+Do not expose long Replit URLs in copied invite/reminder/final standings messages if PUBLIC_APP_URL is configured.
+
+9. Guardrails.
+Do not change unrelated Swayger flows.
+Do not touch NBA picks, NBA bracket challenge, March Madness history, 1v1 challenge flow, or the main SP ledger.
+Keep Game Day SP separate from the main SP system.

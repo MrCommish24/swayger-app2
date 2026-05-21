@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Modal,
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -77,6 +78,7 @@ export default function HostControlRoom() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -194,23 +196,10 @@ export default function HostControlRoom() {
     }
   };
 
+  const openFinalizeModal = () => setShowFinalizeModal(true);
+
   const doFinalize = async () => {
-    const confirmed =
-      Platform.OS === "web"
-        ? window.confirm(
-            "Finalize Game Day standings? Results will become read-only and participants will see the final leaderboard."
-          )
-        : await new Promise<boolean>((resolve) =>
-            Alert.alert(
-              "Finalize Game Day Standings?",
-              "Results will become read-only and participants will see the final leaderboard.",
-              [
-                { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                { text: "Finalize", style: "destructive", onPress: () => resolve(true) },
-              ]
-            )
-          );
-    if (!confirmed) return;
+    setShowFinalizeModal(false);
     setActionLoading("finalize");
     try {
       await gamedayFetch(
@@ -293,6 +282,7 @@ export default function HostControlRoom() {
   const isReadyToFinalize = room.status !== "finalized" && cardsReady && propsReady;
 
   return (
+    <View style={{ flex: 1 }}>
     <ScrollView
       style={styles.container}
       contentContainerStyle={[
@@ -402,7 +392,8 @@ export default function HostControlRoom() {
       {/* Finalize / finalized state */}
       {room.status === "finalized" ? (
         <View style={styles.finalizedBanner}>
-          <Text style={styles.finalizedText}>🏆 Room Finalized — standings are locked</Text>
+          <Text style={styles.finalizedText}>🏆 Game Day standings finalized.</Text>
+          <Text style={styles.finalizedSub}>This room is now read-only. Participants can view final results.</Text>
         </View>
       ) : (
         <View style={styles.finalizeWrapper}>
@@ -433,7 +424,7 @@ export default function HostControlRoom() {
               styles.finalizeBtn,
               (!isReadyToFinalize || actionLoading === "finalize") && styles.btnDisabled,
             ]}
-            onPress={doFinalize}
+            onPress={openFinalizeModal}
             disabled={!isReadyToFinalize || actionLoading === "finalize"}
           >
             {actionLoading === "finalize" ? (
@@ -455,6 +446,35 @@ export default function HostControlRoom() {
         <Text style={styles.viewParticipantText}>View Participant Room →</Text>
       </TouchableOpacity>
     </ScrollView>
+
+    {/* ── Finalize confirmation modal ─────────────────────────────────────── */}
+    <Modal
+      visible={showFinalizeModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowFinalizeModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Finalize Game Day Standings?</Text>
+          <Text style={styles.modalBody}>
+            Results will become read-only and participants will see the final leaderboard.
+          </Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowFinalizeModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalConfirmBtn} onPress={doFinalize}>
+              <Text style={styles.modalConfirmText}>Finalize Standings</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </View>
   );
 }
 
@@ -950,7 +970,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  finalizedText: { color: C.accentGold, fontSize: 14, fontWeight: "700" },
+  finalizedText: { color: C.accentGold, fontSize: 15, fontWeight: "700", textAlign: "center" },
+  finalizedSub: { color: C.textSecondary, fontSize: 13, textAlign: "center", marginTop: 4 },
+
+  // Finalize confirmation modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: C.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalBody: {
+    fontSize: 14,
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: C.surfaceLight,
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  modalCancelText: { color: C.text, fontSize: 14, fontWeight: "600" },
+  modalConfirmBtn: {
+    flex: 1,
+    backgroundColor: C.accentGold,
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  modalConfirmText: { color: "#000", fontSize: 14, fontWeight: "700" },
+
   btnDisabled: { opacity: 0.5 },
 
   // Misc

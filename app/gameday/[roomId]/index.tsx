@@ -245,8 +245,10 @@ export default function GameDayRoomScreen() {
 
   const { room, cards, participant, my_picks, revealed_picks } = roomData;
 
-  // ── Join screen ────────────────────────────────────────────────────────────
-  if (joinStep && !participant) {
+  const isFinalized = room.status === "finalized";
+
+  // ── Join screen — skipped for finalized rooms so anyone can view results ──
+  if (joinStep && !participant && !isFinalized) {
     return (
       <View style={[styles.joinContainer, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 }]}>
         <Text style={styles.joinLogo}>SWAYGER</Text>
@@ -339,7 +341,9 @@ export default function GameDayRoomScreen() {
   }
 
   // ── Main room view ─────────────────────────────────────────────────────────
-  const openCard = cards.find((c) => c.status === "open");
+
+  // Finalized rooms: show final results without any pick submission UI
+  const openCard = isFinalized ? undefined : cards.find((c) => c.status === "open");
   // Has the user saved picks for this card (either this session or from a previous visit)?
   const hasSubmittedOpenCard =
     !!openCard &&
@@ -372,7 +376,17 @@ export default function GameDayRoomScreen() {
         </Text>
       </View>
 
-      {/* Open card — always visible while card is open; hidden once locked */}
+      {/* Finalized banner */}
+      {isFinalized ? (
+        <View style={styles.finalizedBanner}>
+          <Text style={styles.finalizedTitle}>🏆 Final Standings</Text>
+          <Text style={styles.finalizedSub}>
+            This room is locked. All picks are revealed and results are final.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Open card — only shown while room is live */}
       {openCard ? (
         <PickCard
           card={openCard}
@@ -387,8 +401,8 @@ export default function GameDayRoomScreen() {
         />
       ) : null}
 
-      {/* No card open */}
-      {!openCard ? (
+      {/* No card open — only shown for live rooms */}
+      {!openCard && !isFinalized ? (
         <View style={styles.waitingBanner}>
           <Text style={styles.waitingText}>
             No picks are open right now. Check the leaderboard and watch your group chat for the next drop.
@@ -888,6 +902,30 @@ const styles = StyleSheet.create({
   lbRight: { alignItems: "flex-end" },
   lbSP: { fontSize: 14, fontWeight: "700", color: C.accentGold },
   lbStats: { fontSize: 11, color: C.textMuted },
+
+  // Finalized room
+  finalizedBanner: {
+    backgroundColor: "#F5A62318",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F5A62344",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  finalizedTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#F5A623",
+    marginBottom: 4,
+  },
+  finalizedSub: {
+    fontSize: 13,
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 18,
+  },
 
   // Misc
   errorText: { color: C.danger, fontSize: 15, textAlign: "center" },
