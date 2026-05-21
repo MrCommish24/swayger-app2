@@ -47,7 +47,7 @@ export interface GDRoom {
   team_b_star: string;
   game_date: string | null;
   host_user_id: string;
-  status: "draft" | "active" | "final";
+  status: "draft" | "active" | "finalized";
   room_code?: string | null;
 }
 

@@ -133,6 +133,9 @@ export default function HostControlRoom() {
         { session }
       );
       setHostData(data);
+      if (data.room.status === "finalized") {
+        setLocalFinalized(true);
+      }
       setError(null);
     } catch (e: any) {
       setError(e.message ?? "Failed to load host data");
