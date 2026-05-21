@@ -341,6 +341,9 @@ export default function GameDayRoomScreen() {
     >
       {/* Header */}
       <View style={styles.roomHeader}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
         <Text style={styles.logoSmall}>SWAYGER</Text>
         <Text style={styles.roomName}>{room.room_name}</Text>
         <Text style={styles.matchup}>
@@ -697,6 +700,8 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.5 },
 
   // Room header
+  backBtn: { marginBottom: 12 },
+  backBtnText: { color: C.textSecondary, fontSize: 15 },
   roomHeader: { marginBottom: 24 },
   logoSmall: {
     fontSize: 11,
