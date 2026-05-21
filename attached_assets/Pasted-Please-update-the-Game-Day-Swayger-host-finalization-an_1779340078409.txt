@@ -1,0 +1,88 @@
+Please update the Game Day Swayger host finalization and public link behavior.
+
+1. Finalize Standings Button Behavior
+
+Currently, the host can click “Finalize Standings” before all cards/props are locked and settled, which triggers an error message.
+
+Change this behavior so the Finalize Standings button is disabled until the room is actually ready to finalize.
+
+Finalize Standings should only be enabled when:
+- all active/selected pick cards are locked or settled
+- all active props have been settled
+- there are no pending props remaining
+
+If the room is not ready, show helper text near the disabled button:
+
+“Finalize available after all active props are settled.”
+
+Do not rely only on a pop-up error after the button is clicked.
+
+Keep the backend validation as a safety check, but improve the host UI so the host understands what is still required.
+
+If helpful, show a simple readiness summary:
+- Cards locked: X/Y
+- Props settled: X/Y
+- Pending props: X
+
+2. Finalization Confirmation Copy
+
+Update the confirmation message to be cleaner and branded.
+
+Current message:
+“Finalize standings? Results will become read-only and participants will see final scores.”
+
+Use:
+“Finalize Game Day standings? Results will become read-only and participants will see the final leaderboard.”
+
+3. Public Link / Branded URL Behavior
+
+The app is currently showing/copying long Replit dev URLs in invite/reminder/final standings copy.
+
+Add support for a public app base URL using an environment variable:
+
+PUBLIC_APP_URL=https://swayger.app
+
+Use PUBLIC_APP_URL when generating user-facing share links and copy-ready messages.
+
+For example, user-facing links should look like:
+
+https://swayger.app/g/GDS-8F3K2
+
+not:
+
+https://abfe5336-334e-471e-ad27-99fb3e9622a1-00-2zj4mz95vokuh.kirk.replit.dev/gameday/2492a153-b0bc-48ef-ab47-3886f83b3f61
+
+If PUBLIC_APP_URL is missing in development, fallback to the current window origin.
+
+4. Copy Message Updates
+
+Make sure all copy-ready host messages use the short branded public link:
+
+Pregame:
+“Game Day Swayger is live for tonight. Make your picks before tipoff and track the leaderboard here:
+[short link]”
+
+Halftime:
+“Halftime picks are live. Same room:
+[short link]”
+
+4Q:
+“4Q picks are live. Lock in here:
+[short link]”
+
+Final standings:
+“Final Game Day Swayger standings are ready. See who won and who has receipts:
+[short link]”
+
+5. Browser/Dialog Text
+
+If any confirmation dialogs, alerts, or copied text display the URL, use the branded short link where possible.
+
+Do not expose long Replit URLs in participant-facing or host-copy-facing text if PUBLIC_APP_URL is configured.
+
+6. Guardrails
+
+Do not change unrelated Swayger flows.
+Do not touch NBA picks, NBA bracket challenge, March Madness history, 1v1 challenge flow, or the main SP ledger.
+Keep Game Day SP separate from the main SP system.
+Keep backend validation in place even if the frontend button is disabled.

@@ -81,7 +81,7 @@ ensurePreviewReachable = "/status"
 [userenv]
 
 [userenv.shared]
-EXPO_PUBLIC_APP_URL = "https://www.swayger.app"
+EXPO_PUBLIC_APP_URL = "https://swayger.app"
 RESEND_FROM_EMAIL = "Swayger <noreply@swayger.app>"
 EXPO_PUBLIC_POSTHOG_KEY = "phc_r37vsKWdxVK4b4oFSPYr3a7qChnEtT2kNn8emKHAPJry"
 EXPO_PUBLIC_ONESIGNAL_APP_ID = "6c7fe969-e694-4977-819a-f10fbc4159c6"

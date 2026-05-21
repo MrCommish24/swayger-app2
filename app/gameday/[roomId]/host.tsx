@@ -99,14 +99,20 @@ export default function HostControlRoom() {
       });
   }, [authLoading, session?.access_token]);
 
-  const roomUrl = `https://swayger.app/gameday/${roomId}`;
+  // Use EXPO_PUBLIC_APP_URL when set (production), fall back to current origin
+  // so share links always use the branded domain (https://swayger.app) in prod.
+  const BASE_URL =
+    process.env.EXPO_PUBLIC_APP_URL ??
+    (typeof window !== "undefined" ? window.location.origin : "https://swayger.app");
 
-  // Returns the short /g/:roomCode URL — always uses swayger.app domain.
+  const roomUrl = `${BASE_URL}/gameday/${roomId}`;
+
+  // Returns the short /g/:roomCode URL — uses configured public domain.
   const getShareUrl = useCallback(() => {
     const code = hostData?.room?.room_code;
     if (!code) return roomUrl;
-    return `https://swayger.app/g/${code}`;
-  }, [hostData, roomUrl]);
+    return `${BASE_URL}/g/${code}`;
+  }, [hostData, roomUrl, BASE_URL]);
 
   const copyLink = () => {
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
@@ -192,9 +198,18 @@ export default function HostControlRoom() {
     const confirmed =
       Platform.OS === "web"
         ? window.confirm(
-            "Finalize standings? Results will become read-only and participants will see final scores."
+            "Finalize Game Day standings? Results will become read-only and participants will see the final leaderboard."
           )
-        : true; // On native, Alert.alert could be used — keep simple for now
+        : await new Promise<boolean>((resolve) =>
+            Alert.alert(
+              "Finalize Game Day Standings?",
+              "Results will become read-only and participants will see the final leaderboard.",
+              [
+                { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                { text: "Finalize", style: "destructive", onPress: () => resolve(true) },
+              ]
+            )
+          );
     if (!confirmed) return;
     setActionLoading("finalize");
     try {
@@ -265,6 +280,17 @@ export default function HostControlRoom() {
   }
 
   const { room, cards, pick_counts, participant_count, leaderboard } = hostData;
+
+  // ── Finalize readiness ───────────────────────────────────────────────────
+  // A card must be locked or settled before finalization. Closed cards (not
+  // yet opened) are excluded — they are not part of this game's flow.
+  const activeCards = cards.filter((c) => c.status !== "closed");
+  const openCards = activeCards.filter((c) => c.status === "open");
+  const allProps = activeCards.flatMap((c) => c.gameday_props);
+  const pendingProps = allProps.filter((p) => p.status === "pending");
+  const cardsReady = openCards.length === 0;
+  const propsReady = pendingProps.length === 0;
+  const isReadyToFinalize = room.status !== "finalized" && cardsReady && propsReady;
 
   return (
     <ScrollView
@@ -379,17 +405,46 @@ export default function HostControlRoom() {
           <Text style={styles.finalizedText}>🏆 Room Finalized — standings are locked</Text>
         </View>
       ) : (
-        <TouchableOpacity
-          style={[styles.finalizeBtn, actionLoading === "finalize" && styles.btnDisabled]}
-          onPress={doFinalize}
-          disabled={actionLoading === "finalize"}
-        >
-          {actionLoading === "finalize" ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.finalizeBtnText}>Finalize Standings</Text>
+        <View style={styles.finalizeWrapper}>
+          {!isReadyToFinalize && (
+            <View style={styles.finalizeReadiness}>
+              <Text style={styles.finalizeReadinessHint}>
+                Finalize available after all active props are settled.
+              </Text>
+              {activeCards.length > 0 && (
+                <Text style={styles.finalizeReadinessStat}>
+                  Cards locked: {activeCards.length - openCards.length}/{activeCards.length}
+                </Text>
+              )}
+              {allProps.length > 0 && (
+                <Text style={styles.finalizeReadinessStat}>
+                  Props settled: {allProps.length - pendingProps.length}/{allProps.length}
+                </Text>
+              )}
+              {pendingProps.length > 0 && (
+                <Text style={styles.finalizeReadinessStat}>
+                  Pending props: {pendingProps.length}
+                </Text>
+              )}
+            </View>
           )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.finalizeBtn,
+              (!isReadyToFinalize || actionLoading === "finalize") && styles.btnDisabled,
+            ]}
+            onPress={doFinalize}
+            disabled={!isReadyToFinalize || actionLoading === "finalize"}
+          >
+            {actionLoading === "finalize" ? (
+              <ActivityIndicator color="#000" size="small" />
+            ) : (
+              <Text style={[styles.finalizeBtnText, !isReadyToFinalize && { color: C.textMuted }]}>
+                Finalize Standings
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Participant room link */}
@@ -859,12 +914,31 @@ const styles = StyleSheet.create({
   viewParticipantText: { color: C.textSecondary, fontSize: 14, fontWeight: "500" },
 
   // Finalize
+  finalizeWrapper: { marginBottom: 12 },
+  finalizeReadiness: {
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    marginBottom: 8,
+    gap: 4,
+  },
+  finalizeReadinessHint: {
+    fontSize: 13,
+    color: C.textSecondary,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  finalizeReadinessStat: {
+    fontSize: 12,
+    color: C.textMuted,
+  },
   finalizeBtn: {
     backgroundColor: C.accentGold,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: "center",
-    marginBottom: 12,
   },
   finalizeBtnText: { color: "#000", fontSize: 15, fontWeight: "700" },
   finalizedBanner: {
