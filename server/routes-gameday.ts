@@ -964,14 +964,31 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
       if (room.status === "finalized") {
+        console.log(`[gameday] finalize: room ${roomId} already finalized`);
         res.json({ ok: true, already: true });
         return;
       }
 
-      await supabase
+      console.log(`[gameday] finalize: attempting to write status=finalized for room ${roomId}, hostId=${hostId}, stored host_user_id=${room.host_user_id}`);
+
+      const { error: updateError } = await supabase
         .from("gameday_rooms")
-        .update({ status: "finalized", updated_at: new Date().toISOString() })
+        .update({ status: "finalized" })
         .eq("id", roomId);
+
+      if (updateError) {
+        console.error(`[gameday] finalize: DB update FAILED for room ${roomId}:`, updateError.message, updateError);
+        res.status(500).json({ error: `Failed to finalize room: ${updateError.message}` });
+        return;
+      }
+
+      // Verify the write landed
+      const { data: verify } = await supabase
+        .from("gameday_rooms")
+        .select("status")
+        .eq("id", roomId)
+        .single();
+      console.log(`[gameday] finalize: write confirmed, status is now: ${verify?.status}`);
 
       await logEvent(supabase, roomId, null, hostId, "room_finalized", {});
       res.json({ ok: true });
