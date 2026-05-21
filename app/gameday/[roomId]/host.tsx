@@ -168,6 +168,29 @@ export default function HostControlRoom() {
     }
   };
 
+  const doFinalize = async () => {
+    const confirmed =
+      Platform.OS === "web"
+        ? window.confirm(
+            "Finalize standings? Results will become read-only and participants will see final scores."
+          )
+        : true; // On native, Alert.alert could be used — keep simple for now
+    if (!confirmed) return;
+    setActionLoading("finalize");
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/finalize`,
+        { method: "PATCH", body: JSON.stringify({}) },
+        { session }
+      );
+      await fetchHostData();
+    } catch (e: any) {
+      alert(e.message ?? "Finalize failed");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const copyShareText = (phase: "pregame" | "halftime" | "fourth" | "final") => {
     const texts: Record<string, string> = {
       pregame: `I made a Game Day Swayger room for tonight. Make your NBA picks before tipoff, track the leaderboard, and get receipts after the game. Join here: ${roomUrl}`,
@@ -292,6 +315,7 @@ export default function HostControlRoom() {
           key={card.id}
           card={card}
           pickCounts={pick_counts}
+          roomStatus={room.status}
           onOpen={() => doCardAction(card.id, "open")}
           onLock={() => doCardAction(card.id, "lock")}
           onSettle={doSettle}
@@ -315,6 +339,25 @@ export default function HostControlRoom() {
         )}
       </View>
 
+      {/* Finalize / finalized state */}
+      {room.status === "finalized" ? (
+        <View style={styles.finalizedBanner}>
+          <Text style={styles.finalizedText}>🏆 Room Finalized — standings are locked</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.finalizeBtn, actionLoading === "finalize" && styles.btnDisabled]}
+          onPress={doFinalize}
+          disabled={actionLoading === "finalize"}
+        >
+          {actionLoading === "finalize" ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.finalizeBtnText}>Finalize Standings</Text>
+          )}
+        </TouchableOpacity>
+      )}
+
       {/* Participant room link */}
       <TouchableOpacity
         style={styles.viewParticipantBtn}
@@ -331,6 +374,7 @@ export default function HostControlRoom() {
 function HostCard({
   card,
   pickCounts,
+  roomStatus,
   onOpen,
   onLock,
   onSettle,
@@ -338,11 +382,17 @@ function HostCard({
 }: {
   card: Card;
   pickCounts: Record<string, Record<string, number>>;
+  roomStatus: string;
   onOpen: () => void;
   onLock: () => void;
   onSettle: (propId: string, answer: string) => void;
   actionLoading: string | null;
 }) {
+  // Track which settled prop the host has expanded for re-settlement
+  const [editingPropId, setEditingPropId] = useState<string | null>(null);
+
+  const isFinalized = roomStatus === "finalized";
+
   const statusColor: Record<string, string> = {
     closed: C.textMuted,
     open: C.success,
@@ -393,55 +443,127 @@ function HostCard({
       {card.gameday_props.map((prop) => {
         const counts = pickCounts[prop.id] ?? {};
         const totalPicks = Object.values(counts).reduce((a, b) => a + b, 0);
-        const canSettle =
-          card.status === "locked" || card.status === "settled";
+        // Initial settle available on locked/settled cards for unsettled props
+        const canSettle = card.status === "locked" || card.status === "settled";
+        const isSettled = prop.status === "settled";
+        const isEditingThis = editingPropId === prop.id;
+        const isSettling = actionLoading === `settle-${prop.id}`;
 
         return (
           <View key={prop.id} style={styles.propSection}>
-            <Text style={styles.propQuestion}>{prop.question}</Text>
-            {prop.status === "settled" ? (
-              <Text style={styles.settledAnswer}>✓ {prop.correct_answer}</Text>
+            <View style={styles.propHeaderRow}>
+              <Text style={styles.propQuestion}>{prop.question}</Text>
+              {/* Edit Result button — settled props only, not finalized */}
+              {isSettled && !isFinalized && !isEditingThis && (
+                <TouchableOpacity
+                  style={styles.editResultBtn}
+                  onPress={() => setEditingPropId(prop.id)}
+                >
+                  <Text style={styles.editResultText}>Edit Result</Text>
+                </TouchableOpacity>
+              )}
+              {/* Cancel edit */}
+              {isSettled && isEditingThis && (
+                <TouchableOpacity
+                  style={styles.cancelEditBtn}
+                  onPress={() => setEditingPropId(null)}
+                >
+                  <Text style={styles.cancelEditText}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Settled answer row */}
+            {isSettled && (
+              <View style={styles.settledRow}>
+                <Text style={styles.settledAnswer}>✓ {prop.correct_answer}</Text>
+                {isFinalized && (
+                  <Text style={styles.finalizedProp}>FINAL</Text>
+                )}
+              </View>
+            )}
+
+            {/* Show answer options for:
+                1. Unsettled props on locked/settled cards (initial settlement)
+                2. Settled props that are being edited (re-settlement) */}
+            {(canSettle && !isSettled) || (isSettled && isEditingThis) ? (
+              <>
+                {isEditingThis && (
+                  <Text style={styles.editHint}>Select the correct answer:</Text>
+                )}
+                {prop.answer_options.map((ans) => {
+                  const count = counts[ans] ?? 0;
+                  const pct = totalPicks > 0 ? (count / totalPicks) * 100 : 0;
+                  const isCurrentCorrect = prop.correct_answer === ans;
+
+                  return (
+                    <View key={ans} style={styles.propAnswerRow}>
+                      <View style={styles.propAnswerLeft}>
+                        <Text style={[
+                          styles.propAns,
+                          isCurrentCorrect && isSettled && { color: C.success },
+                        ]}>
+                          {ans}
+                        </Text>
+                        <View style={styles.barTrack}>
+                          <View style={{ flex: 1, flexDirection: "row" }}>
+                            <View
+                              style={{
+                                flex: Math.max(pct, 0),
+                                height: 4,
+                                borderRadius: 2,
+                                backgroundColor: isCurrentCorrect ? C.success : C.tint,
+                              }}
+                            />
+                            <View style={{ flex: Math.max(100 - pct, 0), height: 4 }} />
+                          </View>
+                        </View>
+                      </View>
+                      <Text style={styles.propCount}>{count}</Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.settleBtn,
+                          isCurrentCorrect && isSettled && styles.settleBtnActive,
+                        ]}
+                        onPress={() => {
+                          onSettle(prop.id, ans);
+                          setEditingPropId(null);
+                        }}
+                        disabled={isSettling || !!actionLoading}
+                      >
+                        {isSettling ? (
+                          <ActivityIndicator color={C.text} size="small" />
+                        ) : (
+                          <Text style={[
+                            styles.settleBtnText,
+                            isCurrentCorrect && isSettled && styles.settleBtnActiveText,
+                          ]}>
+                            {isCurrentCorrect && isSettled ? "✓ Current" : "✓ Correct"}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </>
             ) : null}
 
-            {prop.answer_options.map((ans) => {
+            {/* Pick distribution bars for closed/open cards (read-only) */}
+            {!canSettle && prop.answer_options.map((ans) => {
               const count = counts[ans] ?? 0;
               const pct = totalPicks > 0 ? (count / totalPicks) * 100 : 0;
-              const isSettling = actionLoading === `settle-${prop.id}`;
-
               return (
                 <View key={ans} style={styles.propAnswerRow}>
                   <View style={styles.propAnswerLeft}>
                     <Text style={styles.propAns}>{ans}</Text>
-                    {/* Flex-based bar — works on native + web */}
                     <View style={styles.barTrack}>
                       <View style={{ flex: 1, flexDirection: "row" }}>
-                        <View
-                          style={{
-                            flex: Math.max(pct, 0),
-                            height: 4,
-                            borderRadius: 2,
-                            backgroundColor:
-                              prop.correct_answer === ans ? C.success : C.tint,
-                          }}
-                        />
+                        <View style={{ flex: Math.max(pct, 0), height: 4, borderRadius: 2, backgroundColor: C.tint }} />
                         <View style={{ flex: Math.max(100 - pct, 0), height: 4 }} />
                       </View>
                     </View>
                   </View>
                   <Text style={styles.propCount}>{count}</Text>
-                  {canSettle && prop.status !== "settled" ? (
-                    <TouchableOpacity
-                      style={styles.settleBtn}
-                      onPress={() => onSettle(prop.id, ans)}
-                      disabled={isSettling || !!actionLoading}
-                    >
-                      {isSettling ? (
-                        <ActivityIndicator color={C.text} size="small" />
-                      ) : (
-                        <Text style={styles.settleBtnText}>✓ Correct</Text>
-                      )}
-                    </TouchableOpacity>
-                  ) : null}
                 </View>
               );
             })}
@@ -575,8 +697,47 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-  propQuestion: { fontSize: 13, fontWeight: "600", color: C.text, marginBottom: 10 },
-  settledAnswer: { fontSize: 13, color: C.success, fontWeight: "600", marginBottom: 8 },
+  propHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 6,
+  },
+  propQuestion: { flex: 1, fontSize: 13, fontWeight: "600", color: C.text },
+  settledRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  settledAnswer: { fontSize: 13, color: C.success, fontWeight: "600" },
+  finalizedProp: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.accentGold,
+    letterSpacing: 1,
+    backgroundColor: C.accentGold + "22",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  editResultBtn: {
+    backgroundColor: C.surfaceLight,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  editResultText: { fontSize: 11, fontWeight: "600", color: C.tint },
+  cancelEditBtn: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  cancelEditText: { fontSize: 11, fontWeight: "600", color: C.textMuted },
+  editHint: { fontSize: 12, color: C.textMuted, marginBottom: 8, fontStyle: "italic" },
   propAnswerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -608,6 +769,11 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   settleBtnText: { color: C.text, fontSize: 12, fontWeight: "600" },
+  settleBtnActive: {
+    backgroundColor: C.success + "22",
+    borderColor: C.success + "66",
+  },
+  settleBtnActiveText: { color: C.success },
 
   // Leaderboard
   section: { marginBottom: 20 },
@@ -644,6 +810,27 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   viewParticipantText: { color: C.textSecondary, fontSize: 14, fontWeight: "500" },
+
+  // Finalize
+  finalizeBtn: {
+    backgroundColor: C.accentGold,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  finalizeBtnText: { color: "#000", fontSize: 15, fontWeight: "700" },
+  finalizedBanner: {
+    backgroundColor: C.accentGold + "18",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.accentGold + "44",
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  finalizedText: { color: C.accentGold, fontSize: 14, fontWeight: "700" },
+  btnDisabled: { opacity: 0.5 },
 
   // Misc
   btn: {

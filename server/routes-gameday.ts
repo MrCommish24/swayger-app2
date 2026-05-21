@@ -746,7 +746,7 @@ export function registerGamedayRoutes(app: Express) {
       const { data: prop } = await supabase
         .from("gameday_props")
         .select(
-          "*, gameday_pick_cards(status, room_id, gameday_rooms(host_user_id))"
+          "*, gameday_pick_cards(status, room_id, gameday_rooms(host_user_id, status))"
         )
         .eq("id", propId)
         .single();
@@ -757,8 +757,14 @@ export function registerGamedayRoutes(app: Express) {
       }
 
       const card = prop.gameday_pick_cards as any;
-      if (card?.gameday_rooms?.host_user_id !== hostId) {
+      const gdRoom = card?.gameday_rooms as any;
+      if (gdRoom?.host_user_id !== hostId) {
         res.status(403).json({ error: "Not your room" });
+        return;
+      }
+
+      if (gdRoom?.status === "finalized") {
+        res.status(400).json({ error: "Room is finalized — results are read-only" });
         return;
       }
 
@@ -810,6 +816,45 @@ export function registerGamedayRoutes(app: Express) {
         prop_id: propId,
         correct_answer,
       });
+      res.json({ ok: true });
+    }
+  );
+
+  // ── PATCH /api/gameday/rooms/:roomId/finalize ───────────────────────────
+  app.patch(
+    "/api/gameday/rooms/:roomId/finalize",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, status")
+        .eq("id", roomId)
+        .single();
+
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if (room.host_user_id !== hostId) {
+        res.status(403).json({ error: "Not your room" });
+        return;
+      }
+      if (room.status === "finalized") {
+        res.json({ ok: true, already: true });
+        return;
+      }
+
+      await supabase
+        .from("gameday_rooms")
+        .update({ status: "finalized", updated_at: new Date().toISOString() })
+        .eq("id", roomId);
+
+      await logEvent(supabase, roomId, null, hostId, "room_finalized", {});
       res.json({ ok: true });
     }
   );
