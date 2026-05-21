@@ -605,7 +605,8 @@ export function registerGamedayRoutes(app: Express) {
           roomId,
           participant.id,
           userId,
-          "logged_in_participant_joined"
+          "participant_joined",
+          { participant_type: "logged_in" }
         );
         res.json({ participant });
         return;
@@ -666,7 +667,8 @@ export function registerGamedayRoutes(app: Express) {
         roomId,
         participant.id,
         null,
-        "guest_participant_joined"
+        "participant_joined",
+        { participant_type: "guest" }
       );
       res.json({ participant, guest_session_id: guestSessionId });
     }
@@ -865,7 +867,7 @@ export function registerGamedayRoutes(app: Express) {
       const { data: prop } = await supabase
         .from("gameday_props")
         .select(
-          "*, gameday_pick_cards(status, room_id, gameday_rooms(host_user_id, status))"
+          "*, gameday_pick_cards(id, status, room_id, gameday_rooms(host_user_id, status))"
         )
         .eq("id", propId)
         .single();
