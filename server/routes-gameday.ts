@@ -174,17 +174,57 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
     const supabase = getServiceSupabase();
-    const { data: rooms, error } = await supabase
+
+    // Try fetching with room_code; if the column doesn't exist yet (migration
+    // not run), fall back to the base columns so the list still works.
+    let { data: rooms, error } = await supabase
       .from("gameday_rooms")
       .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code")
       .eq("host_user_id", payload.sub)
       .order("created_at", { ascending: false });
+
     if (error) {
-      res.status(500).json({ error: error.message });
-      return;
+      console.warn("[gameday] rooms list with room_code failed, retrying without:", error.message);
+      const retry = await supabase
+        .from("gameday_rooms")
+        .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at")
+        .eq("host_user_id", payload.sub)
+        .order("created_at", { ascending: false });
+      if (retry.error) {
+        res.status(500).json({ error: retry.error.message });
+        return;
+      }
+      rooms = retry.data;
     }
+
+    const roomList = rooms ?? [];
+    console.log("[gameday] rooms list:", roomList.map((r: any) => ({ id: r.id.slice(0,8), room_code: r.room_code ?? "null" })));
+
+    // Backfill any rooms that are missing a room_code (non-blocking, best-effort).
+    await Promise.all(
+      roomList.map(async (r: any) => {
+        if (!r.room_code) {
+          try {
+            const newCode = await generateUniqueRoomCode(supabase);
+            const { error: updErr } = await supabase
+              .from("gameday_rooms")
+              .update({ room_code: newCode })
+              .eq("id", r.id);
+            if (!updErr) {
+              r.room_code = newCode;
+              console.log(`[gameday] rooms-list backfilled room_code ${newCode} for ${r.id}`);
+            } else {
+              console.warn("[gameday] rooms-list backfill update failed:", updErr.message);
+            }
+          } catch (e) {
+            console.warn("[gameday] rooms-list backfill skipped (column may not exist yet):", e);
+          }
+        }
+      })
+    );
+
     // Attach participant counts in one query
-    const roomIds = (rooms ?? []).map((r) => r.id);
+    const roomIds = roomList.map((r: any) => r.id);
     let counts: Record<string, number> = {};
     if (roomIds.length > 0) {
       const { data: pRows } = await supabase
@@ -196,7 +236,7 @@ export function registerGamedayRoutes(app: Express) {
       });
     }
     res.json({
-      rooms: (rooms ?? []).map((r) => ({
+      rooms: roomList.map((r: any) => ({
         ...r,
         participant_count: counts[r.id] ?? 0,
       })),
