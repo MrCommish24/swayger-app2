@@ -509,7 +509,7 @@ export default function ProfileScreen() {
 
           <Pressable
             style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/gameday/create")}
+            onPress={() => router.push("/gameday" as never)}
           >
             <Ionicons name="basketball-outline" size={18} color={Colors.dark.tabIconDefault} />
             <Text style={styles.adminButtonText}>Game Day Swayger</Text>
