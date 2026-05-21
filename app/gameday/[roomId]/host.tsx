@@ -304,7 +304,7 @@ export default function HostControlRoom() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace("/gameday")}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <View style={styles.hostBadge}>

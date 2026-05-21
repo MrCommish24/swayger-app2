@@ -1142,6 +1142,7 @@ export function registerGamedayRoutes(app: Express) {
         });
       }
 
+      res.setHeader("Cache-Control", "no-store");
       res.json({
         room,
         cards,
