@@ -29,7 +29,15 @@ export default function CreateGameDayRoom() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
 
-  const [isHost, setIsHost] = useState<boolean | null>(null);
+  // Host check is done client-side using the session email — no round-trip needed.
+  // The server enforces this again when the room is actually created.
+  const GAMEDAY_HOST_EMAILS = ["darius@leagueswype.com"];
+  const isHost = session
+    ? GAMEDAY_HOST_EMAILS.map((e) => e.toLowerCase()).includes(
+        (session.user.email ?? "").toLowerCase()
+      )
+    : null; // null = still loading (no session yet)
+
   const [template, setTemplate] = useState<GDPropTemplate[]>([]);
   const [defaultPropIds, setDefaultPropIds] = useState<string[]>([]);
   const [selectedPropIds, setSelectedPropIds] = useState<Set<string>>(new Set());
@@ -45,11 +53,6 @@ export default function CreateGameDayRoom() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session) return;
-    gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
-      .then((r) => setIsHost(r.isHost))
-      .catch(() => setIsHost(false));
-
     gamedayFetch<TemplateResponse>("/api/gameday/template")
       .then((r) => {
         setTemplate(r.template);
@@ -57,7 +60,7 @@ export default function CreateGameDayRoom() {
         setSelectedPropIds(new Set(r.defaultPropIds));
       })
       .catch(() => {});
-  }, [session]);
+  }, []);
 
   const toggleProp = useCallback((id: string) => {
     setSelectedPropIds((prev) => {
