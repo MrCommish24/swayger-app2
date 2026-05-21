@@ -110,4 +110,24 @@ export const Analytics = {
   h2hViewed: (opponentId?: string) => capture("h2h_viewed", opponentId ? { opponent_id: opponentId } : {}),
   joinScreenViewed: () => capture("join_screen_viewed"),
   qrScanned: () => capture("qr_scanned"),
+
+  // ── Game Day ─────────────────────────────────────────────────────────────────
+  gamedayHubViewed: () =>
+    capture("gameday_hub_viewed"),
+  gamedayRoomViewed: (roomId: string, roomName: string) =>
+    capture("gameday_room_viewed", { room_id: roomId, room_name: roomName }),
+  gamedayJoined: (roomId: string, method: "user" | "guest") =>
+    capture("gameday_joined", { room_id: roomId, method }),
+  gamedayPickSubmitted: (roomId: string, phase: string, propCount: number, isUpdate: boolean) =>
+    capture("gameday_pick_submitted", { room_id: roomId, phase, prop_count: propCount, is_update: isUpdate }),
+  gamedayStandingsShared: (roomId: string) =>
+    capture("gameday_standings_shared", { room_id: roomId }),
+  gamedayRoomCreated: (roomId: string, propCount: number) =>
+    capture("gameday_room_created", { room_id: roomId, prop_count: propCount }),
+  gamedayCardOpened: (roomId: string, cardId: string, phase: string) =>
+    capture("gameday_card_opened", { room_id: roomId, card_id: cardId, phase }),
+  gamedayCardLocked: (roomId: string, cardId: string, phase: string) =>
+    capture("gameday_card_locked", { room_id: roomId, card_id: cardId, phase }),
+  gamedayRoomFinalized: (roomId: string) =>
+    capture("gameday_room_finalized", { room_id: roomId }),
 };

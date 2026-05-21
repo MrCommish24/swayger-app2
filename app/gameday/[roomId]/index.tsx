@@ -22,6 +22,7 @@ import {
   GDLeaderboardEntry,
 } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -69,6 +70,8 @@ export default function GameDayRoomScreen() {
     }
   }, [roomId]);
 
+  const hasTrackedView = useRef(false);
+
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
     try {
@@ -79,6 +82,10 @@ export default function GameDayRoomScreen() {
       );
       setRoomData(data);
       setError(null);
+      if (!hasTrackedView.current) {
+        hasTrackedView.current = true;
+        Analytics.gamedayRoomViewed(roomId, data.room.room_name);
+      }
 
       // Sync pendingPicks when the open card changes (new card) or on first load.
       // This pre-fills any picks already saved on the server so returning users
@@ -123,6 +130,7 @@ export default function GameDayRoomScreen() {
     (typeof window !== "undefined" ? window.location.origin : "https://swayger.app");
 
   const handleShareStandings = async () => {
+    Analytics.gamedayStandingsShared(roomId ?? "");
     setSharing(true);
     try {
       if (Platform.OS === "web") {
@@ -195,6 +203,7 @@ export default function GameDayRoomScreen() {
         { method: "POST", body: JSON.stringify({}) },
         { session }
       );
+      Analytics.gamedayJoined(roomId, "user");
       await fetchRoom();
       setJoinStep(null);
     } catch (e: any) {
@@ -228,6 +237,7 @@ export default function GameDayRoomScreen() {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.localStorage.setItem(GUEST_KEY(roomId), gsId);
       }
+      Analytics.gamedayJoined(roomId, "guest");
       await fetchRoom();
       setJoinStep(null);
     } catch (e: any) {
@@ -258,6 +268,12 @@ export default function GameDayRoomScreen() {
           { session, guestSessionId }
         );
       }
+      Analytics.gamedayPickSubmitted(
+        roomId,
+        openCard.phase,
+        openCard.gameday_props.length,
+        submittedCardId === openCard.id
+      );
       setSubmittedCardId(openCard.id);
       await fetchRoom();
     } catch (e: any) {

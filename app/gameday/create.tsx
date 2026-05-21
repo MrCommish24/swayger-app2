@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch, GDPropTemplate } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -105,6 +106,7 @@ export default function CreateGameDayRoom() {
         },
         { session }
       );
+      Analytics.gamedayRoomCreated(result.room_id, selectedPropIds.size);
       router.replace(`/gameday/${result.room_id}/host` as never);
     } catch (e: any) {
       setError(e.message ?? "Failed to create room");

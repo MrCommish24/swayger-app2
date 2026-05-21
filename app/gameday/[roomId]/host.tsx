@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -218,6 +219,9 @@ export default function HostControlRoom() {
         { method: "PATCH", body: JSON.stringify({}) },
         { session }
       );
+      const phase = hostData?.cards.find((c) => c.id === cardId)?.phase ?? "unknown";
+      if (action === "open") Analytics.gamedayCardOpened(roomId!, cardId, phase);
+      if (action === "lock") Analytics.gamedayCardLocked(roomId!, cardId, phase);
       await fetchHostData();
     } catch (e: any) {
       alert(e.message ?? "Action failed");
@@ -250,6 +254,7 @@ export default function HostControlRoom() {
   const doFinalize = async () => {
     setShowFinalizeModal(false);
     setLocalFinalized(true);
+    Analytics.gamedayRoomFinalized(roomId!);
     setFinalizeError(null);
     setActionLoading("finalize");
     try {

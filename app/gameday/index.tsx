@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -111,6 +112,7 @@ export default function GameDayHub() {
 
   useEffect(() => {
     if (isHost === null) return;
+    Analytics.gamedayHubViewed();
     if (isHost) {
       fetchRooms();
     } else {
