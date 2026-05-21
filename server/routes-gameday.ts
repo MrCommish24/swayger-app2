@@ -139,6 +139,49 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ isHost });
   });
 
+  // ── GET /api/gameday/rooms ──────────────────────────────────────────────
+  // Returns all rooms created by the authenticated host, newest first.
+  app.get("/api/gameday/rooms", async (req: Request, res: Response) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const payload = decodeJwtPayload(auth.slice(7));
+    if (!payload?.sub) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: rooms, error } = await supabase
+      .from("gameday_rooms")
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at")
+      .eq("host_user_id", payload.sub)
+      .order("created_at", { ascending: false });
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    // Attach participant counts in one query
+    const roomIds = (rooms ?? []).map((r) => r.id);
+    let counts: Record<string, number> = {};
+    if (roomIds.length > 0) {
+      const { data: pRows } = await supabase
+        .from("gameday_participants")
+        .select("room_id")
+        .in("room_id", roomIds);
+      (pRows ?? []).forEach((p) => {
+        counts[p.room_id] = (counts[p.room_id] ?? 0) + 1;
+      });
+    }
+    res.json({
+      rooms: (rooms ?? []).map((r) => ({
+        ...r,
+        participant_count: counts[r.id] ?? 0,
+      })),
+    });
+  });
+
   // ── GET /api/gameday/template ───────────────────────────────────────────
   app.get("/api/gameday/template", (_req: Request, res: Response) => {
     res.json({
