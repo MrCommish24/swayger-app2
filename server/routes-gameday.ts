@@ -1189,7 +1189,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { roomId } = req.params;
       const { status } = req.body as { status?: string };
-      const allowed = ["draft", "active", "final"];
+      const allowed = ["draft", "active", "finalized"];
       if (!status || !allowed.includes(status)) {
         res.status(400).json({ error: "Invalid status" });
         return;

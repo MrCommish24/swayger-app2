@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS gameday_rooms (
   game_date       DATE,
   host_user_id    UUID        NOT NULL,
   status          TEXT        NOT NULL DEFAULT 'active'
-                              CHECK (status IN ('draft','active','final')),
+                              CHECK (status IN ('draft','active','finalized')),
   is_private      BOOLEAN     NOT NULL DEFAULT true,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
