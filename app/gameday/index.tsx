@@ -63,7 +63,13 @@ export default function GameDayHub() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchRooms = useCallback(async (quiet = false) => {
+  /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
+  function cleanError(raw: string): string {
+    if (raw.trim().startsWith("<")) return "Server is starting up — retrying…";
+    return raw;
+  }
+
+  const fetchRooms = useCallback(async (quiet = false, attempt = 0) => {
     if (!session) return;
     if (!quiet) setLoading(true);
     try {
@@ -74,9 +80,17 @@ export default function GameDayHub() {
       );
       setRooms(data.rooms);
       setError(null);
+      setLoading(false);
+      setRefreshing(false);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load rooms");
-    } finally {
+      const msg: string = e?.message ?? "Failed to load rooms";
+      // Auto-retry up to 3 times when the server is still starting (HTML response)
+      if (msg.trim().startsWith("<") && attempt < 3) {
+        setTimeout(() => fetchRooms(true, attempt + 1), 1500);
+        // Leave the loading spinner up — don't touch loading/refreshing state
+        return;
+      }
+      setError(cleanError(msg));
       setLoading(false);
       setRefreshing(false);
     }
