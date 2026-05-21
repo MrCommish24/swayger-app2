@@ -238,6 +238,76 @@ After running `005_fix_schema_to_swaygers.sql`, verify the following manually:
 10. **Decline**: Opponent can decline a pending swayger → status becomes "Declined".
 11. **Schema Health**: In Profile (dev mode), Dev: Schema Health panel shows all green checks.
 
+## Game Day Room Creation — Required Procedure
+
+**CRITICAL: Always use the API route, never a direct DB insert.** Creating a room directly in Supabase bypasses the card/prop seeding logic — the room will exist but have no pick cards and no props (empty room). The route at `POST /api/gameday/rooms` handles room creation + pick card creation + prop population in one atomic flow.
+
+### Required Fields
+
+```json
+{
+  "room_name":        "Cavs vs Knicks — ECF Game 3",
+  "team_a_name":      "Cleveland Cavaliers",
+  "team_b_name":      "New York Knicks",
+  "team_a_star":      "Donovan Mitchell",
+  "team_b_star":      "Jalen Brunson",
+  "game_date":        "May 21, 2026",
+  "selected_prop_ids": null
+}
+```
+
+- `team_a_star` and `team_b_star` are **required** — they populate `{{STAR_A}}`/`{{STAR_B}}` placeholders in every prop question
+- `selected_prop_ids` is optional; omitting it uses `DEFAULT_PROP_IDS` (9 props across all 3 phases)
+- `game_date` accepts "May 21", "May 21, 2026", or ISO "2026-05-21"
+
+### What the Route Auto-Creates
+
+3 pick cards (all start `status: "closed"`) + props per card:
+
+| Phase | Card Title | Default Props |
+|---|---|---|
+| `pregame` | Pregame Picks | Who wins? / 1st quarter? / Star pts? / Within 7 pts w/ 2min? |
+| `halftime` | Halftime Picks | Halftime leader wins? / 3rd quarter? / Star 2nd half? |
+| `fourth` | 4Q Clutch Picks | 4th quarter winner? / Within 5 pts in final 2 min? |
+
+### Auth Requirement
+
+The route requires a **Supabase JWT Bearer token** from a host user whose email is in `GAMEDAY_HOST_EMAILS` (default: `darius@leagueswype.com`). Admin token alone is not sufficient — the room must be created from the app UI or by the agent calling the API with the host's JWT.
+
+### If a Room Was Created Without Props (Recovery)
+
+Use this Node snippet with the service role key to backfill cards + props for any room:
+
+```js
+// Run with: node -e "..." (env vars must be loaded)
+// Customize ROOM_ID, TEAM_A, TEAM_B, STAR_A, STAR_B
+const { createClient } = require('@supabase/supabase-js');
+const sb = createClient(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// ... see server/gameday-template.ts DEFAULT_PROP_IDS + NBA_PLAYOFF_TEMPLATE for the full prop list
+// Insert pick cards (pregame/halftime/fourth, status:'closed'), then insert gameday_props per card
+```
+
+### Game Day Room Creation Checklist
+
+When asked to create a Game Day room, always confirm or gather:
+- [ ] `room_name` — e.g. "Cavs vs Knicks — ECF Game 3"
+- [ ] `team_a_name` + `team_b_name` — full team names (used in prop questions)
+- [ ] `team_a_star` + `team_b_star` — primary player names (first + last, used in prop questions)
+- [ ] `game_date` — the actual game date
+- [ ] `selected_prop_ids` — leave null to use the 9 default props
+- [ ] Confirm the response includes 3 cards each with props (check `ok: true` + no empty cards)
+
+### `gameday_pick_cards` Status Flow
+
+`closed` → (host opens) → `open` → (host locks) → `locked` → (host settles) → `settled`
+
+### Key Files
+
+- `server/routes-gameday.ts` — all game day API routes
+- `server/gameday-template.ts` — `NBA_PLAYOFF_TEMPLATE`, `DEFAULT_PROP_IDS`, `resolvePlaceholders()`
+- `app/gameday/[roomId]/index.tsx` — participant view
+- `app/gameday/[roomId]/host.tsx` — host control panel
+
 ## Workflows
 
 - **Start Backend**: `npm run server:dev` (port 5000)
