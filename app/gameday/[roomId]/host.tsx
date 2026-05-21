@@ -9,12 +9,16 @@ import {
   Alert,
   Modal,
   Platform,
+  Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { captureRef } from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
+import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 
 const C = Colors.dark;
 
@@ -121,6 +125,46 @@ export default function HostControlRoom() {
   const copyLink = () => {
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
       navigator.clipboard.writeText(getShareUrl()).catch(() => {});
+    }
+  };
+
+  const receiptRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
+
+  const handleShareStandings = async () => {
+    setSharing(true);
+    try {
+      if (Platform.OS === "web") {
+        if (receiptRef.current) {
+          const { default: html2canvas } = await import("html2canvas");
+          const canvas = await html2canvas(
+            receiptRef.current as unknown as HTMLElement,
+            { useCORS: true, allowTaint: false, backgroundColor: "#0C1220", scale: 2, logging: false }
+          );
+          const dataUrl = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = "game-day-standings.png";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } else {
+        if (receiptRef.current) {
+          const uri = await captureRef(receiptRef.current, { format: "png", quality: 1 });
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share Final Standings", UTI: "public.png" });
+          } else {
+            await Share.share({ url: uri });
+          }
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) console.warn("[gameday-host] share error:", msg);
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -404,8 +448,26 @@ export default function HostControlRoom() {
       {/* Finalize / finalized state */}
       {room.status === "finalized" || localFinalized ? (
         <View style={styles.finalizedBanner}>
-          <Text style={styles.finalizedText}>🏆 Game Day standings finalized.</Text>
-          <Text style={styles.finalizedSub}>This room is now read-only. Participants can view final results.</Text>
+          <Text style={styles.finalizedTitle}>🏆 Standings Locked</Text>
+          <Text style={styles.finalizedSub}>
+            This room is finalized. Participants can see the final results.
+          </Text>
+          <View style={styles.sendOffRow}>
+            <TouchableOpacity
+              style={[styles.shareImgBtn, sharing && styles.btnDisabled]}
+              onPress={handleShareStandings}
+              disabled={sharing}
+            >
+              {sharing ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Text style={styles.shareImgBtnText}>📸 Share Image</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.copyLinkBtn} onPress={copyLink}>
+              <Text style={styles.copyLinkText}>🔗 Copy Link</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <View style={styles.finalizeWrapper}>
@@ -494,6 +556,24 @@ export default function HostControlRoom() {
         </View>
       </View>
     </Modal>
+
+    {/* Off-screen receipt card — captured for sharing */}
+    {(hostData?.room?.status === "finalized" || localFinalized) && hostData?.room ? (
+      <View ref={receiptRef} collapsable={false} style={styles.hiddenReceipt}>
+        <GameDayReceiptCard
+          roomName={hostData.room.room_name}
+          matchup={`${hostData.room.team_a_name} vs ${hostData.room.team_b_name}`}
+          gameDate={hostData.room.game_date ?? null}
+          leaderboard={hostData.leaderboard ?? []}
+          myParticipantId={null}
+          roomLink={
+            hostData.room.room_code
+              ? `swayger.app/g/${hostData.room.room_code}`
+              : undefined
+          }
+        />
+      </View>
+    ) : null}
     </View>
   );
 }
@@ -986,12 +1066,44 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: C.accentGold + "44",
-    paddingVertical: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     alignItems: "center",
     marginBottom: 12,
+    gap: 4,
   },
+  finalizedTitle: { color: C.accentGold, fontSize: 16, fontWeight: "700", textAlign: "center", marginBottom: 2 },
   finalizedText: { color: C.accentGold, fontSize: 15, fontWeight: "700", textAlign: "center" },
-  finalizedSub: { color: C.textSecondary, fontSize: 13, textAlign: "center", marginTop: 4 },
+  finalizedSub: { color: C.textSecondary, fontSize: 13, textAlign: "center", marginBottom: 10 },
+  sendOffRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6,
+    width: "100%",
+  },
+  shareImgBtn: {
+    flex: 1,
+    backgroundColor: C.accentGold,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  shareImgBtnText: { color: "#000", fontSize: 13, fontWeight: "700" },
+  copyLinkBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyLinkText: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  hiddenReceipt: {
+    position: "absolute",
+    top: -9999,
+    left: 0,
+  },
   finalizeErrorBox: {
     backgroundColor: C.danger + "18",
     borderRadius: 10,

@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Share,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +22,9 @@ import {
   GDLeaderboardEntry,
 } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
+import { captureRef } from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
+import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 
 const C = Colors.dark;
 const GUEST_KEY = (roomId: string) => `gd_guest_${roomId}`;
@@ -53,6 +57,8 @@ export default function GameDayRoomScreen() {
   const openCardIdRef = useRef<string | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const receiptRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
 
   // Load guest session from localStorage on mount
   useEffect(() => {
@@ -111,6 +117,47 @@ export default function GameDayRoomScreen() {
       setLeaderboard(data.leaderboard);
     } catch { /* silent */ }
   }, [roomId]);
+
+  const BASE_URL =
+    process.env.EXPO_PUBLIC_APP_URL ??
+    (typeof window !== "undefined" ? window.location.origin : "https://swayger.app");
+
+  const handleShareStandings = async () => {
+    setSharing(true);
+    try {
+      if (Platform.OS === "web") {
+        if (receiptRef.current) {
+          const { default: html2canvas } = await import("html2canvas");
+          const canvas = await html2canvas(
+            receiptRef.current as unknown as HTMLElement,
+            { useCORS: true, allowTaint: false, backgroundColor: "#0C1220", scale: 2, logging: false }
+          );
+          const dataUrl = canvas.toDataURL("image/png");
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = "game-day-standings.png";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } else {
+        if (receiptRef.current) {
+          const uri = await captureRef(receiptRef.current, { format: "png", quality: 1 });
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(uri, { mimeType: "image/png", dialogTitle: "Share Final Standings", UTI: "public.png" });
+          } else {
+            await Share.share({ url: uri });
+          }
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.toLowerCase().includes("cancel")) console.warn("[gameday] share error:", msg);
+    } finally {
+      setSharing(false);
+    }
+  };
 
   // Initial load and polling
   useEffect(() => {
@@ -376,13 +423,39 @@ export default function GameDayRoomScreen() {
         </Text>
       </View>
 
-      {/* Finalized banner */}
+      {/* Finalized banner + share CTAs */}
       {isFinalized ? (
         <View style={styles.finalizedBanner}>
           <Text style={styles.finalizedTitle}>🏆 Final Standings</Text>
           <Text style={styles.finalizedSub}>
             This room is locked. All picks are revealed and results are final.
           </Text>
+          <View style={styles.shareRow}>
+            <TouchableOpacity
+              style={[styles.shareImgBtn, sharing && styles.btnDisabled]}
+              onPress={handleShareStandings}
+              disabled={sharing}
+            >
+              {sharing ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Text style={styles.shareImgBtnText}>📸 Share Standings</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.copyLinkBtn}
+              onPress={() => {
+                const link = room?.room_code
+                  ? `${BASE_URL}/g/${room.room_code}`
+                  : `${BASE_URL}/gameday/${roomId}`;
+                if (Platform.OS === "web" && typeof navigator !== "undefined") {
+                  navigator.clipboard.writeText(link).catch(() => {});
+                }
+              }}
+            >
+              <Text style={styles.copyLinkText}>🔗 Copy Link</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : null}
 
@@ -424,6 +497,28 @@ export default function GameDayRoomScreen() {
 
       {/* Leaderboard */}
       <LeaderboardSection leaderboard={leaderboard} myParticipantId={participant?.id} />
+
+      {/* Off-screen receipt card — captured for sharing */}
+      {isFinalized && room ? (
+        <View
+          ref={receiptRef}
+          collapsable={false}
+          style={styles.hiddenReceipt}
+        >
+          <GameDayReceiptCard
+            roomName={room.room_name}
+            matchup={`${room.team_a_name} vs ${room.team_b_name}`}
+            gameDate={room.game_date ?? null}
+            leaderboard={leaderboard}
+            myParticipantId={participant?.id ?? null}
+            roomLink={
+              room.room_code
+                ? `swayger.app/g/${room.room_code}`
+                : undefined
+            }
+          />
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -925,6 +1020,44 @@ const styles = StyleSheet.create({
     color: C.textSecondary,
     textAlign: "center",
     lineHeight: 18,
+    marginBottom: 12,
+  },
+  shareRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+    width: "100%",
+  },
+  shareImgBtn: {
+    flex: 1,
+    backgroundColor: "#F5A623",
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  shareImgBtnText: {
+    color: "#000",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  copyLinkBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyLinkText: {
+    color: C.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  hiddenReceipt: {
+    position: "absolute",
+    top: -9999,
+    left: 0,
   },
 
   // Misc
