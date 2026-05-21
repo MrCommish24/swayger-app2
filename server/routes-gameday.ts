@@ -28,6 +28,26 @@ function decodeJwtPayload(token: string): { sub?: string; email?: string } | nul
   }
 }
 
+/** Parse a human-readable date like "May 21" into ISO "YYYY-MM-DD", or return null. */
+function parseGameDate(raw: string | undefined | null): string | null {
+  if (!raw?.trim()) return null;
+  const MONTHS: Record<string, string> = {
+    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+  };
+  // Accept "May 21", "May 21 2026", or already ISO "2026-05-21"
+  const isoMatch = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return raw.trim();
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const monthKey = parts[0].slice(0, 3).toLowerCase();
+  const month = MONTHS[monthKey];
+  const day = parts[1].replace(/\D/g, "").padStart(2, "0");
+  const year = parts[2] ?? new Date().getFullYear().toString();
+  if (!month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
 async function requireGamedayHost(
   req: Request,
   res: Response
@@ -38,24 +58,21 @@ async function requireGamedayHost(
     return null;
   }
   const token = auth.slice(7);
-  const supabase = getServiceSupabase();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token);
-  if (error || !user) {
+  // Decode JWT locally — no Supabase network call needed for email/userId check.
+  const payload = decodeJwtPayload(token);
+  if (!payload?.sub) {
     res.status(401).json({ error: "Invalid token" });
     return null;
   }
-  const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "")
+  const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  if (!allowedEmails.includes((user.email ?? "").toLowerCase())) {
+  if (!allowedEmails.includes((payload.email ?? "").toLowerCase())) {
     res.status(403).json({ error: "Not authorized as Game Day host" });
     return null;
   }
-  return user.id;
+  return payload.sub;
 }
 
 async function getCallerIdentity(req: Request) {
@@ -159,7 +176,7 @@ export function registerGamedayRoutes(app: Express) {
         team_b_name: team_b_name.trim(),
         team_a_star: team_a_star.trim(),
         team_b_star: team_b_star.trim(),
-        game_date: game_date || null,
+        game_date: parseGameDate(game_date),
         host_user_id: hostId,
         status: "active",
       })
