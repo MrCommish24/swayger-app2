@@ -142,6 +142,17 @@ async function logEvent(
 }
 
 export function registerGamedayRoutes(app: Express) {
+  // Prevent browser/proxy caching for all gameday API responses.
+  // Without this, Express's ETag freshness check returns 304 for unchanged
+  // responses even after server-side state changes (e.g. room finalized),
+  // so the browser keeps serving the old cached data.
+  // Overriding req.fresh to always be false forces a full 200 on every request.
+  app.use("/api/gameday", (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cache-Control", "no-store");
+    Object.defineProperty(req, "fresh", { get: () => false, configurable: true });
+    next();
+  });
+
   // ── GET /api/gameday/is-host ────────────────────────────────────────────
   app.get("/api/gameday/is-host", (req: Request, res: Response) => {
     const auth = req.headers.authorization;
@@ -1142,7 +1153,6 @@ export function registerGamedayRoutes(app: Express) {
         });
       }
 
-      res.setHeader("Cache-Control", "no-store");
       res.json({
         room,
         cards,
