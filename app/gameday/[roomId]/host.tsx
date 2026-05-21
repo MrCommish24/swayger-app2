@@ -80,6 +80,7 @@ export default function HostControlRoom() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [localFinalized, setLocalFinalized] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -202,6 +203,7 @@ export default function HostControlRoom() {
   const doFinalize = async () => {
     setShowFinalizeModal(false);
     setLocalFinalized(true);
+    setFinalizeError(null);
     setActionLoading("finalize");
     try {
       await gamedayFetch(
@@ -212,7 +214,11 @@ export default function HostControlRoom() {
       await fetchHostData();
     } catch (e: any) {
       setLocalFinalized(false);
-      alert(e.message ?? "Finalize failed");
+      const raw: string = e.message ?? "Finalize failed";
+      const clean = raw.startsWith("<!") || raw.startsWith("<") 
+        ? "Could not reach the server. Check your connection and try again."
+        : raw;
+      setFinalizeError(clean);
     } finally {
       setActionLoading(null);
     }
@@ -400,6 +406,14 @@ export default function HostControlRoom() {
         </View>
       ) : (
         <View style={styles.finalizeWrapper}>
+          {finalizeError ? (
+            <View style={styles.finalizeErrorBox}>
+              <Text style={styles.finalizeErrorText}>⚠ {finalizeError}</Text>
+              <TouchableOpacity onPress={() => setFinalizeError(null)}>
+                <Text style={styles.finalizeErrorDismiss}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
           {!isReadyToFinalize && (
             <View style={styles.finalizeReadiness}>
               <Text style={styles.finalizeReadinessHint}>
@@ -975,6 +989,18 @@ const styles = StyleSheet.create({
   },
   finalizedText: { color: C.accentGold, fontSize: 15, fontWeight: "700", textAlign: "center" },
   finalizedSub: { color: C.textSecondary, fontSize: 13, textAlign: "center", marginTop: 4 },
+  finalizeErrorBox: {
+    backgroundColor: C.danger + "18",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.danger + "44",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    gap: 6,
+  },
+  finalizeErrorText: { color: C.danger, fontSize: 13, lineHeight: 18 },
+  finalizeErrorDismiss: { color: C.textMuted, fontSize: 12, textDecorationLine: "underline" },
 
   // Finalize confirmation modal
   modalOverlay: {
