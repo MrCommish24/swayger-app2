@@ -79,6 +79,7 @@ export default function HostControlRoom() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+  const [localFinalized, setLocalFinalized] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -200,6 +201,7 @@ export default function HostControlRoom() {
 
   const doFinalize = async () => {
     setShowFinalizeModal(false);
+    setLocalFinalized(true);
     setActionLoading("finalize");
     try {
       await gamedayFetch(
@@ -209,6 +211,7 @@ export default function HostControlRoom() {
       );
       await fetchHostData();
     } catch (e: any) {
+      setLocalFinalized(false);
       alert(e.message ?? "Finalize failed");
     } finally {
       setActionLoading(null);
@@ -390,7 +393,7 @@ export default function HostControlRoom() {
       </View>
 
       {/* Finalize / finalized state */}
-      {room.status === "finalized" ? (
+      {room.status === "finalized" || localFinalized ? (
         <View style={styles.finalizedBanner}>
           <Text style={styles.finalizedText}>🏆 Game Day standings finalized.</Text>
           <Text style={styles.finalizedSub}>This room is now read-only. Participants can view final results.</Text>
@@ -422,10 +425,10 @@ export default function HostControlRoom() {
           <TouchableOpacity
             style={[
               styles.finalizeBtn,
-              (!isReadyToFinalize || actionLoading === "finalize") && styles.btnDisabled,
+              (!isReadyToFinalize || actionLoading === "finalize" || showFinalizeModal) && styles.btnDisabled,
             ]}
             onPress={openFinalizeModal}
-            disabled={!isReadyToFinalize || actionLoading === "finalize"}
+            disabled={!isReadyToFinalize || actionLoading === "finalize" || showFinalizeModal}
           >
             {actionLoading === "finalize" ? (
               <ActivityIndicator color="#000" size="small" />
