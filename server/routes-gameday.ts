@@ -28,23 +28,33 @@ function decodeJwtPayload(token: string): { sub?: string; email?: string } | nul
   }
 }
 
-/** Parse a human-readable date like "May 21" into ISO "YYYY-MM-DD", or return null. */
+/** Current year in CDT (America/Chicago). Avoids UTC year mismatch near midnight. */
+function currentYearCDT(): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+  }).format(new Date());
+}
+
+/** Parse a human-readable date like "May 21" or "May 21, 2026" into ISO "YYYY-MM-DD".
+ *  Defaults to the current CDT year when no year is supplied. Returns null on failure. */
 function parseGameDate(raw: string | undefined | null): string | null {
   if (!raw?.trim()) return null;
   const MONTHS: Record<string, string> = {
     jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
     jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
   };
-  // Accept "May 21", "May 21 2026", or already ISO "2026-05-21"
-  const isoMatch = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) return raw.trim();
-  const parts = raw.trim().split(/\s+/);
+  // Already ISO — pass through
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return raw.trim();
+  // Split on whitespace; strip commas so "May 20, 2026" → ["May","20","2026"]
+  const parts = raw.trim().split(/[\s,]+/).filter(Boolean);
   if (parts.length < 2) return null;
   const monthKey = parts[0].slice(0, 3).toLowerCase();
   const month = MONTHS[monthKey];
   const day = parts[1].replace(/\D/g, "").padStart(2, "0");
-  const year = parts[2] ?? new Date().getFullYear().toString();
   if (!month || !day) return null;
+  // Use explicit year if provided, otherwise default to current CDT year
+  const year = parts[2] ? parts[2].replace(/\D/g, "") : currentYearCDT();
   return `${year}-${month}-${day}`;
 }
 
@@ -185,7 +195,9 @@ export function registerGamedayRoutes(app: Express) {
 
     if (roomError || !room) {
       console.error("[gameday] create room error:", roomError);
-      res.status(500).json({ error: "Failed to create room" });
+      res.status(500).json({
+        error: `Could not create room: ${roomError?.message ?? "unknown database error"}`,
+      });
       return;
     }
 
@@ -420,7 +432,9 @@ export function registerGamedayRoutes(app: Express) {
 
         if (error) {
           console.error("[gameday] join error (logged-in):", error);
-          res.status(500).json({ error: "Failed to join room" });
+          res.status(500).json({
+            error: `Could not join room: ${error.message ?? "unknown database error"}`,
+          });
           return;
         }
 
@@ -479,7 +493,9 @@ export function registerGamedayRoutes(app: Express) {
             .json({ error: `${trimmedName} is already taken in this room.` });
           return;
         }
-        res.status(500).json({ error: "Failed to join room" });
+        res.status(500).json({
+          error: `Could not join room: ${(error as any).message ?? "unknown database error"}`,
+        });
         return;
       }
 
@@ -654,7 +670,9 @@ export function registerGamedayRoutes(app: Express) {
 
       if (error) {
         console.error("[gameday] pick error:", error);
-        res.status(500).json({ error: "Failed to save pick" });
+        res.status(500).json({
+          error: `Could not save pick: ${error.message ?? "unknown database error"}`,
+        });
         return;
       }
 
