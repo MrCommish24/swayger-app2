@@ -26,6 +26,7 @@ interface RoomSummary {
   status: "draft" | "active" | "final";
   created_at: string;
   participant_count: number;
+  room_code?: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -238,6 +239,9 @@ export default function GameDayHub() {
               <Text style={styles.metaChip}>
                 {room.participant_count} player{room.participant_count !== 1 ? "s" : ""}
               </Text>
+              {room.room_code ? (
+                <Text style={styles.roomCodeChip}>{room.room_code}</Text>
+              ) : null}
             </View>
 
             <Text style={styles.enterHint}>Tap to open Host Control →</Text>
@@ -316,6 +320,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
+  },
+  roomCodeChip: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.tint,
+    backgroundColor: C.tint + "22",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    letterSpacing: 0.8,
   },
   enterHint: { fontSize: 12, color: C.tint, fontWeight: "600" },
 
