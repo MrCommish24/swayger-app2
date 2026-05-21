@@ -288,6 +288,11 @@ function extractStat(playerData: unknown, statName: string): number | null {
       if (typeof p !== "number" || typeof r !== "number" || typeof b !== "number") return null;
       return p + r + b;
     }
+    if (statName === "af" || statName === "AF") {
+      const a = obj["assists"], f = obj["personalFouls"] ?? obj["fouls"] ?? obj["pf"] ?? 0;
+      if (typeof a !== "number") return null;
+      return a + (typeof f === "number" ? f : 0);
+    }
     const val = obj[statName];
     return typeof val === "number" ? val : null;
   }
