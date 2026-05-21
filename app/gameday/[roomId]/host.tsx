@@ -99,17 +99,13 @@ export default function HostControlRoom() {
       });
   }, [authLoading, session?.access_token]);
 
-  const roomUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/gameday/${roomId}`
-      : `https://swayger.app/gameday/${roomId}`;
+  const roomUrl = `https://swayger.app/gameday/${roomId}`;
 
-  // Returns the short /g/:roomCode URL when available, falls back to long UUID URL.
+  // Returns the short /g/:roomCode URL — always uses swayger.app domain.
   const getShareUrl = useCallback(() => {
     const code = hostData?.room?.room_code;
     if (!code) return roomUrl;
-    const origin = typeof window !== "undefined" ? window.location.origin : "https://swayger.app";
-    return `${origin}/g/${code}`;
+    return `https://swayger.app/g/${code}`;
   }, [hostData, roomUrl]);
 
   const copyLink = () => {

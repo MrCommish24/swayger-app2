@@ -176,7 +176,7 @@ export function registerGamedayRoutes(app: Express) {
     const supabase = getServiceSupabase();
     const { data: rooms, error } = await supabase
       .from("gameday_rooms")
-      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at")
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code")
       .eq("host_user_id", payload.sub)
       .order("created_at", { ascending: false });
     if (error) {
