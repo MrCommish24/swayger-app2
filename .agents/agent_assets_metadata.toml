@@ -102,6 +102,18 @@ uri = "file://attached_assets/generated_images/swayger-arena-slash-wide.png"
 type = "image"
 title = "swayger arena slash wide hero"
 
+[[generated]]
+id = "IdgwEEX5Kpl3Ih3WCznxO"
+uri = "file://assets/og-preview.png"
+type = "image"
+title = "swayger og card clean"
+
+[[generated]]
+id = "VkdzkOROwNSaZl6M82FB1"
+uri = "file://assets/images/swayger-icon.png"
+type = "image"
+title = "swayger app icon S"
+
 [[outputs]]
 id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
