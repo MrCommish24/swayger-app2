@@ -1059,6 +1059,46 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── POST /api/gameday/rooms/:roomId/final-standings-viewed ─────────────
+  // Logs a single final_standings_viewed event per participant per session.
+  // Called client-side once, guarded by a ref so polling never re-triggers it.
+  app.post(
+    "/api/gameday/rooms/:roomId/final-standings-viewed",
+    async (req: Request, res: Response) => {
+      const { roomId } = req.params;
+      const supabase = getServiceSupabase();
+
+      // Resolve caller — works for both logged-in users and guests
+      const { userId, guestSessionId } = await getCallerIdentity(req);
+
+      // Look up participant so we can attach participant_id to the event
+      let participantId: string | null = null;
+      if (userId) {
+        const { data: p } = await supabase
+          .from("gameday_participants")
+          .select("id")
+          .eq("room_id", roomId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        participantId = p?.id ?? null;
+      } else if (guestSessionId) {
+        const { data: p } = await supabase
+          .from("gameday_participants")
+          .select("id")
+          .eq("room_id", roomId)
+          .eq("guest_session_id", guestSessionId)
+          .maybeSingle();
+        participantId = p?.id ?? null;
+      }
+
+      await logEvent(supabase, roomId, participantId, userId, "final_standings_viewed", {
+        participant_type: userId ? "logged_in" : "guest",
+      });
+
+      res.json({ ok: true });
+    }
+  );
+
   // ── GET /api/gameday/rooms/:roomId/host-data ────────────────────────────
   // Extended host view: includes pick counts per prop for settlement UI
   app.get(

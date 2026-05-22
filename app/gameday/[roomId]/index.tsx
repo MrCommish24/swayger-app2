@@ -91,6 +91,12 @@ export default function GameDayRoomScreen() {
       if (data.room.status === "finalized" && !hasTrackedFinalStandings.current) {
         hasTrackedFinalStandings.current = true;
         Analytics.gamedayFinalStandingsViewed(roomId, roomCode);
+        // Also log to gameday_events (fire-and-forget, never blocks render)
+        gamedayFetch(
+          `/api/gameday/rooms/${roomId}/final-standings-viewed`,
+          { method: "POST", body: JSON.stringify({}) },
+          { session, guestSessionId }
+        ).catch(() => {});
       }
 
       // Sync pendingPicks when the open card changes (new card) or on first load.
