@@ -122,14 +122,14 @@ const SEO_SNIPPET = `
   <meta property="og:site_name" content="Swayger" />
   <meta property="og:title" content="Swayger — Social Wager Contracts" />
   <meta property="og:description" content="Make 1v1 social wager contracts with friends. Lock in your pick, challenge someone, and settle it. Join the NBA picks challenge — no real money, just bragging rights." />
-  <meta property="og:image" content="https://www.swayger.app/assets/og-preview.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
+  <meta property="og:image" content="https://www.swayger.app/assets/og-preview.jpg" />
+  <meta property="og:image:width" content="1280" />
+  <meta property="og:image:height" content="720" />
   <meta property="og:url" content="https://www.swayger.app" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Swayger — Social Wager Contracts" />
   <meta name="twitter:description" content="Lock in your takes and prove who was right. 1v1 social wagers with friends, NBA picks challenge, and a full receipt of every outcome." />
-  <meta name="twitter:image" content="https://www.swayger.app/assets/og-preview.png" />`;
+  <meta name="twitter:image" content="https://www.swayger.app/assets/og-preview.jpg" />`;
 
 function injectSeoTags(html: string): string {
   if (html.includes('og:title')) return html; // already present
