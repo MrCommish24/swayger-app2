@@ -312,3 +312,7 @@ When asked to create a Game Day room, always confirm or gather:
 
 - **Start Backend**: `npm run server:dev` (port 5000)
 - **Start Frontend**: `npm run expo:dev` (port 8081)
+
+## User Preferences
+
+- **Email blasts**: Always send a test email to darius@leagueswap.com first and wait for explicit approval before sending the full blast to all users.
