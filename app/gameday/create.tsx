@@ -270,16 +270,12 @@ export default function CreateGameDayRoom() {
                     </View>
                     <View style={styles.propTextWrap}>
                       <Text style={styles.propQuestion}>{prop.question}</Text>
-                      <View style={styles.propMeta}>
-                        <Text style={styles.propAnswers}>
-                          {prop.answers.join(" · ")}
-                        </Text>
-                        <View style={styles.windowBadge}>
-                          <Text style={styles.windowText}>
-                            Settles: {windowLabel}
-                          </Text>
-                        </View>
-                      </View>
+                      <Text style={styles.propAnswers}>
+                        {prop.answers.join(" · ")}
+                      </Text>
+                      <Text style={styles.windowText}>
+                        Settles: {windowLabel}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -415,27 +411,12 @@ const styles = StyleSheet.create({
   checkboxOn: { backgroundColor: C.tint, borderColor: C.tint },
   checkmark: { color: "#fff", fontSize: 13, fontWeight: "700" },
   propTextWrap: { flex: 1 },
-  propQuestion: { fontSize: 14, color: C.text, marginBottom: 4, lineHeight: 20 },
-  propMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  propAnswers: { fontSize: 12, color: C.textMuted },
-  windowBadge: {
-    backgroundColor: "#0F2030",
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "#1A3A50",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
+  propQuestion: { fontSize: 14, color: C.text, marginBottom: 3, lineHeight: 20 },
+  propAnswers: { fontSize: 12, color: C.textMuted, marginBottom: 3 },
   windowText: {
-    fontSize: 10,
+    fontSize: 11,
     color: "#4A9FC8",
-    fontWeight: "600",
-    letterSpacing: 0.3,
+    fontWeight: "500",
   },
   errorMsg: {
     color: C.danger,
