@@ -1964,7 +1964,7 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Someone at Swayger HQ Thinks They Know More NBA Than You</title>
+  <title>WCF Game 3 is tonight — lock in your picks before 7 PM CDT</title>
 </head>
 <body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
   <div style="max-width:520px;margin:0 auto;padding:48px 24px;">
@@ -1976,30 +1976,30 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
     </p>
 
     <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
-      The Swayger NBA Challenge is live and we made an NBA picks Swayger just for you. It&rsquo;s right here waiting. The only question is whether you&rsquo;re going to show up or leave HQ hanging.
+      OKC vs San Antonio. Western Conference Finals Game 3. Tonight.
+    </p>
+
+    <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
+      Your picks are live right now &mdash; SGA, Wemby, Vassell, Caruso. Four props. One shot to move up the leaderboard. Picks lock at <strong>7 PM CDT</strong> so don&rsquo;t sit on this.
     </p>
 
     <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
-      Accept it, make your picks, and see who gets more right tonight.
+      The season&rsquo;s not over. There&rsquo;s still leaderboard spots up for grabs this weekend. Every game counts.
     </p>
 
     <p style="margin:0 0 32px;">
       <a href="${hqChallengeUrl}"
-         style="display:inline-block;background:#ffffff;color:#111111;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;border:2px solid #111111;">
-        Accept the Challenge &rarr;
+         style="display:inline-block;background:#111111;color:#ffffff;font-size:15px;font-weight:700;padding:14px 28px;border-radius:8px;text-decoration:none;">
+        Lock In Your Picks &rarr;
       </a>
     </p>
 
     <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
-      Then &mdash; and this is important &mdash; immediately go challenge someone you know.
-    </p>
-
-    <p style="margin:0 0 20px;font-size:16px;color:#333;line-height:1.7;">
-      Your group chat is right there. Your buddy who thinks his NBA takes are heat? He needs a Swayger in his inbox. Your coworker who&rsquo;s been bragging about their basketball instincts? Make them prove it.
+      Then send a Swayger to whoever you know that has NBA takes. Your group chat, your rival, your coworker who&rsquo;s been quiet since their team got bounced. Make them prove it.
     </p>
 
     <p style="margin:0 0 24px;font-size:16px;color:#333;line-height:1.7;">
-      Challenge a friend to beat your score tonight. Whoever gets more correct wins the Swayger.
+      Challenge a friend to beat your score tonight. Whoever gets more right wins the Swayger.
     </p>
 
     <p style="margin:0 0 32px;">
@@ -2009,12 +2009,8 @@ function buildNightlyPicksChallengeHtml(opts: NightlyPicksChallengeOpts): string
       </a>
     </p>
 
-    <p style="margin:0 0 32px;font-size:16px;color:#333;line-height:1.7;">
-      When it&rsquo;s all said and done, screenshot your result. Post it. Let your picks speak for themselves.
-    </p>
-
     <p style="margin:0 0 8px;font-size:16px;color:#333;line-height:1.7;">
-      Good luck (you&rsquo;ll probably need it),
+      Lock it in.
     </p>
     <p style="margin:0;font-size:16px;color:#111;font-weight:600;">
       -Swayger HQ
@@ -2034,7 +2030,7 @@ export async function sendNightlyPicksChallenge(opts: NightlyPicksChallengeOpts)
     buildNightlyPicksChallengeHtml(opts),
     opts.userId ? generateUnsubscribeUrl(opts.userId) : `${APP_URL}/unsubscribe`,
   );
-  const subject = `Someone at Swayger HQ Thinks They Know More NBA Than You`;
+  const subject = `WCF Game 3 is tonight — lock in your picks before 7 PM CDT`;
   const text = `Hey.
 
 The Swayger NBA Challenge is live and we made an NBA picks Swayger just for you. It's right here waiting. The only question is whether you're going to show up or leave HQ hanging.
