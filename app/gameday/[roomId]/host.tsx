@@ -220,8 +220,8 @@ export default function HostControlRoom() {
         { session }
       );
       const phase = hostData?.cards.find((c) => c.id === cardId)?.phase ?? "unknown";
-      if (action === "open") Analytics.gamedayCardOpened(roomId!, cardId, phase);
-      if (action === "lock") Analytics.gamedayCardLocked(roomId!, cardId, phase);
+      if (action === "open") Analytics.gamedayCardOpened(roomId!, cardId, phase, hostData?.room.room_code);
+      if (action === "lock") Analytics.gamedayCardLocked(roomId!, cardId, phase, hostData?.room.room_code);
       await fetchHostData();
     } catch (e: any) {
       alert(e.message ?? "Action failed");
@@ -254,7 +254,7 @@ export default function HostControlRoom() {
   const doFinalize = async () => {
     setShowFinalizeModal(false);
     setLocalFinalized(true);
-    Analytics.gamedayRoomFinalized(roomId!);
+    Analytics.gamedayRoomFinalized(roomId!, hostData?.room.room_code);
     setFinalizeError(null);
     setActionLoading("finalize");
     try {

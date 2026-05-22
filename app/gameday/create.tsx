@@ -90,7 +90,7 @@ export default function CreateGameDayRoom() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await gamedayFetch<{ ok: boolean; room_id: string }>(
+      const result = await gamedayFetch<{ ok: boolean; room_id: string; room?: { room_code?: string | null } }>(
         "/api/gameday/rooms",
         {
           method: "POST",
@@ -106,7 +106,7 @@ export default function CreateGameDayRoom() {
         },
         { session }
       );
-      Analytics.gamedayRoomCreated(result.room_id, selectedPropIds.size);
+      Analytics.gamedayRoomCreated(result.room_id, selectedPropIds.size, result.room?.room_code);
       router.replace(`/gameday/${result.room_id}/host` as never);
     } catch (e: any) {
       setError(e.message ?? "Failed to create room");

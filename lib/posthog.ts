@@ -42,6 +42,11 @@ export function trackScreen(screenName: string, properties?: Record<string, unkn
 // ─── Named events ────────────────────────────────────────────────────────────
 // Centralised so event names stay consistent across the codebase.
 
+// Helper: only include room_code key if a value is present.
+function rc(roomCode?: string | null): Record<string, string> {
+  return roomCode ? { room_code: roomCode } : {};
+}
+
 export const Analytics = {
   // ── Auth funnel ─────────────────────────────────────────────────────────────
   // These events form the acquisition funnel: view → intent → action → success
@@ -112,22 +117,48 @@ export const Analytics = {
   qrScanned: () => capture("qr_scanned"),
 
   // ── Game Day ─────────────────────────────────────────────────────────────────
+  // All room-scoped events carry room_id (always) and room_code (when available).
   gamedayHubViewed: () =>
     capture("gameday_hub_viewed"),
-  gamedayRoomViewed: (roomId: string, roomName: string) =>
-    capture("gameday_room_viewed", { room_id: roomId, room_name: roomName }),
-  gamedayJoined: (roomId: string, method: "user" | "guest") =>
-    capture("gameday_joined", { room_id: roomId, method }),
-  gamedayPickSubmitted: (roomId: string, phase: string, propCount: number, isUpdate: boolean) =>
-    capture("gameday_pick_submitted", { room_id: roomId, phase, prop_count: propCount, is_update: isUpdate }),
-  gamedayStandingsShared: (roomId: string) =>
-    capture("gameday_standings_shared", { room_id: roomId }),
-  gamedayRoomCreated: (roomId: string, propCount: number) =>
-    capture("gameday_room_created", { room_id: roomId, prop_count: propCount }),
-  gamedayCardOpened: (roomId: string, cardId: string, phase: string) =>
-    capture("gameday_card_opened", { room_id: roomId, card_id: cardId, phase }),
-  gamedayCardLocked: (roomId: string, cardId: string, phase: string) =>
-    capture("gameday_card_locked", { room_id: roomId, card_id: cardId, phase }),
-  gamedayRoomFinalized: (roomId: string) =>
-    capture("gameday_room_finalized", { room_id: roomId }),
+
+  // Fires once per session — guarded by hasTrackedView ref in the room screen.
+  gamedayRoomViewed: (roomId: string, roomName: string, roomCode?: string | null) =>
+    capture("gameday_room_viewed", { room_id: roomId, room_name: roomName, ...rc(roomCode) }),
+
+  gamedayJoined: (roomId: string, method: "user" | "guest", roomCode?: string | null) =>
+    capture("gameday_joined", { room_id: roomId, method, ...rc(roomCode) }),
+
+  gamedayPickSubmitted: (
+    roomId: string,
+    phase: string,
+    propCount: number,
+    isUpdate: boolean,
+    roomCode?: string | null
+  ) =>
+    capture("gameday_pick_submitted", {
+      room_id: roomId,
+      phase,
+      prop_count: propCount,
+      is_update: isUpdate,
+      ...rc(roomCode),
+    }),
+
+  gamedayStandingsShared: (roomId: string, roomCode?: string | null) =>
+    capture("gameday_standings_shared", { room_id: roomId, ...rc(roomCode) }),
+
+  gamedayRoomCreated: (roomId: string, propCount: number, roomCode?: string | null) =>
+    capture("gameday_room_created", { room_id: roomId, prop_count: propCount, ...rc(roomCode) }),
+
+  gamedayCardOpened: (roomId: string, cardId: string, phase: string, roomCode?: string | null) =>
+    capture("gameday_card_opened", { room_id: roomId, card_id: cardId, phase, ...rc(roomCode) }),
+
+  gamedayCardLocked: (roomId: string, cardId: string, phase: string, roomCode?: string | null) =>
+    capture("gameday_card_locked", { room_id: roomId, card_id: cardId, phase, ...rc(roomCode) }),
+
+  gamedayRoomFinalized: (roomId: string, roomCode?: string | null) =>
+    capture("gameday_room_finalized", { room_id: roomId, ...rc(roomCode) }),
+
+  // Fires once per session when a user first views the final standings screen.
+  gamedayFinalStandingsViewed: (roomId: string, roomCode?: string | null) =>
+    capture("gameday_final_standings_viewed", { room_id: roomId, ...rc(roomCode) }),
 };

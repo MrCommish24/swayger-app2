@@ -71,6 +71,7 @@ export default function GameDayRoomScreen() {
   }, [roomId]);
 
   const hasTrackedView = useRef(false);
+  const hasTrackedFinalStandings = useRef(false);
 
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
@@ -82,9 +83,14 @@ export default function GameDayRoomScreen() {
       );
       setRoomData(data);
       setError(null);
+      const roomCode = data.room.room_code ?? undefined;
       if (!hasTrackedView.current) {
         hasTrackedView.current = true;
-        Analytics.gamedayRoomViewed(roomId, data.room.room_name);
+        Analytics.gamedayRoomViewed(roomId, data.room.room_name, roomCode);
+      }
+      if (data.room.status === "finalized" && !hasTrackedFinalStandings.current) {
+        hasTrackedFinalStandings.current = true;
+        Analytics.gamedayFinalStandingsViewed(roomId, roomCode);
       }
 
       // Sync pendingPicks when the open card changes (new card) or on first load.
@@ -130,7 +136,7 @@ export default function GameDayRoomScreen() {
     (typeof window !== "undefined" ? window.location.origin : "https://swayger.app");
 
   const handleShareStandings = async () => {
-    Analytics.gamedayStandingsShared(roomId ?? "");
+    Analytics.gamedayStandingsShared(roomId ?? "", roomData?.room.room_code);
     setSharing(true);
     try {
       if (Platform.OS === "web") {
@@ -203,7 +209,7 @@ export default function GameDayRoomScreen() {
         { method: "POST", body: JSON.stringify({}) },
         { session }
       );
-      Analytics.gamedayJoined(roomId, "user");
+      Analytics.gamedayJoined(roomId, "user", roomData?.room.room_code);
       await fetchRoom();
       setJoinStep(null);
     } catch (e: any) {
@@ -237,7 +243,7 @@ export default function GameDayRoomScreen() {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.localStorage.setItem(GUEST_KEY(roomId), gsId);
       }
-      Analytics.gamedayJoined(roomId, "guest");
+      Analytics.gamedayJoined(roomId, "guest", roomData?.room.room_code);
       await fetchRoom();
       setJoinStep(null);
     } catch (e: any) {
@@ -272,7 +278,8 @@ export default function GameDayRoomScreen() {
         roomId,
         openCard.phase,
         openCard.gameday_props.length,
-        submittedCardId === openCard.id
+        submittedCardId === openCard.id,
+        roomData?.room.room_code
       );
       setSubmittedCardId(openCard.id);
       await fetchRoom();
