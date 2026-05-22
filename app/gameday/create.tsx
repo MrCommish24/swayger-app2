@@ -25,6 +25,15 @@ interface TemplateResponse {
   defaultPropIds: string[];
 }
 
+const PHASE_CONFIG: Record<
+  "pregame" | "halftime" | "fourth",
+  { label: string; range: string }
+> = {
+  pregame: { label: "Pregame Picks", range: "4–6 recommended" },
+  halftime: { label: "Halftime Picks", range: "3–4 recommended" },
+  fourth: { label: "4Q Clutch Picks", range: "2–3 recommended" },
+};
+
 export default function CreateGameDayRoom() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -115,10 +124,10 @@ export default function CreateGameDayRoom() {
     }
   };
 
-  const phases: Array<{ key: "pregame" | "halftime" | "fourth"; label: string }> = [
-    { key: "pregame", label: "Pregame Picks" },
-    { key: "halftime", label: "Halftime Picks" },
-    { key: "fourth", label: "4Q Clutch Picks" },
+  const phases: Array<{ key: "pregame" | "halftime" | "fourth" }> = [
+    { key: "pregame" },
+    { key: "halftime" },
+    { key: "fourth" },
   ];
 
   if (isHost === null) {
@@ -220,23 +229,35 @@ export default function CreateGameDayRoom() {
       {/* Prop selection */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>SELECT PROPS</Text>
-        <Text style={styles.hint}>
-          Aim for 2–4 per card. Default: 9 props recommended.
-        </Text>
 
-        {phases.map((phase) => {
-          const phaseProps = template.filter((p) => p.phase === phase.key);
+        {/* Helper copy */}
+        <View style={styles.helperBox}>
+          <Text style={styles.helperText}>
+            For the best Game Day flow, choose a mix of fast-settle and end-game props so the leaderboard moves throughout the night.
+          </Text>
+          <Text style={styles.helperSub}>
+            Default: 13 props recommended — 6 pregame, 4 halftime, 3 clutch.
+          </Text>
+        </View>
+
+        {phases.map(({ key }) => {
+          const config = PHASE_CONFIG[key];
+          const phaseProps = template.filter((p) => p.phase === key);
           const selectedCount = phaseProps.filter((p) =>
             selectedPropIds.has(p.id)
           ).length;
           return (
-            <View key={phase.key} style={styles.phaseBlock}>
-              <Text style={styles.phaseLabel}>
-                {phase.label}{" "}
-                <Text style={styles.phaseCount}>({selectedCount} selected)</Text>
-              </Text>
+            <View key={key} style={styles.phaseBlock}>
+              <View style={styles.phaseHeaderRow}>
+                <Text style={styles.phaseLabel}>
+                  {config.label}{" "}
+                  <Text style={styles.phaseCount}>({selectedCount} selected)</Text>
+                </Text>
+                <Text style={styles.phaseRange}>{config.range}</Text>
+              </View>
               {phaseProps.map((prop) => {
                 const isOn = selectedPropIds.has(prop.id);
+                const windowLabel = prop.settlement_window ?? "Not labeled";
                 return (
                   <TouchableOpacity
                     key={prop.id}
@@ -249,9 +270,16 @@ export default function CreateGameDayRoom() {
                     </View>
                     <View style={styles.propTextWrap}>
                       <Text style={styles.propQuestion}>{prop.question}</Text>
-                      <Text style={styles.propAnswers}>
-                        {prop.answers.join(" · ")}
-                      </Text>
+                      <View style={styles.propMeta}>
+                        <Text style={styles.propAnswers}>
+                          {prop.answers.join(" · ")}
+                        </Text>
+                        <View style={styles.windowBadge}>
+                          <Text style={styles.windowText}>
+                            Settles: {windowLabel}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -324,21 +352,43 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", gap: 10 },
   half: { flex: 1 },
-  hint: {
-    fontSize: 13,
-    color: C.textMuted,
-    marginBottom: 14,
+  helperBox: {
+    backgroundColor: "#0D2A1A",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#1A4A2E",
+    padding: 14,
+    marginBottom: 20,
   },
-  phaseBlock: { marginBottom: 20 },
+  helperText: {
+    fontSize: 13,
+    color: "#5EC97A",
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  helperSub: {
+    fontSize: 12,
+    color: C.textMuted,
+  },
+  phaseBlock: { marginBottom: 24 },
+  phaseHeaderRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
   phaseLabel: {
     fontSize: 13,
     fontWeight: "700",
     color: C.textSecondary,
-    marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   phaseCount: { fontWeight: "400", color: C.tint },
+  phaseRange: {
+    fontSize: 11,
+    color: C.textMuted,
+  },
   propRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -365,8 +415,28 @@ const styles = StyleSheet.create({
   checkboxOn: { backgroundColor: C.tint, borderColor: C.tint },
   checkmark: { color: "#fff", fontSize: 13, fontWeight: "700" },
   propTextWrap: { flex: 1 },
-  propQuestion: { fontSize: 14, color: C.text, marginBottom: 2, lineHeight: 20 },
+  propQuestion: { fontSize: 14, color: C.text, marginBottom: 4, lineHeight: 20 },
+  propMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   propAnswers: { fontSize: 12, color: C.textMuted },
+  windowBadge: {
+    backgroundColor: "#0F2030",
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#1A3A50",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  windowText: {
+    fontSize: 10,
+    color: "#4A9FC8",
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
   errorMsg: {
     color: C.danger,
     fontSize: 14,

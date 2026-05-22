@@ -106,4 +106,5 @@ export interface GDPropTemplate {
   phase: "pregame" | "halftime" | "fourth";
   question: string;
   answers: string[];
+  settlement_window?: string;
 }

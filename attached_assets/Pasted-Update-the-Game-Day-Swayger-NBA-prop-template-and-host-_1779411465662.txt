@@ -1,0 +1,101 @@
+Update the Game Day Swayger NBA prop template and host prop selection experience to help hosts choose a better mix of props by settlement timing.
+
+Context:
+During testing, we realized the Pregame card needs a mix of props that settle early, mid-game, and end-game. If too many props settle only at the end of the game, the leaderboard does not move early enough and users miss the “I called that” moments.
+
+Goal:
+Help the host select a balanced set of props without adding automation or forcing rules.
+
+Do not automate settlement windows.
+Do not enforce prop mix rules.
+Do not add sports data APIs.
+Do not add real-time settlement.
+Do not change unrelated Swayger flows.
+
+Requirements:
+
+1. Add a settlement_window field or equivalent label to each NBA template prop.
+
+Use simple labels:
+- Early 1Q
+- End 1Q
+- Halftime
+- End 3Q
+- End Game
+
+2. Display the settlement timing label next to each prop on the host prop selection screen.
+
+Example:
+“Who wins the 1st quarter? — Settles: End 1Q”
+
+3. Add helper copy on the host prop selection screen:
+
+“For the best Game Day flow, choose a mix of fast-settle and end-game props so the leaderboard moves throughout the night.”
+
+4. Update the recommended default test setup to 13 total props:
+
+Pregame — 6 props:
+1. Which team scores first? — Early 1Q
+2. Who wins the 1st quarter? — End 1Q
+3. Which team makes the first 3-pointer? — Early 1Q
+4. Which star has more points at halftime? — Halftime
+5. Will either team lead by 10+ at any point? — End Game
+6. Who wins the game? — End Game
+
+Halftime — 4 props:
+1. Who wins the 3rd quarter? — End 3Q
+2. Which team scores first in the 2nd half? — Early 3Q
+3. Which star scores more in the 2nd half? — End Game
+4. Does the halftime leader win the game? — End Game
+
+4Q Clutch — 3 props:
+1. Who wins the 4th quarter? — End Game
+2. Will there be a lead change in the 4th quarter? — End Game
+3. Will the game be within 5 points in the final 2 minutes? — End Game / Final 2 Minutes
+
+5. Add these new prop options to the NBA Playoff Template if they do not already exist:
+
+Pregame:
+- Which team scores first?
+  Options: Team A, Team B
+- Which team makes the first 3-pointer?
+  Options: Team A, Team B
+- Which star has more points at halftime?
+  Options: Team A Star, Team B Star
+
+Halftime:
+- Which team scores first in the 2nd half?
+  Options: Team A, Team B
+
+4Q:
+- Will there be a lead change in the 4th quarter?
+  Options: Yes, No
+
+6. The host should still be able to manually select or deselect props.
+
+7. If the current UI has limits on prop selection per card, update the recommended range to:
+- Pregame: 4–6 props
+- Halftime: 3–4 props
+- 4Q: 2–3 props
+
+Do not allow this change to break existing rooms.
+
+8. Existing Game Day rooms should continue to work even if older props do not have settlement_window labels. If a prop has no settlement_window, show:
+“Settles: Not labeled”
+
+9. Keep Game Day SP separate from the main Swayger SP ledger.
+
+10. Do not change:
+- NBA picks
+- NBA brackets challenge
+- March Madness history
+- 1v1 challenge flow
+- main SP ledger or balances
+
+Acceptance criteria:
+1. Host can see settlement timing labels on prop selection.
+2. Host sees helper copy about choosing a mix of fast-settle and end-game props.
+3. New rooms can use the updated 13-prop recommended setup.
+4. Pregame default includes early, halftime, and end-game settlement props.
+5. Existing Game Day room functionality still works.
+6. No automation or sports data integration is added.
