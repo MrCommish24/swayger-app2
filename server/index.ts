@@ -299,6 +299,26 @@ function configureExpoAndLanding(app: express.Application) {
     res.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
   });
 
+  // ── Short room code redirect (/g/:code → /gameday/:roomId) ───────────────
+  // Used by Discord bot public_link. Resolves GDS-XXXXX to the full room UUID
+  // and redirects server-side so the Expo SPA receives a known deep-link path.
+  app.get("/g/:roomCode", async (req: Request, res: Response) => {
+    const code = (req.params.roomCode ?? "").toUpperCase().trim();
+    if (!code) { res.status(400).send("Missing room code"); return; }
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(
+      process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const { data: room } = await supabase
+      .from("gameday_rooms")
+      .select("id")
+      .eq("room_code", code)
+      .maybeSingle();
+    if (!room) { res.status(404).send("Room not found"); return; }
+    res.redirect(302, `/gameday/${(room as any).id}`);
+  });
+
   registerUnsubscribeRoutes(app);
 
   log("Serving static Expo files with dynamic manifest routing");

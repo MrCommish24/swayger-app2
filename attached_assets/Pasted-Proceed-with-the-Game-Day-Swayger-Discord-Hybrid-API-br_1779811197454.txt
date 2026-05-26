@@ -1,0 +1,144 @@
+Proceed with the Game Day Swayger Discord Hybrid API bridge, but keep the scope narrow.
+
+Goal:
+Enable the existing Discord Swayger bot to create and reference web-based Game Day Swayger rooms without duplicating Game Day logic in Discord.
+
+Please implement the smallest API additions needed for the Discord bot to:
+1. Create a Game Day room using the existing default NBA Game Day template.
+2. Store Discord metadata on the room.
+3. Receive a clean room_id, room_code, and public_link response.
+4. Fetch leaderboard by room_id or room_code.
+5. Fetch final standings by room_id or room_code.
+6. Authenticate using a bot API key instead of browser/Supabase JWT.
+
+Required changes:
+
+1. Add nullable Discord metadata columns to gameday_rooms:
+
+ALTER TABLE gameday_rooms
+  ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'app',
+  ADD COLUMN IF NOT EXISTS discord_guild_id TEXT,
+  ADD COLUMN IF NOT EXISTS discord_channel_id TEXT,
+  ADD COLUMN IF NOT EXISTS discord_user_id TEXT;
+
+2. Add production/dev env var:
+
+GAMEDAY_BOT_API_KEY
+
+3. Add bot API key auth helper.
+
+The helper should accept either:
+
+Authorization: Bearer <GAMEDAY_BOT_API_KEY>
+
+or:
+
+x-api-key: <GAMEDAY_BOT_API_KEY>
+
+Return 401 if missing or invalid.
+
+4. Modify POST /api/gameday/rooms so it accepts either:
+- existing Supabase JWT host auth, or
+- valid GAMEDAY_BOT_API_KEY
+
+When using bot API key, allow the request to include:
+- source: "discord"
+- discord_guild_id
+- discord_channel_id
+- discord_user_id
+- game_label/event_name if supported
+- team_a_name
+- team_b_name
+- team_a_star
+- team_b_star
+
+Use the existing default NBA Game Day prop setup. Do not require the Discord bot to pass complex prop selections in V1.
+
+5. Flatten the create-room response for bot use.
+
+Return:
+
+{
+  "ok": true,
+  "room_id": "uuid",
+  "room_code": "GDS-XXXXX",
+  "public_link": "https://www.swayger.app/g/GDS-XXXXX",
+  "room": { ... }
+}
+
+Use the configured public app URL if available. Do not return long Replit dev links when PUBLIC_APP_URL or EXPO_PUBLIC_APP_URL is configured.
+
+Important: public_link should use the short room_code route, not the UUID route.
+
+6. Add unified leaderboard endpoint.
+
+Create or update an endpoint that accepts either UUID or GDS room code:
+
+GET /api/gameday/rooms/:roomRef/leaderboard
+
+If roomRef is a UUID, use it directly.
+If roomRef starts with GDS-, resolve by room_code.
+
+No auth required.
+
+Return clean leaderboard data suitable for Discord posting:
+- rank
+- display_name
+- game_day_sp
+- correct_picks
+- pending_picks
+- total_picks
+
+7. Add final standings endpoint.
+
+Create:
+
+GET /api/gameday/rooms/:roomRef/final-standings
+
+roomRef can be UUID or GDS room code.
+
+No auth required.
+
+Return:
+- finalized: true/false
+- room_id
+- room_code
+- public_link
+- matchup/team names
+- winner
+- top leaderboard
+- final leaderboard
+- total participants
+- total props
+
+If room is not finalized, return:
+
+{
+  "finalized": false,
+  "message": "This Game Day room is not finalized yet."
+}
+
+Before implementing, confirm the actual room status value used in the database for finalized rooms. Use the existing value consistently. Do not introduce a new final/finalized status mismatch.
+
+8. Guardrails
+
+Do not rebuild or duplicate Game Day logic.
+Do not build Discord-native picks.
+Do not add Discord settlement.
+Do not add Discord lock/open/finalize commands yet.
+Do not touch NBA picks, NBA bracket challenge, March Madness history, 1v1 challenge flow, or main SP ledger.
+Keep Game Day SP separate from the main Swayger SP economy.
+Do not break existing web Game Day routes.
+
+9. Acceptance criteria
+
+- Bot API key can create a Game Day room.
+- Bot-created room is tagged source = discord.
+- Discord metadata is stored.
+- Response includes room_id, room_code, and short public_link.
+- Leaderboard can be fetched using either room_id or room_code.
+- Final standings can be fetched using either room_id or room_code.
+- Invalid bot API key returns 401.
+- Existing browser-host room creation still works.
+- Existing Game Day participant links still work.
+- Existing host controls still work.

@@ -106,6 +106,50 @@ async function requireGamedayHost(
   return payload.sub;
 }
 
+// ── Bot API key helpers ───────────────────────────────────────────────────────
+
+const APP_URL = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
+
+/**
+ * Returns true if the request carries a valid GAMEDAY_BOT_API_KEY.
+ * Accepts either:
+ *   Authorization: Bearer <key>
+ *   x-api-key: <key>
+ */
+function isBotApiKeyValid(req: Request): boolean {
+  const botKey = process.env.GAMEDAY_BOT_API_KEY;
+  if (!botKey) return false;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7) === botKey;
+  }
+  const xApiKey = req.headers["x-api-key"];
+  if (typeof xApiKey === "string") return xApiKey === botKey;
+  return false;
+}
+
+/** Returns true if the string looks like a UUID. */
+function isUuidLike(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+/**
+ * Resolves a roomRef (UUID or GDS-XXXXX room code) to a room UUID.
+ * Returns null if the room does not exist.
+ */
+async function resolveRoomRef(
+  supabase: ReturnType<typeof createClient>,
+  roomRef: string
+): Promise<string | null> {
+  if (isUuidLike(roomRef)) return roomRef;
+  const { data } = await supabase
+    .from("gameday_rooms")
+    .select("id")
+    .eq("room_code", roomRef.toUpperCase().trim())
+    .maybeSingle();
+  return (data as any)?.id ?? null;
+}
+
 async function getCallerIdentity(req: Request) {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) {
@@ -264,8 +308,13 @@ export function registerGamedayRoutes(app: Express) {
 
   // ── POST /api/gameday/rooms ─────────────────────────────────────────────
   app.post("/api/gameday/rooms", async (req: Request, res: Response) => {
-    const hostId = await requireGamedayHost(req, res);
-    if (!hostId) return;
+    // Accept either a valid bot API key OR the existing Supabase host JWT.
+    let hostId: string | null = null;
+    const botAuthed = isBotApiKeyValid(req);
+    if (!botAuthed) {
+      hostId = await requireGamedayHost(req, res);
+      if (!hostId) return; // requireGamedayHost already sent 401/403
+    }
 
     const {
       room_name,
@@ -275,6 +324,10 @@ export function registerGamedayRoutes(app: Express) {
       team_b_star,
       game_date,
       selected_prop_ids,
+      source,
+      discord_guild_id,
+      discord_channel_id,
+      discord_user_id,
     } = req.body as {
       room_name?: string;
       team_a_name?: string;
@@ -283,6 +336,10 @@ export function registerGamedayRoutes(app: Express) {
       team_b_star?: string;
       game_date?: string;
       selected_prop_ids?: string[];
+      source?: string;
+      discord_guild_id?: string;
+      discord_channel_id?: string;
+      discord_user_id?: string;
     };
 
     if (!room_name || !team_a_name || !team_b_name || !team_a_star || !team_b_star) {
@@ -309,10 +366,14 @@ export function registerGamedayRoutes(app: Express) {
       team_a_star: team_a_star.trim(),
       team_b_star: team_b_star.trim(),
       game_date: parseGameDate(game_date),
-      host_user_id: hostId,
+      host_user_id: botAuthed ? null : hostId,
       status: "active",
+      source: source ?? (botAuthed ? "discord" : "app"),
     };
     if (roomCode) insertPayload.room_code = roomCode;
+    if (discord_guild_id)   insertPayload.discord_guild_id   = discord_guild_id;
+    if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
+    if (discord_user_id)    insertPayload.discord_user_id    = discord_user_id;
 
     let { data: room, error: roomError } = await supabase
       .from("gameday_rooms")
@@ -383,9 +444,21 @@ export function registerGamedayRoutes(app: Express) {
       }
     }
 
-    await logEvent(supabase, room.id, null, hostId, "room_created");
-    console.log(`[gameday] room created: ${room.id} "${room_name}"`);
-    res.json({ ok: true, room_id: room.id, room });
+    await logEvent(supabase, room.id, null, botAuthed ? null : hostId, "room_created");
+    console.log(`[gameday] room created: ${room.id} "${room_name}" source=${insertPayload.source}`);
+
+    const returnedCode = (room as any).room_code ?? roomCode ?? null;
+    const publicLink = returnedCode
+      ? `${APP_URL}/g/${returnedCode}`
+      : `${APP_URL}/gameday/${room.id}`;
+
+    res.json({
+      ok: true,
+      room_id: room.id,
+      room_code: returnedCode,
+      public_link: publicLink,
+      room,
+    });
   });
 
   // ── GET /api/gameday/rooms/by-code/:roomCode ────────────────────────────
@@ -997,12 +1070,17 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
-  // ── GET /api/gameday/rooms/:roomId/leaderboard ──────────────────────────
+  // ── GET /api/gameday/rooms/:roomRef/leaderboard ─────────────────────────
+  // roomRef accepts either a UUID or a GDS-XXXXX room code. No auth required.
   app.get(
-    "/api/gameday/rooms/:roomId/leaderboard",
+    "/api/gameday/rooms/:roomRef/leaderboard",
     async (req: Request, res: Response) => {
-      const { roomId } = req.params;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, req.params.roomRef);
+      if (!roomId) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
 
       const { data: participants } = await supabase
         .from("gameday_participants")
@@ -1056,6 +1134,123 @@ export function registerGamedayRoutes(app: Express) {
       });
 
       res.json({ leaderboard });
+    }
+  );
+
+  // ── GET /api/gameday/rooms/:roomRef/final-standings ─────────────────────
+  // Returns final standings for a finalized room.
+  // roomRef accepts either a UUID or a GDS-XXXXX room code. No auth required.
+  // Returns { finalized: false } if the room is not yet finalized.
+  app.get(
+    "/api/gameday/rooms/:roomRef/final-standings",
+    async (req: Request, res: Response) => {
+      const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, req.params.roomRef);
+      if (!roomId) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, room_name, room_code, status, team_a_name, team_b_name, team_a_star, team_b_star, game_date")
+        .eq("id", roomId)
+        .single();
+
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      if ((room as any).status !== "finalized") {
+        res.json({
+          finalized: false,
+          message: "This Game Day room is not finalized yet.",
+        });
+        return;
+      }
+
+      const roomCode = (room as any).room_code ?? null;
+      const publicLink = roomCode
+        ? `${APP_URL}/g/${roomCode}`
+        : `${APP_URL}/gameday/${roomId}`;
+
+      // Participants
+      const { data: participants } = await supabase
+        .from("gameday_participants")
+        .select("id, display_name, is_guest")
+        .eq("room_id", roomId);
+
+      // Picks for scoring
+      const participantIds = (participants ?? []).map((p: any) => p.id);
+      let leaderboard: any[] = [];
+      if (participantIds.length > 0) {
+        const { data: allPicks } = await supabase
+          .from("gameday_picks")
+          .select("participant_id, is_correct")
+          .in("participant_id", participantIds);
+
+        const scores = (participants ?? [])
+          .map((p: any) => {
+            const myPicks = (allPicks ?? []).filter(
+              (pk: any) => pk.participant_id === p.id
+            );
+            const correct = myPicks.filter((pk: any) => pk.is_correct === true).length;
+            const pending = myPicks.filter((pk: any) => pk.is_correct === null).length;
+            return {
+              participant_id: p.id,
+              display_name: p.display_name,
+              is_guest: p.is_guest,
+              game_day_sp: correct * 10,
+              correct_picks: correct,
+              pending_picks: pending,
+              total_picks: myPicks.length,
+            };
+          })
+          .sort(
+            (a: any, b: any) =>
+              b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
+          );
+
+        let rank = 1;
+        leaderboard = scores.map((s: any, i: number) => {
+          if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) rank = i + 1;
+          return { ...s, rank };
+        });
+      }
+
+      // Total props
+      const { count: totalProps } = await supabase
+        .from("gameday_props")
+        .select("id", { count: "exact", head: true })
+        .in(
+          "card_id",
+          (
+            await supabase
+              .from("gameday_pick_cards")
+              .select("id")
+              .eq("room_id", roomId)
+          ).data?.map((c: any) => c.id) ?? []
+        );
+
+      res.json({
+        finalized: true,
+        room_id: roomId,
+        room_code: roomCode,
+        public_link: publicLink,
+        matchup: {
+          team_a: (room as any).team_a_name,
+          team_b: (room as any).team_b_name,
+          star_a: (room as any).team_a_star,
+          star_b: (room as any).team_b_star,
+          game_date: (room as any).game_date,
+          room_name: (room as any).room_name,
+        },
+        winner: leaderboard[0] ?? null,
+        leaderboard,
+        total_participants: (participants ?? []).length,
+        total_props: totalProps ?? 0,
+      });
     }
   );
 
