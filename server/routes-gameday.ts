@@ -317,7 +317,8 @@ export function registerGamedayRoutes(app: Express) {
     }
 
     const {
-      room_name,
+      room_name: _room_name,
+      game_label,
       team_a_name,
       team_b_name,
       team_a_star,
@@ -330,6 +331,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_user_id,
     } = req.body as {
       room_name?: string;
+      game_label?: string;
       team_a_name?: string;
       team_b_name?: string;
       team_a_star?: string;
@@ -342,8 +344,11 @@ export function registerGamedayRoutes(app: Express) {
       discord_user_id?: string;
     };
 
+    // Accept either room_name or game_label (Discord bot compat)
+    const room_name = _room_name ?? game_label;
+
     if (!room_name || !team_a_name || !team_b_name || !team_a_star || !team_b_star) {
-      res.status(400).json({ error: "Missing required fields" });
+      res.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
       return;
     }
 
