@@ -117,14 +117,14 @@ const APP_URL = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
  *   x-api-key: <key>
  */
 function isBotApiKeyValid(req: Request): boolean {
-  const botKey = process.env.GAMEDAY_BOT_API_KEY;
+  const botKey = process.env.GAMEDAY_BOT_API_KEY?.trim();
   if (!botKey) return false;
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7) === botKey;
+    return authHeader.slice(7).trim() === botKey;
   }
   const xApiKey = req.headers["x-api-key"];
-  if (typeof xApiKey === "string") return xApiKey === botKey;
+  if (typeof xApiKey === "string") return xApiKey.trim() === botKey;
   return false;
 }
 
