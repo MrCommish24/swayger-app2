@@ -1,0 +1,113 @@
+Fix Game Day Swayger Discord-created rooms so they are fully usable from the web host/admin flow.
+
+Current issue:
+A room created from Discord successfully generates a public link, but when the participant opens the room, no picks are open. Also, the room does not appear in my host/admin panel because the room was created by the bot with host_user_id = null.
+
+Desired behavior:
+Discord-created Game Day rooms should use the same Game Day engine as web-created rooms and should be manageable by configured Game Day admins.
+
+Requirements:
+
+1. Default props/cards for Discord-created rooms
+
+When POST /api/gameday/rooms is called with:
+source = "discord"
+and valid GAMEDAY_BOT_API_KEY
+
+The API should:
+- create the room
+- create the standard Game Day pick cards:
+  - Pregame
+  - Halftime
+  - 4Q Clutch
+- create the recommended default props for each card
+- use the current default NBA Game Day prop setup
+- ensure the room is ready for participants
+
+2. Open Pregame card automatically for Discord-created rooms
+
+For source = "discord", automatically set:
+- room status = active
+- Pregame card status = open
+- Halftime card status = closed
+- 4Q card status = closed
+
+This matches the Discord invite copy:
+“Pregame picks are live now.”
+
+3. Admin access to bot-created rooms
+
+Configured Game Day admins should be able to access and manage any Game Day room, including rooms where:
+- host_user_id is null
+- source = "discord"
+
+Do not require the logged-in admin to be the original host_user_id for bot-created rooms.
+
+Use the existing admin/host allowlist logic such as:
+- GAMEDAY_HOST_EMAILS
+or existing admin email checks.
+
+4. Host panel visibility
+
+Update the Game Day host/admin room list or dashboard so configured admins can see Discord-created rooms.
+
+At minimum, I need a way as admin to open:
+
+/gameday/:roomId/host
+
+for a Discord-created room.
+
+If there is a Game Day admin dashboard/list, include:
+- web-created rooms
+- discord-created rooms
+- source
+- room_code
+- matchup
+- status
+- participant count
+- host link
+
+5. API response should include host_link
+
+Update the create-room response to include:
+
+{
+  "ok": true,
+  "room_id": "...",
+  "room_code": "GDS-XXXXX",
+  "public_link": "https://www.swayger.app/g/GDS-XXXXX",
+  "host_link": "https://www.swayger.app/gameday/{roomId}/host",
+  "room": { ... }
+}
+
+The Discord bot does not need to post host_link publicly. It is for admin/debug/operation only.
+
+6. Participant room behavior
+
+After a Discord-created room is created, opening the public link should show the open Pregame card and allow users to make picks.
+
+It should not show:
+“No picks are open right now”
+unless no card is actually open.
+
+7. Guardrails
+
+Do not build Discord-native picks.
+Do not add Discord settlement.
+Do not change existing 1v1 challenge flow.
+Do not change NBA picks or bracket challenge.
+Do not touch March Madness history.
+Do not touch the main SP ledger.
+Keep Game Day SP separate.
+Do not break existing web-created Game Day rooms.
+
+8. Acceptance criteria
+
+- Discord bot creates a room.
+- Room has Pregame, Halftime, and 4Q cards.
+- Pregame card is open immediately for Discord-created rooms.
+- Participant public link opens directly to available Pregame picks.
+- Admin can access /gameday/:roomId/host for a Discord-created room.
+- Discord-created rooms are visible to configured Game Day admins.
+- API create response includes public_link and host_link.
+- Existing web-created room flow still works.

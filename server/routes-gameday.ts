@@ -230,21 +230,29 @@ export function registerGamedayRoutes(app: Express) {
     }
     const supabase = getServiceSupabase();
 
-    // Try fetching with room_code; if the column doesn't exist yet (migration
-    // not run), fall back to the base columns so the list still works.
-    let { data: rooms, error } = await supabase
+    // Admins (in GAMEDAY_HOST_EMAILS) see ALL rooms including Discord-created ones.
+    // Non-admins only see rooms they personally created.
+    const listAllowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com")
+      .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+    const isAdminUser = listAllowedEmails.includes((payload.email ?? "").toLowerCase());
+
+    // Try fetching with room_code + source; fall back if columns don't exist yet.
+    let baseQuery = supabase
       .from("gameday_rooms")
-      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code")
-      .eq("host_user_id", payload.sub)
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source")
       .order("created_at", { ascending: false });
+    if (!isAdminUser) baseQuery = (baseQuery as any).eq("host_user_id", payload.sub);
+
+    let { data: rooms, error } = await baseQuery;
 
     if (error) {
-      console.warn("[gameday] rooms list with room_code failed, retrying without:", error.message);
-      const retry = await supabase
+      console.warn("[gameday] rooms list with room_code/source failed, retrying without:", error.message);
+      let retryQuery = supabase
         .from("gameday_rooms")
         .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at")
-        .eq("host_user_id", payload.sub)
         .order("created_at", { ascending: false });
+      if (!isAdminUser) retryQuery = (retryQuery as any).eq("host_user_id", payload.sub);
+      const retry = await retryQuery;
       if (retry.error) {
         res.status(500).json({ error: retry.error.message });
         return;
@@ -294,6 +302,7 @@ export function registerGamedayRoutes(app: Express) {
       rooms: roomList.map((r: any) => ({
         ...r,
         participant_count: counts[r.id] ?? 0,
+        host_link: `${APP_URL}/gameday/${r.id}/host`,
       })),
     });
   });
@@ -449,6 +458,24 @@ export function registerGamedayRoutes(app: Express) {
       }
     }
 
+    // For Discord-created rooms, automatically open the Pregame card so
+    // participants can make picks immediately after the bot posts the link.
+    if (botAuthed || insertPayload.source === "discord") {
+      const { data: pregameCard } = await supabase
+        .from("gameday_pick_cards")
+        .select("id")
+        .eq("room_id", room.id)
+        .eq("phase", "pregame")
+        .single();
+      if (pregameCard) {
+        await supabase
+          .from("gameday_pick_cards")
+          .update({ status: "open", updated_at: new Date().toISOString() })
+          .eq("id", (pregameCard as any).id);
+        console.log(`[gameday] pregame card auto-opened for discord room ${room.id}`);
+      }
+    }
+
     await logEvent(supabase, room.id, null, botAuthed ? null : hostId, "room_created");
     console.log(`[gameday] room created: ${room.id} "${room_name}" source=${insertPayload.source}`);
 
@@ -456,12 +483,14 @@ export function registerGamedayRoutes(app: Express) {
     const publicLink = returnedCode
       ? `${APP_URL}/g/${returnedCode}`
       : `${APP_URL}/gameday/${room.id}`;
+    const hostLink = `${APP_URL}/gameday/${room.id}/host`;
 
     res.json({
       ok: true,
       room_id: room.id,
       room_code: returnedCode,
       public_link: publicLink,
+      host_link: hostLink,
       room,
     });
   });
@@ -772,7 +801,8 @@ export function registerGamedayRoutes(app: Express) {
         res.status(404).json({ error: "Card not found" });
         return;
       }
-      if ((card.gameday_rooms as any)?.host_user_id !== hostId) {
+      const openCardRoomHost = (card.gameday_rooms as any)?.host_user_id;
+      if (openCardRoomHost !== null && openCardRoomHost !== hostId) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
@@ -816,7 +846,8 @@ export function registerGamedayRoutes(app: Express) {
         res.status(404).json({ error: "Card not found" });
         return;
       }
-      if ((card.gameday_rooms as any)?.host_user_id !== hostId) {
+      const lockCardRoomHost = (card.gameday_rooms as any)?.host_user_id;
+      if (lockCardRoomHost !== null && lockCardRoomHost !== hostId) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
@@ -957,7 +988,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const card = prop.gameday_pick_cards as any;
       const gdRoom = card?.gameday_rooms as any;
-      if (gdRoom?.host_user_id !== hostId) {
+      if (gdRoom?.host_user_id !== null && gdRoom?.host_user_id !== hostId) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
@@ -1039,7 +1070,7 @@ export function registerGamedayRoutes(app: Express) {
         res.status(404).json({ error: "Room not found" });
         return;
       }
-      if (room.host_user_id !== hostId) {
+      if (room.host_user_id !== null && room.host_user_id !== hostId) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
@@ -1316,7 +1347,8 @@ export function registerGamedayRoutes(app: Express) {
         .eq("id", roomId)
         .single();
 
-      if (!room || (room as any).host_user_id !== hostId) {
+      const hdRoomHost = (room as any).host_user_id;
+      if (!room || (hdRoomHost !== null && hdRoomHost !== hostId)) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
@@ -1444,7 +1476,8 @@ export function registerGamedayRoutes(app: Express) {
         .eq("id", roomId)
         .single();
 
-      if (!room || (room as any).host_user_id !== hostId) {
+      const spRoomHost = (room as any).host_user_id;
+      if (!room || (spRoomHost !== null && spRoomHost !== hostId)) {
         res.status(403).json({ error: "Not your room" });
         return;
       }
