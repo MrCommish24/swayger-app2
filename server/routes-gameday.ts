@@ -338,6 +338,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_guild_id,
       discord_channel_id,
       discord_user_id,
+      is_private,
     } = req.body as {
       room_name?: string;
       game_label?: string;
@@ -351,6 +352,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_guild_id?: string;
       discord_channel_id?: string;
       discord_user_id?: string;
+      is_private?: boolean;
     };
 
     // Accept either room_name or game_label (Discord bot compat)
@@ -373,6 +375,11 @@ export function registerGamedayRoutes(app: Express) {
       console.warn("[gameday] room_code generation skipped:", e);
     }
 
+    // Discord/bot rooms default to public (is_private: false) so guests can
+    // join via the public link without being redirected to the join screen.
+    // The bot can override by passing is_private: true explicitly.
+    const resolvedIsPrivate = is_private ?? (botAuthed ? false : true);
+
     const insertPayload: Record<string, unknown> = {
       room_name: room_name.trim(),
       team_a_name: team_a_name.trim(),
@@ -383,6 +390,7 @@ export function registerGamedayRoutes(app: Express) {
       host_user_id: botAuthed ? null : hostId,
       status: "active",
       source: source ?? (botAuthed ? "discord" : "app"),
+      is_private: resolvedIsPrivate,
     };
     if (roomCode) insertPayload.room_code = roomCode;
     if (discord_guild_id)   insertPayload.discord_guild_id   = discord_guild_id;
