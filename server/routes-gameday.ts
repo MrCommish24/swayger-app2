@@ -557,6 +557,9 @@ export function registerGamedayRoutes(app: Express) {
       }));
 
       const { userId, guestSessionId } = await getCallerIdentity(req);
+      console.log(
+        `[gameday] room fetch ${roomId}: userId=${userId ? userId.slice(0, 8) + "…" : "null"} guest=${guestSessionId ? guestSessionId.slice(0, 8) + "…" : "null"}`
+      );
 
       let participant = null;
       if (userId) {
@@ -575,6 +578,9 @@ export function registerGamedayRoutes(app: Express) {
           .maybeSingle();
         participant = data;
       }
+      console.log(
+        `[gameday] room fetch ${roomId}: participant=${participant ? participant.id.slice(0, 8) + "…" : "null"} is_guest=${participant?.is_guest ?? "n/a"}`
+      );
 
       const allPropIds = cards.flatMap((c) =>
         ((c.gameday_props as any[]) ?? []).map((p: any) => p.id)

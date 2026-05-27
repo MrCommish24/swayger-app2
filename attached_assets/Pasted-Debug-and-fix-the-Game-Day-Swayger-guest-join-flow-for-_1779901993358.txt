@@ -1,0 +1,52 @@
+Debug and fix the Game Day Swayger guest join flow for Discord-created rooms.
+
+Current issue:
+A room created from Discord is successfully created and returns:
+
+room_id: 06f29373-3477-4b85-bfe4-a12a42a66189
+room_code: GDS-KNPQC
+public_link: https://swayger.app/g/GDS-KNPQC
+status: active
+source: discord
+host_user_id: null
+
+But when a user opens the public link and tries to join as guest, they are redirected back to the join screen instead of entering the room.
+
+This appears to be a web participant join/session recognition issue, not a Discord bot issue.
+
+Please investigate:
+
+1. Does POST /api/gameday/rooms/:roomId/join successfully create a gameday_participants row for Discord-created rooms where host_user_id is null?
+
+2. After guest join, is the frontend storing the guest participant identity correctly in localStorage/sessionStorage?
+
+3. After guest join, does the participant page re-fetch room state and recognize the current guest participant?
+
+4. Does the /g/:roomCode redirect to /gameday/:roomId cause the guest session to be lost?
+
+5. Is there any logic that assumes host_user_id must be non-null for participants to join?
+
+6. Is there a domain mismatch between www.swayger.app and swayger.app that could cause localStorage/session issues?
+
+Important domain issue to check:
+The bot API uses https://www.swayger.app, but the API returns public_link as https://swayger.app/g/GDS-XXXXX. Browser storage differs between www.swayger.app and swayger.app. Standardize public links and app routing to one canonical domain.
+
+Desired behavior:
+When a user opens https://swayger.app/g/GDS-KNPQC and joins as guest:
+- guest participant row is created
+- guest_session_id is stored in browser storage
+- user lands in the Game Day room
+- if Pregame card is open, user sees the pick card
+- user does not get bounced back to the join screen
+
+Add temporary console/server logging if needed, but do not expose sensitive data.
+
+Acceptance criteria:
+1. Guest can join a Discord-created room.
+2. Guest remains in the room after join.
+3. Refreshing the page keeps the guest recognized.
+4. Guest can submit picks on the open Pregame card.
+5. Guest join works from /g/:roomCode short links.
+6. Guest join works consistently on the canonical production domain.
+7. Existing web-created Game Day rooms still allow guest join.
+8. Existing Swayger flows are unchanged.

@@ -245,14 +245,28 @@ export default function GameDayRoomScreen() {
         }
       );
       const gsId = result.guest_session_id;
-      setGuestSessionId(gsId);
+      // Persist to localStorage first — always set before state updates.
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.localStorage.setItem(GUEST_KEY(roomId), gsId);
       }
-      Analytics.gamedayJoined(roomId, "guest", roomData?.room.room_code);
-      await fetchRoom();
+      // Update guestSessionId in state — this causes fetchRoom (a useCallback)
+      // to be recreated with the correct ID on the next render, which triggers
+      // a fresh room fetch that includes the participant header.
+      setGuestSessionId(gsId);
+      // Directly patch roomData with the participant we already have from the
+      // join response. We cannot call fetchRoom() here because it still closes
+      // over the old guestSessionId (null) — the state update above has not
+      // been applied yet. Calling fetchRoom() with the stale closure would
+      // return participant:null and the join-detection useEffect would bounce
+      // the user back to the join screen.
+      setRoomData((prev) =>
+        prev ? { ...prev, participant: result.participant } : prev
+      );
       setJoinStep(null);
+      Analytics.gamedayJoined(roomId, "guest", roomData?.room.room_code);
+      console.log("[gameday] guest joined, session stored:", gsId.slice(0, 8) + "...");
     } catch (e: any) {
+      console.error("[gameday] guest join failed:", e.message);
       setJoinError(e.message);
     } finally {
       setJoining(false);
