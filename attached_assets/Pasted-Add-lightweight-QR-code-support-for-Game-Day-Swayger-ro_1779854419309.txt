@@ -1,0 +1,65 @@
+Add lightweight QR code support for Game Day Swayger rooms.
+
+Goal:
+Allow a Game Day host to display or download a QR code that opens the public participant room link. This is for in-person use cases like watch parties, bars, offices, or groups where the host does not want to text people individually.
+
+Scope:
+This should be a lightweight distribution feature only. Do not change Game Day room logic, picks, props, leaderboard, settlement, final standings, auth, or SP behavior.
+
+Requirements:
+
+1. In the Game Day host control room, add a “QR Code” section near the existing short public link/share controls.
+
+2. Generate the QR code from the public participant link, not the host/admin link.
+
+The QR should use:
+https://www.swayger.app/g/[room_code]
+
+or the configured PUBLIC_APP_URL / EXPO_PUBLIC_APP_URL if that is how public links are currently generated.
+
+Do not use Replit dev URLs if a public app URL is configured.
+
+3. The QR code should be scannable from the host’s phone or laptop screen.
+
+4. Add buttons:
+- Show QR Code
+- Download QR Code PNG
+- Copy Public Link
+
+5. Add short helper copy:
+
+“Let people scan this to join the Game Day room. Anyone with the QR code can join.”
+
+6. If simple, include the room name/matchup near the QR code:
+
+“Game Day Swayger: [Team A] vs [Team B]”
+
+7. Optional only if very easy:
+Generate the QR link with a source query param:
+https://www.swayger.app/g/[room_code]?src=qr
+
+Do not add a new analytics dashboard. If existing join analytics can capture src=qr, great. If not, skip tracking for now.
+
+8. Edge cases:
+- If room_code is missing, fall back to the current public link.
+- Never generate QR code for the host/admin URL.
+- QR should still work if the room is open, locked, or finalized.
+- Existing short links should continue to work.
+
+9. Do not add:
+- public room discovery
+- bar mode
+- sponsor branding
+- printable flyer builder
+- room approval flow
+- max participant limits
+- QR-specific account flow
+- new permissions
+
+10. Acceptance criteria:
+- Host can see a QR code for the Game Day room.
+- Scanning the QR opens the participant room.
+- QR uses the short branded public link.
+- Download PNG works if implemented.
+- Existing Game Day functionality still works.
+- Existing Swayger flows are unchanged.

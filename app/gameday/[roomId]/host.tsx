@@ -11,6 +11,7 @@ import {
   Platform,
   Share,
 } from "react-native";
+import QrCodeSvg from "react-native-qrcode-svg";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
@@ -131,6 +132,27 @@ export default function HostControlRoom() {
 
   const receiptRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const qrRef = useRef<any>(null);
+
+  const getQrUrl = useCallback(() => {
+    const base = getShareUrl();
+    return base.includes("?") ? `${base}&src=qr` : `${base}?src=qr`;
+  }, [getShareUrl]);
+
+  const downloadQr = () => {
+    if (!qrRef.current) return;
+    qrRef.current.toDataURL((dataUrl: string) => {
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = `data:image/png;base64,${dataUrl}`;
+        link.download = `game-day-${hostData?.room?.room_code ?? "qr"}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    });
+  };
 
   const handleShareStandings = async () => {
     setSharing(true);
@@ -390,6 +412,53 @@ export default function HostControlRoom() {
             {participant_count} participant{participant_count !== 1 ? "s" : ""}
           </Text>
         </View>
+      </View>
+
+      {/* QR Code section */}
+      <View style={styles.qrBox}>
+        <View style={styles.qrHeader}>
+          <View>
+            <Text style={styles.qrTitle}>QR CODE</Text>
+            <Text style={styles.qrSub}>
+              {room.team_a_name} vs {room.team_b_name}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.qrToggleBtn}
+            onPress={() => setShowQr((v) => !v)}
+          >
+            <Text style={styles.qrToggleBtnText}>
+              {showQr ? "Hide QR" : "Show QR"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {showQr && (
+          <>
+            <Text style={styles.qrHint}>
+              Let people scan this to join the Game Day room. Anyone with the QR code can join.
+            </Text>
+            <View style={styles.qrCodeWrap}>
+              <QrCodeSvg
+                value={getQrUrl()}
+                size={200}
+                backgroundColor="#FFFFFF"
+                color="#000000"
+                getRef={(ref: any) => { qrRef.current = ref; }}
+              />
+            </View>
+            <Text style={styles.qrUrlText} numberOfLines={1}>{getShareUrl()}</Text>
+            <View style={styles.qrActions}>
+              <TouchableOpacity style={styles.qrBtn} onPress={copyLink}>
+                <Text style={styles.qrBtnText}>Copy Link</Text>
+              </TouchableOpacity>
+              {Platform.OS === "web" && (
+                <TouchableOpacity style={[styles.qrBtn, styles.qrBtnSecondary]} onPress={downloadQr}>
+                  <Text style={styles.qrBtnText}>Download PNG</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
+        )}
       </View>
 
       {/* Share reminder buttons */}
@@ -1177,6 +1246,86 @@ const styles = StyleSheet.create({
   modalConfirmText: { color: "#000", fontSize: 14, fontWeight: "700" },
 
   btnDisabled: { opacity: 0.5 },
+
+  // QR Code
+  qrBox: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    marginBottom: 12,
+  },
+  qrHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  qrTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  qrSub: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: C.text,
+  },
+  qrToggleBtn: {
+    backgroundColor: C.tint,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  qrToggleBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  qrHint: {
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 18,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  qrCodeWrap: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  qrUrlText: {
+    fontSize: 12,
+    color: C.textMuted,
+    textAlign: "center",
+    marginBottom: 14,
+  },
+  qrActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  qrBtn: {
+    flex: 1,
+    backgroundColor: C.tint,
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  qrBtnSecondary: {
+    backgroundColor: C.surfaceLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  qrBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
 
   // Misc
   btn: {
