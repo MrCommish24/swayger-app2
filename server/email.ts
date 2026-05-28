@@ -2678,109 +2678,107 @@ export function buildGameDayBlastHtml(opts: {
   unsubscribeUrl?: string;
 }): string {
   const { gameName, trackedRoomLink, displayName, unsubscribeUrl } = opts;
-  const greeting = displayName
-    ? `<p style="margin:0 0 18px;font-size:15px;color:#8B95A5;">Hey ${displayName},</p>`
+
+  const previewText = "Live props, leaderboard, and bragging rights. Jump in before tipoff.";
+
+  const greeting = displayName ? `Hey ${displayName},` : "Hey,";
+
+  const unsubLine = unsubscribeUrl
+    ? `<p style="margin:24px 0 0;font-size:12px;color:#999999;line-height:1.6;">You're receiving this because you signed up for Swayger. <a href="${unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
     : "";
 
-  const previewText = "Make your picks, climb the leaderboard, and see who finishes as Game Day Champ.";
-
-  const body = `
-    ${greeting}
-    <p style="margin:0 0 18px;font-size:15px;color:#E2E8F0;line-height:1.6;">
-      Tonight's Game Day Swayger room is live for <strong style="color:#FFFFFF;">${gameName}</strong>.
-    </p>
-    <p style="margin:0 0 18px;font-size:15px;color:#E2E8F0;line-height:1.6;">
-      Jump in before tipoff, make your picks, and see if you can climb the leaderboard during the game.
-    </p>
-
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:12px;padding:4px 18px;margin-bottom:22px;">
-      <tr><td style="padding:12px 0 4px;">
-        <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:1px;color:#6C63FF;text-transform:uppercase;">How it works</p>
-      </td></tr>
-      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
-        <span style="font-size:13px;color:#8B95A5;">1</span>
-        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Make your <strong>Pregame picks</strong> before tipoff</span>
-      </td></tr>
-      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
-        <span style="font-size:13px;color:#8B95A5;">2</span>
-        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Come back at <strong>halftime</strong> for second-half picks</span>
-      </td></tr>
-      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
-        <span style="font-size:13px;color:#8B95A5;">3</span>
-        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Lock in your <strong>4Q Clutch picks</strong></span>
-      </td></tr>
-      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
-        <span style="font-size:13px;color:#8B95A5;">4</span>
-        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Watch the <strong>leaderboard move</strong></span>
-      </td></tr>
-      <tr><td style="padding:8px 0 12px;border-top:1px solid #2A2A3A;">
-        <span style="font-size:13px;color:#8B95A5;">5</span>
-        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">See who finishes as <strong>Game Day Champ</strong></span>
-      </td></tr>
-    </table>
-
-    <p style="margin:0 0 22px;font-size:13px;color:#8B95A5;text-align:center;line-height:1.5;">
-      No money. No odds. Just picks, leaderboard, bragging rights, and receipts.
-    </p>
-  `;
-
-  const closingHtml = `
-    <p style="margin:20px 0 4px;font-size:14px;color:#8B95A5;">Lock it in and stand on it.</p>
-    <p style="margin:0;font-size:14px;color:#8B95A5;">— Swayger</p>
-  `;
-
-  let html = `<!DOCTYPE html>
-<html>
+  const html = `<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tonight's Game Day room is live — lock in your picks</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Game Day room is open — ${gameName}</title>
 </head>
-<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
-  <!-- Preview text (hidden) -->
-  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#0F0F14;">${previewText}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
-        <tr>
-          <td style="padding-bottom:28px;text-align:center;">
-            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 8px;">
-            <p style="margin:0 0 20px;font-size:19px;font-weight:700;color:#FFFFFF;line-height:1.35;">
-              Tonight's Game Day room is live — lock in your picks
-            </p>
-            ${body}
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;margin-bottom:24px;">
-              <tr>
-                <td align="center">
-                  <a href="${trackedRoomLink}"
-                     style="display:inline-block;background:#6C63FF;color:#FFFFFF;font-size:15px;font-weight:700;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.2px;">
-                    Join Tonight's Game Day Room
-                  </a>
-                </td>
-              </tr>
-            </table>
-            ${closingHtml}
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:20px;text-align:center;">
-            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Picks, leaderboard, receipts</p>
-          </td>
-        </tr>
+<body style="margin:0;padding:0;background:#ffffff;font-family:Georgia,serif;">
+  <span style="display:none;max-height:0;overflow:hidden;">${previewText}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</span>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
+    <tr><td align="center" style="padding:40px 20px 32px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+
+        <tr><td style="padding-bottom:24px;">
+          <p style="margin:0;font-size:13px;font-weight:700;letter-spacing:2px;color:#111111;font-family:Arial,sans-serif;text-transform:uppercase;">Swayger</p>
+        </td></tr>
+
+        <tr><td style="font-family:Arial,sans-serif;font-size:15px;color:#111111;line-height:1.7;">
+
+          <p style="margin:0 0 16px;">${greeting}</p>
+
+          <p style="margin:0 0 16px;">Tonight's live Game Day Swayger room is open for <strong>${gameName}</strong>.</p>
+
+          <p style="margin:0 0 16px;">Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.</p>
+
+          <p style="margin:0 0 20px;">Jump in before tipoff, lock in your takes, and see if you can finish as Game Day Champ.</p>
+
+          <p style="margin:0 0 8px;font-weight:700;">Here's how it works:</p>
+          <p style="margin:0 0 4px;">1. Make your Pregame prop picks before tipoff</p>
+          <p style="margin:0 0 4px;">2. Come back at halftime for second-half props</p>
+          <p style="margin:0 0 4px;">3. Lock in your 4Q Clutch props</p>
+          <p style="margin:0 0 4px;">4. Watch the leaderboard move</p>
+          <p style="margin:0 0 20px;">5. See who finishes as Game Day Champ</p>
+
+          <p style="margin:0 0 24px;color:#555555;font-size:14px;">No money. No odds. Just live props, leaderboard, bragging rights, and receipts.</p>
+
+          <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            <tr>
+              <td style="background:#111111;border-radius:6px;">
+                <a href="${trackedRoomLink}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;">Join Tonight's Game Day Room →</a>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin:0 0 4px;">Lock it in and stand on it.</p>
+          <p style="margin:0;">— Swayger</p>
+
+          ${unsubLine}
+
+        </td></tr>
+
       </table>
     </td></tr>
   </table>
 </body>
 </html>`;
 
-  if (unsubscribeUrl) {
-    html = addUnsubFooter(html, unsubscribeUrl);
-  }
   return html;
+}
+
+export function buildGameDayBlastText(opts: {
+  gameName: string;
+  trackedRoomLink: string;
+  displayName?: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { gameName, trackedRoomLink, displayName, unsubscribeUrl } = opts;
+  const greeting = displayName ? `Hey ${displayName},` : "Hey,";
+  return [
+    greeting,
+    "",
+    `Tonight's live Game Day Swayger room is open for ${gameName}.`,
+    "",
+    "Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.",
+    "",
+    "Jump in before tipoff, lock in your takes, and see if you can finish as Game Day Champ.",
+    "",
+    "Here's how it works:",
+    "1. Make your Pregame prop picks before tipoff",
+    "2. Come back at halftime for second-half props",
+    "3. Lock in your 4Q Clutch props",
+    "4. Watch the leaderboard move",
+    "5. See who finishes as Game Day Champ",
+    "",
+    "No money. No odds. Just live props, leaderboard, bragging rights, and receipts.",
+    "",
+    `Join Tonight's Game Day Room: ${trackedRoomLink}`,
+    "",
+    "Lock it in and stand on it.",
+    "— Swayger",
+    ...(unsubscribeUrl ? ["", `Unsubscribe: ${unsubscribeUrl}`] : []),
+  ].join("\n");
 }
 
 export async function sendGameDayBlastEmail(opts: {
@@ -2791,7 +2789,7 @@ export async function sendGameDayBlastEmail(opts: {
   trackedRoomLink: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  const subject = "Tonight's Game Day room is live — lock in your picks";
+  const subject = `Game Day room is open — ${opts.gameName}`;
   const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
   const html = buildGameDayBlastHtml({
     gameName: opts.gameName,
@@ -2799,5 +2797,21 @@ export async function sendGameDayBlastEmail(opts: {
     displayName: opts.displayName,
     unsubscribeUrl,
   });
-  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+  const text = buildGameDayBlastText({
+    gameName: opts.gameName,
+    trackedRoomLink: opts.trackedRoomLink,
+    displayName: opts.displayName,
+    unsubscribeUrl,
+  });
+  await resend.emails.send({
+    from: FROM,
+    to: opts.to,
+    subject,
+    html,
+    text,
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  });
 }
