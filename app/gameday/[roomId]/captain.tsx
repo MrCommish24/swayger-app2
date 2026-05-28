@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -166,8 +166,8 @@ function getSuggestedMoments(
     });
   }
 
-  // 3. Current Leader
-  if (leader) {
+  // 3. Current Leader — only show after at least one prop is scored
+  if (leader && settledProps.length > 0) {
     moments.push({
       id: "current_leader",
       type: "current_leader",
@@ -176,8 +176,8 @@ function getSuggestedMoments(
     });
   }
 
-  // 4. Tight Race (within 20 SP)
-  if (leader && second) {
+  // 4. Tight Race (within 20 SP) — only after at least one prop is scored
+  if (leader && second && settledProps.length > 0) {
     const gap = leader.game_day_sp - second.game_day_sp;
     if (gap <= 20) {
       moments.push({
@@ -276,6 +276,8 @@ export default function CaptainCenter() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTrackedView = useRef(false);
@@ -291,6 +293,7 @@ export default function CaptainCenter() {
       ]);
       setRoomData(roomRes);
       setLeaderboard(lbRes.leaderboard ?? []);
+      setLastRefreshed(new Date());
       setError(null);
 
       if (!hasTrackedView.current) {
@@ -373,6 +376,20 @@ export default function CaptainCenter() {
     },
     [roomData, roomId, leaderboard]
   );
+
+  const manualRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }, [fetchData]);
+
+  const refreshedLabel = useMemo(() => {
+    if (!lastRefreshed) return null;
+    const diffSec = Math.floor((Date.now() - lastRefreshed.getTime()) / 1000);
+    if (diffSec < 10) return "just now";
+    if (diffSec < 60) return `${diffSec}s ago`;
+    return `${Math.floor(diffSec / 60)}m ago`;
+  }, [lastRefreshed]);
 
   const router = useRouter();
 
@@ -669,25 +686,45 @@ export default function CaptainCenter() {
       )}
 
       {/* ── 4. Suggested Moments ────────────────────────────────────────────── */}
-      {suggestedMoments.length > 0 && (
+      {!isArchived && (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>SUGGESTED MOMENTS</Text>
-          <Text style={styles.sectionHint}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionLabel}>SUGGESTED MOMENTS</Text>
+            <TouchableOpacity
+              style={[styles.refreshBtn, refreshing && styles.refreshBtnDisabled]}
+              onPress={manualRefresh}
+              disabled={refreshing}
+            >
+              <Text style={styles.refreshBtnText}>
+                {refreshing ? "Refreshing…" : "↻ Refresh"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {refreshedLabel ? (
+            <Text style={styles.refreshedAt}>Updated {refreshedLabel} · auto-updates every 20s</Text>
+          ) : null}
+          <Text style={[styles.sectionHint, { marginTop: 8 }]}>
             Paste these into the group chat to create energy and leaderboard moments.
           </Text>
-          {suggestedMoments.map((moment) => (
-            <View key={moment.id} style={styles.momentCard}>
-              <Text style={styles.momentTitle}>{moment.title}</Text>
-              <Text style={styles.messageText}>{moment.message}</Text>
-              <CopyBtn
-                text={moment.message}
-                type={moment.type}
-                id={`moment_${moment.id}`}
-                label="Copy"
-                full
-              />
-            </View>
-          ))}
+          {suggestedMoments.length === 0 ? (
+            <Text style={styles.emptyText}>
+              No moments available yet. Moments appear once picks are open or scored.
+            </Text>
+          ) : (
+            suggestedMoments.map((moment) => (
+              <View key={moment.id} style={styles.momentCard}>
+                <Text style={styles.momentTitle}>{moment.title}</Text>
+                <Text style={styles.messageText}>{moment.message}</Text>
+                <CopyBtn
+                  text={moment.message}
+                  type={moment.type}
+                  id={`moment_${moment.id}`}
+                  label="Copy"
+                  full
+                />
+              </View>
+            ))
+          )}
         </View>
       )}
 
@@ -988,6 +1025,35 @@ const styles = StyleSheet.create({
     color: C.text,
     lineHeight: 20,
     marginBottom: 10,
+  },
+
+  // Section header row (label + refresh button side by side)
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  refreshBtn: {
+    backgroundColor: `${C.tint}18`,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: C.tint,
+  },
+  refreshBtnDisabled: {
+    opacity: 0.5,
+  },
+  refreshBtnText: {
+    color: C.tint,
+    fontSize: 12,
+    fontWeight: "600" as const,
+  },
+  refreshedAt: {
+    fontSize: 11,
+    color: C.textMuted,
+    marginBottom: 0,
   },
 
   // Moment cards (slightly distinct from cadence cards)

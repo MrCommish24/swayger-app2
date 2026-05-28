@@ -1,0 +1,57 @@
+Verify and, if needed, fix the Game Day Captain Center Suggested Moments so they update dynamically as room state changes.
+
+Context:
+The Captain Center has Suggested Moments like Current Leader, Tight Race, Final Standings, leaderboard summaries, and other copy-ready prompts. These should reflect the current room state, not stale data from when the Captain Center first loaded.
+
+Expected behavior:
+When the admin/host settles props or finalizes the room, the Captain Center should update the relevant moment copy.
+
+Please verify:
+
+1. Does the Captain Center currently poll or refetch room/leaderboard state while open?
+2. If yes, how often?
+3. If no, add lightweight polling using the existing Game Day room/leaderboard fetch pattern.
+4. Make sure Suggested Moments are recalculated after each successful room/leaderboard refresh.
+5. Make sure the copied text uses the latest values at the moment the captain taps Copy.
+
+Dynamic values that should update:
+- current leader name
+- current leader SP
+- top 3 leaderboard
+- participant count
+- tight race point gap
+- finalized winner
+- winner SP
+- final standings
+- current open card phase
+- room status
+
+Specific examples:
+- Current Leader should display the current leader’s name and SP.
+- Tight Race should calculate the current gap between 1st and 2nd, if available.
+- Final Standings should use the finalized winner and top 3 after finalization.
+- If no settled picks exist yet, leaderboard moments should say no settled picks are available yet.
+- If the room is archived, live prompts should disappear or be disabled.
+- If the room is finalized, final receipt and run-it-back moments should appear.
+
+Add a manual “Refresh” button only if it is simple and useful:
+- Label: Refresh Room State
+- It should refetch the room/leaderboard data and update Suggested Moments.
+- Do not overbuild.
+
+Do not change:
+- host controls
+- participant flow
+- scoring
+- settlement
+- finalization logic
+- Discord bot
+- analytics, except existing copy events should continue to fire
+
+Acceptance criteria:
+1. Settle a prop in host panel.
+2. Captain Center updates leaderboard/moment copy without requiring a full browser reload, or with a clear Refresh button if polling is intentionally not used.
+3. Current Leader message uses the correct latest leader name and SP.
+4. Tight Race message uses the correct latest point gap.
+5. Finalized room shows winner/final standings moments.
+6. Copy buttons copy the latest dynamic text.
