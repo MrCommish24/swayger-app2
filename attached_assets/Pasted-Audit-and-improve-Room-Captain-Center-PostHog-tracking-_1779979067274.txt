@@ -1,0 +1,102 @@
+Audit and improve Room Captain Center PostHog tracking for Game Day Swayger.
+
+Context:
+We added a read-only Captain Center for Game Day rooms. It helps a room captain copy invite/reminder messages, suggested moments, leaderboard callouts, trash-talk prompts, final standings, and run-it-back messages.
+
+Current events:
+- gameday_captain_center_viewed
+- gameday_captain_message_copied
+
+Goal:
+Make sure these events have enough properties to determine whether the Captain Center improves host behavior and participant engagement.
+
+Do not add dashboards.
+Do not change Game Day logic.
+Do not change participant flow.
+Do not change host controls.
+Do not add SMS/iMessage/WhatsApp automation.
+Do not add AI.
+Do not add new permissions.
+
+Please ensure:
+
+1. gameday_captain_center_viewed fires once per session/page load.
+
+Properties:
+- room_id
+- room_code
+- room_source: app | discord | unknown
+- room_status
+- current_open_card_phase if available
+- participant_count if available
+- captain_link_source if available: host_panel | direct_link | unknown
+- is_admin_viewer if available: true | false | unknown
+
+2. gameday_captain_message_copied fires every time a captain copies a message or share item.
+
+Properties:
+- room_id
+- room_code
+- room_source
+- room_status
+- current_open_card_phase if available
+- message_type
+- message_category
+- participant_count if available
+- leaderboard_available: true | false
+- leader_name if available
+- leader_sp if available
+
+Use message_type values like:
+- pregame_invite
+- halftime_heads_up
+- halftime_live
+- fourth_heads_up
+- fourth_live
+- picks_locked
+- first_leaderboard_update
+- current_leader
+- tight_race
+- comeback_window
+- last_chance
+- generic_trash_talk
+- quiet_room_nudge
+- final_standings
+- run_it_back
+- copy_public_link
+
+Use message_category values like:
+- invite
+- reminder
+- leaderboard
+- trash_talk
+- urgency
+- final_receipt
+- run_it_back
+- share_link
+
+3. If QR code is shown or copied, track one of:
+- gameday_captain_qr_viewed
+or
+- gameday_captain_message_copied with message_type = qr_viewed / qr_link_copied and message_category = share_link
+
+Use the simplest option consistent with the existing analytics structure.
+
+4. Make sure every Captain Center event includes room_id, room_code, and room_source.
+
+5. Do not fire duplicate captain_center_viewed events from polling or rerenders.
+
+6. After implementation, provide:
+- final Captain Center event list
+- properties for each event
+- message_type values supported
+- message_category values supported
+- QA checklist for testing
+
+Acceptance criteria:
+- We can see whether a Captain Center was opened.
+- We can see which messages were copied.
+- We can distinguish logistical reminders from emotional moments.
+- We can compare rooms where captain moment prompts were used vs. not used.
+- We can segment by room_source = app or discord.
+- Existing Game Day behavior remains unchanged.

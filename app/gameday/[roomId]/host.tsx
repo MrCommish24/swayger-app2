@@ -562,11 +562,11 @@ export default function HostControlRoom() {
           <TouchableOpacity
             style={styles.captainOpenBtn}
             onPress={() => {
-              const url = `${BASE_URL}/gameday/${roomId}/captain`;
+              const url = `${BASE_URL}/gameday/${roomId}/captain?src=host_panel`;
               if (Platform.OS === "web" && typeof window !== "undefined") {
                 window.open(url, "_blank");
               } else {
-                router.push(`/gameday/${roomId}/captain` as never);
+                router.push(`/gameday/${roomId}/captain?src=host_panel` as never);
               }
             }}
           >
@@ -575,7 +575,7 @@ export default function HostControlRoom() {
           <TouchableOpacity
             style={styles.captainCopyBtn}
             onPress={() => {
-              const url = `${BASE_URL}/gameday/${roomId}/captain`;
+              const url = `${BASE_URL}/gameday/${roomId}/captain?src=host_panel`;
               if (Platform.OS === "web" && typeof navigator !== "undefined") {
                 navigator.clipboard.writeText(url).catch(() => {});
               }

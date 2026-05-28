@@ -35,6 +35,29 @@ interface Moment {
   message: string;
 }
 
+// Maps message_type → message_category for PostHog analytics
+const MESSAGE_CATEGORIES: Record<string, string> = {
+  pregame_invite: "invite",
+  halftime_heads_up: "reminder",
+  halftime_live: "invite",
+  fourth_heads_up: "reminder",
+  fourth_live: "invite",
+  final_standings: "final_receipt",
+  picks_locked: "urgency",
+  first_leaderboard_update: "leaderboard",
+  leaderboard_snapshot: "leaderboard",
+  current_leader: "leaderboard",
+  tight_race: "leaderboard",
+  comeback_window: "urgency",
+  last_chance: "urgency",
+  winner: "final_receipt",
+  run_it_back: "run_it_back",
+  generic_trash_talk: "trash_talk",
+  quiet_room_nudge: "trash_talk",
+  copy_public_link: "share_link",
+  qr_viewed: "share_link",
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const BASE_URL =
@@ -133,11 +156,11 @@ function getSuggestedMoments(
     });
   }
 
-  // 2. First Leaderboard Update
+  // 2. First Leaderboard Update — canonical type name for analytics
   if (settledProps.length > 0) {
     moments.push({
-      id: "leaderboard_update",
-      type: "leaderboard_update",
+      id: "first_leaderboard_update",
+      type: "first_leaderboard_update",
       title: "📊 First Leaderboard Update",
       message: "First leaderboard update is in. Somebody already has receipts.",
     });
@@ -217,8 +240,8 @@ function getSuggestedMoments(
   // 10. Quiet Room Nudge — when not finalized
   if (!isFinalized) {
     moments.push({
-      id: "quiet_room",
-      type: "quiet_room",
+      id: "quiet_room_nudge",
+      type: "quiet_room_nudge",
       title: "🔇 Quiet Room Nudge",
       message: "Don't get quiet now. The board is still moving.",
     });
@@ -230,8 +253,12 @@ function getSuggestedMoments(
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CaptainCenter() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId, src } = useLocalSearchParams<{ roomId: string; src?: string }>();
   const insets = useSafeAreaInsets();
+
+  // Derive how the captain got to this page from the ?src= URL param.
+  const captainLinkSource: "host_panel" | "direct_link" | "unknown" =
+    src === "host_panel" ? "host_panel" : src ? "direct_link" : "unknown";
 
   const [roomData, setRoomData] = useState<GDRoomResponse | null>(null);
   const [leaderboard, setLeaderboard] = useState<GDLeaderboardEntry[]>([]);
@@ -258,12 +285,20 @@ export default function CaptainCenter() {
 
       if (!hasTrackedView.current) {
         hasTrackedView.current = true;
-        Analytics.gamedayCaptainCenterViewed({
-          room_id: roomId,
-          room_code: roomRes.room.room_code,
-          room_source: roomRes.room.source ?? "unknown",
-          room_status: roomRes.room.status,
-        });
+        const openCard = roomRes.cards.find((c: any) => c.status === "open");
+        Analytics.gamedayCaptainCenterViewed(
+          {
+            room_id: roomId,
+            room_code: roomRes.room.room_code,
+            room_source: roomRes.room.source ?? "unknown",
+            room_status: roomRes.room.status,
+          },
+          {
+            current_open_card_phase: openCard?.phase ?? null,
+            participant_count: roomRes.participant_count,
+            captain_link_source: captainLinkSource,
+          }
+        );
       }
     } catch (e: any) {
       setError(e.message ?? "Failed to load room");
@@ -291,6 +326,7 @@ export default function CaptainCenter() {
       }
       setCopiedId(id);
       if (roomData) {
+        const openCard = roomData.cards.find((c: any) => c.status === "open");
         Analytics.gamedayCaptainMessageCopied(
           {
             room_id: roomId ?? "",
@@ -298,7 +334,15 @@ export default function CaptainCenter() {
             room_source: roomData.room.source ?? "unknown",
             room_status: roomData.room.status,
           },
-          messageType
+          messageType,
+          {
+            message_category: MESSAGE_CATEGORIES[messageType] ?? "share_link",
+            current_open_card_phase: openCard?.phase ?? null,
+            participant_count: roomData.participant_count,
+            leaderboard_available: leaderboard.length > 0,
+            leader_name: leaderboard[0]?.display_name ?? null,
+            leader_sp: leaderboard[0]?.game_day_sp ?? null,
+          }
         );
       }
       setTimeout(
@@ -306,7 +350,7 @@ export default function CaptainCenter() {
         2000
       );
     },
-    [roomData, roomId]
+    [roomData, roomId, leaderboard]
   );
 
   // ── Loading / error ──────────────────────────────────────────────────────────
@@ -449,8 +493,8 @@ export default function CaptainCenter() {
         <View style={styles.btnRow}>
           <CopyBtn
             text={publicLink}
-            type="public_link"
-            id="public_link"
+            type="copy_public_link"
+            id="copy_public_link"
             label="Copy Link"
             full
           />
@@ -470,7 +514,30 @@ export default function CaptainCenter() {
           <View style={styles.qrSection}>
             <TouchableOpacity
               style={styles.qrToggle}
-              onPress={() => setShowQr((v) => !v)}
+              onPress={() => {
+                const next = !showQr;
+                setShowQr(next);
+                if (next && roomData) {
+                  const openCard = roomData.cards.find((c: any) => c.status === "open");
+                  Analytics.gamedayCaptainMessageCopied(
+                    {
+                      room_id: roomId ?? "",
+                      room_code: roomData.room.room_code,
+                      room_source: roomData.room.source ?? "unknown",
+                      room_status: roomData.room.status,
+                    },
+                    "qr_viewed",
+                    {
+                      message_category: "share_link",
+                      current_open_card_phase: openCard?.phase ?? null,
+                      participant_count: roomData.participant_count,
+                      leaderboard_available: leaderboard.length > 0,
+                      leader_name: leaderboard[0]?.display_name ?? null,
+                      leader_sp: leaderboard[0]?.game_day_sp ?? null,
+                    }
+                  );
+                }
+              }}
             >
               <Text style={styles.qrToggleText}>
                 {showQr ? "Hide QR Code" : "Show QR Code"}
@@ -581,7 +648,7 @@ export default function CaptainCenter() {
                     .slice(0, 3)
                     .map((e, i) => `${i + 1}. ${e.display_name} — ${e.game_day_sp} SP`)
                     .join("\n")}\n\nFull room:\n${publicLink}`}
-                  type="leaderboard_update"
+                  type="leaderboard_snapshot"
                   id="lb_top3"
                   label="Copy Top 3"
                 />
@@ -589,7 +656,7 @@ export default function CaptainCenter() {
               {!isFinalized && (
                 <CopyBtn
                   text={`This room is still open. Plenty of points left on the board:\n${publicLink}`}
-                  type="leaderboard_update"
+                  type="leaderboard_snapshot"
                   id="lb_still_open"
                   label="Copy Still Open"
                 />

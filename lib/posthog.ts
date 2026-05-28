@@ -348,14 +348,46 @@ export const Analytics = {
 
   // ── Captain Center ───────────────────────────────────────────────────────────
 
-  // Fires once per session when a Captain Center page loads.
-  gamedayCaptainCenterViewed: (ctx: GDRoomCtx) =>
-    capture("gameday_captain_center_viewed", rCtx(ctx)),
+  // Fires once per session/page load when the Captain Center opens.
+  // Guarded by hasTrackedView ref in captain.tsx.
+  gamedayCaptainCenterViewed: (
+    ctx: GDRoomCtx,
+    opts?: {
+      current_open_card_phase?: string | null;
+      participant_count?: number | null;
+      captain_link_source?: "host_panel" | "direct_link" | "unknown";
+      is_admin_viewer?: boolean | "unknown";
+    }
+  ) =>
+    capture("gameday_captain_center_viewed", {
+      ...rCtx(ctx),
+      current_open_card_phase: opts?.current_open_card_phase ?? null,
+      participant_count: opts?.participant_count ?? null,
+      captain_link_source: opts?.captain_link_source ?? "unknown",
+      is_admin_viewer: opts?.is_admin_viewer ?? "unknown",
+    }),
 
-  // Fires whenever the captain copies a message from the Captain Center.
-  gamedayCaptainMessageCopied: (ctx: GDRoomCtx, messageType: string) =>
+  // Fires on every message copy (and QR view) from the Captain Center.
+  gamedayCaptainMessageCopied: (
+    ctx: GDRoomCtx,
+    messageType: string,
+    opts: {
+      message_category: string;
+      current_open_card_phase?: string | null;
+      participant_count?: number | null;
+      leaderboard_available: boolean;
+      leader_name?: string | null;
+      leader_sp?: number | null;
+    }
+  ) =>
     capture("gameday_captain_message_copied", {
       ...rCtx(ctx),
       message_type: messageType,
+      message_category: opts.message_category,
+      current_open_card_phase: opts.current_open_card_phase ?? null,
+      participant_count: opts.participant_count ?? null,
+      leaderboard_available: opts.leaderboard_available,
+      leader_name: opts.leader_name ?? null,
+      leader_sp: opts.leader_sp ?? null,
     }),
 };
