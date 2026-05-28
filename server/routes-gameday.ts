@@ -239,7 +239,7 @@ export function registerGamedayRoutes(app: Express) {
     // Try fetching with room_code + source; fall back if columns don't exist yet.
     let baseQuery = supabase
       .from("gameday_rooms")
-      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source")
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at")
       .order("created_at", { ascending: false });
     if (!isAdminUser) baseQuery = (baseQuery as any).eq("host_user_id", payload.sub);
 
@@ -249,7 +249,7 @@ export function registerGamedayRoutes(app: Express) {
       console.warn("[gameday] rooms list with room_code/source failed, retrying without:", error.message);
       let retryQuery = supabase
         .from("gameday_rooms")
-        .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at")
+        .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at")
         .order("created_at", { ascending: false });
       if (!isAdminUser) retryQuery = (retryQuery as any).eq("host_user_id", payload.sub);
       const retry = await retryQuery;
@@ -658,11 +658,15 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("id, status")
+        .select("id, status, archived_at")
         .eq("id", roomId)
         .single();
       if (!room) {
         res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if ((room as any).archived_at) {
+        res.status(410).json({ error: "This Game Day room is no longer active." });
         return;
       }
 
@@ -894,7 +898,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: prop } = await supabase
         .from("gameday_props")
-        .select("*, gameday_pick_cards(status, room_id)")
+        .select("*, gameday_pick_cards(status, room_id, gameday_rooms(archived_at))")
         .eq("id", propId)
         .single();
 
@@ -903,6 +907,11 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
+      const roomArchived = (prop.gameday_pick_cards as any)?.gameday_rooms?.archived_at;
+      if (roomArchived) {
+        res.status(410).json({ error: "This Game Day room is no longer active." });
+        return;
+      }
       const cardStatus = (prop.gameday_pick_cards as any)?.status;
       if (cardStatus !== "open") {
         res.status(400).json({ error: "This pick card is not open" });
@@ -1116,6 +1125,66 @@ export function registerGamedayRoutes(app: Express) {
       console.log(`[gameday] finalize: write confirmed, status is now: ${verify?.status}`);
 
       await logEvent(supabase, roomId, null, hostId, "room_finalized", {});
+      res.json({ ok: true });
+    }
+  );
+
+  // ── PATCH /api/gameday/rooms/:roomId/archive ─────────────────────────────
+  // Soft-deletes a room by setting archived_at = now(). Only configured admins
+  // can archive. Finalized rooms cannot be archived (they are preserved receipts).
+  app.patch(
+    "/api/gameday/rooms/:roomId/archive",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, status, archived_at, source")
+        .eq("id", roomId)
+        .single();
+
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      // Admins can archive any room with null host_user_id (Discord/bot rooms).
+      if ((room as any).host_user_id !== null && (room as any).host_user_id !== hostId) {
+        res.status(403).json({ error: "Not your room" });
+        return;
+      }
+      if ((room as any).status === "finalized") {
+        res.status(400).json({
+          error: "Finalized rooms cannot be archived — they are preserved as receipts.",
+        });
+        return;
+      }
+      if ((room as any).archived_at) {
+        // Already archived — idempotent success.
+        res.json({ ok: true, already: true });
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("gameday_rooms")
+        .update({ archived_at: new Date().toISOString() })
+        .eq("id", roomId);
+
+      if (updateError) {
+        console.error("[gameday] archive error:", updateError.message);
+        res.status(500).json({ error: "Failed to archive room" });
+        return;
+      }
+
+      await logEvent(supabase, roomId, null, hostId, "room_archived", {
+        archived_by: hostId,
+        source: (room as any).source ?? "app",
+      });
+
+      console.log(`[gameday] room archived: ${roomId} by ${hostId.slice(0, 8)}…`);
       res.json({ ok: true });
     }
   );

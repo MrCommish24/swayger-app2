@@ -275,6 +275,10 @@ export default function GameDayRoomScreen() {
 
   const handleSubmitPicks = async (openCard: GDCard) => {
     if (!roomId) return;
+    if (roomData?.room.archived_at) {
+      setPickError("This room is no longer active.");
+      return;
+    }
     const propIds = openCard.gameday_props.map((p) => p.id);
     const missing = propIds.filter((id) => !pendingPicks[id]);
     if (missing.length > 0) {
@@ -336,6 +340,19 @@ export default function GameDayRoomScreen() {
   const { room, cards, participant, my_picks, revealed_picks } = roomData;
 
   const isFinalized = room.status === "finalized";
+
+  // ── Archived room — show inactive message, block all actions ─────────────
+  if (room.archived_at) {
+    return (
+      <View style={[styles.joinContainer, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 }]}>
+        <Text style={styles.joinLogo}>SWAYGER</Text>
+        <Text style={styles.joinHeading}>Room No Longer Active</Text>
+        <Text style={styles.joinSub}>
+          This Game Day room is no longer accepting participants or picks.
+        </Text>
+      </View>
+    );
+  }
 
   // ── Join screen — skipped for finalized rooms so anyone can view results ──
   if (joinStep && !participant && !isFinalized) {

@@ -28,6 +28,7 @@ interface RoomSummary {
   created_at: string;
   participant_count: number;
   room_code?: string | null;
+  archived_at?: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -60,6 +61,7 @@ export default function GameDayHub() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
   function cleanError(raw: string): string {
@@ -162,6 +164,11 @@ export default function GameDayHub() {
   }
 
   // ── Host view ──────────────────────────────────────────────────────────
+  const displayedRooms = showArchived
+    ? rooms
+    : rooms.filter((r) => !r.archived_at);
+  const hasArchivedRooms = rooms.some((r) => !!r.archived_at);
+
   return (
     <ScrollView
       style={styles.container}
@@ -211,11 +218,25 @@ export default function GameDayHub() {
             <Text style={styles.createBtnText}>Create a Room</Text>
           </TouchableOpacity>
         </View>
+      ) : displayedRooms.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyIcon}>📦</Text>
+          <Text style={styles.emptyTitle}>All rooms archived</Text>
+          <Text style={styles.emptySubtitle}>
+            Toggle below to view archived rooms.
+          </Text>
+          <TouchableOpacity
+            style={styles.createBtn}
+            onPress={() => setShowArchived(true)}
+          >
+            <Text style={styles.createBtnText}>Show Archived</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
-        rooms.map((room) => (
+        displayedRooms.map((room) => (
           <TouchableOpacity
             key={room.id}
-            style={styles.roomCard}
+            style={[styles.roomCard, room.archived_at ? styles.roomCardArchived : null]}
             onPress={() => router.push(`/gameday/${room.id}/host` as never)}
             activeOpacity={0.75}
           >
@@ -223,9 +244,15 @@ export default function GameDayHub() {
               <Text style={styles.roomName} numberOfLines={1}>
                 {room.room_name}
               </Text>
-              <View style={[styles.statusBadge, { borderColor: STATUS_COLOR[room.status] }]}>
-                <Text style={[styles.statusText, { color: STATUS_COLOR[room.status] }]}>
-                  {STATUS_LABEL[room.status] ?? room.status}
+              <View style={[
+                styles.statusBadge,
+                { borderColor: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
+              ]}>
+                <Text style={[
+                  styles.statusText,
+                  { color: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
+                ]}>
+                  {room.archived_at ? "Archived" : (STATUS_LABEL[room.status] ?? room.status)}
                 </Text>
               </View>
             </View>
@@ -249,6 +276,18 @@ export default function GameDayHub() {
             <Text style={styles.enterHint}>Tap to open Host Control →</Text>
           </TouchableOpacity>
         ))
+      )}
+
+      {/* Show / hide archived rooms toggle — only visible when there are archived rooms */}
+      {(hasArchivedRooms || showArchived) && (
+        <TouchableOpacity
+          style={styles.archivedToggle}
+          onPress={() => setShowArchived((v) => !v)}
+        >
+          <Text style={styles.archivedToggleText}>
+            {showArchived ? "Hide archived rooms" : "Show archived rooms"}
+          </Text>
+        </TouchableOpacity>
       )}
     </ScrollView>
   );
@@ -334,6 +373,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   enterHint: { fontSize: 12, color: C.tint, fontWeight: "600" },
+  roomCardArchived: { opacity: 0.55 },
+
+  // Archived toggle
+  archivedToggle: {
+    alignSelf: "center",
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  archivedToggleText: { fontSize: 13, color: C.textMuted, textDecorationLine: "underline" },
 
   // Error
   errorBox: {

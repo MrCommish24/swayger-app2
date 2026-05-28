@@ -46,9 +46,11 @@ export interface GDRoom {
   team_a_star: string;
   team_b_star: string;
   game_date: string | null;
-  host_user_id: string;
+  host_user_id: string | null;
   status: "draft" | "active" | "finalized";
   room_code?: string | null;
+  is_private?: boolean;
+  archived_at?: string | null;
 }
 
 export interface GDProp {

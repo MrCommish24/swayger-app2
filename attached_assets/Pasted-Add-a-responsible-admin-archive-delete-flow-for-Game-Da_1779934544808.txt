@@ -1,0 +1,140 @@
+Add a responsible admin archive/delete flow for Game Day Swayger rooms.
+
+Current issue:
+Test Game Day rooms are filling up the admin room feed. I need a way for configured admins to remove non-finalized test rooms from the active/admin view without risking finalized receipts or meaningful room history.
+
+Preferred approach:
+Use a soft-delete/archive pattern, not hard delete.
+
+Requirements:
+
+1. Database
+
+Add a nullable column to gameday_rooms:
+
+archived_at timestamp nullable
+
+If there is already a deleted_at/archive field pattern in the app, use the existing convention.
+
+2. Admin permissions
+
+Only configured Game Day admins can archive rooms.
+
+Use the existing GAMEDAY_HOST_EMAILS / admin allowlist logic.
+
+Do not allow regular users or guests to archive rooms.
+
+3. Which rooms can be archived
+
+Admins can archive rooms only when the room is not finalized.
+
+Do not allow archive/delete from normal UI for finalized rooms.
+
+If room status is finalized/final, hide or disable the archive button and show:
+“Finalized rooms are preserved as receipts.”
+
+4. Admin room feed behavior
+
+Update the Game Day admin room list/feed so archived rooms are hidden by default.
+
+Do not show archived rooms in the normal active room list.
+
+Optional only if simple:
+Add a small “Show archived rooms” toggle for admins.
+
+5. Host panel behavior
+
+On the host/admin room page for a non-finalized room, add an “Archive Room” button.
+
+Use “Archive Room” as the UI label, not “Delete Room.”
+
+Place it somewhere low-risk, not next to core game controls like Open/Lock/Settle.
+
+6. Confirmation modal
+
+When admin clicks Archive Room, show a custom confirmation modal:
+
+Title:
+“Archive this Game Day room?”
+
+Body:
+“This will hide the room from your active room list. Participants will no longer be able to join or submit picks. Existing data will be preserved.”
+
+Buttons:
+- Cancel
+- Archive Room
+
+Do not use native browser confirm() if the app already uses custom modals.
+
+7. Backend endpoint
+
+Add a backend endpoint such as:
+
+PATCH /api/gameday/rooms/:roomId/archive
+
+Behavior:
+- require configured admin auth
+- reject if room is finalized/final
+- set archived_at = now()
+- return { ok: true }
+
+Do not hard-delete rows from:
+- gameday_rooms
+- gameday_pick_cards
+- gameday_props
+- gameday_participants
+- gameday_picks
+- gameday_events
+
+8. Participant/public link behavior
+
+If a user opens an archived room link, show:
+
+“This Game Day room is no longer active.”
+
+Do not allow:
+- joining
+- submitting picks
+- editing picks
+
+9. API/list behavior
+
+Update relevant Game Day room list endpoints to exclude archived rooms by default.
+
+Update participant room fetch if needed to return archived state so the UI can show the inactive message.
+
+10. Analytics
+
+If there is a Game Day events table, log:
+
+event_type = room_archived
+
+Include:
+- room_id
+- archived_by_user_id if available
+- source if available
+
+Do not overbuild analytics dashboards.
+
+11. Guardrails
+
+Do not change:
+- NBA picks
+- NBA bracket challenge
+- March Madness history
+- 1v1 challenge flow
+- main SP ledger or balances
+- Discord bot logic unless needed to handle archived room responses gracefully
+
+Keep Game Day SP separate from the main SP system.
+
+12. Acceptance criteria
+
+- Admin can archive a non-finalized Game Day room.
+- Archived room disappears from active admin/feed list.
+- Archived room data remains in Supabase.
+- Participants cannot join an archived room.
+- Participants cannot submit picks in an archived room.
+- Opening archived public link shows “room no longer active.”
+- Finalized rooms cannot be archived/deleted from normal UI.
+- Existing active/finalized rooms continue to work.

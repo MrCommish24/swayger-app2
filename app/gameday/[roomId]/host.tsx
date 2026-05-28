@@ -49,8 +49,10 @@ interface Room {
   team_b_name: string;
   team_a_star: string;
   team_b_star: string;
+  game_date?: string | null;
   status: string;
   room_code?: string | null;
+  archived_at?: string | null;
 }
 
 interface LbEntry {
@@ -87,6 +89,8 @@ export default function HostControlRoom() {
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
   const [localFinalized, setLocalFinalized] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -295,6 +299,22 @@ export default function HostControlRoom() {
       setFinalizeError(clean);
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const doArchive = async () => {
+    setShowArchiveModal(false);
+    setArchiving(true);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/archive`,
+        { method: "PATCH", body: JSON.stringify({}) },
+        { session }
+      );
+      router.replace("/gameday");
+    } catch (e: any) {
+      alert(e.message ?? "Archive failed");
+      setArchiving(false);
     }
   };
 
@@ -601,6 +621,32 @@ export default function HostControlRoom() {
       >
         <Text style={styles.viewParticipantText}>View Participant Room →</Text>
       </TouchableOpacity>
+
+      {/* ── Archive Room ─────────────────────────────────────────────────────── */}
+      <View style={styles.archiveSection}>
+        <Text style={styles.archiveSectionLabel}>ROOM MANAGEMENT</Text>
+        {room.status === "finalized" || localFinalized ? (
+          <Text style={styles.archiveDisabledText}>
+            Finalized rooms are preserved as receipts and cannot be archived.
+          </Text>
+        ) : room.archived_at ? (
+          <View style={styles.archivedBanner}>
+            <Text style={styles.archivedBannerText}>This room is archived</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.archiveBtn}
+            onPress={() => setShowArchiveModal(true)}
+            disabled={archiving}
+          >
+            {archiving ? (
+              <ActivityIndicator color="#ef4444" size="small" />
+            ) : (
+              <Text style={styles.archiveBtnText}>Archive Room</Text>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
     </ScrollView>
 
     {/* ── Finalize confirmation modal ─────────────────────────────────────── */}
@@ -625,6 +671,34 @@ export default function HostControlRoom() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.modalConfirmBtn} onPress={doFinalize}>
               <Text style={styles.modalConfirmText}>Finalize Standings</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+
+    {/* ── Archive confirmation modal ───────────────────────────────────────── */}
+    <Modal
+      visible={showArchiveModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowArchiveModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Archive this room?</Text>
+          <Text style={styles.modalBody}>
+            The room will be hidden from your active list. All data is preserved — nothing is deleted. You can still access it from the host panel.
+          </Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowArchiveModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalArchiveBtn} onPress={doArchive}>
+              <Text style={styles.modalArchiveText}>Archive</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1106,6 +1180,49 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   viewParticipantText: { color: C.textSecondary, fontSize: 14, fontWeight: "500" },
+
+  // Archive Room section
+  archiveSection: {
+    marginTop: 24,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  archiveSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  archiveBtn: {
+    borderWidth: 1,
+    borderColor: "#ef4444",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  archiveBtnText: { color: "#ef4444", fontSize: 14, fontWeight: "600" },
+  archiveDisabledText: { fontSize: 13, color: C.textMuted, lineHeight: 18 },
+  archivedBanner: {
+    backgroundColor: C.surface,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+  },
+  archivedBannerText: { color: C.textMuted, fontSize: 13, fontWeight: "600" },
+
+  // Archive confirm button (modal)
+  modalArchiveBtn: {
+    flex: 1,
+    backgroundColor: "#ef4444",
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  modalArchiveText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 
   // Finalize
   finalizeWrapper: { marginBottom: 12 },
