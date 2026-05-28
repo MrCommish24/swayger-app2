@@ -1799,6 +1799,44 @@ export function registerGamedayRoutes(app: Express) {
     const TEST_EMAIL = "darius@leagueswype.com";
 
     try {
+      // ── Generate HTML first, inspect before sending ──────────────────────
+      const html = buildGameDayBlastHtml({ gameName: game_name, trackedRoomLink });
+
+      // Strip tags to get visible text only (excludes href values, attrs, etc.)
+      const visibleText = html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ");
+
+      const REQUIRED_PHRASE =
+        "Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q";
+      const DISALLOWED: { phrase: string; pattern: RegExp }[] = [
+        { phrase: "Social Wager Contracts", pattern: /Social Wager Contracts/i },
+        { phrase: "prediction game",        pattern: /prediction game/i },
+        { phrase: "picks game",             pattern: /picks game/i },
+        { phrase: "wager",                  pattern: /\bwager\b/i },
+        { phrase: "beta",                   pattern: /\bbeta\b/i },
+        { phrase: "test",                   pattern: /\btest\b/i },
+      ];
+
+      if (!html.includes(REQUIRED_PHRASE)) {
+        throw new Error(`SAFETY FAIL — required phrase not found in HTML: "${REQUIRED_PHRASE}"`);
+      }
+
+      const violations = DISALLOWED.filter((d) => d.pattern.test(visibleText));
+      if (violations.length > 0) {
+        throw new Error(`SAFETY FAIL — disallowed phrase(s) in visible text: ${violations.map((v) => v.phrase).join(", ")}`);
+      }
+
+      const resolvedSubject = subject ?? `Tonight's live Game Day Swayger room is open for ${game_name}`;
+      const ctaMatch = html.match(/>([^<]*Join Tonight[^<]*)<\/a>/i);
+      const ctaText = ctaMatch ? ctaMatch[1].trim() : "NOT FOUND";
+
+      console.log(`[gameday-blast] ── PRE-SEND INSPECTION ──────────────────────────`);
+      console.log(`[gameday-blast]  subject     : ${resolvedSubject}`);
+      console.log(`[gameday-blast]  CTA button  : ${ctaText}`);
+      console.log(`[gameday-blast]  required phrase: PRESENT ✓`);
+      console.log(`[gameday-blast]  disallowed  : NONE ✓`);
+      console.log(`[gameday-blast]  HTML snippet (first 800 chars):\n${html.slice(0, 800)}`);
+      console.log(`[gameday-blast] ────────────────────────────────────────────────`);
+
       await sendGameDayBlastEmail({
         to: TEST_EMAIL,
         displayName: "Darius",
@@ -1807,8 +1845,8 @@ export function registerGamedayRoutes(app: Express) {
         trackedRoomLink,
         subject,
       });
-      console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL} — game="${game_name}" link=${trackedRoomLink}`);
-      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink });
+      console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL}`);
+      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink, subject: resolvedSubject, cta: ctaText });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[gameday-blast] Test send failed:", msg);

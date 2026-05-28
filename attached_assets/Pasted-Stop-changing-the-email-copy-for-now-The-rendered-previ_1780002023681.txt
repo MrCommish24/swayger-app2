@@ -1,0 +1,103 @@
+Stop changing the email copy for now. The rendered/preview copy shown to me is correct, but the actual test email sent still uses the wrong copy.
+
+This means there is likely a mismatch between:
+- the preview/render route
+- the test-send route
+- the full-send route
+- the email builder function
+- cached/deployed server code
+- old template variables
+- or a second email template/path being used by Resend
+
+Goal:
+Find and fix why the preview copy is correct but the actual sent test email is different.
+
+Do not rewrite the email copy.
+Do not create a new version of the copy.
+Do not send the full blast.
+
+Please investigate and report:
+
+1. Which function generates the HTML for:
+   - GET /admin/gameday/email-preview/blast
+   - POST /admin/gameday/blast-test
+   - POST /admin/gameday/blast-send
+
+2. Confirm whether all three routes use the exact same buildGameDayBlastHtml() output.
+
+3. Check whether blast-test is using:
+   - an old helper
+   - hardcoded fallback copy
+   - a different subject/body
+   - a cached compiled server file
+   - a different environment/deployment than the preview
+
+4. Add temporary server-side logging for the test-send route before sending through Resend:
+   - subject
+   - preview text if applicable
+   - first 800 characters of generated HTML
+   - CTA button text found in HTML
+   - whether the exact approved phrase appears:
+     “Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q”
+   - whether the wrong phrase appears
+
+5. Add a safety assertion before sending the test email:
+   If the generated HTML does NOT include the exact approved sentence:
+   “Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q”
+   then throw an error and do not send.
+
+6. Add another safety assertion:
+   If the generated HTML includes any of these disallowed phrases, throw an error and do not send:
+   - Social Wager Contracts
+   - prediction game
+   - picks game
+   - wager
+   - beta
+   - test
+
+Exception:
+The word “odds” is allowed only in the approved sentence:
+“No money. No odds. Just live props, leaderboard, bragging rights, and receipts.”
+
+7. After fixing, do not just show me the preview.
+   Send the test email only after confirming in backend logs that the exact HTML being sent contains the approved copy.
+
+8. Return:
+   - the exact file/function used by preview
+   - the exact file/function used by test send
+   - the exact file/function used by full send
+   - whether they now share the same source of truth
+   - the backend log output showing the actual HTML snippet sent to Resend
+
+Approved source copy remains:
+
+Subject:
+Thunder vs Spurs Game 6: lock in your live props
+
+Preview text:
+Make live prop picks, climb the leaderboard, and see who finishes as Game Day Champ.
+
+Body:
+Tonight’s live Game Day Swayger room is open for [GAME_NAME].
+
+Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.
+
+Jump in before tipoff, lock in your takes, and see if you can finish as Game Day Champ.
+
+Here’s how it works:
+
+1. Make your Pregame prop picks before tipoff
+2. Come back at halftime for second-half props
+3. Lock in your 4Q Clutch props
+4. Watch the leaderboard move
+5. See who finishes as Game Day Champ
+
+No money. No odds. Just live props, leaderboard, bragging rights, and receipts.
+
+CTA button:
+Join Tonight’s Game Day Room
+
+Closing:
+Lock it in and stand on it.
+
+— Swayger
