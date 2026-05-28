@@ -1855,8 +1855,10 @@ export function registerGamedayRoutes(app: Express) {
   });
 
   // POST /admin/gameday/blast-send
-  // Sends the blast to all eligible users (notification_email set, not unsubscribed).
-  // Requires x-admin-token AND { confirmed: true } in body — prevents accidental sends.
+  // Sends the blast to ALL eligible users — combines:
+  //   1. profiles with notification_email set (not unsubscribed)
+  //   2. auth-only users (email from auth.users, no notification_email on profile)
+  // Requires x-admin-token AND { confirmed: true }.
   app.post("/admin/gameday/blast-send", async (req: Request, res: Response) => {
     if (!isBlastAdmin(req)) {
       res.status(403).json({ ok: false, error: "Forbidden" });
@@ -1880,6 +1882,11 @@ export function registerGamedayRoutes(app: Express) {
     }
 
     const supabase = getServiceSupabase();
+    type Recipient = { id: string; email: string; displayName: string };
+    const recipients: Recipient[] = [];
+    const seenIds = new Set<string>();
+
+    // Source 1: profiles with explicit notification_email
     const { data: profiles, error: profilesErr } = await supabase
       .from("profiles")
       .select("id, notification_email, display_name, username, email_unsubscribed")
@@ -1891,25 +1898,34 @@ export function registerGamedayRoutes(app: Express) {
       res.status(500).json({ ok: false, error: profilesErr.message });
       return;
     }
+    for (const p of (profiles ?? []) as { id: string; notification_email: string; display_name?: string | null; username: string }[]) {
+      if (seenIds.has(p.id)) continue;
+      seenIds.add(p.id);
+      recipients.push({ id: p.id, email: p.notification_email, displayName: p.display_name || p.username });
+    }
 
-    const eligible = ((profiles ?? []) as {
-      id: string;
-      notification_email: string;
-      display_name?: string | null;
-      username: string;
-      email_unsubscribed?: boolean;
-    }[]).filter((p) => p.notification_email && !p.email_unsubscribed);
+    // Source 2: auth-only users (have auth email but no notification_email on profile)
+    const { data: authProfiles, error: authErr } = await supabase.rpc("get_auth_only_profiles");
+    if (authErr) {
+      console.warn("[gameday-blast] get_auth_only_profiles RPC failed — skipping auth-only users:", authErr.message);
+    } else {
+      for (const p of (authProfiles ?? []) as { id: string; notification_email: string; display_name: string | null; username: string; email_unsubscribed: boolean }[]) {
+        if (seenIds.has(p.id) || p.email_unsubscribed || !p.notification_email) continue;
+        seenIds.add(p.id);
+        recipients.push({ id: p.id, email: p.notification_email, displayName: p.display_name || p.username });
+      }
+    }
 
     const trackedRoomLink = buildTrackedLink(room_link);
     let sent = 0;
     let failed = 0;
 
-    for (const profile of eligible) {
+    for (const r of recipients) {
       try {
         await sendGameDayBlastEmail({
-          to: profile.notification_email,
-          displayName: profile.display_name || profile.username,
-          userId: profile.id,
+          to: r.email,
+          displayName: r.displayName,
+          userId: r.id,
           gameName: game_name,
           trackedRoomLink,
           subject,
@@ -1917,19 +1933,76 @@ export function registerGamedayRoutes(app: Express) {
         sent++;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[gameday-blast] Failed for ${profile.notification_email}:`, msg);
+        console.error(`[gameday-blast] Failed for ${r.email}:`, msg);
         failed++;
       }
     }
 
-    console.log(`[gameday-blast] Full blast complete — sent=${sent} failed=${failed} game="${game_name}" link=${trackedRoomLink}`);
-    res.json({
-      ok: true,
-      sent,
-      failed,
-      total_eligible: eligible.length,
-      tracked_link: trackedRoomLink,
-    });
+    console.log(`[gameday-blast] Full blast complete — sent=${sent} failed=${failed} total=${recipients.length} game="${game_name}"`);
+    res.json({ ok: true, sent, failed, total_eligible: recipients.length, tracked_link: trackedRoomLink });
+  });
+
+  // POST /admin/gameday/blast-catchup
+  // Sends only to auth-only users (those missed by the original blast-send).
+  // Use after a blast-send that went to notification_email users only.
+  app.post("/admin/gameday/blast-catchup", async (req: Request, res: Response) => {
+    if (!isBlastAdmin(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const { game_name, room_link, confirmed, subject } = req.body as {
+      game_name?: string;
+      room_link?: string;
+      confirmed?: boolean;
+      subject?: string;
+    };
+
+    if (!game_name || !room_link) {
+      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      return;
+    }
+    if (confirmed !== true) {
+      res.status(400).json({ ok: false, error: "confirmed: true is required" });
+      return;
+    }
+
+    const supabase = getServiceSupabase();
+    const { data: authProfiles, error: authErr } = await supabase.rpc("get_auth_only_profiles");
+    if (authErr) {
+      console.error("[gameday-blast-catchup] get_auth_only_profiles RPC failed:", authErr.message);
+      res.status(500).json({ ok: false, error: authErr.message });
+      return;
+    }
+
+    const eligible = ((authProfiles ?? []) as { id: string; notification_email: string; display_name: string | null; username: string; email_unsubscribed: boolean }[])
+      .filter((p) => p.notification_email && !p.email_unsubscribed);
+
+    const trackedRoomLink = buildTrackedLink(room_link);
+    let sent = 0;
+    let failed = 0;
+
+    for (const p of eligible) {
+      try {
+        await sendGameDayBlastEmail({
+          to: p.notification_email,
+          displayName: p.display_name || p.username,
+          userId: p.id,
+          gameName: game_name,
+          trackedRoomLink,
+          subject,
+        });
+        sent++;
+        await new Promise((r) => setTimeout(r, 150)); // gentle rate limiting
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[gameday-blast-catchup] Failed for ${p.notification_email}:`, msg);
+        failed++;
+      }
+    }
+
+    console.log(`[gameday-blast-catchup] Catchup complete — sent=${sent} failed=${failed} total=${eligible.length}`);
+    res.json({ ok: true, sent, failed, total_eligible: eligible.length, tracked_link: trackedRoomLink });
   });
 
   // ── DELETE /api/gameday/rooms/:roomId/countdown ──────────────────────────
