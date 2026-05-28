@@ -1,0 +1,352 @@
+Yes — use this combined prompt. It keeps the scope focused on participant clarity + manual countdown notices, without building push notifications or automation.
+
+Build a focused Game Day Swayger participant-room improvement that combines:
+
+1. A clearer participant room experience for users joining by email, direct link, QR, or social link.
+2. Lightweight manual countdown notices controlled by the admin/host.
+
+Context:
+Some Game Day participants are not in the text/group chat where the Room Captain sends halftime and 4Q reminders. They may join from email, direct link, QR, or Discord. These users need the room itself to explain the Game Day cadence and tell them what is open now, what is coming next, and when to check back.
+
+Also, users have said pick windows can feel rushed or easy to miss. A simple manual countdown notice can help participants know when a card is about to open or lock.
+
+This should be a lightweight communication/clarity improvement only.
+
+Do not build:
+
+- push notifications
+- SMS
+- iMessage integration
+- WhatsApp integration
+- email automation
+- scheduled jobs
+- sports APIs
+- automated card opening
+- automated card locking
+- AI-generated reminders
+- new captain permissions
+- Discord bot changes
+
+The host/admin should remain responsible for opening and locking cards manually.
+
+==================================================
+PART 1 — Improve Participant Room Cadence
+
+Goal:
+Make the participant room clearly show:
+
+- what pick windows exist
+- what is open now
+- what is locked
+- what is coming next
+- when users should check back
+- that users can still participate in future windows even if they missed an earlier one
+
+Add a “Game Day Timeline” section near the top of the participant room.
+
+The timeline should show:
+
+1. Pregame Picks
+2. Halftime Picks
+3. 4Q Clutch Picks
+4. Final Receipts
+
+Each phase should show a clear status:
+
+- Open Now
+- Locked
+- Coming Up
+- Receipts Ready
+- Finalized
+
+Use the existing card/room state to determine these statuses.
+
+==================================================
+PART 2 — Add “Next Pick Window” Callout
+
+Add a prominent “Next Pick Window” or “What’s Next” callout near the top of the participant room.
+
+Suggested copy by state:
+
+If Pregame is open:
+“Pregame Picks are open now. Lock in before tipoff.”
+
+If Pregame is locked and Halftime is not open yet:
+“Next up: Halftime Picks. Check back at halftime to make your second-half calls.”
+
+If Halftime is open:
+“Halftime Picks are live. Make your second-half calls now.”
+
+If Halftime is locked and 4Q is not open yet:
+“Next up: 4Q Clutch Picks. Check back near the start of the 4th quarter.”
+
+If 4Q is open:
+“4Q Clutch Picks are live. Last window to move up before receipts drop.”
+
+If no picks are open:
+“No picks are open right now. Check the timeline below to see what’s coming next.”
+
+If room is finalized:
+“Receipts are in. View final standings.”
+
+If user missed Pregame:
+“Pregame Picks are locked, but you can still join Halftime and 4Q picks.”
+
+If user missed Halftime but 4Q remains:
+“Halftime Picks are locked, but 4Q Clutch Picks are still coming.”
+
+Do not make the room feel broken just because no card is open.
+
+Avoid only saying:
+“No picks are open right now.”
+
+Always provide a next-step explanation.
+
+==================================================
+PART 3 — Lightweight Manual Countdown Notices
+
+Goal:
+Allow the admin/host to start simple 5-minute or 10-minute countdown notices that appear in the participant room and Captain Center.
+
+This is a communication aid only.
+
+Countdowns should NOT automatically open or lock cards.
+
+Add a “Participant Countdown Notice” section to the Game Day Host Panel.
+
+Controls:
+
+1. Select phase:
+
+- Pregame
+- Halftime
+- 4Q
+
+2. Select notice type:
+
+- Opens Soon
+- Locks Soon
+
+3. Select duration:
+
+- 5 minutes
+- 10 minutes
+
+4. Buttons:
+
+- Start Countdown
+- Clear Countdown
+
+Suggested persisted countdown state:
+
+- countdown_phase
+- countdown_type: opens_soon | locks_soon
+- countdown_ends_at
+- countdown_started_at
+- countdown_started_by_user_id if available
+
+Use the simplest persistence approach consistent with the current app.
+
+If a DB migration is needed, provide it clearly and do not proceed without noting it.
+
+==================================================
+PART 4 — Participant Room Countdown Display
+
+If a countdown is active, show a prominent countdown banner near the top of the participant Game Day room.
+
+The countdown should visually update as time passes.
+
+Suggested copy:
+
+For Halftime Opens Soon:
+“Halftime Picks open soon.
+Expected in ~5:00.
+Stay close — second-half picks are coming.”
+
+For Halftime Locks Soon:
+“Halftime Picks lock soon.
+5:00 left to submit your picks.”
+
+For 4Q Opens Soon:
+“4Q Clutch Picks open soon.
+Last window to move up before receipts drop.”
+
+For 4Q Locks Soon:
+“4Q Picks lock soon.
+Get your picks in before the window closes.”
+
+For Pregame Locks Soon:
+“Pregame Picks lock soon.
+Get your picks in before tipoff.”
+
+Important:
+If countdown reaches zero, do not automatically open or lock a card.
+
+After expiration, show a soft message for a short grace period such as:
+“Window update expected now. Check the room.”
+
+Or hide the countdown after expiration.
+
+Use language like “expected” or “coming soon” for open notices so users do not assume the card will automatically open exactly when the timer hits zero.
+
+==================================================
+PART 5 — Captain Center Countdown Display
+
+If a countdown is active, also show the countdown notice in the Captain Center.
+
+The Room Captain should be able to see what participants are seeing.
+
+If simple, add a copy-ready message tied to the countdown.
+
+Examples:
+
+For Halftime Opens Soon:
+“Halftime Picks open soon. Stay close — second-half picks are coming.”
+
+For Halftime Locks Soon:
+“Halftime Picks lock in 5 minutes. Make your second-half calls now.”
+
+For 4Q Opens Soon:
+“4Q Clutch Picks open soon. Last window to move up before receipts drop.”
+
+For 4Q Locks Soon:
+“4Q Picks lock in 5 minutes. Get your picks in before receipts drop.”
+
+Do not add countdown controls to the Captain Center yet.
+
+Reason:
+Captain Center is currently read-only and accessible by link. Starting a countdown changes public room state, so countdown controls should remain admin/host-only for now.
+
+==================================================
+PART 6 — Host Panel Behavior
+
+Countdown controls should appear only in the full host/admin panel.
+
+Do not show countdown controls for:
+
+- archived rooms
+- finalized rooms
+
+If a room is archived:
+Do not show active countdown banners.
+
+If a room is finalized:
+Clear or ignore countdown state and do not show countdown controls.
+
+The host should be able to manually clear a countdown at any time.
+
+==================================================
+PART 7 — Analytics
+
+If PostHog tracking is already easy to add, add these events:
+
+Event:
+gameday_countdown_started
+
+Properties:
+
+- room_id
+- room_code
+- room_source
+- phase
+- countdown_type
+- duration_minutes
+- started_by_user_id if available
+
+Event:
+gameday_countdown_cleared
+
+Properties:
+
+- room_id
+- room_code
+- room_source
+- phase
+- countdown_type
+
+Optional if easy:
+Add properties to gameday_room_viewed:
+
+- current_open_card_phase
+- next_card_phase
+- active_countdown_phase
+- active_countdown_type
+
+Do not let analytics delay the participant-room UX.
+
+==================================================
+PART 8 — Guardrails
+
+Do not change:
+
+- participant join flow
+- guest flow
+- logged-in user flow
+- pick submission logic
+- pick update logic
+- card open/lock logic
+- settlement logic
+- finalization logic
+- archive logic
+- Captain Center read-only status
+- Discord bot logic
+- SP scoring
+- NBA picks
+- NBA bracket challenge
+- March Madness history
+- 1v1 challenge flow
+- main SP ledger/balances
+
+Do not build:
+
+- notifications
+- SMS
+- iMessage
+- WhatsApp
+- email reminders
+- automated card state changes
+- sports clock integration
+- scheduled jobs
+- captain countdown controls
+
+==================================================
+Implementation Approach
+
+Before coding, inspect the current Game Day participant room, host panel, Captain Center, and existing room/card data structures.
+
+Return a short build plan first.
+
+The build plan should include:
+
+1. Files to modify
+2. Whether a database migration is needed
+3. How countdown state will be stored
+4. How participant timeline statuses will be computed
+5. How the next-window callout will be computed
+6. How Captain Center will display countdowns
+7. Analytics events to add, if any
+8. What is intentionally skipped
+
+Do not implement until I approve the plan.
+
+==================================================
+Acceptance Criteria
+
+1. Participant room shows a clear Game Day Timeline.
+2. Participant room shows what pick window is open now.
+3. Participant room shows what pick window is coming next.
+4. “No picks open” state provides useful next-step guidance.
+5. Users who missed Pregame understand they can still participate in later windows.
+6. Admin can start a 5-minute or 10-minute countdown from the Host Panel.
+7. Countdown can be set for Opens Soon or Locks Soon.
+8. Countdown can be set for Pregame, Halftime, or 4Q.
+9. Participant room shows active countdown banner.
+10. Captain Center shows active countdown banner.
+11. Countdown does not automatically open or lock cards.
+12. Admin can clear countdown.
+13. Archived/finalized rooms do not show countdown controls.
+14. Captain Center remains read-only.
+15. Existing Game Day behavior remains unchanged.
+16. Existing Captain Center behavior remains unchanged.
+17. Existing Discord bot behavior remains unchanged.
+18. Existing non-Game-Day Swayger functionality remains unchanged.
