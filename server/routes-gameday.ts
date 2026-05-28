@@ -1796,7 +1796,7 @@ export function registerGamedayRoutes(app: Express) {
     }
 
     const trackedRoomLink = buildTrackedLink(room_link);
-    const TEST_EMAIL = "darius@leagueswap.com";
+    const TEST_EMAIL = "darius@leagueswype.com";
 
     try {
       await sendGameDayBlastEmail({
