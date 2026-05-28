@@ -1,0 +1,125 @@
+Update the Game Day Swayger email campaign copy exactly as written below.
+
+Important:
+Do not rewrite, summarize, improve, shorten, rephrase, or substitute terminology.
+
+The email copy below is approved source copy and must be used verbatim except for replacing:
+
+* [GAME_NAME]
+* [TRACKED_ROOM_LINK]
+
+Do not use alternate terms like:
+
+* picks game
+* prediction game
+* challenge room
+* test
+* beta
+* wager
+* bet
+* gambling
+* odds
+* payout
+* cash prize
+
+Use the exact approved terminology:
+
+* Game Day Swayger
+* live Game Day Swayger room
+* quick prop picks
+* Pregame prop picks
+* second-half props
+* 4Q Clutch props
+* leaderboard
+* Game Day Champ
+* receipts
+* Lock it in and stand on it
+
+Subject line:
+Thunder vs Spurs Game 6: lock in your live props
+
+Preview text:
+Make live prop picks, climb the leaderboard, and see who finishes as Game Day Champ.
+
+Email body:
+
+Tonight’s live Game Day Swayger room is open for [GAME_NAME].
+
+Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.
+
+Jump in before tipoff, lock in your takes, and see if you can finish as Game Day Champ.
+
+Here’s how it works:
+
+1. Make your Pregame prop picks before tipoff
+2. Come back at halftime for second-half props
+3. Lock in your 4Q Clutch props
+4. Watch the leaderboard move
+5. See who finishes as Game Day Champ
+
+No money. No odds. Just live props, leaderboard, bragging rights, and receipts.
+
+CTA button copy:
+Join Tonight’s Game Day Room
+
+CTA link:
+[TRACKED_ROOM_LINK]
+
+Closing:
+
+Lock it in and stand on it.
+
+— Swayger
+
+Footer:
+Keep the existing required unsubscribe/preferences footer and Swayger branding.
+
+Implementation requirements:
+
+1. Update buildGameDayBlastHtml() so the rendered email uses the exact copy above.
+2. Do not change the subject line unless explicitly instructed.
+3. Do not change CTA button copy.
+4. Do not change the approved Game Day terminology.
+5. Keep the existing dark-themed styling.
+6. Keep the existing unsubscribe footer.
+7. Keep the existing Resend sending logic.
+8. Keep the existing test-send and full-send safeguards.
+9. Keep the existing tracking link behavior.
+
+Tracking link format:
+Use the provided room link with:
+?src=email&utm_source=email&utm_campaign=gameday_tonight
+
+If the provided room link already has query params, append the tracking params correctly using & instead of ?.
+
+Acceptance criteria:
+
+1. Test email subject is exactly:
+   Thunder vs Spurs Game 6: lock in your live props
+
+2. Preview text is exactly:
+   Make live prop picks, climb the leaderboard, and see who finishes as Game Day Champ.
+
+3. Email body uses the exact approved copy above.
+
+4. CTA button says exactly:
+   Join Tonight’s Game Day Room
+
+5. The phrase “Social Wager Contracts” does not appear anywhere.
+
+6. The phrase “test” does not appear anywhere.
+
+7. The phrase “beta” does not appear anywhere.
+
+8. The phrase “bet” does not appear anywhere.
+
+9. The phrase “wager” does not appear anywhere.
+
+10. The phrase “odds” appears only in this approved sentence:
+    No money. No odds. Just live props, leaderboard, bragging rights, and receipts.
+
+11. Send a test email only first.
+
+12. Do not send the full blast until I approve the test email.
+
+13. After updating, provide the final rendered subject, preview text, CTA copy, and body text for review.

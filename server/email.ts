@@ -2679,7 +2679,7 @@ export function buildGameDayBlastHtml(opts: {
 }): string {
   const { gameName, trackedRoomLink, displayName, unsubscribeUrl } = opts;
 
-  const previewText = "Live props, leaderboard, and bragging rights. Jump in before tipoff.";
+  const previewText = "Make live prop picks, climb the leaderboard, and see who finishes as Game Day Champ.";
 
   const unsubLine = unsubscribeUrl
     ? `<p style="margin:24px 0 0;font-size:12px;color:#999999;line-height:1.6;">You're receiving this because you signed up for Swayger. <a href="${unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
