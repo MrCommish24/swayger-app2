@@ -298,6 +298,11 @@ function extractStat(playerData: unknown, statName: string): number | null {
       if (typeof t !== "number" || typeof a !== "number") return null;
       return t + a;
     }
+    if (statName === "tms" || statName === "TMS") {
+      const t = obj["threePointersMade"], s = obj["steals"];
+      if (typeof t !== "number" || typeof s !== "number") return null;
+      return t + s;
+    }
     const val = obj[statName];
     return typeof val === "number" ? val : null;
   }
