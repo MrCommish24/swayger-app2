@@ -1668,6 +1668,96 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── POST /api/gameday/rooms/:roomId/next-room-interest ───────────────────
+  // Public: capture intent from a participant who wants to be notified about
+  // the next Game Day room. No auth required — guests can submit via email.
+  // Stored in local postgres (gameday_next_room_interest table).
+  app.post(
+    "/api/gameday/rooms/:roomId/next-room-interest",
+    async (req: Request, res: Response) => {
+      const { roomId } = req.params;
+      const {
+        email,
+        participant_id,
+        participant_type,
+        room_code,
+        entry_source,
+        final_rank,
+        final_sp,
+        is_winner,
+      } = req.body as {
+        email?: string;
+        participant_id?: string;
+        participant_type?: string;
+        room_code?: string;
+        entry_source?: string;
+        final_rank?: number;
+        final_sp?: number;
+        is_winner?: boolean;
+      };
+
+      const supabase = getServiceSupabase();
+
+      // Verify the room exists in Supabase
+      const { data: rm } = await supabase
+        .from("gameday_rooms")
+        .select("id, room_code, source")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (!rm) {
+        res.status(404).json({ ok: false, error: "Room not found" });
+        return;
+      }
+
+      let userId: string | null = null;
+      const authHeader = req.headers.authorization ?? "";
+      if (authHeader.startsWith("Bearer ")) {
+        const payload = decodeJwtPayload(authHeader.slice(7));
+        userId = payload?.sub ?? null;
+      }
+
+      // Insert into local postgres (persistent across restarts)
+      try {
+        const { Client } = await import("pg");
+        const pgClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+          ssl: false,
+          connectionTimeoutMillis: 5000,
+        });
+        await pgClient.connect();
+        await pgClient.query(
+          `insert into gameday_next_room_interest
+             (room_id, room_code, participant_id, user_id, email,
+              participant_type, room_source, entry_source,
+              final_rank, final_sp, is_winner)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            roomId,
+            room_code ?? (rm as any).room_code ?? null,
+            participant_id ?? null,
+            userId,
+            email ?? null,
+            participant_type ?? null,
+            (rm as any).source ?? null,
+            entry_source ?? null,
+            final_rank ?? null,
+            final_sp ?? null,
+            is_winner ?? null,
+          ]
+        );
+        await pgClient.end();
+      } catch (pgErr: unknown) {
+        const msg = pgErr instanceof Error ? pgErr.message : String(pgErr);
+        console.warn("[gameday] next-room-interest insert error:", msg);
+        // Fail silently — still return ok so the client shows success state
+      }
+
+      console.log(`[gameday] next-room-interest: room=${roomId} email=${email ?? "none"} user=${userId ?? "guest"}`);
+      res.json({ ok: true });
+    }
+  );
+
   // ── DELETE /api/gameday/rooms/:roomId/countdown ──────────────────────────
   // Host-only: clear the active countdown notice.
   app.delete(

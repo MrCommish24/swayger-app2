@@ -305,6 +305,42 @@ export const Analytics = {
       ...pCtx(participant),
     }),
 
+  gamedayNextRoomCtaClicked: (
+    ctx: GDRoomCtx,
+    entrySource: string,
+    participant?: GDParticipantCtx | null,
+    finalRank?: number | null,
+    finalSp?: number | null,
+    isWinner?: boolean | null
+  ) =>
+    capture("gameday_next_room_cta_clicked", {
+      ...rCtx(ctx),
+      entry_source: entrySource,
+      ...pCtx(participant),
+      ...(finalRank != null ? { final_rank: finalRank } : {}),
+      ...(finalSp != null ? { final_sp: finalSp } : {}),
+      ...(isWinner != null ? { is_winner: isWinner } : {}),
+    }),
+
+  gamedayNextRoomInterestSubmitted: (
+    ctx: GDRoomCtx,
+    entrySource: string,
+    emailProvided: boolean,
+    participant?: GDParticipantCtx | null,
+    finalRank?: number | null,
+    finalSp?: number | null,
+    isWinner?: boolean | null
+  ) =>
+    capture("gameday_next_room_interest_submitted", {
+      ...rCtx(ctx),
+      entry_source: entrySource,
+      email_provided: emailProvided,
+      ...pCtx(participant),
+      ...(finalRank != null ? { final_rank: finalRank } : {}),
+      ...(finalSp != null ? { final_sp: finalSp } : {}),
+      ...(isWinner != null ? { is_winner: isWinner } : {}),
+    }),
+
   // New: fires in host.tsx after a prop is successfully settled.
   // Measures host settlement cadence and correct-answer distribution.
   gamedayPropSettled: (

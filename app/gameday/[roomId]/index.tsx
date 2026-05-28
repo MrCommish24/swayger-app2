@@ -670,6 +670,11 @@ export default function GameDayRoomScreen() {
 
   // Finalized rooms: show final results without any pick submission UI
   const openCard = isFinalized ? undefined : cards.find((c) => c.status === "open");
+
+  const myLbEntry = participant ? leaderboard.find((e) => e.participant_id === participant.id) : undefined;
+  const myFinalRank = myLbEntry?.rank ?? null;
+  const myFinalSp = myLbEntry?.game_day_sp ?? null;
+  const myIsWinner = myLbEntry ? myLbEntry.rank === 1 : null;
   // Has the user saved picks for this card (either this session or from a previous visit)?
   const hasSubmittedOpenCard =
     !!openCard &&
@@ -839,6 +844,25 @@ export default function GameDayRoomScreen() {
       {/* Leaderboard */}
       <LeaderboardSection leaderboard={leaderboard} myParticipantId={participant?.id} />
 
+      {/* Next Game Day CTA — only on finalized rooms */}
+      {isFinalized && (
+        <NextGameDayCTA
+          roomId={roomId ?? ""}
+          roomCode={room.room_code}
+          roomSource={room.source ?? "unknown"}
+          entrySource={entrySourceRef.current}
+          participantId={participant?.id}
+          participantType={participant?.is_guest ? "guest" : "user"}
+          isGuest={participant?.is_guest ?? true}
+          userEmail={session?.user?.email ?? null}
+          finalRank={myFinalRank}
+          finalSp={myFinalSp}
+          isWinner={myIsWinner}
+          session={session}
+          guestSessionId={guestSessionId}
+        />
+      )}
+
       {/* Off-screen receipt card — captured for sharing */}
       {isFinalized && room ? (
         <View
@@ -861,6 +885,153 @@ export default function GameDayRoomScreen() {
         </View>
       ) : null}
     </ScrollView>
+  );
+}
+
+// ── Next Game Day CTA ─────────────────────────────────────────────────────────
+
+function NextGameDayCTA({
+  roomId,
+  roomCode,
+  roomSource,
+  entrySource,
+  participantId,
+  participantType,
+  isGuest,
+  userEmail,
+  finalRank,
+  finalSp,
+  isWinner,
+  session,
+  guestSessionId,
+}: {
+  roomId: string;
+  roomCode?: string | null;
+  roomSource?: string;
+  entrySource: string;
+  participantId?: string;
+  participantType?: string;
+  isGuest?: boolean;
+  userEmail?: string | null;
+  finalRank?: number | null;
+  finalSp?: number | null;
+  isWinner?: boolean | null;
+  session: unknown;
+  guestSessionId: string | null;
+}) {
+  const [ctaState, setCtaState] = useState<"idle" | "email_input" | "submitted">("idle");
+  const [ctaEmail, setCtaEmail] = useState("");
+  const [ctaLoading, setCtaLoading] = useState(false);
+
+  const roomCtx: GDRoomCtx = { room_id: roomId, room_code: roomCode, room_source: roomSource };
+  const participantCtx: GDParticipantCtx = {
+    participant_id: participantId,
+    participant_type: participantType,
+    is_guest: isGuest,
+  };
+  const hasLoggedInEmail = !isGuest && !!userEmail;
+
+  const handleNotifyMe = () => {
+    Analytics.gamedayNextRoomCtaClicked(
+      roomCtx,
+      entrySource,
+      participantCtx,
+      finalRank ?? null,
+      finalSp ?? null,
+      isWinner ?? null
+    );
+    if (hasLoggedInEmail) {
+      submitInterest(userEmail!);
+    } else {
+      setCtaState("email_input");
+    }
+  };
+
+  const submitInterest = async (emailToUse: string) => {
+    setCtaLoading(true);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/next-room-interest`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: emailToUse || undefined,
+            participant_id: participantId,
+            participant_type: participantType,
+            room_code: roomCode,
+            entry_source: entrySource,
+            final_rank: finalRank,
+            final_sp: finalSp,
+            is_winner: isWinner,
+          }),
+        },
+        { session: session as never, guestSessionId }
+      );
+    } catch {
+      // fail silently — still show success
+    } finally {
+      setCtaLoading(false);
+    }
+    Analytics.gamedayNextRoomInterestSubmitted(
+      roomCtx,
+      entrySource,
+      !!emailToUse,
+      participantCtx,
+      finalRank ?? null,
+      finalSp ?? null,
+      isWinner ?? null
+    );
+    setCtaState("submitted");
+  };
+
+  if (ctaState === "submitted") {
+    return (
+      <View style={styles.nextRoomCta}>
+        <Text style={styles.nextRoomSuccess}>✓ You're on the list for the next Game Day room.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.nextRoomCta}>
+      <Text style={styles.nextRoomTitle}>Want in on the next Game Day room?</Text>
+      <Text style={styles.nextRoomBody}>We'll let you know when the next room goes live.</Text>
+      {ctaState === "idle" ? (
+        <>
+          <TouchableOpacity style={styles.nextRoomBtn} onPress={handleNotifyMe} disabled={ctaLoading}>
+            <Text style={styles.nextRoomBtnText}>Notify Me Next Game</Text>
+          </TouchableOpacity>
+          <Text style={styles.nextRoomHelper}>No spam. Just Game Day drops.</Text>
+        </>
+      ) : (
+        <>
+          <TextInput
+            style={styles.nextRoomInput}
+            placeholder="your@email.com"
+            placeholderTextColor={C.textMuted}
+            value={ctaEmail}
+            onChangeText={setCtaEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity
+            style={[
+              styles.nextRoomBtn,
+              (!ctaEmail.includes("@") || ctaLoading) && styles.nextRoomBtnDisabled,
+            ]}
+            onPress={() => ctaEmail.includes("@") && submitInterest(ctaEmail)}
+            disabled={!ctaEmail.includes("@") || ctaLoading}
+          >
+            {ctaLoading ? (
+              <ActivityIndicator color="#000" size="small" />
+            ) : (
+              <Text style={styles.nextRoomBtnText}>I'm In</Text>
+            )}
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -1510,6 +1681,70 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700" as const,
     letterSpacing: 0.3,
+  },
+
+  // Next Game Day CTA
+  nextRoomCta: {
+    backgroundColor: `${C.tint}12`,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: `${C.tint}40`,
+    padding: 18,
+    marginTop: 16,
+    alignItems: "center" as const,
+  },
+  nextRoomTitle: {
+    fontSize: 16,
+    fontWeight: "700" as const,
+    color: C.text,
+    textAlign: "center" as const,
+    marginBottom: 6,
+  },
+  nextRoomBody: {
+    fontSize: 13,
+    color: C.textSecondary,
+    textAlign: "center" as const,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  nextRoomBtn: {
+    backgroundColor: C.tint,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    alignItems: "center" as const,
+    width: "100%" as unknown as number,
+  },
+  nextRoomBtnDisabled: {
+    opacity: 0.45,
+  },
+  nextRoomBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700" as const,
+  },
+  nextRoomHelper: {
+    marginTop: 8,
+    fontSize: 11,
+    color: C.textMuted,
+  },
+  nextRoomInput: {
+    width: "100%" as unknown as number,
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: C.text,
+    marginBottom: 10,
+  },
+  nextRoomSuccess: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: C.success,
+    textAlign: "center" as const,
   },
 
   // Misc

@@ -1,0 +1,120 @@
+Add a lightweight “Next Game Day Room” CTA to finalized Game Day Swayger rooms.
+
+Context:
+When a Game Day room is finalized, participants see final standings and receipts. This is the best moment to test whether users want to come back for another Game Day room.
+
+Goal:
+Add a simple post-game CTA that captures repeat intent without overbuilding a public lobby or notification system.
+
+Placement:
+On the finalized Game Day room screen, below the final standings / receipt section.
+
+CTA copy:
+Title:
+“Want in on the next Game Day room?”
+
+Body:
+“We’ll let you know when the next room goes live.”
+
+Button:
+“Notify Me Next Game”
+
+Small helper:
+“No spam. Just Game Day drops.”
+
+Behavior:
+1. If the user is logged in and their email is available:
+   - clicking the button should save their interest using their user/email if available
+   - show success state:
+     “You’re on the list for the next Game Day room.”
+
+2. If the user is a guest or no email is available:
+   - clicking the button should show a small email input
+   - user enters email
+   - submit saves interest
+   - show success state:
+     “You’re on the list for the next Game Day room.”
+
+3. Do not automatically subscribe everyone.
+   The user must click the CTA or submit their email.
+
+Data to save:
+Use the simplest existing storage pattern. If needed, create a table like:
+
+gameday_next_room_interest
+- id
+- room_id
+- room_code
+- participant_id nullable
+- user_id nullable
+- email nullable
+- participant_type
+- room_source
+- entry_source
+- final_rank nullable
+- final_sp nullable
+- is_winner nullable
+- created_at
+
+If adding a new table is too much for this pass, use an existing lead/waitlist/contact table if appropriate.
+
+Analytics:
+Track PostHog event when CTA is clicked:
+
+gameday_next_room_cta_clicked
+
+Properties:
+- room_id
+- room_code
+- room_source
+- entry_source
+- participant_id if available
+- participant_type
+- is_guest
+- final_rank if available
+- final_sp if available
+- is_winner if available
+
+Track PostHog event when interest is submitted:
+
+gameday_next_room_interest_submitted
+
+Properties:
+- room_id
+- room_code
+- room_source
+- entry_source
+- participant_id if available
+- participant_type
+- email_provided: true/false
+- final_rank if available
+- final_sp if available
+- is_winner if available
+
+Guardrails:
+Do not build:
+- public room lobby
+- automated email notifications
+- SMS
+- push notifications
+- user profile changes
+- subscription management
+- complex notification preferences
+
+Do not change:
+- pick logic
+- scoring
+- finalization
+- host panel
+- Captain Center
+- Discord bot
+- existing Swayger flows
+
+Acceptance criteria:
+- CTA appears only after room is finalized.
+- CTA appears below final standings/receipts.
+- Logged-in users can express interest.
+- Guests can enter email to express interest.
+- Success state appears after submission.
+- PostHog tracks CTA click and interest submitted.
+- Existing final standings and share behavior still work.
