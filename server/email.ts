@@ -2668,3 +2668,136 @@ export function buildCFBracketBlastPreview(): string {
     picksUrl: "https://www.swayger.app/picks",
   });
 }
+
+// ─── Game Day Blast ───────────────────────────────────────────────────────────
+
+export function buildGameDayBlastHtml(opts: {
+  gameName: string;
+  trackedRoomLink: string;
+  displayName?: string;
+  unsubscribeUrl?: string;
+}): string {
+  const { gameName, trackedRoomLink, displayName, unsubscribeUrl } = opts;
+  const greeting = displayName
+    ? `<p style="margin:0 0 18px;font-size:15px;color:#8B95A5;">Hey ${displayName},</p>`
+    : "";
+
+  const previewText = "Make your picks, climb the leaderboard, and see who finishes as Game Day Champ.";
+
+  const body = `
+    ${greeting}
+    <p style="margin:0 0 18px;font-size:15px;color:#E2E8F0;line-height:1.6;">
+      Tonight's Game Day Swayger room is live for <strong style="color:#FFFFFF;">${gameName}</strong>.
+    </p>
+    <p style="margin:0 0 18px;font-size:15px;color:#E2E8F0;line-height:1.6;">
+      Jump in before tipoff, make your picks, and see if you can climb the leaderboard during the game.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#13131D;border-radius:12px;padding:4px 18px;margin-bottom:22px;">
+      <tr><td style="padding:12px 0 4px;">
+        <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:1px;color:#6C63FF;text-transform:uppercase;">How it works</p>
+      </td></tr>
+      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">1</span>
+        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Make your <strong>Pregame picks</strong> before tipoff</span>
+      </td></tr>
+      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">2</span>
+        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Come back at <strong>halftime</strong> for second-half picks</span>
+      </td></tr>
+      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">3</span>
+        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Lock in your <strong>4Q Clutch picks</strong></span>
+      </td></tr>
+      <tr><td style="padding:8px 0;border-top:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">4</span>
+        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">Watch the <strong>leaderboard move</strong></span>
+      </td></tr>
+      <tr><td style="padding:8px 0 12px;border-top:1px solid #2A2A3A;">
+        <span style="font-size:13px;color:#8B95A5;">5</span>
+        <span style="font-size:14px;color:#FFFFFF;margin-left:10px;">See who finishes as <strong>Game Day Champ</strong></span>
+      </td></tr>
+    </table>
+
+    <p style="margin:0 0 22px;font-size:13px;color:#8B95A5;text-align:center;line-height:1.5;">
+      No money. No odds. Just picks, leaderboard, bragging rights, and receipts.
+    </p>
+  `;
+
+  const closingHtml = `
+    <p style="margin:20px 0 4px;font-size:14px;color:#8B95A5;">Lock it in and stand on it.</p>
+    <p style="margin:0;font-size:14px;color:#8B95A5;">— Swayger</p>
+  `;
+
+  let html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tonight's Game Day room is live — lock in your picks</title>
+</head>
+<body style="margin:0;padding:0;background:#0F0F14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <!-- Preview text (hidden) -->
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#0F0F14;">${previewText}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F0F14;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+        <tr>
+          <td style="padding-bottom:28px;text-align:center;">
+            <span style="font-size:22px;font-weight:800;color:#FFFFFF;letter-spacing:-0.5px;">SWAYGER</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#1C1C26;border-radius:16px;padding:28px 28px 8px;">
+            <p style="margin:0 0 20px;font-size:19px;font-weight:700;color:#FFFFFF;line-height:1.35;">
+              Tonight's Game Day room is live — lock in your picks
+            </p>
+            ${body}
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;margin-bottom:24px;">
+              <tr>
+                <td align="center">
+                  <a href="${trackedRoomLink}"
+                     style="display:inline-block;background:#6C63FF;color:#FFFFFF;font-size:15px;font-weight:700;padding:14px 36px;border-radius:12px;text-decoration:none;letter-spacing:0.2px;">
+                    Join Tonight's Game Day Room
+                  </a>
+                </td>
+              </tr>
+            </table>
+            ${closingHtml}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-top:20px;text-align:center;">
+            <p style="margin:0;font-size:11px;color:#4A4A5A;">Swayger &middot; Picks, leaderboard, receipts</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  if (unsubscribeUrl) {
+    html = addUnsubFooter(html, unsubscribeUrl);
+  }
+  return html;
+}
+
+export async function sendGameDayBlastEmail(opts: {
+  to: string;
+  displayName: string;
+  userId: string;
+  gameName: string;
+  trackedRoomLink: string;
+}): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  const subject = "Tonight's Game Day room is live — lock in your picks";
+  const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
+  const html = buildGameDayBlastHtml({
+    gameName: opts.gameName,
+    trackedRoomLink: opts.trackedRoomLink,
+    displayName: opts.displayName,
+    unsubscribeUrl,
+  });
+  await resend.emails.send({ from: FROM, to: opts.to, subject, html });
+}

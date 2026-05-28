@@ -1,0 +1,97 @@
+Build and prepare a one-time Game Day Swayger email campaign for tonight’s Game Day room.
+
+Important:
+Do not create the Game Day room automatically for this campaign. I will manually create the room first and provide the public Game Day room link.
+
+Goal:
+Send an email to Swayger users inviting them to join tonight’s Game Day Swayger room. The email should feel like a live event invite, not a test. It should create urgency, FOMO, and a reason to participate.
+
+Positioning:
+Game Day Swayger is a live-game picks room where users can:
+- make picks before and during the game
+- climb the leaderboard
+- compete for Game Day Champ status
+- collect receipts
+- lock in their takes and stand on them
+
+Avoid:
+- “test”
+- “beta”
+- betting language
+- gambling language
+- odds
+- wager
+- payout
+- cash prize
+- sportsbook language
+
+Campaign details:
+Game: [PASTE GAME NAME — e.g., Thunder vs Spurs Game 6]
+Room link: [PASTE GAME DAY ROOM LINK]
+Tracked link:
+[PASTE GAME DAY ROOM LINK]?src=email&utm_source=email&utm_campaign=gameday_tonight
+
+Before sending:
+1. Confirm which email provider/system the app currently uses.
+2. Confirm where the user email list lives.
+3. Confirm the email will only go to eligible/opted-in users.
+4. Generate and send a test email to me first.
+5. Do not send to the full user list until I approve the test.
+6. Include unsubscribe/preferences link if supported/required by the email system.
+
+Subject line:
+Tonight’s Game Day room is live — lock in your picks
+
+Preview text:
+Make your picks, climb the leaderboard, and see who finishes as Game Day Champ.
+
+Email body:
+
+Tonight’s Game Day Swayger room is live.
+
+Jump in before tipoff, make your picks, and see if you can climb the leaderboard during the game.
+
+Here’s how it works:
+
+1. Make your Pregame picks before tipoff
+2. Come back at halftime for second-half picks
+3. Lock in your 4Q Clutch picks
+4. Watch the leaderboard move
+5. See who finishes as Game Day Champ
+
+No money. No odds. Just picks, leaderboard, bragging rights, and receipts.
+
+CTA button:
+Join Tonight’s Game Day Room
+
+CTA link:
+[tracked Game Day room link]
+
+Closing:
+Lock it in and stand on it.
+
+— Swayger
+
+Footer:
+Include Swayger branding and required unsubscribe/preferences link.
+
+Tracking:
+Make sure the CTA link includes:
+src=email
+utm_source=email
+utm_campaign=gameday_tonight
+
+If PostHog captures these params, users entering from this email should have entry_source = email or the campaign params available on room_viewed, joined, and pick_submitted events.
+
+Post-game repeat intent:
+The finalized room already includes the “Notify Me Next Game” CTA. Do not build anything new for this email campaign, but make sure users who join tonight and view final standings can use that CTA after the room finalizes.
+
+Acceptance criteria:
+1. Test email sends to my email first.
+2. CTA opens the correct Game Day room.
+3. Email does not mention testing or beta.
+4. Email avoids gambling/betting language.
+5. Email includes unsubscribe/preferences if required.
+6. Full send does not happen until I approve the test.
+7. Email-driven users can be tracked through src=email / utm_source=email / campaign params.
+8. Existing Game Day room, Captain Center, Discord bot, and Swayger flows remain unchanged.

@@ -5,6 +5,10 @@ import {
   DEFAULT_PROP_IDS,
   resolvePlaceholders,
 } from "./gameday-template.js";
+import {
+  buildGameDayBlastHtml,
+  sendGameDayBlastEmail,
+} from "./email.js";
 
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -1743,6 +1747,149 @@ export function registerGamedayRoutes(app: Express) {
       res.json({ ok: true });
     }
   );
+
+  // ── Game Day Email Blast ──────────────────────────────────────────────────
+  // All blast routes use x-admin-token: MM_ADMIN_TOKEN for auth.
+  // Body params (POST): { game_name, room_link }
+  // The tracked link (?src=email&utm_source=email&utm_campaign=gameday_tonight)
+  // is appended server-side so callers never need to construct it manually.
+
+  function isBlastAdmin(req: Request): boolean {
+    const token = req.header("x-admin-token");
+    const adminToken = process.env.MM_ADMIN_TOKEN;
+    return !!adminToken && token === adminToken;
+  }
+
+  function buildTrackedLink(roomLink: string): string {
+    const sep = roomLink.includes("?") ? "&" : "?";
+    return `${roomLink}${sep}src=email&utm_source=email&utm_campaign=gameday_tonight`;
+  }
+
+  // GET /admin/gameday/email-preview/blast?game_name=...&room_link=...
+  // Renders the blast email HTML for visual inspection before sending.
+  app.get("/admin/gameday/email-preview/blast", (req: Request, res: Response) => {
+    const gameName = (req.query.game_name as string | undefined) || "Thunder vs Spurs — WCF Game 6";
+    const roomLink = (req.query.room_link as string | undefined) || "https://swayger.app/g/GDS-R78VR";
+    const trackedRoomLink = buildTrackedLink(roomLink);
+    const html = buildGameDayBlastHtml({
+      gameName,
+      trackedRoomLink,
+      displayName: "Jordan",
+    });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  });
+
+  // POST /admin/gameday/blast-test
+  // Sends the blast email to darius@leagueswap.com only.
+  // Requires x-admin-token. Full blast is NOT triggered.
+  app.post("/admin/gameday/blast-test", async (req: Request, res: Response) => {
+    if (!isBlastAdmin(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const { game_name, room_link } = req.body as { game_name?: string; room_link?: string };
+    if (!game_name || !room_link) {
+      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      return;
+    }
+
+    const trackedRoomLink = buildTrackedLink(room_link);
+    const TEST_EMAIL = "darius@leagueswap.com";
+
+    try {
+      await sendGameDayBlastEmail({
+        to: TEST_EMAIL,
+        displayName: "Darius",
+        userId: "test-preview",
+        gameName: game_name,
+        trackedRoomLink,
+      });
+      console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL} — game="${game_name}" link=${trackedRoomLink}`);
+      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[gameday-blast] Test send failed:", msg);
+      res.status(500).json({ ok: false, error: msg });
+    }
+  });
+
+  // POST /admin/gameday/blast-send
+  // Sends the blast to all eligible users (notification_email set, not unsubscribed).
+  // Requires x-admin-token AND { confirmed: true } in body — prevents accidental sends.
+  app.post("/admin/gameday/blast-send", async (req: Request, res: Response) => {
+    if (!isBlastAdmin(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const { game_name, room_link, confirmed } = req.body as {
+      game_name?: string;
+      room_link?: string;
+      confirmed?: boolean;
+    };
+
+    if (!game_name || !room_link) {
+      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      return;
+    }
+    if (confirmed !== true) {
+      res.status(400).json({ ok: false, error: "confirmed: true is required to send the full blast" });
+      return;
+    }
+
+    const supabase = getServiceSupabase();
+    const { data: profiles, error: profilesErr } = await supabase
+      .from("profiles")
+      .select("id, notification_email, display_name, username, email_unsubscribed")
+      .not("notification_email", "is", null)
+      .neq("email_unsubscribed", true);
+
+    if (profilesErr) {
+      console.error("[gameday-blast] Failed to fetch profiles:", profilesErr.message);
+      res.status(500).json({ ok: false, error: profilesErr.message });
+      return;
+    }
+
+    const eligible = ((profiles ?? []) as {
+      id: string;
+      notification_email: string;
+      display_name?: string | null;
+      username: string;
+      email_unsubscribed?: boolean;
+    }[]).filter((p) => p.notification_email && !p.email_unsubscribed);
+
+    const trackedRoomLink = buildTrackedLink(room_link);
+    let sent = 0;
+    let failed = 0;
+
+    for (const profile of eligible) {
+      try {
+        await sendGameDayBlastEmail({
+          to: profile.notification_email,
+          displayName: profile.display_name || profile.username,
+          userId: profile.id,
+          gameName: game_name,
+          trackedRoomLink,
+        });
+        sent++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[gameday-blast] Failed for ${profile.notification_email}:`, msg);
+        failed++;
+      }
+    }
+
+    console.log(`[gameday-blast] Full blast complete — sent=${sent} failed=${failed} game="${game_name}" link=${trackedRoomLink}`);
+    res.json({
+      ok: true,
+      sent,
+      failed,
+      total_eligible: eligible.length,
+      tracked_link: trackedRoomLink,
+    });
+  });
 
   // ── DELETE /api/gameday/rooms/:roomId/countdown ──────────────────────────
   // Host-only: clear the active countdown notice.
