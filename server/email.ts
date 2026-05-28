@@ -2681,8 +2681,6 @@ export function buildGameDayBlastHtml(opts: {
 
   const previewText = "Live props, leaderboard, and bragging rights. Jump in before tipoff.";
 
-  const greeting = displayName ? `Hey ${displayName},` : "Hey,";
-
   const unsubLine = unsubscribeUrl
     ? `<p style="margin:24px 0 0;font-size:12px;color:#999999;line-height:1.6;">You're receiving this because you signed up for Swayger. <a href="${unsubscribeUrl}" style="color:#999999;">Unsubscribe</a></p>`
     : "";
@@ -2706,8 +2704,6 @@ export function buildGameDayBlastHtml(opts: {
 
         <tr><td style="font-family:Arial,sans-serif;font-size:15px;color:#111111;line-height:1.7;">
 
-          <p style="margin:0 0 16px;">${greeting}</p>
-
           <p style="margin:0 0 16px;">Tonight's live Game Day Swayger room is open for <strong>${gameName}</strong>.</p>
 
           <p style="margin:0 0 16px;">Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.</p>
@@ -2726,7 +2722,7 @@ export function buildGameDayBlastHtml(opts: {
           <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
             <tr>
               <td style="background:#111111;border-radius:6px;">
-                <a href="${trackedRoomLink}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;">Join Tonight's Game Day Room →</a>
+                <a href="${trackedRoomLink}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;font-family:Arial,sans-serif;">Join Tonight's Game Day Room</a>
               </td>
             </tr>
           </table>
@@ -2753,11 +2749,8 @@ export function buildGameDayBlastText(opts: {
   displayName?: string;
   unsubscribeUrl?: string;
 }): string {
-  const { gameName, trackedRoomLink, displayName, unsubscribeUrl } = opts;
-  const greeting = displayName ? `Hey ${displayName},` : "Hey,";
+  const { gameName, trackedRoomLink, unsubscribeUrl } = opts;
   return [
-    greeting,
-    "",
     `Tonight's live Game Day Swayger room is open for ${gameName}.`,
     "",
     "Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.",
@@ -2789,7 +2782,7 @@ export async function sendGameDayBlastEmail(opts: {
   trackedRoomLink: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  const subject = `Game Day room is open — ${opts.gameName}`;
+  const subject = `Tonight's live Game Day Swayger room is open for ${opts.gameName}`;
   const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
   const html = buildGameDayBlastHtml({
     gameName: opts.gameName,
