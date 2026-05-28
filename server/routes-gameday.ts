@@ -1201,6 +1201,21 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
+      // Check archived status before doing any further work.
+      const { data: roomMeta } = await supabase
+        .from("gameday_rooms")
+        .select("archived_at")
+        .eq("id", roomId)
+        .single();
+      if ((roomMeta as any)?.archived_at) {
+        res.status(410).json({
+          ok: false,
+          archived: true,
+          message: "This Game Day room has been archived and is no longer active.",
+        });
+        return;
+      }
+
       const { data: participants } = await supabase
         .from("gameday_participants")
         .select("id, display_name, is_guest")
@@ -1272,12 +1287,22 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("id, room_name, room_code, status, team_a_name, team_b_name, team_a_star, team_b_star, game_date")
+        .select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date")
         .eq("id", roomId)
         .single();
 
       if (!room) {
         res.status(404).json({ error: "Room not found" });
+        return;
+      }
+
+      // Archived rooms are no longer active — return 410 before any standings logic.
+      if ((room as any).archived_at) {
+        res.status(410).json({
+          ok: false,
+          archived: true,
+          message: "This Game Day room has been archived and is no longer active.",
+        });
         return;
       }
 
