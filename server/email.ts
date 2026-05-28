@@ -2704,20 +2704,20 @@ export function buildGameDayBlastHtml(opts: {
 
         <tr><td style="font-family:Arial,sans-serif;font-size:15px;color:#111111;line-height:1.7;">
 
-          <p style="margin:0 0 16px;">Tonight's live Game Day Swayger room is open for <strong>${gameName}</strong>.</p>
+          <p style="margin:0 0 16px;">Tonight's live Game Day Swayger room is open for ${gameName}.</p>
 
           <p style="margin:0 0 16px;">Game Day Swayger is a live room where everyone makes quick prop picks before the game, at halftime, and in the 4Q — then watches the leaderboard move as the game unfolds.</p>
 
           <p style="margin:0 0 20px;">Jump in before tipoff, lock in your takes, and see if you can finish as Game Day Champ.</p>
 
-          <p style="margin:0 0 8px;font-weight:700;">Here's how it works:</p>
+          <p style="margin:0 0 8px;">Here's how it works:</p>
           <p style="margin:0 0 4px;">1. Make your Pregame prop picks before tipoff</p>
           <p style="margin:0 0 4px;">2. Come back at halftime for second-half props</p>
           <p style="margin:0 0 4px;">3. Lock in your 4Q Clutch props</p>
           <p style="margin:0 0 4px;">4. Watch the leaderboard move</p>
           <p style="margin:0 0 20px;">5. See who finishes as Game Day Champ</p>
 
-          <p style="margin:0 0 24px;color:#555555;font-size:14px;">No money. No odds. Just live props, leaderboard, bragging rights, and receipts.</p>
+          <p style="margin:0 0 24px;">No money. No odds. Just live props, leaderboard, bragging rights, and receipts.</p>
 
           <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
             <tr>
