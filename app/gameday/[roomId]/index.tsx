@@ -22,7 +22,7 @@ import {
   GDLeaderboardEntry,
 } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
-import { Analytics, detectEntrySource, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
+import { Analytics, detectEntrySource, detectUtmCampaign, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -201,6 +201,7 @@ export default function GameDayRoomScreen() {
   const hasTrackedFinalStandings = useRef(false);
   // Detected once on mount from URL params / referrer — never changes mid-session.
   const entrySourceRef = useRef<string>(detectEntrySource());
+  const utmCampaignRef = useRef<string | undefined>(detectUtmCampaign());
   const hasTrackedLeaderboard = useRef(false);
 
   // Build PostHog room context from the latest roomData snapshot.
@@ -241,7 +242,8 @@ export default function GameDayRoomScreen() {
           buildRoomCtx(data),
           data.room.room_name,
           entrySourceRef.current,
-          buildParticipantCtx(data)
+          buildParticipantCtx(data),
+          utmCampaignRef.current
         );
       }
       if (data.room.status === "finalized" && !hasTrackedFinalStandings.current) {
@@ -414,7 +416,8 @@ export default function GameDayRoomScreen() {
         buildRoomCtx(roomData),
         "user",
         entrySourceRef.current,
-        buildParticipantCtx(roomData)
+        buildParticipantCtx(roomData),
+        utmCampaignRef.current
       );
       await fetchRoom();
       setJoinStep(null);
@@ -480,7 +483,8 @@ export default function GameDayRoomScreen() {
           participant_type: "guest",
           is_guest: true,
           is_logged_in: false,
-        }
+        },
+        utmCampaignRef.current
       );
       console.log("[gameday] guest joined, session stored:", gsId.slice(0, 8) + "...");
     } catch (e: any) {
@@ -522,7 +526,8 @@ export default function GameDayRoomScreen() {
         openCard.gameday_props.length,
         submittedCardId === openCard.id,
         entrySourceRef.current,
-        buildParticipantCtx(roomData)
+        buildParticipantCtx(roomData),
+        utmCampaignRef.current
       );
       setSubmittedCardId(openCard.id);
       await fetchRoom();

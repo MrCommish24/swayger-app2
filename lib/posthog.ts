@@ -82,11 +82,20 @@ export function detectEntrySource(): string {
       params.get("utm_source");
     if (src === "qr") return "qr";
     if (src === "discord") return "discord";
+    if (src === "email") return "email";
     const ref = document.referrer ?? "";
     if (ref.includes("discord.com") || ref.includes("discord.gg")) return "discord";
     if (ref && !ref.includes(window.location.hostname)) return "direct_link";
   } catch { /* noop — Platform.OS !== "web" */ }
   return "unknown";
+}
+
+export function detectUtmCampaign(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("utm_campaign") ?? undefined;
+  } catch { return undefined; }
 }
 
 // Private helpers — spread into event properties.
@@ -195,8 +204,9 @@ export const Analytics = {
   // Participant-scoped events also include participant_id, participant_type,
   // is_guest, is_logged_in.
   //
-  // entry_source — "qr" | "discord" | "direct_link" | "app" | "unknown"
+  // entry_source — "qr" | "discord" | "email" | "direct_link" | "app" | "unknown"
   //   Detected once per session via detectEntrySource() and cached in a ref.
+  // utm_campaign — optional, e.g. "gameday_tonight". Detected via detectUtmCampaign().
   //
   // Duplicate-firing is prevented by hasTracked* refs in each component.
 
@@ -208,12 +218,14 @@ export const Analytics = {
     ctx: GDRoomCtx,
     roomName: string,
     entrySource: string,
-    participant?: GDParticipantCtx | null
+    participant?: GDParticipantCtx | null,
+    utmCampaign?: string
   ) =>
     capture("gameday_room_viewed", {
       ...rCtx(ctx),
       room_name: roomName,
       entry_source: entrySource,
+      ...(utmCampaign ? { utm_campaign: utmCampaign } : {}),
       ...pCtx(participant),
     }),
 
@@ -221,12 +233,14 @@ export const Analytics = {
     ctx: GDRoomCtx,
     method: "user" | "guest",
     entrySource: string,
-    participant?: GDParticipantCtx | null
+    participant?: GDParticipantCtx | null,
+    utmCampaign?: string
   ) =>
     capture("gameday_joined", {
       ...rCtx(ctx),
       method,
       entry_source: entrySource,
+      ...(utmCampaign ? { utm_campaign: utmCampaign } : {}),
       ...pCtx(participant),
     }),
 
@@ -238,7 +252,8 @@ export const Analytics = {
     propCount: number,
     isUpdate: boolean,
     entrySource: string,
-    participant?: GDParticipantCtx | null
+    participant?: GDParticipantCtx | null,
+    utmCampaign?: string
   ) =>
     capture("gameday_pick_submitted", {
       ...rCtx(ctx),
@@ -246,6 +261,7 @@ export const Analytics = {
       prop_count: propCount,
       is_update: isUpdate,
       entry_source: entrySource,
+      ...(utmCampaign ? { utm_campaign: utmCampaign } : {}),
       ...pCtx(participant),
     }),
 
