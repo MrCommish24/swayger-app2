@@ -1717,40 +1717,26 @@ export function registerGamedayRoutes(app: Express) {
         userId = payload?.sub ?? null;
       }
 
-      // Insert into local postgres (persistent across restarts)
-      try {
-        const { Client } = await import("pg");
-        const pgClient = new Client({
-          connectionString: process.env.DATABASE_URL,
-          ssl: false,
-          connectionTimeoutMillis: 5000,
+      // Insert into Supabase (same DB as all other game day data)
+      const { error: insertError } = await supabase
+        .from("gameday_next_room_interest")
+        .insert({
+          room_id: roomId,
+          room_code: room_code ?? (rm as any).room_code ?? null,
+          participant_id: participant_id ?? null,
+          user_id: userId,
+          email: email ?? null,
+          participant_type: participant_type ?? null,
+          room_source: (rm as any).source ?? null,
+          entry_source: entry_source ?? null,
+          final_rank: final_rank ?? null,
+          final_sp: final_sp ?? null,
+          is_winner: is_winner ?? null,
         });
-        await pgClient.connect();
-        await pgClient.query(
-          `insert into gameday_next_room_interest
-             (room_id, room_code, participant_id, user_id, email,
-              participant_type, room_source, entry_source,
-              final_rank, final_sp, is_winner)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            roomId,
-            room_code ?? (rm as any).room_code ?? null,
-            participant_id ?? null,
-            userId,
-            email ?? null,
-            participant_type ?? null,
-            (rm as any).source ?? null,
-            entry_source ?? null,
-            final_rank ?? null,
-            final_sp ?? null,
-            is_winner ?? null,
-          ]
-        );
-        await pgClient.end();
-      } catch (pgErr: unknown) {
-        const msg = pgErr instanceof Error ? pgErr.message : String(pgErr);
-        console.warn("[gameday] next-room-interest insert error:", msg);
-        // Fail silently — still return ok so the client shows success state
+
+      if (insertError) {
+        // Log for server-side debugging — still return ok so the UI shows success
+        console.error("[gameday] next-room-interest insert error:", insertError.message, insertError.code);
       }
 
       console.log(`[gameday] next-room-interest: room=${roomId} email=${email ?? "none"} user=${userId ?? "guest"}`);
