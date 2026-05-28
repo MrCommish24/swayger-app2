@@ -345,4 +345,17 @@ export const Analytics = {
       entry_source: entrySource,
       ...(opts ?? {}),
     }),
+
+  // ── Captain Center ───────────────────────────────────────────────────────────
+
+  // Fires once per session when a Captain Center page loads.
+  gamedayCaptainCenterViewed: (ctx: GDRoomCtx) =>
+    capture("gameday_captain_center_viewed", rCtx(ctx)),
+
+  // Fires whenever the captain copies a message from the Captain Center.
+  gamedayCaptainMessageCopied: (ctx: GDRoomCtx, messageType: string) =>
+    capture("gameday_captain_message_copied", {
+      ...rCtx(ctx),
+      message_type: messageType,
+    }),
 };

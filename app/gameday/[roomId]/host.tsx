@@ -547,6 +547,45 @@ export default function HostControlRoom() {
         </TouchableOpacity>
       </View>
 
+      {/* Room Captain Tools */}
+      <View style={styles.captainSection}>
+        <Text style={styles.captainSectionLabel}>ROOM CAPTAIN TOOLS</Text>
+        <Text style={styles.captainSectionHint}>
+          Send this link to the person managing the group chat. They can copy
+          messages, share the QR code, and spark leaderboard moments — but they
+          cannot control the game.
+        </Text>
+        <Text style={styles.captainUrl} numberOfLines={1} ellipsizeMode="tail">
+          {`${BASE_URL}/gameday/${roomId}/captain`}
+        </Text>
+        <View style={styles.captainActions}>
+          <TouchableOpacity
+            style={styles.captainOpenBtn}
+            onPress={() => {
+              const url = `${BASE_URL}/gameday/${roomId}/captain`;
+              if (Platform.OS === "web" && typeof window !== "undefined") {
+                window.open(url, "_blank");
+              } else {
+                router.push(`/gameday/${roomId}/captain` as never);
+              }
+            }}
+          >
+            <Text style={styles.captainOpenBtnText}>Open Captain Center</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.captainCopyBtn}
+            onPress={() => {
+              const url = `${BASE_URL}/gameday/${roomId}/captain`;
+              if (Platform.OS === "web" && typeof navigator !== "undefined") {
+                navigator.clipboard.writeText(url).catch(() => {});
+              }
+            }}
+          >
+            <Text style={styles.captainCopyBtnText}>Copy Captain Link</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Pick cards */}
       {cards.map((card) => (
         <HostCard
@@ -1478,6 +1517,70 @@ const styles = StyleSheet.create({
   },
   qrBtnText: {
     color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  // Room Captain Tools
+  captainSection: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    marginBottom: 12,
+  },
+  captainSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  captainSectionHint: {
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  captainUrl: {
+    fontSize: 12,
+    color: C.tint,
+    backgroundColor: C.background,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 12,
+  },
+  captainActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  captainOpenBtn: {
+    flex: 1,
+    backgroundColor: C.tint,
+    borderRadius: 9,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  captainOpenBtnText: {
+    color: "#000",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  captainCopyBtn: {
+    flex: 1,
+    backgroundColor: C.surfaceLight,
+    borderRadius: 9,
+    paddingVertical: 11,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  captainCopyBtnText: {
+    color: C.text,
     fontSize: 13,
     fontWeight: "600",
   },

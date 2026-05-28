@@ -1,0 +1,694 @@
+Build a lightweight Game Day Swayger Captain Center.
+
+Context:
+Right now, only configured admins have access to the full Game Day host panel. That should remain true.
+
+However, we are testing non-founder-hosted Game Day rooms where a “Room Captain” manages the group chat/text thread while the admin still operates the actual game from the host panel.
+
+The Room Captain needs tools to:
+- share the room link
+- show a QR code
+- copy/paste reminder messages
+- spark leaderboard moments
+- create urgency
+- create trash talk / social energy
+- share final standings
+- encourage “run it back” behavior
+
+This should improve the participant experience, not just make the captain’s job easier.
+
+Important:
+The Captain Center is NOT the full host panel.
+It must be read-only.
+It must not allow the captain to control the game.
+
+The Captain Center should help the room captain create emotional moments around:
+- picks locking
+- leaderboard movement
+- someone taking the lead
+- comeback chances
+- final receipts
+- defending the belt next game
+
+Product principle:
+Automate suggestions, not actions.
+
+Do not auto-send text messages.
+Do not build SMS.
+Do not build iMessage or WhatsApp integrations.
+Do not build AI-generated trash talk.
+Do not build Discord-native features.
+Do not change game logic.
+
+==================================================
+Core Concept
+==================================================
+
+Add a new read-only Captain Center page for each Game Day room.
+
+Suggested route:
+/gameday/:roomId/captain
+
+or if easier:
+/gameday/captain/:roomId
+
+The page should be accessible from the admin host panel through:
+
+- “Open Captain Center”
+- “Copy Captain Center Link”
+
+The admin should be able to send the Captain Center link to a non-admin room captain.
+
+The Captain Center should include no sensitive controls. It can be accessible by link for MVP, because it only contains sharing/copy tools and public room information.
+
+If a lightweight captain token is easy, use it. If not, do not add authentication complexity in this version.
+
+==================================================
+Access / Permission Rules
+==================================================
+
+1. Full host panel remains admin-only.
+
+2. Captain Center is read-only.
+
+3. Captain Center must NOT include:
+- open card button
+- lock card button
+- settle prop controls
+- edit result controls
+- finalize room button
+- archive room button
+- admin-only data
+- destructive actions
+
+4. Captain Center can show:
+- room name/game label
+- matchup
+- room code
+- public participant link
+- QR code
+- room status
+- current card/card status
+- participant count
+- leaderboard summary
+- copy-ready messages
+- suggested share moments
+- final standings message if finalized
+
+==================================================
+Host Panel Updates
+==================================================
+
+In the existing Game Day host/admin panel, add a “Room Captain Tools” section.
+
+This section should include:
+
+1. Open Captain Center button
+2. Copy Captain Center Link button
+3. Short helper copy:
+
+“Send this link to the person managing the group chat. They can copy messages, share the QR code, and spark leaderboard moments, but they cannot control the game.”
+
+4. The Captain Center link should be based on the current room.
+
+5. Do not expose the host/admin link inside Captain Center.
+
+==================================================
+Captain Center Page Layout
+==================================================
+
+The page should be mobile-friendly first.
+
+Most room captains will use it from their phone while watching a game.
+
+Suggested sections:
+
+1. Header
+2. Share the Room
+3. Game Day Cadence
+4. Suggested Moments
+5. Leaderboard / Room Story
+6. Final Receipts / Run It Back, if finalized
+
+==================================================
+Section 1 — Header
+==================================================
+
+Show:
+
+- Game Day Swayger
+- [Team A] vs [Team B]
+- game_label or room_name
+- room_code
+- room status
+- current open card phase if any
+
+Example:
+
+Game Day Swayger  
+Warriors vs. Sonics  
+Room Code: GDS-XXXXX  
+Status: Active  
+Current Window: Pregame Picks
+
+==================================================
+Section 2 — Share the Room
+==================================================
+
+Show:
+
+- Public participant link
+- Copy Public Link button
+- QR code if QR support already exists or can be added simply
+- Copy Pregame Invite button
+
+Public participant link should use the short branded link:
+
+https://swayger.app/g/[room_code]
+
+or the existing configured public app URL.
+
+Do not use Replit dev URLs.
+
+Helper text:
+
+“Let people join from the group chat, QR code, or link. Anyone with this link can join.”
+
+Pregame invite copy:
+
+“Pregame is live. Make your Game Day Swayger picks before tipoff.
+
+Track the leaderboard and collect receipts here:
+[public_link]”
+
+==================================================
+Section 3 — Game Day Cadence
+==================================================
+
+Add copy-ready message cards with Copy buttons.
+
+Each card should have:
+- label
+- suggested timing
+- message text
+- Copy button
+
+Include these messages:
+
+1. Pregame Invite
+
+Timing:
+15–30 minutes before tipoff
+
+Message:
+“Pregame is live. Make your Game Day Swayger picks before tipoff.
+
+Track the leaderboard and collect receipts here:
+[public_link]”
+
+2. Halftime Heads-Up
+
+Timing:
+Near end of 2Q / before halftime
+
+Message:
+“Heads up — Halftime picks are coming soon.
+
+Don’t fall off the board.”
+
+3. Halftime Picks Live
+
+Timing:
+Halftime
+
+Message:
+“Halftime picks are live.
+
+Make your second-half calls and see who moves up:
+[public_link]”
+
+4. 4Q Heads-Up
+
+Timing:
+Near end of 3Q
+
+Message:
+“4Q Clutch picks are coming soon.
+
+Last window to move up before receipts drop.”
+
+5. 4Q Picks Live
+
+Timing:
+Start of 4Q / when card opens
+
+Message:
+“4Q Clutch picks are live.
+
+Lock in here:
+[public_link]”
+
+6. Final Standings
+
+Timing:
+After room is finalized
+
+Message:
+“Receipts are in.
+
+🏆 Tonight’s Game Day Champ: [winner_name] — [winner_sp] SP
+
+Full standings:
+[public_link]”
+
+If winner is not available yet, use:
+“Receipts are almost in. Final standings will show here after the room is finalized.”
+
+==================================================
+Section 4 — Suggested Moments
+==================================================
+
+This is the most important creative layer.
+
+Add a “Suggested Moments” section that gives the Room Captain copy-ready prompts to create emotional moments in the group chat.
+
+These should be based on room state where possible.
+
+The goal:
+Help the captain create urgency, trash talk, social recognition, and repeat-play energy without making them invent messages.
+
+Suggested moment cards should include:
+- moment type
+- short explanation
+- copy-ready message
+- Copy button
+
+Use simple deterministic logic. Do not use AI.
+
+Suggested moments to include:
+
+1. Picks Locked Moment
+
+Show when a card is locked or after picks are revealed.
+
+Message:
+“Picks are locked. Receipts are live. Let’s see who actually knows ball.”
+
+2. First Leaderboard Update
+
+Show when at least one prop has been settled.
+
+Message:
+“First leaderboard update is in. Somebody already has receipts.”
+
+3. Current Leader Callout
+
+Show when leaderboard has a leader.
+
+Message:
+“Current leader: [leader_name] with [leader_sp] SP. The room is officially on notice.”
+
+4. Tight Race
+
+Show if first and second place are close, for example within 10 or 20 SP.
+
+Message:
+“Only [point_gap] SP separates first and second. One pick can flip the room.”
+
+If point gap is not available, fallback:
+“This leaderboard is still wide open. One pick can flip the room.”
+
+5. Comeback Window
+
+Show before or during 4Q.
+
+Message:
+“Don’t disappear now. 4Q picks can still flip the room.”
+
+6. Last Chance / Urgency
+
+Show when 4Q card is open.
+
+Message:
+“Last window to move up before receipts drop.”
+
+7. Winner / Champ Moment
+
+Show when finalized and winner exists.
+
+Message:
+“Receipts are in. Tonight’s Game Day Champ is [winner_name] with [winner_sp] SP.”
+
+8. Run It Back Moment
+
+Show after finalization.
+
+Message:
+“Champ has to defend the belt next game. Who’s running it back?”
+
+9. Light Trash Talk Generic
+
+Always available.
+
+Message:
+“Some of these picks are aging badly.”
+
+10. Quiet Room Nudge
+
+Always available.
+
+Message:
+“Don’t get quiet now. The board is still moving.”
+
+==================================================
+Optional Dynamic Moments If Easy
+==================================================
+
+Only add these if the data is already available without heavy backend work:
+
+1. Only One Called It
+
+If a settled prop has exactly one correct pick:
+
+Message:
+“Respect to [name]. Only one in the room who called that.”
+
+2. Everyone Missed
+
+If a settled prop has zero correct picks:
+
+Message:
+“Not one person called that. The whole room is on fraud watch.”
+
+3. Biggest Mover
+
+If previous leaderboard state is easy to compare:
+
+Message:
+“Biggest move: [name] just jumped [x] spots.”
+
+Do not build previous-leaderboard snapshot infrastructure just for this.
+
+If it is not already easy, skip Biggest Mover.
+
+==================================================
+Section 5 — Leaderboard / Room Story
+==================================================
+
+Show a lightweight leaderboard summary if available.
+
+Include:
+
+- Current leader
+- Top 3
+- Participant count
+- Settled props count if available
+- Pending props count if available
+
+Add copy buttons for:
+
+1. Current Leader Message
+
+“[leader_name] is leading the room with [leader_sp] SP.”
+
+2. Top 3 Message
+
+“Current Top 3:
+1. [name] — [sp] SP
+2. [name] — [sp] SP
+3. [name] — [sp] SP
+
+Full room:
+[public_link]”
+
+3. Still Open Message
+
+“This room is still open. Plenty of points left on the board:
+[public_link]”
+
+If leaderboard has no settled picks:
+
+Show:
+“No settled picks yet. Leaderboard moments will appear after the first prop is scored.”
+
+==================================================
+Section 6 — Final Receipts / Run It Back
+==================================================
+
+If room is finalized:
+
+Show:
+- Winner
+- Top 3
+- Copy Final Standings Message
+- Copy Run It Back Message
+- Link to final standings/receipt
+- Share final standings button if existing share functionality can be reused
+
+Final Standings Message:
+
+“Receipts are in.
+
+🏆 Tonight’s Game Day Champ: [winner_name] — [winner_sp] SP
+
+Top 3:
+1. [name] — [sp] SP
+2. [name] — [sp] SP
+3. [name] — [sp] SP
+
+Full standings:
+[public_link]”
+
+Run It Back Message:
+
+“Champ has to defend the belt next game. Who’s running it back?”
+
+If room is not finalized:
+
+Show:
+“Final receipt messages will appear after standings are finalized.”
+
+==================================================
+Data Needed
+==================================================
+
+Use existing Game Day room APIs if possible.
+
+The Captain Center likely needs:
+- room details
+- room_code
+- team names
+- room status
+- card statuses
+- public link
+- participant count
+- leaderboard
+- finalized state
+- winner/top 3 if finalized
+- settled/pending prop counts if available
+
+Do not create large new backend systems.
+
+If an existing endpoint already returns this data, use it.
+
+If a small read-only endpoint is needed, add the smallest possible endpoint.
+
+Suggested endpoint if needed:
+
+GET /api/gameday/rooms/:roomId/captain
+
+or
+
+GET /api/gameday/rooms/:roomRef/captain
+
+This endpoint should return read-only data only.
+
+It should not expose host controls or sensitive admin information.
+
+==================================================
+Captain Link / Token
+==================================================
+
+For MVP, simplest acceptable version:
+
+- Captain Center link is accessible by room ID or room code.
+- No login required.
+- No token required.
+- Reason: the page is read-only and contains only public/share information.
+
+If a simple captain token already exists or is very easy to add, use it.
+
+Do not add complex auth or role management in this version.
+
+==================================================
+Copy Button Behavior
+==================================================
+
+Every message card should have a Copy button.
+
+When copied, show a small success state:
+“Copied.”
+
+Use native clipboard APIs if already used in the app.
+
+Fallback gracefully if clipboard fails.
+
+==================================================
+QR Code
+==================================================
+
+If QR code support already exists or can be added simply, include it.
+
+QR should point to:
+https://swayger.app/g/[room_code]
+
+If QR is more than a small addition, skip it for now and only include the public link.
+
+Do not build:
+- flyer generator
+- sponsor-branded QR
+- QR analytics dashboard
+- printable assets
+
+==================================================
+Analytics
+==================================================
+
+If PostHog tracking exists, track lightweight Captain Center events:
+
+1. gameday_captain_center_viewed
+
+Properties:
+- room_id
+- room_code
+- room_source
+- room_status
+
+2. gameday_captain_message_copied
+
+Properties:
+- room_id
+- room_code
+- room_source
+- message_type:
+  pregame_invite
+  halftime_heads_up
+  halftime_live
+  fourth_heads_up
+  fourth_live
+  picks_locked
+  leaderboard_update
+  current_leader
+  tight_race
+  comeback_window
+  final_standings
+  run_it_back
+  generic_trash_talk
+
+Do not overbuild analytics.
+
+==================================================
+Archived / Finalized Behavior
+==================================================
+
+If room is archived:
+
+Show:
+“This Game Day room is no longer active.”
+
+Do not show live reminder prompts.
+
+You may still show final-safe information if available, but do not allow copy prompts that suggest users can still join.
+
+If room is finalized:
+
+Show final receipt/run-it-back messages.
+Do not show live pick-window reminders as primary actions.
+
+If room is active:
+
+Show live cadence and moment prompts.
+
+==================================================
+Guardrails
+==================================================
+
+Do not change:
+- participant join flow
+- pick submission flow
+- card open/lock logic
+- settlement logic
+- finalization logic
+- archive logic
+- SP scoring
+- Discord bot logic
+- 1v1 challenge flow
+- NBA picks
+- NBA bracket challenge
+- March Madness history
+- main SP ledger/balances
+
+Do not build:
+- automated SMS
+- iMessage integration
+- WhatsApp integration
+- automated text sending
+- AI trash talk
+- native Discord picks
+- native Discord settlement
+- badges/profiles
+- cash prizes
+- sponsor tools
+- public feed
+- complex role system
+
+==================================================
+Acceptance Criteria
+==================================================
+
+1. Admin host panel shows “Room Captain Tools.”
+2. Admin can open Captain Center from host panel.
+3. Admin can copy Captain Center link from host panel.
+4. Captain Center is read-only.
+5. Captain Center does not expose game control buttons.
+6. Captain Center shows public room link.
+7. Captain Center includes copy-ready pregame, halftime, 4Q, and final messages.
+8. Captain Center includes Suggested Moments section.
+9. Suggested Moments include at least:
+   - Picks Locked
+   - First Leaderboard Update
+   - Current Leader
+   - Tight Race
+   - Comeback Window
+   - Last Chance
+   - Winner/Champ
+   - Run It Back
+   - Generic Trash Talk
+10. Captain can copy each message.
+11. Leaderboard summary appears when available.
+12. Final receipt/run-it-back messages appear after finalization.
+13. Archived rooms show inactive state.
+14. Existing host panel controls still work.
+15. Existing participant room still works.
+16. Existing Discord bot flow still works.
+17. Existing non-Game-Day Swayger flows still work.
+18. No new admin/game-control permissions are exposed.
+19. PostHog tracks captain center viewed and message copied if analytics are already available.
+
+==================================================
+Implementation Request
+==================================================
+
+Before coding, inspect the current Game Day routes/components and provide a short build plan.
+
+The build plan should include:
+- route to use
+- data source/API endpoint to use
+- whether a new read-only endpoint is needed
+- files to modify
+- whether QR can be included simply
+- how copy buttons will work
+- how suggested moments will be generated
+- what will be intentionally skipped
+
+Do not implement until I approve the plan.
