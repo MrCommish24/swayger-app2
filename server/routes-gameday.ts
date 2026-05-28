@@ -1789,7 +1789,7 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    const { game_name, room_link } = req.body as { game_name?: string; room_link?: string };
+    const { game_name, room_link, subject } = req.body as { game_name?: string; room_link?: string; subject?: string };
     if (!game_name || !room_link) {
       res.status(400).json({ ok: false, error: "game_name and room_link are required" });
       return;
@@ -1805,6 +1805,7 @@ export function registerGamedayRoutes(app: Express) {
         userId: "test-preview",
         gameName: game_name,
         trackedRoomLink,
+        subject,
       });
       console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL} — game="${game_name}" link=${trackedRoomLink}`);
       res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink });
@@ -1824,10 +1825,11 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    const { game_name, room_link, confirmed } = req.body as {
+    const { game_name, room_link, confirmed, subject } = req.body as {
       game_name?: string;
       room_link?: string;
       confirmed?: boolean;
+      subject?: string;
     };
 
     if (!game_name || !room_link) {
@@ -1872,6 +1874,7 @@ export function registerGamedayRoutes(app: Express) {
           userId: profile.id,
           gameName: game_name,
           trackedRoomLink,
+          subject,
         });
         sent++;
       } catch (err: unknown) {

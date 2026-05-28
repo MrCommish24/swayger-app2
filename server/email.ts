@@ -2780,9 +2780,10 @@ export async function sendGameDayBlastEmail(opts: {
   userId: string;
   gameName: string;
   trackedRoomLink: string;
+  subject?: string;
 }): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  const subject = `Tonight's live Game Day Swayger room is open for ${opts.gameName}`;
+  const subject = opts.subject ?? `Tonight's live Game Day Swayger room is open for ${opts.gameName}`;
   const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
   const html = buildGameDayBlastHtml({
     gameName: opts.gameName,
