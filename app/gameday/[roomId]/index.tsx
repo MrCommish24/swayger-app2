@@ -22,7 +22,7 @@ import {
   GDLeaderboardEntry,
 } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
-import { Analytics } from "@/lib/posthog";
+import { Analytics, detectEntrySource, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -72,6 +72,30 @@ export default function GameDayRoomScreen() {
 
   const hasTrackedView = useRef(false);
   const hasTrackedFinalStandings = useRef(false);
+  // Detected once on mount from URL params / referrer — never changes mid-session.
+  const entrySourceRef = useRef<string>(detectEntrySource());
+  const hasTrackedLeaderboard = useRef(false);
+
+  // Build PostHog room context from the latest roomData snapshot.
+  const buildRoomCtx = (data: GDRoomResponse | null): GDRoomCtx => ({
+    room_id: roomId ?? "",
+    room_code: data?.room.room_code,
+    room_source: data?.room.source ?? "unknown",
+    room_status: data?.room.status,
+  });
+
+  // Build PostHog participant context from roomData + auth session.
+  const buildParticipantCtx = (data: GDRoomResponse | null): GDParticipantCtx | null => {
+    const p = data?.participant;
+    if (!p) return null;
+    return {
+      participant_id: p.id,
+      participant_type: p.is_guest ? "guest" : "user",
+      is_guest: p.is_guest,
+      is_logged_in: !!session,
+      user_id: session?.user?.id ?? null,
+    };
+  };
 
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
@@ -86,11 +110,20 @@ export default function GameDayRoomScreen() {
       const roomCode = data.room.room_code ?? undefined;
       if (!hasTrackedView.current) {
         hasTrackedView.current = true;
-        Analytics.gamedayRoomViewed(roomId, data.room.room_name, roomCode);
+        Analytics.gamedayRoomViewed(
+          buildRoomCtx(data),
+          data.room.room_name,
+          entrySourceRef.current,
+          buildParticipantCtx(data)
+        );
       }
       if (data.room.status === "finalized" && !hasTrackedFinalStandings.current) {
         hasTrackedFinalStandings.current = true;
-        Analytics.gamedayFinalStandingsViewed(roomId, roomCode);
+        Analytics.gamedayFinalStandingsViewed(
+          buildRoomCtx(data),
+          entrySourceRef.current,
+          buildParticipantCtx(data)
+        );
         // Also log to gameday_events (fire-and-forget, never blocks render)
         gamedayFetch(
           `/api/gameday/rooms/${roomId}/final-standings-viewed`,
@@ -142,7 +175,14 @@ export default function GameDayRoomScreen() {
     (typeof window !== "undefined" ? window.location.origin : "https://swayger.app");
 
   const handleShareStandings = async () => {
-    Analytics.gamedayStandingsShared(roomId ?? "", roomData?.room.room_code);
+    const shareMethod = Platform.OS === "web" ? "download_image" : "native_share";
+    Analytics.gamedayStandingsShared(
+      buildRoomCtx(roomData),
+      entrySourceRef.current,
+      shareMethod,
+      buildParticipantCtx(roomData),
+      false
+    );
     setSharing(true);
     try {
       if (Platform.OS === "web") {
@@ -205,6 +245,34 @@ export default function GameDayRoomScreen() {
     if (joinStep === null) setJoinStep("choose");
   }, [roomData]);
 
+  // Once-per-session leaderboard view — fires when leaderboard data first arrives.
+  // Guarded by ref so polling never re-fires it.
+  useEffect(() => {
+    if (!hasTrackedLeaderboard.current && leaderboard.length > 0 && roomData) {
+      hasTrackedLeaderboard.current = true;
+      const openCard = (roomData.cards as GDCard[]).find((c) => c.status === "open");
+      const settledPropCount = (roomData.cards as GDCard[])
+        .flatMap((c) => c.gameday_props)
+        .filter((p) => p.status === "settled").length;
+      Analytics.gamedayLeaderboardViewed(
+        buildRoomCtx(roomData),
+        entrySourceRef.current,
+        {
+          participant_id: roomData.participant?.id,
+          participant_type: roomData.participant
+            ? roomData.participant.is_guest
+              ? "guest"
+              : "user"
+            : undefined,
+          leaderboard_available: true,
+          participant_count: roomData.participant_count,
+          settled_prop_count: settledPropCount,
+          current_open_card_phase: openCard?.phase,
+        }
+      );
+    }
+  }, [leaderboard, roomData]);
+
   // Auto-join logged-in users
   const autoJoinLoggedIn = useCallback(async () => {
     if (!roomId || !session) return;
@@ -215,7 +283,12 @@ export default function GameDayRoomScreen() {
         { method: "POST", body: JSON.stringify({}) },
         { session }
       );
-      Analytics.gamedayJoined(roomId, "user", roomData?.room.room_code);
+      Analytics.gamedayJoined(
+        buildRoomCtx(roomData),
+        "user",
+        entrySourceRef.current,
+        buildParticipantCtx(roomData)
+      );
       await fetchRoom();
       setJoinStep(null);
     } catch (e: any) {
@@ -263,7 +336,25 @@ export default function GameDayRoomScreen() {
         prev ? { ...prev, participant: result.participant } : prev
       );
       setJoinStep(null);
-      Analytics.gamedayJoined(roomId, "guest", roomData?.room.room_code);
+      // At this point roomData still has the old participant (null), but we
+      // already patched it via setRoomData above. Build a lightweight ctx
+      // directly so we don't rely on the stale roomData closure value.
+      Analytics.gamedayJoined(
+        {
+          room_id: roomId ?? "",
+          room_code: roomData?.room.room_code,
+          room_source: roomData?.room.source ?? "unknown",
+          room_status: roomData?.room.status,
+        },
+        "guest",
+        entrySourceRef.current,
+        {
+          participant_id: result.participant.id,
+          participant_type: "guest",
+          is_guest: true,
+          is_logged_in: false,
+        }
+      );
       console.log("[gameday] guest joined, session stored:", gsId.slice(0, 8) + "...");
     } catch (e: any) {
       console.error("[gameday] guest join failed:", e.message);
@@ -299,11 +390,12 @@ export default function GameDayRoomScreen() {
         );
       }
       Analytics.gamedayPickSubmitted(
-        roomId,
+        buildRoomCtx(roomData),
         openCard.phase,
         openCard.gameday_props.length,
         submittedCardId === openCard.id,
-        roomData?.room.room_code
+        entrySourceRef.current,
+        buildParticipantCtx(roomData)
       );
       setSubmittedCardId(openCard.id);
       await fetchRoom();

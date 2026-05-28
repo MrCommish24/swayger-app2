@@ -51,6 +51,8 @@ export interface GDRoom {
   room_code?: string | null;
   is_private?: boolean;
   archived_at?: string | null;
+  /** "app" | "discord" — how the room was originally created */
+  source?: string | null;
 }
 
 export interface GDProp {

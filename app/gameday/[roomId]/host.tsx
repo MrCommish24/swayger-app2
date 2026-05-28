@@ -53,6 +53,8 @@ interface Room {
   status: string;
   room_code?: string | null;
   archived_at?: string | null;
+  /** "app" | "discord" — how the room was created */
+  source?: string | null;
 }
 
 interface LbEntry {
@@ -246,8 +248,14 @@ export default function HostControlRoom() {
         { session }
       );
       const phase = hostData?.cards.find((c) => c.id === cardId)?.phase ?? "unknown";
-      if (action === "open") Analytics.gamedayCardOpened(roomId!, cardId, phase, hostData?.room.room_code);
-      if (action === "lock") Analytics.gamedayCardLocked(roomId!, cardId, phase, hostData?.room.room_code);
+      const roomCtx = {
+        room_id: roomId!,
+        room_code: hostData?.room.room_code,
+        room_source: hostData?.room.source ?? "unknown",
+        room_status: hostData?.room.status,
+      };
+      if (action === "open") Analytics.gamedayCardOpened(roomCtx, cardId, phase);
+      if (action === "lock") Analytics.gamedayCardLocked(roomCtx, cardId, phase);
       await fetchHostData();
     } catch (e: any) {
       alert(e.message ?? "Action failed");
@@ -267,6 +275,31 @@ export default function HostControlRoom() {
         },
         { session }
       );
+      // Fire PostHog event with pick-count stats computed from local host data.
+      const card = hostData?.cards.find((c) =>
+        c.gameday_props.some((p) => p.id === propId)
+      );
+      const phase = card?.phase ?? "unknown";
+      const propPickCounts = hostData?.pick_counts?.[propId] ?? {};
+      const totalPicks = Object.values(propPickCounts).reduce((a, b) => a + b, 0);
+      const correctPickCount = propPickCounts[correctAnswer] ?? 0;
+      Analytics.gamedayPropSettled(
+        {
+          room_id: roomId!,
+          room_code: hostData?.room.room_code,
+          room_source: hostData?.room.source ?? "unknown",
+          room_status: hostData?.room.status,
+        },
+        propId,
+        phase,
+        {
+          card_id: card?.id,
+          correct_answer: correctAnswer,
+          total_picks: totalPicks,
+          correct_pick_count: correctPickCount,
+          incorrect_pick_count: totalPicks - correctPickCount,
+        }
+      );
       await fetchHostData();
     } catch (e: any) {
       alert(e.message ?? "Settle failed");
@@ -280,7 +313,12 @@ export default function HostControlRoom() {
   const doFinalize = async () => {
     setShowFinalizeModal(false);
     setLocalFinalized(true);
-    Analytics.gamedayRoomFinalized(roomId!, hostData?.room.room_code);
+    Analytics.gamedayRoomFinalized({
+      room_id: roomId!,
+      room_code: hostData?.room.room_code,
+      room_source: hostData?.room.source ?? "unknown",
+      room_status: hostData?.room.status,
+    });
     setFinalizeError(null);
     setActionLoading("finalize");
     try {

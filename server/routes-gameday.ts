@@ -999,7 +999,7 @@ export function registerGamedayRoutes(app: Express) {
       const { data: prop } = await supabase
         .from("gameday_props")
         .select(
-          "*, gameday_pick_cards(id, status, room_id, gameday_rooms(host_user_id, status))"
+          "*, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
         )
         .eq("id", propId)
         .single();
@@ -1067,6 +1067,8 @@ export function registerGamedayRoutes(app: Express) {
       const roomId = card?.room_id;
       await logEvent(supabase, roomId, null, hostId, "prop_settled", {
         prop_id: propId,
+        card_id: card?.id,
+        phase: card?.phase,
         correct_answer,
       });
       res.json({ ok: true });

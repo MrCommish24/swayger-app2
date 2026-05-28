@@ -1,0 +1,331 @@
+Please make a focused Game Day Swayger PostHog analytics cleanup and improvement pass.
+
+Context:
+We already have a solid baseline of Game Day PostHog tracking. Do not rebuild analytics from scratch and do not add dashboards. The goal is to make the existing events consistent enough to evaluate Game Day Swayger across web-created rooms, Discord-created rooms, and future QR/link-driven rooms.
+
+Current PostHog events already tracked:
+- gameday_hub_viewed
+- gameday_room_created
+- gameday_room_viewed
+- gameday_joined
+- gameday_pick_submitted
+- gameday_card_opened
+- gameday_card_locked
+- gameday_room_finalized
+- gameday_final_standings_viewed
+- gameday_standings_shared
+
+Current server-side gameday_events table tracks:
+- room_created
+- room_joined
+- card_opened
+- card_locked
+- pick_submitted
+- prop_settled
+- room_finalized
+- room_archived
+- final_standings_viewed
+
+Primary validation questions:
+1. Are users joining Game Day rooms after receiving a link?
+2. Do users submit Pregame picks?
+3. Do users return for Halftime picks?
+4. Do users return for 4Q picks?
+5. Do users view the final standings/receipt?
+6. Do users share the final standings/receipt?
+7. Do Discord-created rooms perform better than web/app-created rooms?
+8. Does QR/link-driven access create incremental participation later?
+
+Most important metric:
+Cross-window retention.
+
+Definition:
+Of users who submit Pregame picks, what percentage also submit Halftime and/or 4Q picks?
+
+Please make the smallest changes needed to support this analysis.
+
+Do not change:
+- Game Day room logic
+- pick logic
+- leaderboard logic
+- settlement behavior
+- SP scoring
+- Discord bot behavior
+- auth behavior
+- NBA picks
+- NBA bracket challenge
+- March Madness history
+- 1v1 challenge flow
+- main SP ledger/balances
+
+Keep Game Day SP separate from the main Swayger SP system.
+
+==================================================
+PART 1 — Add consistent properties to existing PostHog events
+==================================================
+
+For every Game Day PostHog event, include these properties where available:
+
+Required common properties:
+- room_id
+- room_code
+- room_source: app | discord | unknown
+- entry_source: discord | qr | text | direct_link | app | unknown
+- room_status
+
+Important:
+Use `room_source` for how the room was created.
+Use `entry_source` for how the participant entered the room.
+
+Examples:
+- A room created by the Discord bot should have room_source = "discord".
+- A user clicking a Discord-posted link should have entry_source = "discord" if that is detectable.
+- A QR link with ?src=qr should have entry_source = "qr".
+- A normal web/app-created room should have room_source = "app".
+
+Do not rename existing events.
+
+If any source is unknown, use "unknown" instead of leaving it blank.
+
+==================================================
+PART 2 — Participant properties
+==================================================
+
+For participant-related events, include where available:
+- participant_id
+- participant_type: guest | user | unknown
+- is_guest
+- is_logged_in
+- user_id if authenticated
+- current_open_card_phase if available
+
+Apply this especially to:
+- gameday_room_viewed
+- gameday_joined
+- gameday_pick_submitted
+- gameday_final_standings_viewed
+- gameday_standings_shared
+
+==================================================
+PART 3 — Card/pick properties
+==================================================
+
+For card and pick-related events, include where available:
+- phase: pregame | halftime | fourth
+- card_id
+- card_status
+- prop_count
+- pick_count_submitted if available
+- is_update if applicable
+
+Apply this especially to:
+- gameday_pick_submitted
+- gameday_card_opened
+- gameday_card_locked
+
+Important:
+gameday_pick_submitted must include phase and participant_id if available. This is required to calculate cross-window retention.
+
+==================================================
+PART 4 — Room creation event cleanup
+==================================================
+
+Update gameday_room_created so it includes:
+- room_id
+- room_code
+- room_source
+- created_from: app | discord_bot | admin | unknown
+- discord_guild_id if available
+- discord_channel_id if available
+- creator_user_id if available
+- creator_discord_user_id if available
+- team_a_name
+- team_b_name
+- game_label or room_name
+- prop_count_total if available
+- pregame_prop_count if available
+- halftime_prop_count if available
+- fourth_prop_count if available
+
+==================================================
+PART 5 — Add PostHog prop settlement event
+==================================================
+
+Currently prop_settled exists server-side in gameday_events but not in PostHog.
+
+Add a PostHog event:
+
+Event name:
+gameday_prop_settled
+
+Fire when:
+A host/admin successfully settles a Game Day prop.
+
+Do not fire if settlement fails.
+
+Properties:
+- room_id
+- room_code
+- room_source: app | discord | unknown
+- prop_id
+- card_id if available
+- phase: pregame | halftime | fourth
+- correct_answer if available
+- settled_by_user_id if available
+- total_picks_for_prop if available
+- correct_pick_count if available
+- incorrect_pick_count if available
+
+This helps measure host burden and settlement cadence.
+
+==================================================
+PART 6 — Final standings and sharing cleanup
+==================================================
+
+Update gameday_final_standings_viewed so it includes:
+- room_id
+- room_code
+- room_source
+- entry_source
+- participant_id if available
+- participant_type if available
+- is_guest if available
+- is_logged_in if available
+- is_winner if available
+- final_rank if available
+- final_sp if available
+
+Update gameday_standings_shared so it includes:
+- room_id
+- room_code
+- room_source
+- entry_source
+- participant_id if available
+- participant_type if available
+- is_host
+- share_method: native_share | copy_text | download_image | screenshot_export | unknown
+- is_winner if available
+
+Do not change the share UI unless needed only to pass share_method.
+
+==================================================
+PART 7 — QR / source query param handling
+==================================================
+
+If the URL contains any of the following:
+- ?src=qr
+- ?src=discord
+- ?source=qr
+- ?source=discord
+- ?utm_source=discord
+- ?utm_source=qr
+
+Map that into entry_source.
+
+Examples:
+- ?src=qr → entry_source = "qr"
+- ?src=discord → entry_source = "discord"
+- ?utm_source=discord → entry_source = "discord"
+
+If no source param exists, attempt to infer:
+- referrer includes discord → entry_source = "discord"
+- otherwise use direct_link or unknown
+
+Do not build a QR feature in this task. Just make sure source params are captured if present.
+
+==================================================
+PART 8 — Duplicate event prevention
+==================================================
+
+Avoid duplicate firing from:
+- polling
+- rerenders
+- repeated room state refreshes
+- leaderboard refreshes
+
+Keep existing once-per-session behavior for:
+- gameday_room_viewed
+- gameday_final_standings_viewed
+
+If gameday_leaderboard_viewed already exists or is easy to add, it should be throttled or once-per-session. Do not add it if it creates risk of noisy tracking.
+
+==================================================
+PART 9 — Optional leaderboard view event
+==================================================
+
+If simple and low-risk, add:
+
+Event name:
+gameday_leaderboard_viewed
+
+Fire when:
+A participant views the leaderboard section or room page where leaderboard is visible.
+
+Properties:
+- room_id
+- room_code
+- room_source
+- entry_source
+- participant_id if available
+- participant_type if available
+- room_status
+- current_open_card_phase if available
+- leaderboard_available: true/false
+- settled_prop_count if available
+- participant_count if available
+
+Important:
+Do not fire repeatedly due to polling. If this is hard to do cleanly, skip it for now and explain why.
+
+==================================================
+PART 10 — Server-side gameday_events alignment
+==================================================
+
+Do not remove existing gameday_events table tracking.
+
+If easy, make sure server-side events include:
+- room_id
+- room_code if available
+- source or room_source if available
+- phase for card/pick/settlement events
+
+But PostHog is the main focus of this task.
+
+==================================================
+PART 11 — Implementation approach
+==================================================
+
+Before coding, inspect the existing PostHog helper/function structure.
+
+Prefer updating central analytics helper methods instead of sprinkling one-off property logic throughout the app.
+
+If there is a central Analytics object/module, update the Game Day methods there.
+
+After implementation, provide:
+
+1. Final list of Game Day PostHog events.
+2. Final properties included with each event.
+3. Which events were intentionally skipped and why.
+4. How duplicate firing is prevented.
+5. Any limitations around guest participant tracking.
+6. A short QA checklist for testing in a fake Game Day room.
+
+==================================================
+Acceptance criteria
+==================================================
+
+1. gameday_room_created includes room_source and created_from.
+2. gameday_room_viewed includes room_source and entry_source.
+3. gameday_joined includes room_source, entry_source, participant type, and participant_id if available.
+4. gameday_pick_submitted includes room_source, entry_source, participant_id if available, and phase.
+5. gameday_card_opened and gameday_card_locked include room_source and phase.
+6. gameday_prop_settled is added to PostHog.
+7. gameday_room_finalized includes room_source.
+8. gameday_final_standings_viewed includes room_source and entry_source.
+9. gameday_standings_shared includes room_source, entry_source, and share_method if available.
+10. QR/source query params are captured into entry_source where present.
+11. Events do not spam PostHog during polling/rerenders.
+12. Existing Game Day behavior still works.
+13. Existing non-Game-Day Swayger functionality still works.
+14. We can calculate cross-window retention from PostHog using gameday_pick_submitted grouped by participant_id, room_id, and phase.
+15. We can segment Game Day rooms by app-created vs Discord-created using room_source.

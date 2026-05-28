@@ -115,7 +115,31 @@ export default function CreateGameDayRoom() {
         },
         { session }
       );
-      Analytics.gamedayRoomCreated(result.room_id, selectedPropIds.size, result.room?.room_code);
+      Analytics.gamedayRoomCreated(
+        {
+          room_id: result.room_id,
+          room_code: result.room?.room_code,
+          room_source: "app",
+          room_status: "draft",
+        },
+        {
+          created_from: "app",
+          team_a_name: teamA.trim(),
+          team_b_name: teamB.trim(),
+          room_name: roomName.trim(),
+          prop_count_total: selectedPropIds.size,
+          pregame_prop_count: template.filter(
+            (p) => selectedPropIds.has(p.id) && p.phase === "pregame"
+          ).length,
+          halftime_prop_count: template.filter(
+            (p) => selectedPropIds.has(p.id) && p.phase === "halftime"
+          ).length,
+          fourth_prop_count: template.filter(
+            (p) => selectedPropIds.has(p.id) && p.phase === "fourth"
+          ).length,
+          creator_user_id: session?.user?.id,
+        }
+      );
       router.replace(`/gameday/${result.room_id}/host` as never);
     } catch (e: any) {
       setError(e.message ?? "Failed to create room");
