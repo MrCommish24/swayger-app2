@@ -31,8 +31,9 @@ const C = Colors.dark;
 const GUEST_KEY = (roomId: string) => `gd_guest_${roomId}`;
 
 export default function GameDayRoomScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId, from } = useLocalSearchParams<{ roomId: string; from?: string }>();
   const router = useRouter();
+  const fromCaptain = from === "captain";
   const insets = useSafeAreaInsets();
   const { session, profile } = useAuth();
 
@@ -565,6 +566,14 @@ export default function GameDayRoomScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
+        {fromCaptain && (
+          <TouchableOpacity
+            style={styles.captainReturnBtn}
+            onPress={() => router.push(`/gameday/${roomId}/captain` as never)}
+          >
+            <Text style={styles.captainReturnBtnText}>← Captain Center</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.logoSmall}>SWAYGER</Text>
         <Text style={styles.roomName}>{room.room_name}</Text>
         <Text style={styles.matchup}>
@@ -1210,6 +1219,23 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -9999,
     left: 0,
+  },
+
+  // Captain return link
+  captainReturnBtn: {
+    alignSelf: "flex-start" as const,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: `${C.tint}18`,
+    borderWidth: 1,
+    borderColor: C.tint,
+    marginBottom: 4,
+  },
+  captainReturnBtnText: {
+    color: C.tint,
+    fontSize: 13,
+    fontWeight: "600" as const,
   },
 
   // Misc

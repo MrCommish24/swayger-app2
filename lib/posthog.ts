@@ -390,4 +390,14 @@ export const Analytics = {
       leader_name: opts.leader_name ?? null,
       leader_sp: opts.leader_sp ?? null,
     }),
+
+  // Fires when the captain taps "Enter Game Day Room" / "View Final Standings" from the Captain Center.
+  gamedayCaptainEnterRoomClicked: (
+    ctx: GDRoomCtx,
+    opts?: { current_open_card_phase?: string | null }
+  ) =>
+    capture("gameday_captain_enter_room_clicked", {
+      ...rCtx(ctx),
+      current_open_card_phase: opts?.current_open_card_phase ?? null,
+    }),
 };

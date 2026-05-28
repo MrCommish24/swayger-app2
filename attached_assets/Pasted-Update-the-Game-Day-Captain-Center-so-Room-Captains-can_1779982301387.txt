@@ -1,0 +1,152 @@
+Update the Game Day Captain Center so Room Captains can easily move between the Captain Center and the participant Game Day room.
+
+Context:
+In most cases, the Room Captain will also be a participant in the Game Day contest. They need to use the Captain Center to copy reminders and suggested moments, but they also need a quick way to enter the actual participant room to make picks, check the leaderboard, and view standings.
+
+Currently, the Captain Center is read-only and should stay that way. We do not want to merge the Captain Center with the participant room or expose any host/admin controls.
+
+Goal:
+Add a simple, same-tab bridge from the Captain Center to the participant room, plus a return path back to the Captain Center.
+
+Preferred UX:
+On both web and mobile, clicking “Enter Game Day Room” should navigate in the same tab to the public participant room.
+
+Do not open a new tab.
+
+Reason:
+Most Room Captains will be on mobile and will move between:
+Captain Center → Participant Room → Captain Center
+
+Same-tab navigation is cleaner and avoids browser tab confusion.
+
+Requirements:
+
+1. Add a prominent button near the top of the Captain Center.
+
+Button label:
+“Enter Game Day Room”
+
+Optional label if the room is finalized:
+“View Final Standings”
+
+2. Button behavior:
+
+The button should navigate in the same tab to the public participant room:
+
+https://swayger.app/g/[room_code]
+
+or the existing configured public link for that room.
+
+Do not route to the host/admin panel.
+
+3. Preserve a way back to Captain Center.
+
+When navigating from Captain Center to the participant room, include a query param or return parameter so the participant room knows the user came from Captain Center.
+
+Preferred options:
+
+Option A:
+https://swayger.app/g/[room_code]?from=captain
+
+Option B:
+https://swayger.app/g/[room_code]?captain_return=/gameday/[roomId]/captain
+
+Use the simplest reliable option.
+
+4. Add a “← Back to Captain Center” link/button on the participant Game Day room only when the user came from Captain Center.
+
+This should only show when the relevant query param is present.
+
+Do not show it for normal participants who open the room link from text, Discord, QR, or direct link.
+
+5. Back button behavior:
+
+The “← Back to Captain Center” button should return to the Captain Center for the same room.
+
+If the query param includes the return URL, use that.
+
+If not, derive the Captain Center route from the current room ID:
+
+/gameday/[roomId]/captain
+
+6. Archived room behavior:
+
+If the room is archived, hide or disable the “Enter Game Day Room” button in Captain Center and show:
+
+“This Game Day room is no longer active.”
+
+7. Finalized room behavior:
+
+If the room is finalized, keep the button visible but use the label:
+
+“View Final Standings”
+
+It should still route to the participant/final standings room view.
+
+8. Keep Captain Center read-only.
+
+Do not add:
+- open card controls
+- lock card controls
+- settle prop controls
+- finalize controls
+- archive controls
+- edit result controls
+- admin-only data
+
+9. Keep existing Captain Center functionality unchanged:
+
+Do not break:
+- Copy Public Link
+- QR Code
+- Pregame Invite
+- Halftime messages
+- 4Q messages
+- Suggested Moments
+- Final Receipts
+- Captain Center analytics
+
+10. Optional analytics:
+
+If PostHog tracking is already easy to add, track:
+
+Event:
+gameday_captain_enter_room_clicked
+
+Properties:
+- room_id
+- room_code
+- room_source
+- room_status
+- current_open_card_phase
+
+If this adds complexity, skip it. Do not let analytics delay the UX improvement.
+
+11. Do not change:
+- participant join flow
+- pick submission flow
+- host panel controls
+- settlement logic
+- finalization logic
+- archive logic
+- Discord bot logic
+- Game Day scoring
+- SP logic
+- NBA picks
+- NBA bracket challenge
+- March Madness history
+- 1v1 challenge flow
+- main SP ledger/balances
+
+Acceptance criteria:
+
+1. Captain Center shows a prominent “Enter Game Day Room” button.
+2. Clicking the button opens the participant Game Day room in the same tab.
+3. The participant room shows “← Back to Captain Center” only when the user came from the Captain Center.
+4. The back button returns to the Captain Center for the same room.
+5. Captain Center remains read-only.
+6. No host/admin controls are exposed.
+7. Archived rooms do not encourage entering the room.
+8. Finalized rooms show “View Final Standings.”
+9. Existing participant room behavior remains unchanged for normal users.
+10. Existing Captain Center copy/message functionality remains unchanged.

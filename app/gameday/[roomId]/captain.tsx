@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import QrCodeSvg from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
@@ -353,6 +353,23 @@ export default function CaptainCenter() {
     [roomData, roomId, leaderboard]
   );
 
+  const router = useRouter();
+
+  const enterRoom = useCallback(() => {
+    if (!roomData) return;
+    const openCard = roomData.cards.find((c: any) => c.status === "open");
+    Analytics.gamedayCaptainEnterRoomClicked(
+      {
+        room_id: roomId ?? "",
+        room_code: roomData.room.room_code,
+        room_source: roomData.room.source ?? "unknown",
+        room_status: roomData.room.status,
+      },
+      { current_open_card_phase: openCard?.phase ?? null }
+    );
+    router.push(`/gameday/${roomId}?from=captain` as never);
+  }, [roomData, roomId, router]);
+
   // ── Loading / error ──────────────────────────────────────────────────────────
 
   if (loading) {
@@ -467,6 +484,15 @@ export default function CaptainCenter() {
           {participant_count} participant{participant_count !== 1 ? "s" : ""}
         </Text>
       </View>
+
+      {/* ── Enter Room button ──────────────────────────────────────────────── */}
+      {!isArchived && (
+        <TouchableOpacity style={styles.enterRoomBtn} onPress={enterRoom}>
+          <Text style={styles.enterRoomBtnText}>
+            {isFinalized ? "🏆 View Final Standings" : "🏀 Enter Game Day Room"}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {/* ── Archived banner ─────────────────────────────────────────────────── */}
       {isArchived && (
@@ -972,4 +998,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   finalActions: { gap: 8 },
+
+  // Enter room button
+  enterRoomBtn: {
+    backgroundColor: C.tint,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center" as const,
+    marginBottom: 16,
+  },
+  enterRoomBtnText: {
+    color: "#000",
+    fontSize: 15,
+    fontWeight: "700" as const,
+    letterSpacing: 0.2,
+  },
 });
