@@ -29,8 +29,8 @@
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
-      "title": "Swayger — Social Wager Contracts",
-      "description": "Swayger is the app for locking in takes and proving who was right. Make 1v1 social wager contracts with friends, join the NBA picks challenge, and track every outcome — no real money, just bragging rights.",
+      "title": "Swayger — Picks, Challenges & Receipts",
+      "description": "Make picks, challenge friends, track the leaderboard, and keep receipts.",
       "lang": "en"
     },
     "plugins": [

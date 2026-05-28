@@ -93,7 +93,7 @@ function getCadenceCards(publicLink: string, winner?: GDLeaderboardEntry): Caden
       type: "halftime_live",
       label: "🕐 Halftime Picks Live",
       timing: "Halftime",
-      message: `Halftime picks are live.\n\nMake your second-half calls and see who moves up:\n${publicLink}`,
+      message: `Halftime picks are live.\n\nMake your second-half calls and see who moves up:\n<${publicLink}>`,
     },
     {
       id: "fourth_heads_up",
@@ -107,7 +107,7 @@ function getCadenceCards(publicLink: string, winner?: GDLeaderboardEntry): Caden
       type: "fourth_live",
       label: "🔥 4Q Picks Live",
       timing: "Start of 4Q",
-      message: `4Q Clutch picks are live.\n\nLock in here:\n${publicLink}`,
+      message: `4Q Clutch picks are live.\n\nLock in here:\n<${publicLink}>`,
     },
     {
       id: "final_standings",

@@ -1,0 +1,59 @@
+Update only the Game Day Captain Center copied message formatting for Halftime Picks Live and 4Q Picks Live.
+
+Current issue:
+When the Room Captain copies and pastes the Halftime Picks Live and 4Q Picks Live messages into text/RCS/iMessage group chats, the public Game Day URL creates a large link preview. This makes the group chat noisy because the same room preview appears multiple times.
+
+Goal:
+Keep the current engagement-focused copy exactly the same, but wrap the public URL in angle brackets for these two copied messages to try to suppress repeated link previews.
+
+Important:
+Do not shorten or rewrite the message copy.
+Do not remove the link.
+Do not change Pregame Invite copy.
+Do not change Final Standings copy.
+Do not change Suggested Moments copy.
+Do not change game logic, analytics, participant flow, host panel logic, Discord bot logic, or any other Swayger flow.
+
+Requirements:
+
+1. In the Captain Center, update the copied message output for:
+- Halftime Picks Live
+- 4Q Picks Live
+
+2. Wherever the public link appears in those two copied messages, format it as:
+
+<[public_link]>
+
+Example:
+
+If the current copied message is:
+
+“Halftime picks are live.
+
+Make your second-half calls and see who moves up:
+https://swayger.app/g/GDS-XXXXX”
+
+Change only the URL formatting to:
+
+“Halftime picks are live.
+
+Make your second-half calls and see who moves up:
+<https://swayger.app/g/GDS-XXXXX>”
+
+3. Do the same for the 4Q Picks Live message.
+
+4. Leave the Pregame Invite link as the normal raw URL so the initial room share can still generate a preview.
+
+5. Leave Final Standings link behavior unchanged for now.
+
+6. Make sure copied messages remain clickable where supported.
+
+7. Keep PostHog event behavior unchanged. If the same copy buttons currently fire gameday_captain_message_copied, they should continue to fire with the same message_type and message_category.
+
+Acceptance criteria:
+- Halftime Picks Live copied message uses <[public_link]>.
+- 4Q Picks Live copied message uses <[public_link]>.
+- Pregame Invite copied message still uses the normal public link.
+- Final Standings copied message remains unchanged.
+- No other Captain Center copy is changed.
+- Existing copy buttons still work.
