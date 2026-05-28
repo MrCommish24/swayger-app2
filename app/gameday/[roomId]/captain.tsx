@@ -250,6 +250,15 @@ function getSuggestedMoments(
   return moments;
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtMmSs(totalSecs: number): string {
+  const s = Math.max(0, totalSecs);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, "0")}`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CaptainCenter() {
@@ -266,6 +275,7 @@ export default function CaptainCenter() {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasTrackedView = useRef(false);
@@ -314,6 +324,17 @@ export default function CaptainCenter() {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [fetchData]);
+
+  // Countdown timer: ticks every second while an active notice is set
+  useEffect(() => {
+    const endsAtStr = roomData?.room.countdown_ends_at;
+    if (!endsAtStr) { setCountdownSecsLeft(0); return; }
+    const tick = () =>
+      setCountdownSecsLeft(Math.floor((Date.parse(endsAtStr) - Date.now()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [roomData?.room.countdown_ends_at]);
 
   const copyMessage = useCallback(
     async (text: string, messageType: string, id: string) => {
@@ -493,6 +514,39 @@ export default function CaptainCenter() {
           </Text>
         </TouchableOpacity>
       )}
+
+      {/* ── Countdown banner (read-only, mirrors participant room) ─────────── */}
+      {(() => {
+        const cdPhase = roomData?.room.countdown_phase;
+        const cdType = roomData?.room.countdown_type;
+        const cdEndsAt = roomData?.room.countdown_ends_at;
+        if (!cdPhase || !cdType || !cdEndsAt || isArchived || isFinalized) return null;
+        if (countdownSecsLeft < -120) return null;
+        const expired = countdownSecsLeft <= 0;
+        const pl = cdPhase === "pregame" ? "Pregame Picks" : cdPhase === "halftime" ? "Halftime Picks" : "4Q Clutch Picks";
+        const isLocksType = cdType === "locks_soon";
+        const timerStr = expired ? "" : fmtMmSs(countdownSecsLeft);
+        const headline = expired
+          ? `${pl} window update expected now.`
+          : isLocksType
+          ? `${pl} lock soon.`
+          : `${pl} expected soon.`;
+        const sub = expired
+          ? "Check the room — the host is opening or locking the window."
+          : isLocksType
+          ? (cdPhase === "pregame" ? "Get your picks in before tipoff." : cdPhase === "halftime" ? "Get your second-half picks in now." : "Get your picks in before the window closes.")
+          : "Host is opening this window soon. Stay close — picks are coming.";
+        const timer = expired ? null : isLocksType ? `${timerStr} left to submit your picks` : `Expected in ~${timerStr}`;
+        const isUrgent = isLocksType && !expired;
+        return (
+          <View style={[styles.cdBanner, isUrgent ? styles.cdBannerUrgent : styles.cdBannerInfo]}>
+            <Text style={styles.cdBannerHeadline}>{isLocksType ? "⏱ " : "📣 "}{headline}</Text>
+            <Text style={styles.cdBannerSub}>{sub}</Text>
+            {timer ? <Text style={styles.cdBannerTimer}>{timer}</Text> : null}
+            <Text style={styles.cdBannerNote}>Host notice · Does not automatically open or lock picks</Text>
+          </View>
+        );
+      })()}
 
       {/* ── Archived banner ─────────────────────────────────────────────────── */}
       {isArchived && (
@@ -1012,5 +1066,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700" as const,
     letterSpacing: 0.2,
+  },
+
+  // Countdown banner (read-only, mirrors participant room)
+  cdBanner: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  cdBannerInfo: { backgroundColor: `${C.tint}15`, borderColor: C.tint },
+  cdBannerUrgent: { backgroundColor: `${C.danger}18`, borderColor: C.danger },
+  cdBannerHeadline: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700" as const,
+    marginBottom: 4,
+  },
+  cdBannerSub: {
+    color: C.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  cdBannerTimer: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "600" as const,
+    marginBottom: 4,
+  },
+  cdBannerNote: {
+    color: C.textMuted,
+    fontSize: 11,
+    marginTop: 2,
   },
 });

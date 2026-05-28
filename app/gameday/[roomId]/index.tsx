@@ -30,6 +30,120 @@ import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 const C = Colors.dark;
 const GUEST_KEY = (roomId: string) => `gd_guest_${roomId}`;
 
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+function fmtMmSs(totalSecs: number): string {
+  const s = Math.max(0, totalSecs);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, "0")}`;
+}
+
+interface TimelineItem {
+  key: "pregame" | "halftime" | "fourth" | "final";
+  label: string;
+  status: "open" | "locked" | "settled" | "coming_up" | "finalized";
+}
+
+function computeTimeline(cards: GDCard[], isFinalized: boolean): TimelineItem[] {
+  const byPhase = (p: GDCard["phase"]) => cards.find((c) => c.phase === p);
+  const statusFor = (p: GDCard["phase"]): TimelineItem["status"] => {
+    const c = byPhase(p);
+    if (!c || c.status === "closed") return "coming_up";
+    if (c.status === "open") return "open";
+    if (c.status === "locked") return "locked";
+    return isFinalized ? "finalized" : "settled";
+  };
+  return [
+    { key: "pregame", label: "Pregame Picks", status: statusFor("pregame") },
+    { key: "halftime", label: "Halftime Picks", status: statusFor("halftime") },
+    { key: "fourth", label: "4Q Clutch Picks", status: statusFor("fourth") },
+    { key: "final", label: "Final Receipts", status: isFinalized ? "finalized" : "coming_up" },
+  ];
+}
+
+function getNextWindow(
+  cards: GDCard[],
+  isFinalized: boolean,
+  myPicks: Record<string, string>
+): { headline: string; sub: string } {
+  if (isFinalized) return { headline: "🏆 Receipts are in.", sub: "View final standings below." };
+
+  const pregame = cards.find((c) => c.phase === "pregame");
+  const halftime = cards.find((c) => c.phase === "halftime");
+  const fourth = cards.find((c) => c.phase === "fourth");
+
+  if (pregame?.status === "open")
+    return { headline: "🟢 Pregame Picks are open.", sub: "Lock in before tipoff." };
+  if (halftime?.status === "open")
+    return { headline: "🟢 Halftime Picks are live.", sub: "Make your second-half calls now." };
+  if (fourth?.status === "open")
+    return { headline: "🟢 4Q Clutch Picks are live.", sub: "Last window to move up before receipts drop." };
+
+  const pregameLocked = pregame?.status === "locked" || pregame?.status === "settled";
+  const halftimeLocked = halftime?.status === "locked" || halftime?.status === "settled";
+  const fourthLocked = fourth?.status === "locked" || fourth?.status === "settled";
+
+  const missedPregame =
+    pregameLocked &&
+    !(pregame?.gameday_props ?? []).some((p) => myPicks[p.id] !== undefined);
+  const missedHalftime =
+    halftimeLocked &&
+    !(halftime?.gameday_props ?? []).some((p) => myPicks[p.id] !== undefined);
+
+  if (pregameLocked && halftime?.status === "closed") {
+    return missedPregame
+      ? { headline: "⏳ Pregame Picks are locked.", sub: "You can still join Halftime and 4Q picks when they open." }
+      : { headline: "⏳ Next up: Halftime Picks.", sub: "Check back at halftime to make your second-half calls." };
+  }
+  if (halftimeLocked && fourth?.status === "closed") {
+    return missedHalftime
+      ? { headline: "⏳ Halftime Picks are locked.", sub: "4Q Clutch Picks are still coming. Check back near the 4th quarter." }
+      : { headline: "⏳ Next up: 4Q Clutch Picks.", sub: "Check back near the start of the 4th quarter." };
+  }
+  if (pregameLocked && halftimeLocked && fourthLocked) {
+    return { headline: "📊 Receipts are being tallied.", sub: "Check back soon for final standings." };
+  }
+  return {
+    headline: "⏳ No picks are open right now.",
+    sub: "Stay close — the first pick window will open before tipoff.",
+  };
+}
+
+function getCountdownCopy(
+  phase: string,
+  type: string,
+  secsLeft: number,
+  expired: boolean
+): { headline: string; sub: string; timer: string } {
+  const pl = phase === "pregame" ? "Pregame Picks" : phase === "halftime" ? "Halftime Picks" : "4Q Clutch Picks";
+  if (expired) {
+    return {
+      headline: `${pl} window update expected now.`,
+      sub: "Check the room — the host is opening or locking the window.",
+      timer: "",
+    };
+  }
+  const t = fmtMmSs(secsLeft);
+  if (type === "opens_soon") {
+    return {
+      headline: `${pl} expected soon.`,
+      sub: "Host is opening this window soon. Stay close — picks are coming.",
+      timer: `Expected in ~${t}`,
+    };
+  }
+  return {
+    headline: `${pl} lock soon.`,
+    sub:
+      phase === "pregame"
+        ? "Get your picks in before tipoff."
+        : phase === "halftime"
+        ? "Get your second-half picks in now."
+        : "Get your picks in before the window closes.",
+    timer: `${t} left to submit your picks`,
+  };
+}
+
 export default function GameDayRoomScreen() {
   const { roomId, from } = useLocalSearchParams<{ roomId: string; from?: string }>();
   const router = useRouter();
@@ -61,6 +175,18 @@ export default function GameDayRoomScreen() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const receiptRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+  const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
+
+  // Countdown timer: ticks every second while an active notice exists
+  useEffect(() => {
+    const endsAtStr = roomData?.room.countdown_ends_at;
+    if (!endsAtStr) { setCountdownSecsLeft(0); return; }
+    const tick = () =>
+      setCountdownSecsLeft(Math.floor((Date.parse(endsAtStr) - Date.now()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [roomData?.room.countdown_ends_at]);
 
   // Load guest session from localStorage on mount
   useEffect(() => {
@@ -584,6 +710,26 @@ export default function GameDayRoomScreen() {
         </Text>
       </View>
 
+      {/* Countdown banner */}
+      {(() => {
+        const cdPhase = room?.countdown_phase;
+        const cdType = room?.countdown_type;
+        const cdEndsAt = room?.countdown_ends_at;
+        if (!cdPhase || !cdType || !cdEndsAt || isFinalized) return null;
+        if (countdownSecsLeft < -120) return null;
+        const expired = countdownSecsLeft <= 0;
+        const { headline, sub, timer } = getCountdownCopy(cdPhase, cdType, countdownSecsLeft, expired);
+        const isUrgent = cdType === "locks_soon" && !expired;
+        return (
+          <View style={[styles.cdBanner, isUrgent ? styles.cdBannerUrgent : styles.cdBannerInfo]}>
+            <Text style={styles.cdBannerHeadline}>{cdType === "locks_soon" ? "⏱ " : "📣 "}{headline}</Text>
+            <Text style={styles.cdBannerSub}>{sub}</Text>
+            {timer ? <Text style={styles.cdBannerTimer}>{timer}</Text> : null}
+            <Text style={styles.cdBannerNote}>Host notice · Picks do not automatically open or lock</Text>
+          </View>
+        );
+      })()}
+
       {/* Finalized banner + share CTAs */}
       {isFinalized ? (
         <View style={styles.finalizedBanner}>
@@ -635,14 +781,48 @@ export default function GameDayRoomScreen() {
         />
       ) : null}
 
-      {/* No card open — only shown for live rooms */}
-      {!openCard && !isFinalized ? (
-        <View style={styles.waitingBanner}>
-          <Text style={styles.waitingText}>
-            No picks are open right now. Check the leaderboard and watch your group chat for the next drop.
-          </Text>
+      {/* Next Pick Window callout — shown when no card is open */}
+      {!openCard && !isFinalized ? (() => {
+        const nw = getNextWindow(cards, isFinalized, my_picks);
+        return (
+          <View style={styles.nextWindowCard}>
+            <Text style={styles.nextWindowHeadline}>{nw.headline}</Text>
+            <Text style={styles.nextWindowSub}>{nw.sub}</Text>
+          </View>
+        );
+      })() : null}
+
+      {/* Game Day Timeline */}
+      {!isFinalized && (
+        <View style={styles.timelineSection}>
+          <Text style={styles.timelineSectionLabel}>GAME DAY TIMELINE</Text>
+          {computeTimeline(cards, isFinalized).map((item) => {
+            const statusLabel =
+              item.status === "open" ? "Open Now" :
+              item.status === "locked" ? "Locked" :
+              (item.status === "settled" || item.status === "finalized") ?
+                (item.key === "final" ? "Ready" : "Settled") :
+              "Coming Up";
+            const statusColor =
+              item.status === "open" ? "#22c55e" :
+              item.status === "locked" ? C.textMuted :
+              (item.status === "settled" || item.status === "finalized") ?
+                (item.key === "final" ? C.accentGold : C.tint) :
+              C.textSecondary;
+            return (
+              <View key={item.key} style={[styles.timelineRow, item.status === "open" && styles.timelineRowActive]}>
+                <View style={[styles.timelineDot, { backgroundColor: statusColor }]} />
+                <Text style={[styles.timelineLabel, item.status === "open" && styles.timelineLabelActive]}>
+                  {item.label}
+                </Text>
+                <View style={[styles.timelineStatusBadge, { borderColor: statusColor }]}>
+                  <Text style={[styles.timelineStatusText, { color: statusColor }]}>{statusLabel}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
-      ) : null}
+      )}
 
       {/* Locked/settled cards — reveal */}
       {cards
@@ -1089,23 +1269,6 @@ const styles = StyleSheet.create({
   },
   submittedInlineText: { fontSize: 13, color: C.success, fontWeight: "600" },
 
-  // Waiting
-  waitingBanner: {
-    backgroundColor: C.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 20,
-    marginBottom: 16,
-    alignItems: "center",
-  },
-  waitingText: {
-    fontSize: 14,
-    color: C.textSecondary,
-    textAlign: "center",
-    lineHeight: 21,
-  },
-
   // Reveal
   revealProp: { marginBottom: 20 },
   correctAnswerRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
@@ -1236,6 +1399,117 @@ const styles = StyleSheet.create({
     color: C.tint,
     fontSize: 13,
     fontWeight: "600" as const,
+  },
+
+  // Countdown banner
+  cdBanner: {
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  cdBannerInfo: { backgroundColor: `${C.tint}15`, borderColor: C.tint },
+  cdBannerUrgent: { backgroundColor: `${C.danger}18`, borderColor: C.danger },
+  cdBannerHeadline: {
+    color: C.text,
+    fontSize: 15,
+    fontWeight: "700" as const,
+    marginBottom: 4,
+  },
+  cdBannerSub: {
+    color: C.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  cdBannerTimer: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "600" as const,
+    marginBottom: 4,
+  },
+  cdBannerNote: {
+    color: C.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  // Next Pick Window callout
+  nextWindowCard: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  nextWindowHeadline: {
+    color: C.text,
+    fontSize: 16,
+    fontWeight: "700" as const,
+    marginBottom: 6,
+  },
+  nextWindowSub: {
+    color: C.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  // Game Day Timeline
+  timelineSection: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  timelineSectionLabel: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1.2,
+    marginBottom: 12,
+  },
+  timelineRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingVertical: 8,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+  },
+  timelineRowActive: {
+    backgroundColor: `${C.tint}10`,
+    marginHorizontal: -4,
+    paddingHorizontal: 8,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  timelineLabel: {
+    flex: 1,
+    color: C.textSecondary,
+    fontSize: 14,
+    fontWeight: "500" as const,
+  },
+  timelineLabelActive: {
+    color: C.text,
+    fontWeight: "700" as const,
+  },
+  timelineStatusBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  timelineStatusText: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 0.3,
   },
 
   // Misc

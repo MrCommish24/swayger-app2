@@ -24,6 +24,13 @@ import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 
 const C = Colors.dark;
 
+function fmtMmSs(totalSecs: number): string {
+  const s = Math.max(0, totalSecs);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}:${rem.toString().padStart(2, "0")}`;
+}
+
 interface Prop {
   id: string;
   question: string;
@@ -55,6 +62,10 @@ interface Room {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was created */
   source?: string | null;
+  countdown_phase?: "pregame" | "halftime" | "fourth" | null;
+  countdown_type?: "opens_soon" | "locks_soon" | null;
+  countdown_ends_at?: string | null;
+  countdown_started_at?: string | null;
 }
 
 interface LbEntry {
@@ -93,6 +104,11 @@ export default function HostControlRoom() {
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [countdownPhase, setCountdownPhase] = useState<"pregame" | "halftime" | "fourth">("halftime");
+  const [countdownType, setCountdownType] = useState<"opens_soon" | "locks_soon">("opens_soon");
+  const [countdownDuration, setCountdownDuration] = useState<5 | 10>(5);
+  const [countdownLoading, setCountdownLoading] = useState(false);
+  const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -236,6 +252,17 @@ export default function HostControlRoom() {
     };
   }, [isHost, fetchHostData]);
 
+  // Countdown timer: ticks every second while an active notice is displayed
+  useEffect(() => {
+    const endsAtStr = hostData?.room.countdown_ends_at;
+    if (!endsAtStr) { setCountdownSecsLeft(0); return; }
+    const tick = () =>
+      setCountdownSecsLeft(Math.floor((Date.parse(endsAtStr) - Date.now()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [hostData?.room.countdown_ends_at]);
+
   const doCardAction = async (
     cardId: string,
     action: "open" | "lock"
@@ -353,6 +380,46 @@ export default function HostControlRoom() {
     } catch (e: any) {
       alert(e.message ?? "Archive failed");
       setArchiving(false);
+    }
+  };
+
+  const startCountdown = async () => {
+    setCountdownLoading(true);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/countdown`,
+        { method: "POST", body: JSON.stringify({ phase: countdownPhase, countdown_type: countdownType, duration_minutes: countdownDuration }) },
+        { session }
+      );
+      Analytics.gamedayCountdownStarted(
+        { room_id: roomId!, room_code: hostData?.room.room_code, room_source: hostData?.room.source ?? "unknown", room_status: hostData?.room.status },
+        { phase: countdownPhase, countdown_type: countdownType, duration_minutes: countdownDuration }
+      );
+      await fetchHostData();
+    } catch (e: any) {
+      alert(e.message ?? "Failed to start countdown");
+    } finally {
+      setCountdownLoading(false);
+    }
+  };
+
+  const clearCountdown = async () => {
+    setCountdownLoading(true);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/countdown`,
+        { method: "DELETE" },
+        { session }
+      );
+      Analytics.gamedayCountdownCleared(
+        { room_id: roomId!, room_code: hostData?.room.room_code, room_source: hostData?.room.source ?? "unknown", room_status: hostData?.room.status },
+        { phase: hostData?.room.countdown_phase, countdown_type: hostData?.room.countdown_type }
+      );
+      await fetchHostData();
+    } catch (e: any) {
+      alert(e.message ?? "Failed to clear countdown");
+    } finally {
+      setCountdownLoading(false);
     }
   };
 
@@ -585,6 +652,93 @@ export default function HostControlRoom() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Participant Countdown Notice */}
+      {!room.archived_at && room.status !== "finalized" && (
+        <View style={styles.cdSection}>
+          <Text style={styles.cdSectionLabel}>PARTICIPANT COUNTDOWN NOTICE</Text>
+          <Text style={styles.cdSectionHint}>
+            Show a manual notice to participants. This does not automatically open or lock any card — it's a communication aid only.
+          </Text>
+
+          {room.countdown_ends_at && countdownSecsLeft > -120 && (
+            <View style={[styles.cdActiveBanner, room.countdown_type === "locks_soon" ? styles.cdActiveBannerUrgent : styles.cdActiveBannerInfo]}>
+              <Text style={styles.cdActiveBannerLabel}>
+                {room.countdown_type === "locks_soon" ? "⏱ Locks Soon" : "📣 Opens Soon"}
+                {" — "}
+                {room.countdown_phase === "pregame" ? "Pregame" : room.countdown_phase === "halftime" ? "Halftime" : "4Q"}
+              </Text>
+              <Text style={styles.cdActiveBannerTimer}>
+                {countdownSecsLeft > 0 ? `${fmtMmSs(countdownSecsLeft)} remaining` : "Expired — grace window"}
+              </Text>
+              <TouchableOpacity
+                style={[styles.cdClearBtn, countdownLoading && styles.btnDisabled]}
+                onPress={clearCountdown}
+                disabled={countdownLoading}
+              >
+                <Text style={styles.cdClearBtnText}>Clear Countdown</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.cdControlLabel}>Phase</Text>
+          <View style={styles.cdSegRow}>
+            {(["pregame", "halftime", "fourth"] as const).map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.cdSeg, countdownPhase === p && styles.cdSegActive]}
+                onPress={() => setCountdownPhase(p)}
+              >
+                <Text style={[styles.cdSegText, countdownPhase === p && styles.cdSegActiveText]}>
+                  {p === "pregame" ? "Pregame" : p === "halftime" ? "Halftime" : "4Q"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.cdControlLabel}>Notice Type</Text>
+          <View style={styles.cdSegRow}>
+            {(["opens_soon", "locks_soon"] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.cdSeg, countdownType === t && styles.cdSegActive]}
+                onPress={() => setCountdownType(t)}
+              >
+                <Text style={[styles.cdSegText, countdownType === t && styles.cdSegActiveText]}>
+                  {t === "opens_soon" ? "Opens Soon" : "Locks Soon"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.cdControlLabel}>Duration</Text>
+          <View style={styles.cdSegRow}>
+            {([5, 10] as const).map((d) => (
+              <TouchableOpacity
+                key={d}
+                style={[styles.cdSeg, countdownDuration === d && styles.cdSegActive]}
+                onPress={() => setCountdownDuration(d)}
+              >
+                <Text style={[styles.cdSegText, countdownDuration === d && styles.cdSegActiveText]}>
+                  {d} min
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.cdStartBtn, countdownLoading && styles.btnDisabled]}
+            onPress={startCountdown}
+            disabled={countdownLoading}
+          >
+            {countdownLoading ? (
+              <ActivityIndicator color="#000" size="small" />
+            ) : (
+              <Text style={styles.cdStartBtnText}>▶ Start Countdown</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Pick cards */}
       {cards.map((card) => (
@@ -1583,6 +1737,105 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 13,
     fontWeight: "600",
+  },
+
+  // Countdown notice controls
+  cdSection: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cdSectionLabel: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  cdSectionHint: {
+    color: C.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  cdActiveBanner: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  cdActiveBannerInfo: { backgroundColor: `${C.tint}18`, borderColor: C.tint },
+  cdActiveBannerUrgent: { backgroundColor: `${C.danger}18`, borderColor: C.danger },
+  cdActiveBannerLabel: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "700" as const,
+    marginBottom: 4,
+  },
+  cdActiveBannerTimer: {
+    color: C.textSecondary,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  cdClearBtn: {
+    backgroundColor: C.surfaceLight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center" as const,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cdClearBtnText: {
+    color: C.text,
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
+  cdControlLabel: {
+    color: C.textMuted,
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  cdSegRow: {
+    flexDirection: "row" as const,
+    gap: 8,
+  },
+  cdSeg: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: "center" as const,
+    backgroundColor: C.surfaceLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cdSegActive: {
+    backgroundColor: C.tint,
+    borderColor: C.tint,
+  },
+  cdSegText: {
+    color: C.textSecondary,
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
+  cdSegActiveText: { color: "#000" },
+  cdStartBtn: {
+    backgroundColor: C.tint,
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: "center" as const,
+    marginTop: 16,
+  },
+  cdStartBtnText: {
+    color: "#000",
+    fontSize: 14,
+    fontWeight: "700" as const,
+    letterSpacing: 0.2,
   },
 
   // Misc

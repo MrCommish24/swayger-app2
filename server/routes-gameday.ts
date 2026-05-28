@@ -1600,4 +1600,109 @@ export function registerGamedayRoutes(app: Express) {
       res.json({ ok: true });
     }
   );
+
+  // ── POST /api/gameday/rooms/:roomId/countdown ─────────────────────────────
+  // Host-only: set a manual countdown notice in the participant room.
+  // This is a communication aid only — it does NOT open or lock cards.
+  app.post(
+    "/api/gameday/rooms/:roomId/countdown",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const { phase, countdown_type, duration_minutes } = req.body as {
+        phase?: string;
+        countdown_type?: string;
+        duration_minutes?: number;
+      };
+
+      const validPhases = ["pregame", "halftime", "fourth"];
+      const validTypes = ["opens_soon", "locks_soon"];
+      const validDurations = [5, 10];
+
+      if (!phase || !validPhases.includes(phase)) {
+        res.status(400).json({ error: "Invalid phase" });
+        return;
+      }
+      if (!countdown_type || !validTypes.includes(countdown_type)) {
+        res.status(400).json({ error: "Invalid countdown_type" });
+        return;
+      }
+      if (!duration_minutes || !validDurations.includes(duration_minutes)) {
+        res.status(400).json({ error: "duration_minutes must be 5 or 10" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const { data: cdRoom } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, status, archived_at")
+        .eq("id", roomId)
+        .single();
+
+      if (!cdRoom) { res.status(404).json({ error: "Room not found" }); return; }
+      const cdHost = (cdRoom as any).host_user_id;
+      if (cdHost !== null && cdHost !== hostId) {
+        res.status(403).json({ error: "Not your room" }); return;
+      }
+      if ((cdRoom as any).archived_at || (cdRoom as any).status === "finalized") {
+        res.status(400).json({ error: "Cannot set countdown on archived or finalized room" }); return;
+      }
+
+      const now = new Date();
+      const endsAt = new Date(now.getTime() + (duration_minutes as number) * 60 * 1000);
+
+      await supabase
+        .from("gameday_rooms")
+        .update({
+          countdown_phase: phase,
+          countdown_type,
+          countdown_ends_at: endsAt.toISOString(),
+          countdown_started_at: now.toISOString(),
+        })
+        .eq("id", roomId);
+
+      console.log(`[gameday] countdown set: room=${roomId} phase=${phase} type=${countdown_type} ends=${endsAt.toISOString()}`);
+      res.json({ ok: true, countdown_ends_at: endsAt.toISOString() });
+    }
+  );
+
+  // ── DELETE /api/gameday/rooms/:roomId/countdown ──────────────────────────
+  // Host-only: clear the active countdown notice.
+  app.delete(
+    "/api/gameday/rooms/:roomId/countdown",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const { data: clrRoom } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id")
+        .eq("id", roomId)
+        .single();
+
+      if (!clrRoom) { res.status(404).json({ error: "Room not found" }); return; }
+      const clrHost = (clrRoom as any).host_user_id;
+      if (clrHost !== null && clrHost !== hostId) {
+        res.status(403).json({ error: "Not your room" }); return;
+      }
+
+      await supabase
+        .from("gameday_rooms")
+        .update({
+          countdown_phase: null,
+          countdown_type: null,
+          countdown_ends_at: null,
+          countdown_started_at: null,
+        })
+        .eq("id", roomId);
+
+      console.log(`[gameday] countdown cleared: room=${roomId}`);
+      res.json({ ok: true });
+    }
+  );
 }

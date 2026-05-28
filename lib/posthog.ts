@@ -400,4 +400,31 @@ export const Analytics = {
       ...rCtx(ctx),
       current_open_card_phase: opts?.current_open_card_phase ?? null,
     }),
+
+  gamedayCountdownStarted: (
+    ctx: GDRoomCtx,
+    opts: {
+      phase: string;
+      countdown_type: string;
+      duration_minutes: number;
+      started_by_user_id?: string | null;
+    }
+  ) =>
+    capture("gameday_countdown_started", {
+      ...rCtx(ctx),
+      phase: opts.phase,
+      countdown_type: opts.countdown_type,
+      duration_minutes: opts.duration_minutes,
+      started_by_user_id: opts.started_by_user_id ?? null,
+    }),
+
+  gamedayCountdownCleared: (
+    ctx: GDRoomCtx,
+    opts: { phase?: string | null; countdown_type?: string | null }
+  ) =>
+    capture("gameday_countdown_cleared", {
+      ...rCtx(ctx),
+      phase: opts.phase ?? null,
+      countdown_type: opts.countdown_type ?? null,
+    }),
 };
