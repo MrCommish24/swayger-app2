@@ -83,6 +83,7 @@ export function detectEntrySource(): string {
     if (src === "qr") return "qr";
     if (src === "discord") return "discord";
     if (src === "email") return "email";
+    if (src === "text" || src === "sms") return "text";
     const ref = document.referrer ?? "";
     if (ref.includes("discord.com") || ref.includes("discord.gg")) return "discord";
     if (ref && !ref.includes(window.location.hostname)) return "direct_link";

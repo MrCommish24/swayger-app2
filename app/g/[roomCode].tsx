@@ -8,7 +8,9 @@ import Colors from "@/constants/colors";
 const C = Colors.dark;
 
 export default function GameDayShortLink() {
-  const { roomCode } = useLocalSearchParams<{ roomCode: string }>();
+  // Capture ALL params — roomCode plus any tracking params (src, utm_source, utm_campaign, etc.)
+  const params = useLocalSearchParams<Record<string, string>>();
+  const { roomCode } = params;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,13 @@ export default function GameDayShortLink() {
     const code = String(roomCode).toUpperCase().trim();
     gamedayFetch<{ room_id: string }>(`/api/gameday/rooms/by-code/${code}`)
       .then(({ room_id }) => {
-        router.replace(`/gameday/${room_id}` as never);
+        // Forward all tracking params so attribution survives the redirect
+        const forwarded = Object.entries(params)
+          .filter(([k]) => k !== "roomCode")
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join("&");
+        const dest = forwarded ? `/gameday/${room_id}?${forwarded}` : `/gameday/${room_id}`;
+        router.replace(dest as never);
       })
       .catch((e: any) => {
         setError(e?.message ?? "Room not found");
