@@ -1837,7 +1837,7 @@ export function registerGamedayRoutes(app: Express) {
       console.log(`[gameday-blast]  HTML snippet (first 800 chars):\n${html.slice(0, 800)}`);
       console.log(`[gameday-blast] ────────────────────────────────────────────────`);
 
-      await sendGameDayBlastEmail({
+      const resendId = await sendGameDayBlastEmail({
         to: TEST_EMAIL,
         displayName: "Darius",
         userId: "test-preview",
@@ -1845,8 +1845,26 @@ export function registerGamedayRoutes(app: Express) {
         trackedRoomLink,
         subject,
       });
-      console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL}`);
-      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink, subject: resolvedSubject, cta: ctaText });
+      console.log(`[gameday-blast] Test email sent to ${TEST_EMAIL} resend_id=${resendId ?? "none"}`);
+
+      // Log the test send (non-fatal — never block the response)
+      const supabase = getServiceSupabase();
+      const roomCodeMatch = room_link.match(/\/g\/([A-Z0-9-]+)/i);
+      const roomCode = roomCodeMatch ? roomCodeMatch[1] : null;
+      supabase.from("gameday_email_sends").insert({
+        campaign_name: game_name,
+        recipient_email: TEST_EMAIL,
+        user_id: null,
+        resend_message_id: resendId,
+        room_id: null,
+        room_code: roomCode,
+        room_link: trackedRoomLink,
+        is_test: true,
+      }).then(({ error }) => {
+        if (error) console.warn("[gameday-blast] Failed to log test send:", error.message);
+      });
+
+      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink, subject: resolvedSubject, cta: ctaText, resend_message_id: resendId });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[gameday-blast] Test send failed:", msg);
@@ -1917,12 +1935,16 @@ export function registerGamedayRoutes(app: Express) {
     }
 
     const trackedRoomLink = buildTrackedLink(room_link);
+    const roomCodeMatch = room_link.match(/\/g\/([A-Z0-9-]+)/i);
+    const roomCode = roomCodeMatch ? roomCodeMatch[1] : null;
     let sent = 0;
     let failed = 0;
+    let stored = 0;
+    const logRows: object[] = [];
 
     for (const r of recipients) {
       try {
-        await sendGameDayBlastEmail({
+        const resendId = await sendGameDayBlastEmail({
           to: r.email,
           displayName: r.displayName,
           userId: r.id,
@@ -1931,6 +1953,16 @@ export function registerGamedayRoutes(app: Express) {
           subject,
         });
         sent++;
+        logRows.push({
+          campaign_name: game_name,
+          recipient_email: r.email,
+          user_id: r.id,
+          resend_message_id: resendId,
+          room_id: null,
+          room_code: roomCode,
+          room_link: trackedRoomLink,
+          is_test: false,
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[gameday-blast] Failed for ${r.email}:`, msg);
@@ -1938,8 +1970,18 @@ export function registerGamedayRoutes(app: Express) {
       }
     }
 
-    console.log(`[gameday-blast] Full blast complete — sent=${sent} failed=${failed} total=${recipients.length} game="${game_name}"`);
-    res.json({ ok: true, sent, failed, total_eligible: recipients.length, tracked_link: trackedRoomLink });
+    // Bulk-insert all send records (non-fatal)
+    if (logRows.length > 0) {
+      const { error: logErr } = await supabase.from("gameday_email_sends").insert(logRows);
+      if (logErr) {
+        console.warn("[gameday-blast] Failed to log send records:", logErr.message);
+      } else {
+        stored = logRows.length;
+      }
+    }
+
+    console.log(`[gameday-blast] Full blast complete — sent=${sent} failed=${failed} stored=${stored} total=${recipients.length} game="${game_name}"`);
+    res.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: recipients.length, tracked_link: trackedRoomLink });
   });
 
   // POST /admin/gameday/blast-catchup
@@ -1979,12 +2021,16 @@ export function registerGamedayRoutes(app: Express) {
       .filter((p) => p.notification_email && !p.email_unsubscribed);
 
     const trackedRoomLink = buildTrackedLink(room_link);
+    const roomCodeMatch = room_link.match(/\/g\/([A-Z0-9-]+)/i);
+    const roomCode = roomCodeMatch ? roomCodeMatch[1] : null;
     let sent = 0;
     let failed = 0;
+    let stored = 0;
+    const logRows: object[] = [];
 
     for (const p of eligible) {
       try {
-        await sendGameDayBlastEmail({
+        const resendId = await sendGameDayBlastEmail({
           to: p.notification_email,
           displayName: p.display_name || p.username,
           userId: p.id,
@@ -1993,6 +2039,16 @@ export function registerGamedayRoutes(app: Express) {
           subject,
         });
         sent++;
+        logRows.push({
+          campaign_name: game_name,
+          recipient_email: p.notification_email,
+          user_id: p.id,
+          resend_message_id: resendId,
+          room_id: null,
+          room_code: roomCode,
+          room_link: trackedRoomLink,
+          is_test: false,
+        });
         await new Promise((r) => setTimeout(r, 150)); // gentle rate limiting
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -2001,8 +2057,18 @@ export function registerGamedayRoutes(app: Express) {
       }
     }
 
-    console.log(`[gameday-blast-catchup] Catchup complete — sent=${sent} failed=${failed} total=${eligible.length}`);
-    res.json({ ok: true, sent, failed, total_eligible: eligible.length, tracked_link: trackedRoomLink });
+    // Bulk-insert all send records (non-fatal)
+    if (logRows.length > 0) {
+      const { error: logErr } = await supabase.from("gameday_email_sends").insert(logRows);
+      if (logErr) {
+        console.warn("[gameday-blast-catchup] Failed to log send records:", logErr.message);
+      } else {
+        stored = logRows.length;
+      }
+    }
+
+    console.log(`[gameday-blast-catchup] Catchup complete — sent=${sent} failed=${failed} stored=${stored} total=${eligible.length}`);
+    res.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: eligible.length, tracked_link: trackedRoomLink });
   });
 
   // ── DELETE /api/gameday/rooms/:roomId/countdown ──────────────────────────

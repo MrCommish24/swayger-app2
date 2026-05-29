@@ -2781,8 +2781,8 @@ export async function sendGameDayBlastEmail(opts: {
   gameName: string;
   trackedRoomLink: string;
   subject?: string;
-}): Promise<void> {
-  if (!process.env.RESEND_API_KEY) return;
+}): Promise<string | null> {
+  if (!process.env.RESEND_API_KEY) return null;
   const subject = opts.subject ?? `Tonight's live Game Day Swayger room is open for ${opts.gameName}`;
   const unsubscribeUrl = generateUnsubscribeUrl(opts.userId);
   const html = buildGameDayBlastHtml({
@@ -2797,7 +2797,7 @@ export async function sendGameDayBlastEmail(opts: {
     displayName: opts.displayName,
     unsubscribeUrl,
   });
-  await resend.emails.send({
+  const result = await resend.emails.send({
     from: FROM,
     to: opts.to,
     subject,
@@ -2808,4 +2808,5 @@ export async function sendGameDayBlastEmail(opts: {
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   });
+  return (result as { data?: { id?: string } | null }).data?.id ?? null;
 }
