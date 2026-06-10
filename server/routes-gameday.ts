@@ -1195,6 +1195,68 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── PATCH /api/gameday/rooms/:roomId/rename ──────────────────────────────
+  // Updates the display name of a room. Host-only. Works on any non-archived room.
+  app.patch(
+    "/api/gameday/rooms/:roomId/rename",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const { room_name } = req.body as { room_name?: string };
+
+      const trimmed = (room_name ?? "").trim();
+      if (!trimmed) {
+        res.status(400).json({ error: "room_name is required" });
+        return;
+      }
+      if (trimmed.length > 120) {
+        res.status(400).json({ error: "room_name must be 120 characters or fewer" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, archived_at")
+        .eq("id", roomId)
+        .single();
+
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if ((room as any).host_user_id !== null && (room as any).host_user_id !== hostId) {
+        res.status(403).json({ error: "Not your room" });
+        return;
+      }
+      if ((room as any).archived_at) {
+        res.status(400).json({ error: "Archived rooms cannot be renamed" });
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("gameday_rooms")
+        .update({ room_name: trimmed })
+        .eq("id", roomId);
+
+      if (updateError) {
+        console.error("[gameday] rename error:", updateError.message);
+        res.status(500).json({ error: "Failed to rename room" });
+        return;
+      }
+
+      await logEvent(supabase, roomId, null, hostId, "room_renamed", {
+        new_name: trimmed,
+      });
+
+      console.log(`[gameday] room renamed: ${roomId} → "${trimmed}"`);
+      res.json({ ok: true, room_name: trimmed });
+    }
+  );
+
   // ── GET /api/gameday/rooms/:roomRef/leaderboard ─────────────────────────
   // roomRef accepts either a UUID or a GDS-XXXXX room code. No auth required.
   app.get(

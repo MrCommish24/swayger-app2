@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
+  TextInput,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -110,6 +111,12 @@ export default function HostControlRoom() {
   const [countdownLoading, setCountdownLoading] = useState(false);
   const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
 
+  // Room name inline edit
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Resolve host status from server once auth finishes initialising.
@@ -149,6 +156,41 @@ export default function HostControlRoom() {
   const copyLink = () => {
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
       navigator.clipboard.writeText(getShareUrl()).catch(() => {});
+    }
+  };
+
+  const startEditName = () => {
+    setEditNameValue(hostData?.room?.room_name ?? "");
+    setNameError(null);
+    setIsEditingName(true);
+  };
+
+  const cancelEditName = () => {
+    setIsEditingName(false);
+    setNameError(null);
+  };
+
+  const saveRoomName = async () => {
+    const trimmed = editNameValue.trim();
+    if (!trimmed) { setNameError("Name can't be empty"); return; }
+    if (trimmed.length > 120) { setNameError("120 characters max"); return; }
+    if (trimmed === hostData?.room?.room_name) { setIsEditingName(false); return; }
+    setNameSaving(true);
+    setNameError(null);
+    try {
+      await gamedayFetch<{ ok: boolean; room_name: string }>(
+        `/api/gameday/rooms/${roomId}/rename`,
+        { method: "PATCH", body: JSON.stringify({ room_name: trimmed }) },
+        { session }
+      );
+      setHostData((prev) =>
+        prev ? { ...prev, room: { ...prev.room, room_name: trimmed } } : prev
+      );
+      setIsEditingName(false);
+    } catch (e: any) {
+      setNameError(e?.message ?? "Failed to save");
+    } finally {
+      setNameSaving(false);
     }
   };
 
@@ -508,7 +550,45 @@ export default function HostControlRoom() {
         </View>
       </View>
 
-      <Text style={styles.roomName}>{room.room_name}</Text>
+      {/* Room name — tap pencil to edit inline */}
+      {isEditingName ? (
+        <View style={styles.nameEditRow}>
+          <TextInput
+            style={styles.nameInput}
+            value={editNameValue}
+            onChangeText={setEditNameValue}
+            autoFocus
+            maxLength={120}
+            returnKeyType="done"
+            onSubmitEditing={saveRoomName}
+            editable={!nameSaving}
+            selectTextOnFocus
+          />
+          <TouchableOpacity
+            style={[styles.nameActionBtn, styles.nameSaveBtn]}
+            onPress={saveRoomName}
+            disabled={nameSaving}
+          >
+            {nameSaving
+              ? <ActivityIndicator size="small" color={C.background} />
+              : <Text style={styles.nameSaveBtnText}>Save</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.nameActionBtn, styles.nameCancelBtn]}
+            onPress={cancelEditName}
+            disabled={nameSaving}
+          >
+            <Text style={styles.nameCancelBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity style={styles.nameRow} onPress={startEditName} activeOpacity={0.7}>
+          <Text style={styles.roomName}>{room.room_name}</Text>
+          <Text style={styles.nameEditIcon}>✎</Text>
+        </TouchableOpacity>
+      )}
+      {nameError ? <Text style={styles.nameErrorText}>{nameError}</Text> : null}
+
       <Text style={styles.matchup}>
         {room.team_a_name} vs {room.team_b_name}
       </Text>
@@ -1196,7 +1276,35 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.2,
   },
-  roomName: { fontSize: 22, fontWeight: "700", color: C.text, marginBottom: 4 },
+  roomName: { fontSize: 22, fontWeight: "700", color: C.text },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  nameEditIcon: { fontSize: 16, color: C.textMuted, paddingTop: 2 },
+  nameEditRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  nameInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
+    color: C.text,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.tint,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  nameActionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 48,
+  },
+  nameSaveBtn: { backgroundColor: C.tint },
+  nameSaveBtnText: { color: C.background, fontWeight: "700", fontSize: 13 },
+  nameCancelBtn: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+  nameCancelBtnText: { color: C.textMuted, fontSize: 13, fontWeight: "600" },
+  nameErrorText: { fontSize: 12, color: "#FF6B6B", marginBottom: 4 },
   matchup: { fontSize: 15, color: C.tint, fontWeight: "600", marginBottom: 2 },
   stars: { fontSize: 13, color: C.textMuted, marginBottom: 20 },
 
