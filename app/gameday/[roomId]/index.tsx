@@ -798,6 +798,7 @@ export default function GameDayRoomScreen() {
         <PickCard
           card={openCard}
           myPicks={pendingPicks}
+          serverPicks={my_picks}
           onSelect={(propId, answer) =>
             setPendingPicks((prev) => ({ ...prev, [propId]: answer }))
           }
@@ -1062,6 +1063,7 @@ function NextGameDayCTA({
 function PickCard({
   card,
   myPicks,
+  serverPicks,
   onSelect,
   onSubmit,
   submitting,
@@ -1070,6 +1072,7 @@ function PickCard({
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
+  serverPicks: Record<string, string>;
   onSelect: (propId: string, answer: string) => void;
   onSubmit: () => void;
   submitting: boolean;
@@ -1079,6 +1082,14 @@ function PickCard({
   const answered = card.gameday_props.filter((p) => myPicks[p.id]).length;
   const total = card.gameday_props.length;
   const allAnswered = answered === total;
+
+  // True when the user has submitted previously AND has made a local change that
+  // differs from what's saved on the server — the amber reminder banner appears.
+  const hasUnsavedChanges =
+    hasSubmitted &&
+    card.gameday_props.some(
+      (p) => myPicks[p.id] !== undefined && myPicks[p.id] !== serverPicks[p.id]
+    );
 
   return (
     <View style={styles.card}>
@@ -1096,7 +1107,16 @@ function PickCard({
       {hasSubmitted ? (
         <View style={styles.submittedInline}>
           <Text style={styles.submittedInlineText}>
-            ✓ Picks submitted. You can change them until this card locks.
+            ✓ Picks locked in. Green = confirmed. You can update until this card locks.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Unsaved-change reminder — amber, only when a pick was changed post-submit */}
+      {hasUnsavedChanges ? (
+        <View style={styles.updateReminderBanner}>
+          <Text style={styles.updateReminderText}>
+            ⚠️ You changed a pick — tap "Update my picks →" to save it.
           </Text>
         </View>
       ) : null}
@@ -1106,6 +1126,7 @@ function PickCard({
           key={prop.id}
           prop={prop}
           selected={myPicks[prop.id]}
+          serverPick={serverPicks[prop.id]}
           onSelect={(ans) => onSelect(prop.id, ans)}
         />
       ))}
@@ -1118,6 +1139,7 @@ function PickCard({
         style={[
           styles.submitBtn,
           (submitting || (!hasSubmitted && !allAnswered)) && styles.btnDisabled,
+          hasUnsavedChanges && styles.submitBtnUpdate,
         ]}
         onPress={onSubmit}
         disabled={submitting}
@@ -1137,10 +1159,12 @@ function PickCard({
 function PropPicker({
   prop,
   selected,
+  serverPick,
   onSelect,
 }: {
   prop: GDProp;
   selected: string | undefined;
+  serverPick: string | undefined;
   onSelect: (ans: string) => void;
 }) {
   return (
@@ -1148,15 +1172,27 @@ function PropPicker({
       <Text style={styles.propQuestion}>{prop.question}</Text>
       <View style={styles.optionsRow}>
         {prop.answer_options.map((ans) => {
-          const active = selected === ans;
+          const isSelected = selected === ans;
+          // Confirmed = saved to server and unchanged locally (green)
+          const isConfirmed = isSelected && serverPick === ans;
+          // Pending = locally selected but differs from what's on the server (blue)
+          const isPending = isSelected && !isConfirmed;
           return (
             <TouchableOpacity
               key={ans}
-              style={[styles.optionBtn, active && styles.optionBtnActive]}
+              style={[
+                styles.optionBtn,
+                isConfirmed && styles.optionBtnConfirmed,
+                isPending && styles.optionBtnActive,
+              ]}
               onPress={() => onSelect(ans)}
               activeOpacity={0.75}
             >
-              <Text style={[styles.optionText, active && styles.optionTextActive]}>
+              <Text style={[
+                styles.optionText,
+                isConfirmed && styles.optionTextConfirmed,
+                isPending && styles.optionTextActive,
+              ]}>
                 {ans}
               </Text>
             </TouchableOpacity>
@@ -1424,8 +1460,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   optionBtnActive: { borderColor: C.tint, backgroundColor: C.tint + "22" },
+  optionBtnConfirmed: { borderColor: C.success, backgroundColor: C.success + "22" },
   optionText: { color: C.textSecondary, fontSize: 13, fontWeight: "500" },
   optionTextActive: { color: C.tint, fontWeight: "700" },
+  optionTextConfirmed: { color: C.success, fontWeight: "700" },
 
   // Submit
   submitBtn: {
@@ -1435,7 +1473,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
+  submitBtnUpdate: { backgroundColor: "#F5A623" },
   submitBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
+  // Unsaved-change reminder banner (amber — appears when picks changed post-submit)
+  updateReminderBanner: {
+    backgroundColor: "#F5A62318",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#F5A62355",
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  updateReminderText: { fontSize: 13, color: "#F5A623", fontWeight: "600" },
 
   // Submitted banner
   submittedBanner: {
