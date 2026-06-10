@@ -1257,6 +1257,127 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── POST /api/gameday/rooms/:roomId/duplicate ────────────────────────────
+  // Clones a room's structure (teams, stars, props) into a brand-new room.
+  // All cards reset to "closed", all props reset to "pending" (no picks/participants
+  // are copied). Works on any room status including archived.
+  app.post(
+    "/api/gameday/rooms/:roomId/duplicate",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const { room_name: customName } = req.body as { room_name?: string };
+      const supabase = getServiceSupabase();
+
+      // ── 1. Fetch source room ──────────────────────────────────────────────
+      const { data: srcRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private")
+        .eq("id", roomId)
+        .single();
+
+      if (!srcRoom) {
+        res.status(404).json({ error: "Source room not found" });
+        return;
+      }
+
+      // ── 2. Fetch source cards + props ─────────────────────────────────────
+      const { data: srcCards } = await supabase
+        .from("gameday_pick_cards")
+        .select("phase, title, display_order, gameday_props(question, answer_options, display_order)")
+        .eq("room_id", roomId)
+        .order("display_order");
+
+      if (!srcCards || srcCards.length === 0) {
+        res.status(400).json({ error: "Source room has no cards to duplicate" });
+        return;
+      }
+
+      // ── 3. Determine name for the new room ────────────────────────────────
+      const newName = (customName ?? "").trim() || `Copy of ${(srcRoom as any).room_name}`;
+      if (newName.length > 120) {
+        res.status(400).json({ error: "room_name must be 120 characters or fewer" });
+        return;
+      }
+
+      // ── 4. Generate a unique room code ────────────────────────────────────
+      let roomCode: string | undefined;
+      try {
+        roomCode = await generateUniqueRoomCode(supabase);
+      } catch (e) {
+        console.warn("[gameday] room_code generation skipped during duplicate:", e);
+      }
+
+      // ── 5. Create the new room ────────────────────────────────────────────
+      const newRoomPayload: Record<string, unknown> = {
+        room_name:    newName,
+        team_a_name:  (srcRoom as any).team_a_name,
+        team_b_name:  (srcRoom as any).team_b_name,
+        team_a_star:  (srcRoom as any).team_a_star,
+        team_b_star:  (srcRoom as any).team_b_star,
+        game_date:    (srcRoom as any).game_date ?? null,
+        host_user_id: hostId,
+        status:       "active",
+        source:       "app",
+        is_private:   (srcRoom as any).is_private ?? true,
+      };
+      if (roomCode) newRoomPayload.room_code = roomCode;
+
+      const { data: newRoom, error: roomErr } = await supabase
+        .from("gameday_rooms")
+        .insert(newRoomPayload)
+        .select()
+        .single();
+
+      if (roomErr || !newRoom) {
+        console.error("[gameday] duplicate room insert error:", roomErr);
+        res.status(500).json({ error: "Failed to create duplicate room" });
+        return;
+      }
+
+      // ── 6. Clone cards + props ────────────────────────────────────────────
+      for (const srcCard of srcCards as any[]) {
+        const { data: newCard } = await supabase
+          .from("gameday_pick_cards")
+          .insert({
+            room_id:       newRoom.id,
+            phase:         srcCard.phase,
+            title:         srcCard.title,
+            display_order: srcCard.display_order,
+            status:        "closed",
+          })
+          .select()
+          .single();
+
+        if (!newCard) continue;
+
+        const props = [...(srcCard.gameday_props ?? [])].sort(
+          (a: any, b: any) => a.display_order - b.display_order
+        );
+
+        for (const srcProp of props) {
+          await supabase.from("gameday_props").insert({
+            card_id:       (newCard as any).id,
+            question:      srcProp.question,
+            answer_options: srcProp.answer_options,
+            display_order: srcProp.display_order,
+            status:        "pending",
+            correct_answer: null,
+          });
+        }
+      }
+
+      await logEvent(supabase, newRoom.id, null, hostId, "room_created", {
+        duplicated_from: roomId,
+      });
+
+      console.log(`[gameday] room duplicated: ${roomId} → ${newRoom.id} "${newName}"`);
+      res.json({ ok: true, room_id: newRoom.id, room_name: newName, room_code: (newRoom as any).room_code ?? null });
+    }
+  );
+
   // ── GET /api/gameday/rooms/:roomRef/leaderboard ─────────────────────────
   // roomRef accepts either a UUID or a GDS-XXXXX room code. No auth required.
   app.get(

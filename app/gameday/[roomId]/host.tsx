@@ -105,6 +105,9 @@ export default function HostControlRoom() {
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateName, setDuplicateName] = useState("");
   const [countdownPhase, setCountdownPhase] = useState<"pregame" | "halftime" | "fourth">("halftime");
   const [countdownType, setCountdownType] = useState<"opens_soon" | "locks_soon">("opens_soon");
   const [countdownDuration, setCountdownDuration] = useState<5 | 10>(5);
@@ -422,6 +425,29 @@ export default function HostControlRoom() {
     } catch (e: any) {
       alert(e.message ?? "Archive failed");
       setArchiving(false);
+    }
+  };
+
+  const openDuplicateModal = () => {
+    setDuplicateName(`Copy of ${hostData?.room?.room_name ?? ""}`);
+    setShowDuplicateModal(true);
+  };
+
+  const doDuplicate = async () => {
+    const trimmed = duplicateName.trim();
+    if (!trimmed) return;
+    setShowDuplicateModal(false);
+    setDuplicating(true);
+    try {
+      const result = await gamedayFetch<{ ok: boolean; room_id: string; room_name: string }>(
+        `/api/gameday/rooms/${roomId}/duplicate`,
+        { method: "POST", body: JSON.stringify({ room_name: trimmed }) },
+        { session }
+      );
+      router.replace(`/gameday/${result.room_id}/host` as never);
+    } catch (e: any) {
+      alert(e.message ?? "Duplicate failed");
+      setDuplicating(false);
     }
   };
 
@@ -933,20 +959,35 @@ export default function HostControlRoom() {
         <Text style={styles.viewParticipantText}>View Participant Room →</Text>
       </TouchableOpacity>
 
-      {/* ── Archive Room ─────────────────────────────────────────────────────── */}
+      {/* ── Room Management ──────────────────────────────────────────────────── */}
       <View style={styles.archiveSection}>
         <Text style={styles.archiveSectionLabel}>ROOM MANAGEMENT</Text>
+
+        {/* Duplicate Room — always available */}
+        <TouchableOpacity
+          style={styles.duplicateBtn}
+          onPress={openDuplicateModal}
+          disabled={duplicating}
+        >
+          {duplicating ? (
+            <ActivityIndicator color={C.tint} size="small" />
+          ) : (
+            <Text style={styles.duplicateBtnText}>⧉  Duplicate Room</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Archive Room */}
         {room.status === "finalized" || localFinalized ? (
-          <Text style={styles.archiveDisabledText}>
+          <Text style={[styles.archiveDisabledText, { marginTop: 10 }]}>
             Finalized rooms are preserved as receipts and cannot be archived.
           </Text>
         ) : room.archived_at ? (
-          <View style={styles.archivedBanner}>
+          <View style={[styles.archivedBanner, { marginTop: 10 }]}>
             <Text style={styles.archivedBannerText}>This room is archived</Text>
           </View>
         ) : (
           <TouchableOpacity
-            style={styles.archiveBtn}
+            style={[styles.archiveBtn, { marginTop: 10 }]}
             onPress={() => setShowArchiveModal(true)}
             disabled={archiving}
           >
@@ -982,6 +1023,50 @@ export default function HostControlRoom() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.modalConfirmBtn} onPress={doFinalize}>
               <Text style={styles.modalConfirmText}>Finalize Standings</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+
+    {/* ── Duplicate confirmation modal ─────────────────────────────────────── */}
+    <Modal
+      visible={showDuplicateModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowDuplicateModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Duplicate this room?</Text>
+          <Text style={styles.modalBody}>
+            Same teams, same props — completely fresh picks. No participants or scoring carry over.
+          </Text>
+          <Text style={styles.duplicateModalLabel}>NAME FOR THE NEW ROOM</Text>
+          <TextInput
+            style={styles.duplicateModalInput}
+            value={duplicateName}
+            onChangeText={setDuplicateName}
+            maxLength={120}
+            autoFocus
+            selectTextOnFocus
+            returnKeyType="done"
+            placeholder="Room name"
+            placeholderTextColor={C.textMuted}
+          />
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowDuplicateModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalConfirmBtn, !duplicateName.trim() && { opacity: 0.4 }]}
+              onPress={doDuplicate}
+              disabled={!duplicateName.trim()}
+            >
+              <Text style={styles.modalConfirmText}>Duplicate</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1519,6 +1604,37 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   viewParticipantText: { color: C.textSecondary, fontSize: 14, fontWeight: "500" },
+
+  // Duplicate Room button
+  duplicateBtn: {
+    borderWidth: 1,
+    borderColor: C.tint,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  duplicateBtnText: { color: C.tint, fontSize: 14, fontWeight: "600" },
+
+  // Duplicate modal inputs
+  duplicateModalLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 1,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  duplicateModalInput: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: C.text,
+    marginBottom: 16,
+  },
 
   // Archive Room section
   archiveSection: {
