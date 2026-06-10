@@ -171,6 +171,11 @@ export default function GameDayRoomScreen() {
   const [submittedCardId, setSubmittedCardId] = useState<string | null>(null);
   // Ref to detect open-card changes so we can re-sync pendingPicks from the server.
   const openCardIdRef = useRef<string | null>(null);
+  // Tracks whether pendingPicks has been seeded with real server picks for the current card.
+  // Resets when the card changes. Used to handle the guest-session race: the first fetchRoom
+  // may fire before guestSessionId loads from localStorage, returning empty my_picks. When
+  // a subsequent fetch returns real picks, we need to re-seed even though the card ID hasn't changed.
+  const picksSeededRef = useRef(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const receiptRef = useRef<View>(null);
@@ -261,19 +266,31 @@ export default function GameDayRoomScreen() {
         ).catch(() => {});
       }
 
-      // Sync pendingPicks when the open card changes (new card) or on first load.
-      // This pre-fills any picks already saved on the server so returning users
-      // see their current selections and can update them while the card is open.
+      // Sync pendingPicks from the server when:
+      //   a) A different card is now open (card switch or first load), OR
+      //   b) The server now has real picks for us but we haven't seeded them yet.
+      //      This handles the guest-session race where the first fetchRoom fires before
+      //      guestSessionId is loaded from localStorage (so my_picks comes back empty),
+      //      and the subsequent fetch actually returns the user's saved picks — but the
+      //      card ID hasn't changed, so the old "card changed" check would skip re-seeding.
       const newOpenCard = (data.cards as GDCard[]).find((c) => c.status === "open");
       const newOpenCardId = newOpenCard?.id ?? null;
-      if (newOpenCardId !== openCardIdRef.current) {
-        openCardIdRef.current = newOpenCardId;
+      const cardChanged = newOpenCardId !== openCardIdRef.current;
+      const serverHasPicksForUs = newOpenCard != null && Object.keys(data.my_picks).length > 0;
+
+      if (cardChanged || (serverHasPicksForUs && !picksSeededRef.current)) {
+        if (cardChanged) {
+          openCardIdRef.current = newOpenCardId;
+          picksSeededRef.current = false; // reset seed-tracking for the new card
+        }
         if (newOpenCard) {
           // Seed pendingPicks with whatever the server has saved for this card.
           const seeded: Record<string, string> = {};
           newOpenCard.gameday_props.forEach((p) => {
             if (data.my_picks[p.id]) seeded[p.id] = data.my_picks[p.id];
           });
+          // Mark as seeded only when we actually got real picks from the server.
+          if (Object.keys(seeded).length > 0) picksSeededRef.current = true;
           setPendingPicks(seeded);
         } else {
           setPendingPicks({});
