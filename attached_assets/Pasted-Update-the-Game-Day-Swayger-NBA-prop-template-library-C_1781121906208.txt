@@ -1,0 +1,526 @@
+Update the Game Day Swayger NBA prop template/library.
+
+Context:
+Game Day Swayger is working well during the NBA playoffs. The current props are good, but we need a deeper and more creative prop library for each lock card:
+- Pregame
+- Halftime
+- 4Q Clutch
+
+Right now, the prop options are too limited, and a few are too subjective or hard to settle.
+
+Goal:
+Expand the Game Day prop library to approximately 20 strong, objective prop options per card/phase so the host/admin has more variety when creating each room.
+
+Important:
+This should be a prop library expansion, not necessarily a requirement that all 20 props are shown to participants every game.
+
+The host/admin should still be able to select which props are used for that room.
+
+Do not change:
+- scoring logic
+- card open/lock logic
+- settlement logic
+- participant flow
+- Captain Center
+- Discord bot
+- SP system
+- Game Day room structure
+- existing analytics
+
+==================================================
+Core Rules For New Props
+==================================================
+
+1. Every prop must be objectively settleable.
+
+Avoid subjective language like:
+- Who makes the biggest play?
+- Who has the most clutch moment?
+- Who changes momentum?
+- Will either team miss a clutch free throw?
+- Who looked better?
+- Who had the better half?
+
+2. Remove or retire overly subjective props from the template/library, including:
+- “Who makes the biggest play?”
+- “Will either team miss a clutch free throw?”
+- any similar subjective or debate-heavy props
+
+3. Use clear answer options.
+
+4. Add “Tie” as an answer option for all head-to-head stat comparison props where a tie can realistically happen.
+
+Especially:
+- Which star scores more points?
+- Which team scores more points in [period]?
+- Which player/team has more threes/rebounds/assists/etc. if used
+
+If two numeric outcomes are being compared, include:
+- Team A / Player A
+- Team B / Player B
+- Tie
+
+5. Keep props appropriate to each phase:
+- Pregame props should include full-game, first-quarter, first-half, and early-game props.
+- Halftime props should be based on what can happen in the second half, third quarter, or full-game outcome from halftime.
+- 4Q Clutch props should be about the fourth quarter, final score margin, late-game lead changes, and final stat outcomes that remain interesting late.
+
+6. Prefer props that help leaderboard movement happen throughout the game:
+- some settle after Q1
+- some settle by halftime
+- some settle after Q3
+- some settle at final
+- some create late-game swing potential
+
+==================================================
+Recommended Prop Library
+==================================================
+
+Please inspect the current Game Day template first, then update/merge carefully without creating duplicates.
+
+Use the following prop library as the target direction.
+
+==================================================
+Pregame Prop Library — Target ~20
+==================================================
+
+Pregame props should be made before tipoff. Include a mix of early-settle and full-game props.
+
+1. Which team scores first?
+Options:
+- Team A
+- Team B
+
+2. Which team makes the first 3-pointer?
+Options:
+- Team A
+- Team B
+- No 3-pointer made in first quarter
+
+3. Which team wins the 1st quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+4. Which team scores more points in the 1st quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+5. Which team reaches 10 points first?
+Options:
+- Team A
+- Team B
+
+6. Which team reaches 20 points first?
+Options:
+- Team A
+- Team B
+- Neither reaches 20 in the 1st quarter
+
+7. Will either team lead by 10+ points in the 1st half?
+Options:
+- Yes
+- No
+
+8. Which star scores more points in the 1st quarter?
+Options:
+- Star A
+- Star B
+- Tie
+
+9. Which star scores more points in the 1st half?
+Options:
+- Star A
+- Star B
+- Tie
+
+10. Which star makes more 3-pointers in the game?
+Options:
+- Star A
+- Star B
+- Tie
+
+11. Which star finishes with more total points?
+Options:
+- Star A
+- Star B
+- Tie
+
+12. Which team has more made 3-pointers in the game?
+Options:
+- Team A
+- Team B
+- Tie
+
+13. Which team has more turnovers in the game?
+Options:
+- Team A
+- Team B
+- Tie
+
+14. Which team has more offensive rebounds in the game?
+Options:
+- Team A
+- Team B
+- Tie
+
+15. Will either team score 30+ points in the 1st quarter?
+Options:
+- Yes
+- No
+
+16. Will both teams score 25+ points in the 1st quarter?
+Options:
+- Yes
+- No
+
+17. Which team wins the first half?
+Options:
+- Team A
+- Team B
+- Tie
+
+18. Which team wins the game?
+Options:
+- Team A
+- Team B
+
+19. Will the final margin be 7 points or fewer?
+Options:
+- Yes
+- No
+
+20. Will the game total be 220+ combined points?
+Options:
+- Yes
+- No
+
+Optional if score thresholds should be configurable:
+Allow the host/admin to edit thresholds like 220+, 30+, 25+, 7 points or fewer.
+
+==================================================
+Halftime Prop Library — Target ~20
+==================================================
+
+Halftime props should be made at halftime and should focus on second-half, third-quarter, and final-outcome scenarios.
+
+1. Which team scores first in the 2nd half?
+Options:
+- Team A
+- Team B
+
+2. Which team makes the first 3-pointer of the 2nd half?
+Options:
+- Team A
+- Team B
+- No 3-pointer made in 3rd quarter
+
+3. Which team wins the 3rd quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+4. Which team scores more points in the 3rd quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+5. Which team reaches 15 second-half points first?
+Options:
+- Team A
+- Team B
+
+6. Which team scores more points in the 2nd half?
+Options:
+- Team A
+- Team B
+- Tie
+
+7. Which star scores more points in the 2nd half?
+Options:
+- Star A
+- Star B
+- Tie
+
+8. Which star makes more 3-pointers in the 2nd half?
+Options:
+- Star A
+- Star B
+- Tie
+
+9. Will either star score 15+ points in the 2nd half?
+Options:
+- Yes
+- No
+
+10. Will either team lead by 15+ points at any point in the 2nd half?
+Options:
+- Yes
+- No
+
+11. Will the halftime leader win the game?
+Options:
+- Yes
+- No
+- Game was tied at halftime
+
+12. Will there be a lead change in the 3rd quarter?
+Options:
+- Yes
+- No
+
+13. Will the game be within 5 points entering the 4th quarter?
+Options:
+- Yes
+- No
+
+14. Will either team score 35+ points in the 3rd quarter?
+Options:
+- Yes
+- No
+
+15. Will both teams make at least two 3-pointers in the 3rd quarter?
+Options:
+- Yes
+- No
+
+16. Which team commits more turnovers in the 2nd half?
+Options:
+- Team A
+- Team B
+- Tie
+
+17. Which team gets more rebounds in the 2nd half?
+Options:
+- Team A
+- Team B
+- Tie
+
+18. Which team has more made free throws in the 2nd half?
+Options:
+- Team A
+- Team B
+- Tie
+
+19. Will the team trailing at halftime come back to take the lead?
+Options:
+- Yes
+- No
+- Game was tied at halftime
+
+20. Which team wins the game from halftime?
+Options:
+- Team A
+- Team B
+
+==================================================
+4Q Clutch Prop Library — Target ~20
+==================================================
+
+4Q Clutch props should be made before or early in the 4th quarter and focus on late-game urgency, final margin, final stats, and comeback potential.
+
+1. Which team wins the 4th quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+2. Which team scores more points in the 4th quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+3. Which team scores first in the 4th quarter?
+Options:
+- Team A
+- Team B
+
+4. Which team makes the first 3-pointer of the 4th quarter?
+Options:
+- Team A
+- Team B
+- No 3-pointer made in 4th quarter
+
+5. Will there be a lead change in the 4th quarter?
+Options:
+- Yes
+- No
+
+6. Will the game be within 5 points at any point in the final 2 minutes?
+Options:
+- Yes
+- No
+
+7. Will the final margin be 5 points or fewer?
+Options:
+- Yes
+- No
+
+8. Will the final margin be 10 points or fewer?
+Options:
+- Yes
+- No
+
+9. Will either team score 30+ points in the 4th quarter?
+Options:
+- Yes
+- No
+
+10. Will both teams score 20+ points in the 4th quarter?
+Options:
+- Yes
+- No
+
+11. Which star scores more points in the 4th quarter?
+Options:
+- Star A
+- Star B
+- Tie
+
+12. Will either star score 10+ points in the 4th quarter?
+Options:
+- Yes
+- No
+
+13. Which team makes more 3-pointers in the 4th quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+14. Which team attempts more free throws in the 4th quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+15. Which team makes more free throws in the 4th quarter?
+Options:
+- Team A
+- Team B
+- Tie
+
+16. Will the team trailing entering the 4th quarter take the lead?
+Options:
+- Yes
+- No
+- Game was tied entering the 4th
+
+17. Will the team leading entering the 4th quarter win the game?
+Options:
+- Yes
+- No
+- Game was tied entering the 4th
+
+18. Will either team go on an 8–0 run or better in the 4th quarter?
+Options:
+- Yes
+- No
+
+19. Will the game have overtime?
+Options:
+- Yes
+- No
+
+20. Who wins the game?
+Options:
+- Team A
+- Team B
+
+==================================================
+Tie Option Requirement
+==================================================
+
+Add “Tie” as an answer option to any prop that compares two teams or two players on a numeric stat where a tie is possible.
+
+Examples:
+- Which star scores more points?
+- Which star scores more points in the 1st half?
+- Which star scores more points in the 2nd half?
+- Which star scores more points in the 4th quarter?
+- Which team scores more points in the 1st quarter?
+- Which team scores more points in the 3rd quarter?
+- Which team scores more points in the 4th quarter?
+- Which team makes more 3-pointers?
+- Which team commits more turnovers?
+- Which team gets more rebounds?
+- Which team makes more free throws?
+
+Do not force a tie option where there cannot realistically be a tie, such as:
+- Which team scores first?
+- Which team reaches 10 first?
+- Who wins the game?
+
+Important:
+Settlement UI must allow the host/admin to select Tie when it is an answer option.
+Participant UI must show Tie as a selectable option.
+Leaderboard/scoring must correctly award points to users who selected Tie if Tie is settled as correct.
+
+==================================================
+Implementation Guidance
+==================================================
+
+1. Inspect the current Game Day prop template source.
+Likely places:
+- server/routes-gameday.ts
+- GET /api/gameday/template
+- frontend create room prop selection screen
+
+2. Update the prop library/template without breaking existing rooms.
+
+Existing rooms should keep their existing props.
+Only newly created rooms should use the updated library.
+
+3. Remove or hide subjective props from the default selectable library.
+
+4. Make sure prop IDs/keys are stable enough for settlement and analytics.
+
+5. Make sure each prop has:
+- phase/card assignment
+- question text
+- answer options
+- clear settlement options
+- no subjective judgment required
+
+6. If there is a default selected set, do not automatically select 20 props per phase unless that is already how the app works.
+
+Preferred:
+- Expand the available library to around 20 per phase.
+- Keep the default selected count reasonable.
+
+Suggested default selected count:
+- Pregame: 6
+- Halftime: 4
+- 4Q Clutch: 3 to 5
+
+7. Do not add sports API integration.
+8. Do not add automated settlement.
+9. Do not add AI.
+10. Do not change scoring values unless needed to support Tie answer options.
+
+==================================================
+Acceptance Criteria
+==================================================
+
+1. Pregame library has approximately 20 objective props.
+2. Halftime library has approximately 20 objective props.
+3. 4Q Clutch library has approximately 20 objective props.
+4. Subjective props are removed or hidden from the library.
+5. Props are appropriate to their lock-card timing.
+6. Tie is available for head-to-head numeric comparison props.
+7. Participant can select Tie where available.
+8. Host/admin can settle Tie where available.
+9. Users who selected Tie receive points when Tie is the settled answer.
+10. Existing created rooms are not changed retroactively.
+11. New rooms use the expanded library.
+12. Game Day create flow still works.
+13. Participant pick flow still works.
+14. Host settlement flow still works.
+15. Leaderboard scoring still works.
+16. Captain Center and Discord bot remain unaffected.
