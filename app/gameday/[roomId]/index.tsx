@@ -276,7 +276,11 @@ export default function GameDayRoomScreen() {
       const newOpenCard = (data.cards as GDCard[]).find((c) => c.status === "open");
       const newOpenCardId = newOpenCard?.id ?? null;
       const cardChanged = newOpenCardId !== openCardIdRef.current;
-      const serverHasPicksForUs = newOpenCard != null && Object.keys(data.my_picks).length > 0;
+      // Only count picks for this specific card's props — not picks from other cards
+      // (e.g. pregame picks must not trigger a re-seed when the halftime card is open).
+      const serverHasPicksForUs =
+        newOpenCard != null &&
+        newOpenCard.gameday_props.some((p: any) => data.my_picks[p.id] !== undefined);
 
       if (cardChanged || (serverHasPicksForUs && !picksSeededRef.current)) {
         if (cardChanged) {
