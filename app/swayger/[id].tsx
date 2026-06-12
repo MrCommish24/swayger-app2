@@ -105,7 +105,7 @@ function buildShareMessage(
   return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
 }
 
-function InviteSection({ inviteCode, swaygerName, isMarchMadness }: { inviteCode: string; swaygerName: string; isMarchMadness?: boolean }) {
+function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, isMarchMadness }: { inviteCode: string; swaygerName: string; creatorPick?: string; creatorUsername?: string; isMarchMadness?: boolean }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
@@ -122,7 +122,10 @@ function InviteSection({ inviteCode, swaygerName, isMarchMadness }: { inviteCode
   }
 
   async function handleShare() {
-    const message = `Join my Swayger "${swaygerName}"!\n\nTap to join: ${inviteLink}\n\nOr enter code manually: ${inviteCode}`;
+    const takeLine = creatorPick
+      ? `${creatorUsername ? `@${creatorUsername}` : "I"} says: "${creatorPick}"\n\n`
+      : "";
+    const message = `${takeLine}Think you know better? Take the other side on Swayger 👇\n${inviteLink}\n\nOr enter code: ${inviteCode}`;
     try {
       await Share.share({ message, url: inviteLink });
     } catch {
