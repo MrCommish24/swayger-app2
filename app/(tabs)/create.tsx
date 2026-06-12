@@ -56,6 +56,9 @@ export default function CreateSwaygerScreen() {
   const isCounter = !!params.counterTitle && !params.lockedOpponentId && !isOpenChallenge;
   const isRematch = !!params.lockedOpponentId;
 
+  // Pre-filled title for "Same Swayger, New Opponent" — carried over from the original.
+  // For normal new Swaygers this is empty and the title is derived from the take on submit.
+  const [prefillTitle] = useState(params.prefillTitle || params.counterTitle || "");
   const [creatorPick, setCreatorPick] = useState(params.creatorPickPrefill || "");
   const [category, setCategory] = useState(params.prefillCategory || params.counterCategory || "Sports");
   const [stakeUnits, setStakeUnits] = useState(
@@ -97,8 +100,12 @@ export default function CreateSwaygerScreen() {
     (balanceData == null || stakeUnits <= myBalance);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      createSwayger(creatorPick.trim().slice(0, 60), category, stakeUnits, creatorPick, user!.id, description, stakeNote),
+    mutationFn: () => {
+      // When a title is pre-filled (Same Swayger, New Opponent), use it directly.
+      // For fresh Swaygers, derive the title from the take (original behavior).
+      const title = prefillTitle.trim() || creatorPick.trim().slice(0, 60);
+      return createSwayger(title, category, stakeUnits, creatorPick, user!.id, description, stakeNote);
+    },
     onSuccess: async (result) => {
       if (result.error) { showError(result.error); return; }
       Analytics.swaygerCreated(category, stakeUnits);
@@ -190,6 +197,14 @@ export default function CreateSwaygerScreen() {
         )}
 
         <View style={styles.form}>
+
+          {/* ── Locked title row — shown for Same Swayger, New Opponent ── */}
+          {isOpenChallenge && prefillTitle ? (
+            <View style={styles.lockedTitleRow}>
+              <Text style={styles.lockedTitleLabel}>Swayger</Text>
+              <Text style={styles.lockedTitleValue}>{prefillTitle}</Text>
+            </View>
+          ) : null}
 
           {/* ── Field 1: Your Take (pick) ── */}
           <View>
@@ -466,6 +481,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 12,
     gap: 22,
+  },
+
+  // Locked title display (Same Swayger, New Opponent)
+  lockedTitleRow: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  lockedTitleLabel: {
+    fontSize: 10,
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  lockedTitleValue: {
+    fontSize: 15,
+    color: Colors.dark.text,
+    fontWeight: "600" as const,
   },
 
   // Field labels
