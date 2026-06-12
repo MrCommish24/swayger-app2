@@ -105,7 +105,7 @@ function buildShareMessage(
   return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
 }
 
-function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, isMarchMadness }: { inviteCode: string; swaygerName: string; creatorPick?: string; creatorUsername?: string; isMarchMadness?: boolean }) {
+function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, stakeUnits, stakeNote, isMarchMadness }: { inviteCode: string; swaygerName: string; creatorPick?: string; creatorUsername?: string; stakeUnits?: number; stakeNote?: string; isMarchMadness?: boolean }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
@@ -122,10 +122,16 @@ function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, 
   }
 
   async function handleShare() {
-    const takeLine = creatorPick
-      ? `${creatorUsername ? `@${creatorUsername}` : "I"} says: "${creatorPick}"\n\n`
-      : "";
-    const message = `${takeLine}Think you know better? Take the other side on Swayger 👇\n${inviteLink}\n\nOr enter code: ${inviteCode}`;
+    const who = creatorUsername ? `@${creatorUsername}` : "I";
+    const takeLine = creatorPick ? `${who} says: "${creatorPick}"\n` : "";
+    const stakeParts = [
+      stakeUnits != null ? `${stakeUnits} SP` : null,
+      stakeNote?.trim() || null,
+    ].filter(Boolean);
+    const stakeLine = stakeParts.length > 0
+      ? `${stakeParts.join(" · ")} on the line\n\n`
+      : "\n";
+    const message = `${takeLine}${stakeLine}Think you know better? Take the other side on Swayger 👇\n${inviteLink}\n\nOr enter code: ${inviteCode}`;
     try {
       await Share.share({ message, url: inviteLink });
     } catch {
@@ -1344,7 +1350,15 @@ export default function SwaygerDetailScreen() {
           </View>
         </View>
       ) : status === "pending_invite" && isCreator && invite?.invite_code ? (
-        <InviteSection inviteCode={invite.invite_code} swaygerName={swayger.title} isMarchMadness={swayger.category === "March Madness"} />
+        <InviteSection
+          inviteCode={invite.invite_code}
+          swaygerName={swayger.title}
+          creatorPick={swayger.creator_pick}
+          creatorUsername={profiles?.creator?.username}
+          stakeUnits={swayger.stake_units}
+          stakeNote={swayger.stake_note}
+          isMarchMadness={swayger.category === "March Madness"}
+        />
       ) : null}
 
       <View style={styles.section}>
