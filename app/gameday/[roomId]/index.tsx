@@ -295,7 +295,14 @@ export default function GameDayRoomScreen() {
           });
           // Mark as seeded only when we actually got real picks from the server.
           if (Object.keys(seeded).length > 0) picksSeededRef.current = true;
-          setPendingPicks(seeded);
+          if (cardChanged) {
+            // Card switch: full replace with server picks.
+            setPendingPicks(seeded);
+          } else {
+            // Re-seed (race condition or post-submit refresh): merge server picks
+            // but local picks win — never wipe something the user already selected.
+            setPendingPicks((prev) => ({ ...seeded, ...prev }));
+          }
         } else {
           setPendingPicks({});
         }
@@ -551,6 +558,8 @@ export default function GameDayRoomScreen() {
         utmCampaignRef.current
       );
       setSubmittedCardId(openCard.id);
+      // Force a re-seed from the server so pendingPicks reflects all freshly saved picks.
+      picksSeededRef.current = false;
       await fetchRoom();
     } catch (e: any) {
       setPickError(e.message);
