@@ -1,8 +1,10 @@
+import { useCallback } from "react";
 import {
   StyleSheet, Text, View, Platform, FlatList,
   ActivityIndicator, Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
@@ -10,12 +12,15 @@ import { useAuth } from "@/lib/auth-context";
 import { fetchAllH2HOpponents, H2HOpponent } from "@/lib/swayger";
 import { getAvatarColor, formatDate } from "@/lib/helpers";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 export default function H2HIndexScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const router = useRouter();
   const { user, profile } = useAuth();
+
+  useFocusEffect(useCallback(() => { Analytics.h2hViewed(); }, []));
 
   const { data: opponents, isLoading } = useQuery<H2HOpponent[]>({
     queryKey: ["h2h-opponents", user?.id],

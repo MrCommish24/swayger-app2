@@ -105,7 +105,7 @@ function buildShareMessage(
   return `${challengerName} just challenged you. ⚡\n\n"${title}"\n${category} · ${stakeStr}\n\nAccept the challenge: ${link}`;
 }
 
-function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, stakeUnits, stakeNote, isMarchMadness }: { inviteCode: string; swaygerName: string; creatorPick?: string; creatorUsername?: string; stakeUnits?: number; stakeNote?: string; isMarchMadness?: boolean }) {
+function InviteSection({ inviteCode, swaygerIdForAnalytics, swaygerName, creatorPick, creatorUsername, stakeUnits, stakeNote, isMarchMadness }: { inviteCode: string; swaygerIdForAnalytics?: string; swaygerName: string; creatorPick?: string; creatorUsername?: string; stakeUnits?: number; stakeNote?: string; isMarchMadness?: boolean }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [inviteLink, setInviteLink] = useState(buildInviteLink(inviteCode));
 
@@ -119,6 +119,7 @@ function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, 
     await Clipboard.setStringAsync(inviteLink);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
+    if (swaygerIdForAnalytics) Analytics.inviteCodeCopied(swaygerIdForAnalytics);
   }
 
   async function handleShare() {
@@ -134,8 +135,10 @@ function InviteSection({ inviteCode, swaygerName, creatorPick, creatorUsername, 
     const message = `${takeLine}${stakeLine}Think you know better? Take the other side on Swayger 👇\n${inviteLink}\n\nOr enter code: ${inviteCode}`;
     try {
       await Share.share({ message, url: inviteLink });
+      if (swaygerIdForAnalytics) Analytics.inviteShared(swaygerIdForAnalytics, "native_share");
     } catch {
       await Clipboard.setStringAsync(inviteLink);
+      if (swaygerIdForAnalytics) Analytics.inviteShared(swaygerIdForAnalytics, "clipboard_fallback");
     }
   }
 
@@ -1352,6 +1355,7 @@ export default function SwaygerDetailScreen() {
       ) : status === "pending_invite" && isCreator && invite?.invite_code ? (
         <InviteSection
           inviteCode={invite.invite_code}
+          swaygerIdForAnalytics={id as string}
           swaygerName={swayger.title}
           creatorPick={swayger.creator_pick}
           creatorUsername={profiles?.creator?.username}

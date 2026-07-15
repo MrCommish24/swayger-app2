@@ -350,7 +350,7 @@ export default function LeaderboardScreen() {
   const params = useLocalSearchParams<{ category?: string }>();
   const [selectedCategory, setSelectedCategory] = useState(params.category || "All");
 
-  useFocusEffect(useCallback(() => { Analytics.leaderboardViewed("all"); }, []));
+  useFocusEffect(useCallback(() => { Analytics.leaderboardViewed(selectedCategory); }, [selectedCategory]));
 
   const { data, isLoading } = useQuery<AllSettledData>({
     queryKey: ["leaderboard-all"],

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   StyleSheet, Text, View, Platform, ActivityIndicator,
   ScrollView, Pressable,
@@ -14,6 +14,7 @@ import { fetchDetailedH2H, DetailedH2HResult, categoryIcon, H2HSwaygerLog } from
 import { getAvatarColor, formatDate, showError } from "@/lib/helpers";
 import H2HReceiptCard from "@/components/H2HReceiptCard";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 export default function H2HDetailScreen() {
   const { opponentId } = useLocalSearchParams<{ opponentId: string }>();
@@ -23,6 +24,10 @@ export default function H2HDetailScreen() {
   const { user, profile } = useAuth();
   const captureTarget = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+
+  useEffect(() => {
+    if (opponentId) Analytics.h2hViewed(opponentId);
+  }, [opponentId]);
 
   const { data, isLoading } = useQuery<DetailedH2HResult>({
     queryKey: ["h2h-detail", user?.id, opponentId],
