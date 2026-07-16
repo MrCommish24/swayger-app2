@@ -7,7 +7,7 @@
 import { supabase } from "@/lib/supabase";
 import { getApiUrl } from "@/lib/query-client";
 
-export const NBA_PLAYOFFS_ACTIVE = true;
+export const NBA_PLAYOFFS_ACTIVE = false;
 
 // ─── Scoring System ──────────────────────────────────────────
 
