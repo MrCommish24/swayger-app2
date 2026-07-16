@@ -53,7 +53,7 @@ export interface GDRoom {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was originally created */
   source?: string | null;
-  countdown_phase?: "pregame" | "halftime" | "fourth" | null;
+  countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;
   countdown_started_at?: string | null;
@@ -73,7 +73,7 @@ export interface GDCard {
   id: string;
   room_id: string;
   title: string;
-  phase: "pregame" | "halftime" | "fourth";
+  phase: string;
   status: "closed" | "open" | "locked" | "settled";
   display_order: number;
   lock_label: string | null;

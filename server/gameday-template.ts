@@ -1,6 +1,6 @@
 export interface PropTemplate {
   id: string;
-  phase: "pregame" | "halftime" | "fourth";
+  phase: "pregame" | "halftime" | "fourth" | "final_push" | "penalties";
   question: string;
   answers: string[];
   settlement_window: string;
@@ -473,6 +473,373 @@ export const DEFAULT_PROP_IDS: string[] = [
   "q4_winner",          // End Game (Tie option included)
   "q4_lead_change",     // End Game
   "q4_clutch",          // Final 2 Min
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIFA / Soccer template — 4 phases: pregame, halftime, final_push, penalties
+// Designed for a 90-min match with possible extra time + shootout.
+// Pregame: settle progressively through 1H, halftime, full game.
+// Halftime: settle through 2H and end of 90 min.
+// Final Push: opens ~70th min, covers last 20 min + ET question.
+// Penalties: host opens ONLY if match goes to a shootout.
+// ─────────────────────────────────────────────────────────────────────────────
+export const FIFA_TEMPLATE: PropTemplate[] = [
+
+  // ── Pregame ───────────────────────────────────────────────────────────────
+
+  {
+    id: "fifa_pg_scores_first",
+    phase: "pregame",
+    question: "Which team scores first?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No goals in first 20 min"],
+    settlement_window: "First 20 Min",
+  },
+  {
+    id: "fifa_pg_1h_goals",
+    phase: "pregame",
+    question: "How many goals in the first half?",
+    answers: ["0", "1", "2+"],
+    settlement_window: "Halftime",
+  },
+  {
+    id: "fifa_pg_1h_winner",
+    phase: "pregame",
+    question: "Who leads at halftime?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Level / 0-0"],
+    settlement_window: "Halftime",
+  },
+  {
+    id: "fifa_pg_star_goal_1h",
+    phase: "pregame",
+    question: "Does either star score in the first half?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Both", "Neither"],
+    settlement_window: "Halftime",
+  },
+  {
+    id: "fifa_pg_corner_1h",
+    phase: "pregame",
+    question: "Which team wins more corners in the first half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Equal"],
+    settlement_window: "Halftime",
+  },
+  {
+    id: "fifa_pg_winner",
+    phase: "pregame",
+    question: "Who wins after 90 minutes?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Draw"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_total_goals",
+    phase: "pregame",
+    question: "Total goals in the match (90 min)?",
+    answers: ["0–1", "2", "3", "4+"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_star_goal",
+    phase: "pregame",
+    question: "Which star scores in the match?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Both", "Neither"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_red_card",
+    phase: "pregame",
+    question: "Will there be a red card?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_pg_extra_time",
+    phase: "pregame",
+    question: "Will the match go to extra time?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_penalties",
+    phase: "pregame",
+    question: "Will there be a penalty shootout?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_pg_clean_sheet",
+    phase: "pregame",
+    question: "Does either team keep a clean sheet (90 min)?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Neither"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_margin",
+    phase: "pregame",
+    question: "Winning margin after 90 min?",
+    answers: ["1 goal", "2 goals", "3+ goals", "Draw"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_pg_comeback",
+    phase: "pregame",
+    question: "Will the team that concedes first come back to equalize or win?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_pg_trophy",
+    phase: "pregame",
+    question: "Who lifts the trophy?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+
+  // ── Halftime ─────────────────────────────────────────────────────────────
+
+  {
+    id: "fifa_ht_next_goal",
+    phase: "halftime",
+    question: "Who scores next?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No more goals"],
+    settlement_window: "Early 2H",
+  },
+  {
+    id: "fifa_ht_first_goal_2h",
+    phase: "halftime",
+    question: "Which team scores first in the 2nd half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No 2nd half goals"],
+    settlement_window: "Early 2H",
+  },
+  {
+    id: "fifa_ht_2h_goals",
+    phase: "halftime",
+    question: "How many goals in the 2nd half?",
+    answers: ["0", "1", "2+"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_2h_winner",
+    phase: "halftime",
+    question: "Which team wins the 2nd half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Draw"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_result_holds",
+    phase: "halftime",
+    question: "Does the halftime result hold at full time?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_comeback",
+    phase: "halftime",
+    question: "Will the team trailing at halftime equalize or win?",
+    answers: ["Yes", "No", "Teams are level at halftime"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_star_goal_2h",
+    phase: "halftime",
+    question: "Does either star score in the 2nd half?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Both", "Neither"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_extra_time",
+    phase: "halftime",
+    question: "Will the match go to extra time?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_red_card_2h",
+    phase: "halftime",
+    question: "Will there be a red card in the 2nd half?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_ht_sub_goal",
+    phase: "halftime",
+    question: "Will a substitute score in the 2nd half?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_injury_goal",
+    phase: "halftime",
+    question: "Will there be a goal in injury time?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_winner",
+    phase: "halftime",
+    question: "Who wins the match (90 min)?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Draw"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_corner_2h",
+    phase: "halftime",
+    question: "Which team wins more corners in the 2nd half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Equal"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_ht_trophy",
+    phase: "halftime",
+    question: "Who lifts the trophy?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+
+  // ── Final Push (opens ~70th min) ──────────────────────────────────────────
+
+  {
+    id: "fifa_fp_next_goal",
+    phase: "final_push",
+    question: "Next goal goes to?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No more goals in 90 min"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_goal_last20",
+    phase: "final_push",
+    question: "Will there be a goal in the final 20 minutes?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_injury_time",
+    phase: "final_push",
+    question: "How many minutes of injury time?",
+    answers: ["1–4 min", "5–7 min", "8+ min"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_extra_time",
+    phase: "final_push",
+    question: "Will the match go to extra time?",
+    answers: ["Yes", "No"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_penalties",
+    phase: "final_push",
+    question: "Will there be a penalty shootout?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_fp_star_goal",
+    phase: "final_push",
+    question: "Does either star score in the final 20 minutes?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Neither"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_comeback",
+    phase: "final_push",
+    question: "Will the trailing team equalize or win from here?",
+    answers: ["Yes", "No", "Teams are level"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_winner_90",
+    phase: "final_push",
+    question: "Who wins after 90 minutes?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Draw / Extra Time"],
+    settlement_window: "End 90 Min",
+  },
+  {
+    id: "fifa_fp_trophy",
+    phase: "final_push",
+    question: "Who lifts the trophy?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "fifa_fp_clean_sheet",
+    phase: "final_push",
+    question: "Does either team keep a clean sheet (90 min)?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Neither"],
+    settlement_window: "End 90 Min",
+  },
+
+  // ── Penalties (host opens ONLY if shootout happens) ───────────────────────
+
+  {
+    id: "fifa_pen_winner",
+    phase: "penalties",
+    question: "Who wins the penalty shootout?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Shootout",
+  },
+  {
+    id: "fifa_pen_first_miss",
+    phase: "penalties",
+    question: "Which team misses first?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No misses"],
+    settlement_window: "End Shootout",
+  },
+  {
+    id: "fifa_pen_total_kicks",
+    phase: "penalties",
+    question: "Total penalty kicks taken?",
+    answers: ["5–6", "7–8", "9–10", "11+"],
+    settlement_window: "End Shootout",
+  },
+  {
+    id: "fifa_pen_sudden_death",
+    phase: "penalties",
+    question: "Does it go beyond the first 5 kicks per side?",
+    answers: ["Yes — sudden death!", "No"],
+    settlement_window: "End Shootout",
+  },
+  {
+    id: "fifa_pen_star_scores",
+    phase: "penalties",
+    question: "Does either star take and score a penalty?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Both", "Neither"],
+    settlement_window: "End Shootout",
+  },
+  {
+    id: "fifa_pen_clean_sweep",
+    phase: "penalties",
+    question: "Does any team score all their kicks perfectly?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Shootout",
+  },
+];
+
+// Default FIFA props — good mix that keeps the leaderboard moving all match.
+// Pregame: 6  |  Halftime: 4  |  Final Push: 4  |  Penalties: all 6
+export const FIFA_DEFAULT_PROP_IDS: string[] = [
+  // ── Pregame ──
+  "fifa_pg_scores_first",     // First 20 Min
+  "fifa_pg_1h_winner",        // Halftime
+  "fifa_pg_star_goal_1h",     // Halftime
+  "fifa_pg_winner",           // End 90 Min
+  "fifa_pg_extra_time",       // End 90 Min
+  "fifa_pg_trophy",           // End Game
+  // ── Halftime ──
+  "fifa_ht_next_goal",        // Early 2H
+  "fifa_ht_2h_winner",        // End 90 Min
+  "fifa_ht_comeback",         // End 90 Min
+  "fifa_ht_extra_time",       // End 90 Min
+  // ── Final Push ──
+  "fifa_fp_goal_last20",      // End 90 Min
+  "fifa_fp_extra_time",       // End 90 Min
+  "fifa_fp_winner_90",        // End 90 Min
+  "fifa_fp_trophy",           // End Game
+  // ── Penalties (all — only matters if shootout happens) ──
+  "fifa_pen_winner",
+  "fifa_pen_first_miss",
+  "fifa_pen_total_kicks",
+  "fifa_pen_sudden_death",
+  "fifa_pen_star_scores",
+  "fifa_pen_clean_sweep",
 ];
 
 export function resolvePlaceholders(

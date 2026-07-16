@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import {
   NBA_PLAYOFF_TEMPLATE,
   DEFAULT_PROP_IDS,
+  FIFA_TEMPLATE,
+  FIFA_DEFAULT_PROP_IDS,
   resolvePlaceholders,
 } from "./gameday-template.js";
 import {
@@ -343,6 +345,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_channel_id,
       discord_user_id,
       is_private,
+      sport,
     } = req.body as {
       room_name?: string;
       game_label?: string;
@@ -357,6 +360,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_channel_id?: string;
       discord_user_id?: string;
       is_private?: boolean;
+      sport?: "nba" | "soccer";
     };
 
     // Accept either room_name or game_label (Discord bot compat)
@@ -367,7 +371,10 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    const propIds = selected_prop_ids ?? DEFAULT_PROP_IDS;
+    const isSoccer = sport === "soccer";
+    const activeTemplate = isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
+    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
+    const propIds = selected_prop_ids ?? defaultPropIds;
     const supabase = getServiceSupabase();
 
     // Generate a short room code; gracefully skip if DB column doesn't exist yet
@@ -430,13 +437,20 @@ export function registerGamedayRoutes(app: Express) {
 
     const cardPhases: Array<{
       title: string;
-      phase: "pregame" | "halftime" | "fourth";
+      phase: string;
       display_order: number;
-    }> = [
-      { title: "Pregame Picks", phase: "pregame", display_order: 0 },
-      { title: "Halftime Picks", phase: "halftime", display_order: 1 },
-      { title: "4Q Clutch Picks", phase: "fourth", display_order: 2 },
-    ];
+    }> = isSoccer
+      ? [
+          { title: "Pregame Picks", phase: "pregame", display_order: 0 },
+          { title: "Halftime Picks", phase: "halftime", display_order: 1 },
+          { title: "Final Push 🔥", phase: "final_push", display_order: 2 },
+          { title: "Penalty Shootout ⚽", phase: "penalties", display_order: 3 },
+        ]
+      : [
+          { title: "Pregame Picks", phase: "pregame", display_order: 0 },
+          { title: "Halftime Picks", phase: "halftime", display_order: 1 },
+          { title: "4Q Clutch Picks", phase: "fourth", display_order: 2 },
+        ];
 
     const vars = {
       TEAM_A: team_a_name.trim(),
@@ -454,7 +468,7 @@ export function registerGamedayRoutes(app: Express) {
 
       if (!card) continue;
 
-      const templateProps = NBA_PLAYOFF_TEMPLATE.filter(
+      const templateProps = activeTemplate.filter(
         (p) => p.phase === cardDef.phase && propIds.includes(p.id)
       );
 

@@ -40,26 +40,26 @@ function fmtMmSs(totalSecs: number): string {
 }
 
 interface TimelineItem {
-  key: "pregame" | "halftime" | "fourth" | "final";
+  key: string;
   label: string;
   status: "open" | "locked" | "settled" | "coming_up" | "finalized";
 }
 
 function computeTimeline(cards: GDCard[], isFinalized: boolean): TimelineItem[] {
-  const byPhase = (p: GDCard["phase"]) => cards.find((c) => c.phase === p);
-  const statusFor = (p: GDCard["phase"]): TimelineItem["status"] => {
-    const c = byPhase(p);
-    if (!c || c.status === "closed") return "coming_up";
-    if (c.status === "open") return "open";
-    if (c.status === "locked") return "locked";
+  const statusFor = (card: GDCard | undefined): TimelineItem["status"] => {
+    if (!card || card.status === "closed") return "coming_up";
+    if (card.status === "open") return "open";
+    if (card.status === "locked") return "locked";
     return isFinalized ? "finalized" : "settled";
   };
-  return [
-    { key: "pregame", label: "Pregame Picks", status: statusFor("pregame") },
-    { key: "halftime", label: "Halftime Picks", status: statusFor("halftime") },
-    { key: "fourth", label: "4Q Clutch Picks", status: statusFor("fourth") },
-    { key: "final", label: "Final Receipts", status: isFinalized ? "finalized" : "coming_up" },
-  ];
+  const sorted = [...cards].sort((a, b) => a.display_order - b.display_order);
+  const items: TimelineItem[] = sorted.map((card) => ({
+    key: card.phase,
+    label: card.title,
+    status: statusFor(card),
+  }));
+  items.push({ key: "final", label: "Final Receipts", status: isFinalized ? "finalized" : "coming_up" });
+  return items;
 }
 
 function getNextWindow(
@@ -69,44 +69,48 @@ function getNextWindow(
 ): { headline: string; sub: string } {
   if (isFinalized) return { headline: "🏆 Receipts are in.", sub: "View final standings below." };
 
-  const pregame = cards.find((c) => c.phase === "pregame");
-  const halftime = cards.find((c) => c.phase === "halftime");
-  const fourth = cards.find((c) => c.phase === "fourth");
-
-  if (pregame?.status === "open")
-    return { headline: "🟢 Pregame Picks are open.", sub: "Lock in before tipoff." };
-  if (halftime?.status === "open")
-    return { headline: "🟢 Halftime Picks are live.", sub: "Make your second-half calls now." };
-  if (fourth?.status === "open")
-    return { headline: "🟢 4Q Clutch Picks are live.", sub: "Last window to move up before receipts drop." };
-
-  const pregameLocked = pregame?.status === "locked" || pregame?.status === "settled";
-  const halftimeLocked = halftime?.status === "locked" || halftime?.status === "settled";
-  const fourthLocked = fourth?.status === "locked" || fourth?.status === "settled";
-
-  const missedPregame =
-    pregameLocked &&
-    !(pregame?.gameday_props ?? []).some((p) => myPicks[p.id] !== undefined);
-  const missedHalftime =
-    halftimeLocked &&
-    !(halftime?.gameday_props ?? []).some((p) => myPicks[p.id] !== undefined);
-
-  if (pregameLocked && halftime?.status === "closed") {
-    return missedPregame
-      ? { headline: "⏳ Pregame Picks are locked.", sub: "You can still join Halftime and 4Q picks when they open." }
-      : { headline: "⏳ Next up: Halftime Picks.", sub: "Check back at halftime to make your second-half calls." };
+  const sorted = [...cards].sort((a, b) => a.display_order - b.display_order);
+  const openCard = sorted.find((c) => c.status === "open");
+  if (openCard) {
+    const sub =
+      openCard.phase === "pregame"
+        ? "Lock in your picks before kickoff / tipoff."
+        : openCard.phase === "penalties"
+        ? "Pick your shootout winner now!"
+        : "Make your calls now — window closes soon.";
+    return { headline: `🟢 ${openCard.title} are live.`, sub };
   }
-  if (halftimeLocked && fourth?.status === "closed") {
-    return missedHalftime
-      ? { headline: "⏳ Halftime Picks are locked.", sub: "4Q Clutch Picks are still coming. Check back near the 4th quarter." }
-      : { headline: "⏳ Next up: 4Q Clutch Picks.", sub: "Check back near the start of the 4th quarter." };
-  }
-  if (pregameLocked && halftimeLocked && fourthLocked) {
+
+  const allDone = sorted.every(
+    (c) => c.status === "locked" || c.status === "settled"
+  );
+  if (allDone) {
     return { headline: "📊 Receipts are being tallied.", sub: "Check back soon for final standings." };
   }
+
+  const lastActive = [...sorted].reverse().find(
+    (c) => c.status === "locked" || c.status === "settled"
+  );
+  const nextClosed = sorted.find((c) => c.status === "closed");
+
+  if (lastActive && nextClosed) {
+    const missedLast = !(lastActive.gameday_props ?? []).some(
+      (p) => myPicks[p.id] !== undefined
+    );
+    return missedLast
+      ? {
+          headline: `⏳ ${lastActive.title} are locked.`,
+          sub: `You can still catch ${nextClosed.title} when the host opens it.`,
+        }
+      : {
+          headline: `⏳ Next up: ${nextClosed.title}.`,
+          sub: "Check back when the host opens the next window.",
+        };
+  }
+
   return {
     headline: "⏳ No picks are open right now.",
-    sub: "Stay close — the first pick window will open before tipoff.",
+    sub: "Stay close — the first pick window opens soon.",
   };
 }
 
@@ -116,7 +120,14 @@ function getCountdownCopy(
   secsLeft: number,
   expired: boolean
 ): { headline: string; sub: string; timer: string } {
-  const pl = phase === "pregame" ? "Pregame Picks" : phase === "halftime" ? "Halftime Picks" : "4Q Clutch Picks";
+  const PHASE_LABELS: Record<string, string> = {
+    pregame: "Pregame Picks",
+    halftime: "Halftime Picks",
+    fourth: "4Q Clutch Picks",
+    final_push: "Final Push Picks",
+    penalties: "Penalty Shootout Picks",
+  };
+  const pl = PHASE_LABELS[phase] ?? "Picks";
   if (expired) {
     return {
       headline: `${pl} window update expected now.`,
@@ -136,9 +147,11 @@ function getCountdownCopy(
     headline: `${pl} lock soon.`,
     sub:
       phase === "pregame"
-        ? "Get your picks in before tipoff."
+        ? "Get your picks in before kickoff."
         : phase === "halftime"
         ? "Get your second-half picks in now."
+        : phase === "penalties"
+        ? "Pick your shootout winner before the window closes."
         : "Get your picks in before the window closes.",
     timer: `${t} left to submit your picks`,
   };
