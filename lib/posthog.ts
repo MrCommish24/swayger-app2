@@ -84,6 +84,7 @@ export function detectEntrySource(): string {
     if (src === "discord") return "discord";
     if (src === "email") return "email";
     if (src === "text" || src === "sms") return "text";
+    if (src === "home_live_now") return "home_live_now";
     const ref = document.referrer ?? "";
     if (ref.includes("discord.com") || ref.includes("discord.gg")) return "discord";
     if (ref && !ref.includes(window.location.hostname)) return "direct_link";
@@ -479,5 +480,60 @@ export const Analytics = {
       ...rCtx(ctx),
       phase: opts.phase ?? null,
       countdown_type: opts.countdown_type ?? null,
+    }),
+
+  // ── Home screen "Live Now" discovery ────────────────────────────────────────
+
+  /**
+   * Fires once per mount when the Live Now section renders with ≥1 room.
+   * entry_source is always "home_dashboard" (user was already in the app).
+   */
+  gamedayLiveNowSectionViewed: (opts: {
+    room_count: number;
+    room_ids: string[];
+  }) =>
+    capture("gameday_live_now_section_viewed", {
+      entry_source: "home_dashboard",
+      room_count: opts.room_count,
+      room_ids: opts.room_ids,
+    }),
+
+  /**
+   * Fires when the user taps a room card in the Live Now section.
+   * entry_source is always "home_live_now" — this is then passed via ?src= so
+   * the room screen's gamedayRoomViewed also records it automatically.
+   */
+  gamedayLiveNowCardTapped: (opts: {
+    room_id: string;
+    room_name: string;
+    matchup: string;
+    position: number;
+    total_rooms: number;
+  }) =>
+    capture("gameday_live_now_card_tapped", {
+      entry_source: "home_live_now",
+      room_id: opts.room_id,
+      room_name: opts.room_name,
+      matchup: opts.matchup,
+      position: opts.position,
+      total_rooms: opts.total_rooms,
+    }),
+
+  // ── Room visibility (host action) ───────────────────────────────────────────
+
+  /**
+   * Fires in host.tsx when the host toggles a room between Public and Private.
+   */
+  gamedayRoomVisibilityChanged: (
+    ctx: GDRoomCtx,
+    opts: {
+      new_visibility: "public" | "private";
+      host_user_id?: string | null;
+    }
+  ) =>
+    capture("gameday_room_visibility_changed", {
+      ...rCtx(ctx),
+      new_visibility: opts.new_visibility,
+      ...(opts.host_user_id ? { host_user_id: opts.host_user_id } : {}),
     }),
 };

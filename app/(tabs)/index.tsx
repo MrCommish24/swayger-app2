@@ -442,6 +442,7 @@ interface PublicGDRoom {
 
 function LiveGameDayRooms() {
   const router = useRouter();
+  const hasTrackedSection = useRef(false);
 
   const { data } = useQuery<{ rooms: PublicGDRoom[] }>({
     queryKey: ["gameday", "public-rooms"],
@@ -456,6 +457,17 @@ function LiveGameDayRooms() {
   });
 
   const rooms = data?.rooms ?? [];
+
+  useEffect(() => {
+    if (rooms.length > 0 && !hasTrackedSection.current) {
+      hasTrackedSection.current = true;
+      Analytics.gamedayLiveNowSectionViewed({
+        room_count: rooms.length,
+        room_ids: rooms.map((r) => r.id),
+      });
+    }
+  }, [rooms]);
+
   if (rooms.length === 0) return null;
 
   return (
@@ -470,12 +482,19 @@ function LiveGameDayRooms() {
         contentContainerStyle={gdStyles.scroll}
         bounces={false}
       >
-        {rooms.map((room) => (
+        {rooms.map((room, index) => (
           <Pressable
             key={room.id}
             style={({ pressed }) => [gdStyles.card, pressed && gdStyles.cardPressed]}
             onPress={() => {
-              router.push(`/gameday/${room.id}` as never);
+              Analytics.gamedayLiveNowCardTapped({
+                room_id: room.id,
+                room_name: room.room_name,
+                matchup: `${room.team_a_name} vs ${room.team_b_name}`,
+                position: index,
+                total_rooms: rooms.length,
+              });
+              router.push(`/gameday/${room.id}?src=home_live_now` as never);
             }}
           >
             <Text style={gdStyles.matchup} numberOfLines={1}>

@@ -484,6 +484,17 @@ export default function HostControlRoom() {
         { method: "PATCH", body: JSON.stringify({ is_private: next }) },
         { session }
       );
+      Analytics.gamedayRoomVisibilityChanged(
+        {
+          room_id: roomId as string,
+          room_code: hostData?.room.room_code ?? null,
+          room_status: hostData?.room.status,
+        },
+        {
+          new_visibility: next ? "private" : "public",
+          host_user_id: session?.user?.id ?? null,
+        }
+      );
     } catch (e: any) {
       setLocalIsPrivate(current);
       alert(e.message ?? "Failed to update visibility");
