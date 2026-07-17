@@ -1818,7 +1818,7 @@ export function registerGamedayRoutes(app: Express) {
         duration_minutes?: number;
       };
 
-      const validPhases = ["pregame", "halftime", "fourth"];
+      const validPhases = ["pregame", "halftime", "fourth", "final_push", "penalties"];
       const validTypes = ["opens_soon", "locks_soon"];
       const validDurations = [5, 10];
 

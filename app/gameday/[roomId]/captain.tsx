@@ -135,13 +135,14 @@ function getSuggestedMoments(
   );
   const allProps = activeCards.flatMap((c) => c.gameday_props);
   const settledProps = allProps.filter((p) => p.status === "settled");
-  const fourthCard = cards.find((c) => c.phase === "fourth");
-  const is4QOpen = fourthCard?.status === "open";
+  const lateGameCard = cards.find((c) => c.phase === "fourth" || c.phase === "final_push");
+  const is4QOpen = lateGameCard?.status === "open";
   const is4QActive =
-    fourthCard &&
-    (fourthCard.status === "open" ||
-      fourthCard.status === "locked" ||
-      fourthCard.status === "settled");
+    lateGameCard &&
+    (lateGameCard.status === "open" ||
+      lateGameCard.status === "locked" ||
+      lateGameCard.status === "settled");
+  const lateGameLabel = lateGameCard?.phase === "final_push" ? "Final Push" : "4Q";
 
   const leader = leaderboard[0];
   const second = leaderboard[1];
@@ -189,17 +190,17 @@ function getSuggestedMoments(
     }
   }
 
-  // 5. Comeback Window (4Q phase active)
+  // 5. Comeback Window (late game phase active)
   if (!isFinalized && is4QActive) {
     moments.push({
       id: "comeback_window",
       type: "comeback_window",
       title: "⏰ Comeback Window",
-      message: "Don't disappear now. 4Q picks can still flip the room.",
+      message: `Don't disappear now. ${lateGameLabel} picks can still flip the room.`,
     });
   }
 
-  // 6. Last Chance (4Q open)
+  // 6. Last Chance (late game open)
   if (is4QOpen) {
     moments.push({
       id: "last_chance",
@@ -527,7 +528,7 @@ export default function CaptainCenter() {
       {!isArchived && (
         <TouchableOpacity style={styles.enterRoomBtn} onPress={enterRoom}>
           <Text style={styles.enterRoomBtnText}>
-            {isFinalized ? "🏆 View Final Standings" : "🏀 Enter Game Day Room"}
+            {isFinalized ? "🏆 View Final Standings" : isSoccer ? "⚽ Enter Game Day Room" : "🏀 Enter Game Day Room"}
           </Text>
         </TouchableOpacity>
       )}
@@ -540,7 +541,14 @@ export default function CaptainCenter() {
         if (!cdPhase || !cdType || !cdEndsAt || isArchived || isFinalized) return null;
         if (countdownSecsLeft < -120) return null;
         const expired = countdownSecsLeft <= 0;
-        const pl = cdPhase === "pregame" ? "Pregame Picks" : cdPhase === "halftime" ? "Halftime Picks" : "4Q Clutch Picks";
+        const PHASE_LABELS: Record<string, string> = {
+          pregame: "Pregame Picks",
+          halftime: "Halftime Picks",
+          fourth: "4Q Clutch Picks",
+          final_push: "Final Push",
+          penalties: "Penalty Shootout",
+        };
+        const pl = PHASE_LABELS[cdPhase] ?? cdPhase;
         const isLocksType = cdType === "locks_soon";
         const timerStr = expired ? "" : fmtMmSs(countdownSecsLeft);
         const headline = expired
@@ -551,7 +559,7 @@ export default function CaptainCenter() {
         const sub = expired
           ? "Check the room — the host is opening or locking the window."
           : isLocksType
-          ? (cdPhase === "pregame" ? "Get your picks in before tipoff." : cdPhase === "halftime" ? "Get your second-half picks in now." : "Get your picks in before the window closes.")
+          ? (cdPhase === "pregame" ? (isSoccer ? "Get your picks in before kickoff." : "Get your picks in before tipoff.") : cdPhase === "halftime" ? "Get your second-half picks in now." : "Get your picks in before the window closes.")
           : "Host is opening this window soon. Stay close — picks are coming.";
         const timer = expired ? null : isLocksType ? `${timerStr} left to submit your picks` : `Expected in ~${timerStr}`;
         const isUrgent = isLocksType && !expired;

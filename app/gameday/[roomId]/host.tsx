@@ -491,16 +491,24 @@ export default function HostControlRoom() {
     }
   };
 
-  const copyShareText = (phase: "pregame" | "halftime" | "fourth" | "final") => {
+  const copyShareText = (phase: string) => {
     const url = getShareUrl();
+    const roomIsSoccer = (hostData?.cards ?? []).some(
+      (c) => c.phase === "final_push" || c.phase === "penalties"
+    );
     const texts: Record<string, string> = {
-      pregame: `Game Day Swayger is live for tonight. Make your picks before tipoff and track the leaderboard here:\n${url}`,
+      pregame: roomIsSoccer
+        ? `Game Day Swayger room is live for ${hostData?.room.room_name ?? "the match"}. Make your picks before kickoff:\n${url}`
+        : `Game Day Swayger is live. Make your picks before tipoff and track the leaderboard here:\n${url}`,
       halftime: `Halftime picks are live. Same room:\n${url}`,
       fourth: `4Q picks are live. Lock in here:\n${url}`,
+      final_push: `Final Push picks are live — last window before receipts drop. Lock in here:\n${url}`,
+      penalties: `Penalty Shootout picks are live. Pick your winner now:\n${url}`,
       final: `Final Game Day Swayger standings are ready. See who won and who has receipts:\n${url}`,
     };
+    const text = texts[phase] ?? `Game Day Swayger room: ${url}`;
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      navigator.clipboard.writeText(texts[phase]).catch(() => {});
+      navigator.clipboard.writeText(text).catch(() => {});
     }
   };
 
@@ -706,12 +714,21 @@ export default function HostControlRoom() {
         >
           <Text style={styles.reminderBtnText}>Copy Halftime Reminder</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.reminderBtn}
-          onPress={() => copyShareText("fourth")}
-        >
-          <Text style={styles.reminderBtnText}>Copy 4Q Reminder</Text>
-        </TouchableOpacity>
+        {cards.some((c) => c.phase === "final_push") ? (
+          <TouchableOpacity
+            style={styles.reminderBtn}
+            onPress={() => copyShareText("final_push")}
+          >
+            <Text style={styles.reminderBtnText}>Copy Final Push Reminder</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.reminderBtn}
+            onPress={() => copyShareText("fourth")}
+          >
+            <Text style={styles.reminderBtnText}>Copy 4Q Reminder</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.reminderBtn}
           onPress={() => copyShareText("final")}
@@ -772,7 +789,7 @@ export default function HostControlRoom() {
               <Text style={styles.cdActiveBannerLabel}>
                 {room.countdown_type === "locks_soon" ? "⏱ Locks Soon" : "📣 Opens Soon"}
                 {" — "}
-                {room.countdown_phase === "pregame" ? "Pregame" : room.countdown_phase === "halftime" ? "Halftime" : "4Q"}
+                {room.countdown_phase === "pregame" ? "Pregame" : room.countdown_phase === "halftime" ? "Halftime" : room.countdown_phase === "final_push" ? "Final Push" : room.countdown_phase === "penalties" ? "Penalties" : "4Q"}
               </Text>
               <Text style={styles.cdActiveBannerTimer}>
                 {countdownSecsLeft > 0 ? `${fmtMmSs(countdownSecsLeft)} remaining` : "Expired — grace window"}
@@ -789,17 +806,30 @@ export default function HostControlRoom() {
 
           <Text style={styles.cdControlLabel}>Phase</Text>
           <View style={styles.cdSegRow}>
-            {(["pregame", "halftime", "fourth"] as const).map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[styles.cdSeg, countdownPhase === p && styles.cdSegActive]}
-                onPress={() => setCountdownPhase(p)}
-              >
-                <Text style={[styles.cdSegText, countdownPhase === p && styles.cdSegActiveText]}>
-                  {p === "pregame" ? "Pregame" : p === "halftime" ? "Halftime" : "4Q"}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(() => {
+              const PHASE_SHORT: Record<string, string> = {
+                pregame: "Pregame",
+                halftime: "Halftime",
+                fourth: "4Q",
+                final_push: "Final Push",
+                penalties: "Penalties",
+              };
+              const phases = cards
+                .slice()
+                .sort((a, b) => a.display_order - b.display_order)
+                .map((c) => c.phase);
+              return phases.map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={[styles.cdSeg, countdownPhase === p && styles.cdSegActive]}
+                  onPress={() => setCountdownPhase(p)}
+                >
+                  <Text style={[styles.cdSegText, countdownPhase === p && styles.cdSegActiveText]}>
+                    {PHASE_SHORT[p] ?? p}
+                  </Text>
+                </TouchableOpacity>
+              ));
+            })()}
           </View>
 
           <Text style={styles.cdControlLabel}>Notice Type</Text>
