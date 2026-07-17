@@ -427,8 +427,140 @@ function ChallengeCards({
 }
 
 const PENDING_AMBER = "#F59E0B";
-
 const GOLD = "#F5A623";
+
+// ─── LiveGameDayRooms ──────────────────────────────────────────────────────────
+interface PublicGDRoom {
+  id: string;
+  room_name: string;
+  team_a_name: string;
+  team_b_name: string;
+  game_date: string | null;
+  status: string;
+  room_code: string | null;
+}
+
+function LiveGameDayRooms() {
+  const router = useRouter();
+
+  const { data } = useQuery<{ rooms: PublicGDRoom[] }>({
+    queryKey: ["gameday", "public-rooms"],
+    queryFn: async () => {
+      const url = new URL("/api/gameday/public-rooms", getApiUrl());
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error("Failed to load rooms");
+      return res.json();
+    },
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
+  });
+
+  const rooms = data?.rooms ?? [];
+  if (rooms.length === 0) return null;
+
+  return (
+    <View style={gdStyles.section}>
+      <View style={gdStyles.header}>
+        <View style={gdStyles.livePulse} />
+        <Text style={gdStyles.headerLabel}>LIVE GAME DAY</Text>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={gdStyles.scroll}
+        bounces={false}
+      >
+        {rooms.map((room) => (
+          <Pressable
+            key={room.id}
+            style={({ pressed }) => [gdStyles.card, pressed && gdStyles.cardPressed]}
+            onPress={() => {
+              router.push(`/gameday/${room.id}` as never);
+            }}
+          >
+            <Text style={gdStyles.matchup} numberOfLines={1}>
+              {room.team_a_name} vs {room.team_b_name}
+            </Text>
+            {room.game_date && (
+              <Text style={gdStyles.date}>{room.game_date}</Text>
+            )}
+            <View style={gdStyles.footer}>
+              <View style={gdStyles.statusDot} />
+              <Text style={gdStyles.statusText}>Live</Text>
+              <Text style={gdStyles.enterCta}>Enter →</Text>
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+const gdStyles = StyleSheet.create({
+  section: { marginBottom: 4 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  livePulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#22C55E",
+  },
+  headerLabel: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1.2,
+    color: Colors.dark.textSecondary,
+  },
+  scroll: { paddingHorizontal: 16, gap: 10 },
+  card: {
+    width: 200,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 14,
+    gap: 4,
+  },
+  cardPressed: { opacity: 0.8 },
+  matchup: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.dark.text,
+  },
+  date: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+  },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 6,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#22C55E",
+  },
+  statusText: {
+    fontSize: 11,
+    color: "#22C55E",
+    fontWeight: "600" as const,
+    flex: 1,
+  },
+  enterCta: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+    color: Colors.dark.tint,
+  },
+});
 
 function StatsStrip({
   swaygers,
@@ -1018,6 +1150,8 @@ export default function DashboardScreen() {
           </View>
         </Pressable>
       )}
+
+      <LiveGameDayRooms />
 
       <ChallengeCards
         onPressPlayoffs={() => router.push("/playoffs")}

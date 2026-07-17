@@ -221,6 +221,26 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ isHost });
   });
 
+  // ── GET /api/gameday/public-rooms ─────────────────────────────────────────
+  // Returns active, non-archived, public (is_private=false) rooms. No auth required.
+  app.get("/api/gameday/public-rooms", async (req: Request, res: Response) => {
+    const supabase = getServiceSupabase();
+    const { data: rooms, error } = await supabase
+      .from("gameday_rooms")
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, room_code")
+      .eq("is_private", false)
+      .is("archived_at", null)
+      .neq("status", "finalized")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[gameday] public-rooms error:", error.message);
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    res.json({ rooms: rooms ?? [] });
+  });
+
   // ── GET /api/gameday/rooms ──────────────────────────────────────────────
   // Returns all rooms created by the authenticated host, newest first.
   app.get("/api/gameday/rooms", async (req: Request, res: Response) => {
@@ -1268,6 +1288,54 @@ export function registerGamedayRoutes(app: Express) {
 
       console.log(`[gameday] room renamed: ${roomId} → "${trimmed}"`);
       res.json({ ok: true, room_name: trimmed });
+    }
+  );
+
+  // ── PATCH /api/gameday/rooms/:roomId/visibility ──────────────────────────
+  // Toggles is_private on a room. Host-only.
+  app.patch(
+    "/api/gameday/rooms/:roomId/visibility",
+    async (req: Request, res: Response) => {
+      const hostId = await requireGamedayHost(req, res);
+      if (!hostId) return;
+
+      const { roomId } = req.params;
+      const { is_private } = req.body as { is_private?: boolean };
+
+      if (typeof is_private !== "boolean") {
+        res.status(400).json({ error: "is_private must be a boolean" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, archived_at")
+        .eq("id", roomId)
+        .single();
+
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if ((room as any).host_user_id !== null && (room as any).host_user_id !== hostId) {
+        res.status(403).json({ error: "Not your room" });
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("gameday_rooms")
+        .update({ is_private })
+        .eq("id", roomId);
+
+      if (updateError) {
+        console.error("[gameday] visibility update error:", updateError.message);
+        res.status(500).json({ error: "Failed to update visibility" });
+        return;
+      }
+
+      console.log(`[gameday] room ${roomId} visibility → is_private=${is_private}`);
+      res.json({ ok: true, is_private });
     }
   );
 

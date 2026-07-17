@@ -108,10 +108,12 @@ export default function HostControlRoom() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateName, setDuplicateName] = useState("");
-  const [countdownPhase, setCountdownPhase] = useState<"pregame" | "halftime" | "fourth">("halftime");
+  const [countdownPhase, setCountdownPhase] = useState<string>("halftime");
   const [countdownType, setCountdownType] = useState<"opens_soon" | "locks_soon">("opens_soon");
   const [countdownDuration, setCountdownDuration] = useState<5 | 10>(5);
   const [countdownLoading, setCountdownLoading] = useState(false);
+  const [localIsPrivate, setLocalIsPrivate] = useState<boolean | null>(null);
+  const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
 
   // Room name inline edit
@@ -471,6 +473,25 @@ export default function HostControlRoom() {
     }
   };
 
+  const toggleVisibility = async () => {
+    const current = localIsPrivate ?? (hostData?.room.is_private ?? true);
+    const next = !current;
+    setLocalIsPrivate(next);
+    setVisibilityLoading(true);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${roomId}/visibility`,
+        { method: "PATCH", body: JSON.stringify({ is_private: next }) },
+        { session }
+      );
+    } catch (e: any) {
+      setLocalIsPrivate(current);
+      alert(e.message ?? "Failed to update visibility");
+    } finally {
+      setVisibilityLoading(false);
+    }
+  };
+
   const clearCountdown = async () => {
     setCountdownLoading(true);
     try {
@@ -651,6 +672,20 @@ export default function HostControlRoom() {
             {participant_count} participant{participant_count !== 1 ? "s" : ""}
           </Text>
         </View>
+        <TouchableOpacity
+          style={[styles.visibilityRow, visibilityLoading && { opacity: 0.5 }]}
+          onPress={toggleVisibility}
+          disabled={visibilityLoading}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.visibilityDot, { backgroundColor: (localIsPrivate ?? hostData?.room.is_private ?? true) ? "#F97316" : "#22C55E" }]} />
+          <Text style={styles.visibilityLabel}>
+            {(localIsPrivate ?? hostData?.room.is_private ?? true) ? "Private — not listed in app" : "Public — visible to all users"}
+          </Text>
+          <Text style={styles.visibilityToggle}>
+            {(localIsPrivate ?? hostData?.room.is_private ?? true) ? "Make Public" : "Make Private"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* QR Code section */}
@@ -1466,6 +1501,22 @@ const styles = StyleSheet.create({
   },
   copyBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   participants: { fontSize: 13, color: C.textSecondary },
+  visibilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.07)",
+  },
+  visibilityDot: { width: 8, height: 8, borderRadius: 4 },
+  visibilityLabel: { flex: 1, fontSize: 12, color: C.textSecondary },
+  visibilityToggle: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: C.tint,
+  },
 
   // Reminders
   reminderRow: { gap: 8, marginBottom: 20 },
