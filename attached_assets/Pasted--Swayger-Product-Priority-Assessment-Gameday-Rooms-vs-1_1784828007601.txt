@@ -1,0 +1,888 @@
+# Swayger Product Priority Assessment: Gameday Rooms vs. 1v1 Challenges
+
+I want you to review the current Swayger application and produce a detailed technical and UX plan for changing the product priority from **1v1 Swayger challenges** to **Swayger Gameday Rooms**.
+
+## Important instruction
+
+Do **not** write, modify, delete, migrate, or deploy any code.
+
+This is an assessment and planning exercise only.
+
+Do not make changes to:
+
+* The database
+* Application routes
+* Components
+* Navigation
+* Authentication
+* APIs
+* Environment variables
+* Production data
+* Deployment configuration
+* Styling
+* Copy
+* Analytics
+
+First inspect the existing codebase and explain what is currently built, how the product is presently organized, and what would be required to make Gameday Rooms the primary product experience.
+
+---
+
+# Background
+
+Swayger was originally built around 1v1 sports challenges.
+
+The basic 1v1 concept is:
+
+* One person creates a sports prediction or challenge
+* Another person accepts it
+* Each person locks in their take
+* The result is resolved
+* The app creates a record or “receipt” showing who was right
+* Users can build a history, record, reputation, or standing over time
+
+The issue is that the 1v1 product has a meaningful cold-start problem.
+
+A user must:
+
+1. Understand the product
+2. Decide to create a challenge
+3. Identify someone to challenge
+4. Send the challenge
+5. Get the other person to open it
+6. Get the other person to accept
+7. Wait for the relevant sports result
+8. Return to resolve or view the result
+
+We have found it difficult to consistently convert new users into completed 1v1 challenges.
+
+Swayger Gameday Rooms appear to have more traction.
+
+The Gameday experience allows multiple people to join a shared room around a live sporting event and make picks during several stages of the game.
+
+The Gameday experience currently includes or has included:
+
+* Shared Gameday Rooms
+* Join-by-link functionality
+* Pregame picks
+* Halftime picks
+* Fourth-quarter or clutch picks
+* Pick lock times
+* Ability to update picks before locking
+* Host-managed room experience
+* Host resolution of picks
+* Live or updated leaderboard
+* Final standings
+* Shareable post-game results or receipts
+* Private group participation
+* Multiple participants in the same room
+* Game-specific props
+* Repeat engagement throughout the same sporting event
+
+The intended Gameday flow is generally:
+
+1. A room is created for a sporting event
+2. A link is distributed
+3. Participants join the room
+4. Participants make pregame picks
+5. Picks lock
+6. Halftime picks open
+7. Halftime picks lock
+8. Fourth-quarter or clutch picks open
+9. Final results are resolved
+10. Participants see standings and shareable results
+
+During previous testing, Gameday Rooms produced more participation and repeat engagement than standalone 1v1 challenges.
+
+The current application, however, may still be structured and presented primarily as a 1v1 product, with Gameday Rooms discoverable somewhere within the larger Swayger experience.
+
+We want to understand what it would take to reposition the application so that:
+
+> Swayger Gameday becomes the primary user experience and acquisition wedge, while 1v1 challenges remain available as a secondary feature.
+
+This does not necessarily mean deleting or rebuilding the 1v1 system.
+
+The possible product hierarchy could become:
+
+* Gameday Rooms as the primary home experience
+* My Picks or My Rooms as a primary destination
+* Leaderboards and results as a primary destination
+* 1v1 challenges as a secondary feature
+* 1v1 challenges possibly initiated from inside or after a Gameday Room
+
+---
+
+# Objective
+
+Inspect the current Swayger codebase and produce a written assessment covering:
+
+1. How the application is currently structured
+2. Whether the current product hierarchy favors 1v1 challenges or Gameday Rooms
+3. Where Gameday functionality currently lives
+4. What user flows currently exist
+5. What would need to change to make Gameday the primary experience
+6. Which changes are simple presentation changes versus deeper architectural changes
+7. What can reasonably be changed without rebuilding the product
+8. Risks, dependencies, and unanswered questions
+9. A recommended phased implementation plan
+10. A suggested seven-day scope focused on driving Gameday participation
+
+Again, do not implement anything.
+
+---
+
+# Step 1: Inspect the existing application
+
+Review the full relevant codebase before making recommendations.
+
+Identify and document:
+
+* Framework and major technologies
+* Frontend structure
+* Backend structure
+* Database and data-access approach
+* Authentication approach
+* Routing structure
+* Navigation structure
+* Homepage or landing-page structure
+* User dashboard structure
+* Main 1v1 challenge components
+* Main Gameday Room components
+* Shared components used by both experiences
+* APIs, server actions, or backend functions used by each experience
+* Database tables or models associated with each experience
+* Analytics or event tracking currently present
+* Any admin, host, moderator, or room-management functionality
+* Any feature flags or configuration that affect which experience is shown
+
+Do not assume the architecture based on file names alone. Trace the actual user flows and component relationships.
+
+---
+
+# Step 2: Document the current product hierarchy
+
+Explain what a new user sees today.
+
+Walk through the current experience from the perspective of a first-time visitor.
+
+Please answer:
+
+* What is the default route?
+* What is the first screen?
+* What is the primary headline and value proposition?
+* What is the main call to action?
+* Is the user encouraged to create a 1v1 challenge, join a room, browse games, or do something else?
+* Where are Gameday Rooms visible?
+* How many clicks does it take to find a Gameday Room?
+* Is there a list of live, upcoming, or completed rooms?
+* Can users enter a room directly through a shared link?
+* Is authentication required before seeing the room?
+* Is authentication required before making picks?
+* Is the room experience understandable to someone who has never used Swayger?
+* How prominently are 1v1 challenges featured?
+* Which experience dominates the navigation?
+* Which experience dominates the homepage?
+* Which experience dominates the signed-in dashboard?
+* Which experience appears to be the core product based on the code and UX?
+
+Include route names and relevant files when useful.
+
+---
+
+# Step 3: Map the current 1v1 experience
+
+Create a clear map of the current 1v1 user journey.
+
+Include:
+
+* Entry points
+* Routes
+* Screens
+* Main components
+* Database entities
+* User actions
+* Challenge creation
+* Opponent selection or invitation
+* Challenge acceptance
+* Pick or take submission
+* Locking behavior
+* Resolution
+* Results
+* Receipts
+* Sharing
+* Notifications, if any
+* History, records, rankings, or profiles
+* Authentication requirements
+
+Identify what parts of this system are:
+
+* Independent of Gameday
+* Shared with Gameday
+* Potentially reusable inside Gameday
+* Likely to create complexity if deprioritized
+* Safe to leave unchanged while changing the product hierarchy
+
+---
+
+# Step 4: Map the current Gameday Room experience
+
+Create a clear map of the current Gameday user journey.
+
+Include:
+
+* How rooms are created
+* Who can create them
+* Whether rooms are public, private, or both
+* How users discover rooms
+* How shared links work
+* Join flow
+* Guest participation
+* Account creation requirements
+* Room membership
+* Pregame picks
+* Halftime picks
+* Fourth-quarter or clutch picks
+* Pick editing
+* Pick locking
+* Prop structure
+* Scoring
+* Host controls
+* Result resolution
+* Leaderboard behavior
+* Final standings
+* Receipts or shareable results
+* Room history
+* Return-user behavior
+* Any reminders or notifications
+* Mobile behavior
+* Relevant routes
+* Relevant components
+* Relevant database tables
+* Relevant APIs or server functions
+
+Identify any incomplete, brittle, duplicated, or manually managed portions of the Gameday experience.
+
+Also identify any functionality that exists in the code but is not currently easy for users to discover.
+
+---
+
+# Step 5: Compare the two experiences
+
+Create a comparison of the current 1v1 and Gameday systems across the following dimensions:
+
+* Primary entry point
+* Number of steps to first value
+* Authentication friction
+* Invitation friction
+* Cold-start dependency
+* Discoverability
+* Group participation
+* Live-event relevance
+* Repeat engagement
+* Sharing
+* Leaderboards
+* Social proof
+* Host dependency
+* Manual administration
+* Data-model complexity
+* Technical maturity
+* Mobile usability
+* Ease of testing
+* Ease of promotion
+* Ease of measuring engagement
+
+For each dimension, explain what the current codebase actually supports rather than giving a generic product opinion.
+
+---
+
+# Step 6: Define the desired new product hierarchy
+
+Assess what it would take to make the following the primary product flow:
+
+> Open Swayger → See the relevant live or upcoming game → Join a Gameday Room → Make picks → Return for later rounds → Follow the leaderboard → View and share final results.
+
+A likely future hierarchy could be:
+
+## Primary experiences
+
+* Gameday home
+* Live and upcoming rooms
+* My Rooms
+* My Picks
+* Leaderboards
+* Results or receipts
+
+## Secondary experiences
+
+* 1v1 challenges
+* Challenge history
+* Create a standalone challenge
+* Direct challenge invitations
+
+Potentially, 1v1 could become a downstream action from Gameday, such as:
+
+* Challenge someone from the room
+* Challenge someone who finished near you
+* Run it back against another participant
+* Create a head-to-head challenge for the next game
+* Convert a debated room result into a 1v1 challenge
+
+Evaluate whether the current architecture can support this hierarchy without a major rebuild.
+
+---
+
+# Step 7: Identify required UX and UI changes
+
+Document the specific UX and UI changes that would likely be required.
+
+Please review and assess the following areas.
+
+## Homepage
+
+Would the homepage need to change from a challenge-first experience to a game-first experience?
+
+Possible Gameday homepage elements could include:
+
+* Featured game
+* Live now
+* Starting soon
+* Tonight’s rooms
+* Upcoming games
+* Recently completed rooms
+* Number of players joined
+* Countdown to pick lock
+* Current room phase
+* Join room button
+* Create private room button
+* Share room link
+
+Explain what already exists and what is missing.
+
+## Navigation
+
+Assess whether the navigation should become something like:
+
+* Gameday
+* My Picks
+* My Rooms
+* Leaderboards
+* Challenges
+* Profile
+
+Do not assume these exact labels are correct. Recommend labels based on the current application structure.
+
+Explain:
+
+* Which current navigation items would move
+* Which would be renamed
+* Which would be demoted
+* Which would stay
+* Whether mobile navigation differs
+* Whether route changes would be required
+
+## Dashboard
+
+Assess whether the signed-in dashboard currently centers on 1v1 activity.
+
+Explain how it could instead center on:
+
+* Rooms joined
+* Rooms currently active
+* Open pick cards
+* Picks awaiting resolution
+* Current leaderboard position
+* Upcoming lock windows
+* Completed rooms
+* Shareable results
+* Suggested future rooms
+
+## Room discovery
+
+Assess how users currently find Gameday Rooms.
+
+Determine whether the application needs:
+
+* A room directory
+* Featured rooms
+* Live rooms
+* Upcoming rooms
+* Sport filters
+* League filters
+* Date filters
+* Public versus private indicators
+* Search
+* Direct-link-only private rooms
+
+Explain which of these are realistic for a seven-day priority shift and which should wait.
+
+## Shared-link flow
+
+Trace the current shared-link experience.
+
+Assess whether the preferred flow can be:
+
+1. User clicks a room link
+2. User sees the matchup and room details
+3. User enters a display name or signs in
+4. User joins
+5. User immediately begins making picks
+
+Explain where the current flow creates friction.
+
+Assess whether account creation can occur after participation rather than before it.
+
+Do not recommend weakening data integrity or security without explaining the tradeoffs.
+
+## Phase timeline
+
+Assess whether the room clearly communicates:
+
+* Pregame
+* Halftime
+* Fourth quarter or clutch
+* Final
+
+Determine whether users can always see:
+
+* Which phase is open
+* Which phase is completed
+* Which phase is locked
+* When the next phase opens
+* When the current phase locks
+* Whether their picks were submitted
+* Whether they can still edit their picks
+
+Recommend changes based on the existing implementation.
+
+## Calls to action
+
+Identify the current primary calls to action throughout the app.
+
+Explain which calls to action would need to change from language such as:
+
+* Create a challenge
+* Find an opponent
+* Start a Swayger
+
+Toward actions such as:
+
+* Join tonight’s room
+* Make your picks
+* View live leaderboard
+* Return for halftime
+* Create a private room
+* Invite your group
+
+## Empty states
+
+Review the empty states for new users.
+
+A new user should not be shown an empty challenge inbox and conclude that nothing is happening.
+
+Assess what could replace empty states, including:
+
+* Featured public room
+* Upcoming room
+* Create a private room
+* Join with invite link
+* Sample or demo room
+* Recently completed public room
+* Explanation of how Gameday works
+
+---
+
+# Step 8: Identify technical changes by level of effort
+
+Separate the possible work into four categories.
+
+## Category A: Presentation and prioritization changes
+
+Examples:
+
+* Default route
+* Homepage content
+* Navigation ordering
+* CTA changes
+* Label changes
+* Featured-room placement
+* Dashboard ordering
+* Empty-state changes
+
+## Category B: Moderate frontend or workflow changes
+
+Examples:
+
+* New Gameday landing screen
+* Live and upcoming room sections
+* Improved room cards
+* Better phase timeline
+* Improved shared-link join flow
+* My Rooms dashboard
+* Mobile navigation updates
+
+## Category C: Backend or data-model changes
+
+Examples:
+
+* Room discovery queries
+* Public/private room status
+* Featured-room status
+* Guest participation
+* Room membership changes
+* New analytics events
+* Reminder state
+* Phase scheduling
+* Automated scoring or room status
+
+## Category D: Major architectural changes
+
+Examples:
+
+* Rebuilding authentication
+* Replacing the current room model
+* Reworking scoring architecture
+* Converging 1v1 and Gameday data models
+* Replacing host-managed resolution
+* Migrating production data
+* Rebuilding notifications
+* Creating a new administrative system
+
+For every proposed change, include:
+
+* Relevant files or modules
+* Dependencies
+* Risk level
+* Estimated complexity: low, medium, or high
+* Whether it is required for the seven-day goal
+* Whether it can wait
+* Whether it affects existing 1v1 functionality
+
+Do not provide time estimates in hours unless the codebase supports a reasonable estimate. Relative sizing is sufficient.
+
+---
+
+# Step 9: Determine whether routes must change
+
+Assess whether Gameday can become primary using the existing route structure.
+
+Please explain:
+
+* Current homepage route
+* Current Gameday routes
+* Current 1v1 routes
+* Current authenticated dashboard routes
+* Current public room routes
+* Current invitation routes
+* Current result and receipt routes
+
+Recommend whether we should:
+
+1. Keep all existing routes and only change entry points
+2. Make a current Gameday route the default homepage
+3. Add a new Gameday landing route
+4. Redirect existing homepage traffic
+5. Preserve legacy 1v1 URLs
+6. Add aliases or redirects
+7. Avoid route changes entirely during the first phase
+
+Call out any SEO, analytics, authentication, broken-link, or deployment implications.
+
+---
+
+# Step 10: Protect the existing 1v1 system
+
+We do not want to delete 1v1 challenges.
+
+Explain how to demote them safely without breaking them.
+
+Assess whether 1v1 can remain available through:
+
+* A secondary navigation tab
+* A dashboard section
+* User profiles
+* Challenge history
+* Direct invitation links
+* Post-room actions
+* Room participant profiles
+
+Identify any code that assumes 1v1 is the default product and would create problems if the homepage or navigation changed.
+
+Also identify any shared terminology, components, database relationships, or analytics that could become confusing.
+
+---
+
+# Step 11: Analytics and measurement
+
+Inspect the current analytics setup.
+
+Identify what events are currently tracked for:
+
+* Homepage visits
+* Room views
+* Room joins
+* Challenge views
+* Challenge creation
+* Challenge acceptance
+* Pick submission
+* Pick updates
+* Pick lock
+* Halftime return
+* Fourth-quarter return
+* Leaderboard views
+* Final results
+* Sharing
+* Account creation
+* Invite-link clicks
+
+Recommend the minimum analytics needed to evaluate the Gameday-first change.
+
+At minimum, we likely need to understand:
+
+* Number of room-link visitors
+* Room view-to-join conversion
+* Join-to-first-pick conversion
+* Pregame completion
+* Halftime return rate
+* Fourth-quarter return rate
+* Completed room participation
+* Leaderboard views
+* Results shares
+* Repeat participation in another room
+* Account creation after participation
+* Number of participants per room
+* Public room versus private room participation
+
+Separate what is already tracked from what would need to be added.
+
+Do not add analytics during this assessment.
+
+---
+
+# Step 12: Recommend a seven-day priority plan
+
+Our immediate goal is not a complete platform rebuild.
+
+The goal is:
+
+> Over the next seven days, make it easier for people to discover, join, understand, and participate in Swayger Gameday Rooms.
+
+Recommend the smallest set of changes that would meaningfully shift the product toward Gameday.
+
+Prioritize changes that:
+
+* Reduce time to first pick
+* Reduce account-creation friction
+* Make live or upcoming rooms obvious
+* Improve room-link conversion
+* Clarify pick phases
+* Encourage users to return at halftime and in the fourth quarter
+* Make leaderboards visible
+* Preserve existing 1v1 functionality
+* Avoid unnecessary infrastructure work
+
+Provide:
+
+## Must do
+
+Changes required to make Gameday visibly primary.
+
+## Should do
+
+Changes that materially improve participation but could be deferred if necessary.
+
+## Could do
+
+Useful enhancements that are not necessary for this seven-day push.
+
+## Do not do yet
+
+Changes that are too large, too risky, or not sufficiently validated.
+
+---
+
+# Step 13: Provide a phased product plan
+
+Recommend a phased roadmap.
+
+## Phase 1: Reprioritize
+
+Focus on:
+
+* Homepage
+* Navigation
+* Room discovery
+* Shared-link flow
+* Room phase clarity
+* Analytics
+
+## Phase 2: Improve retention
+
+Potentially include:
+
+* Reminders
+* Return prompts
+* Room history
+* Better results sharing
+* Repeat-room suggestions
+* Account conversion after participation
+
+## Phase 3: Connect Gameday and 1v1
+
+Potentially include:
+
+* Challenge a room participant
+* Run it back
+* Head-to-head rematches
+* Rivalries
+* Gameday-derived challenge suggestions
+* Combined reputation or receipts
+
+## Phase 4: Scale
+
+Potentially include:
+
+* More sports
+* Automated game data
+* Automated scoring
+* Public room programming
+* Sponsor-supported rooms
+* Venue or in-arena experiences
+* Rewards and redemptions
+
+For each phase, explain which parts of the current codebase can be reused.
+
+---
+
+# Required final deliverable
+
+Return a written report with the following exact sections:
+
+## 1. Executive Summary
+
+Summarize:
+
+* How Swayger is positioned today
+* Whether the application is technically 1v1-first
+* How mature the Gameday experience is
+* Whether Gameday can become primary without a rebuild
+* The most important recommended changes
+
+## 2. Current Application Architecture
+
+Describe the framework, routes, components, data model, authentication, APIs, and major product systems.
+
+## 3. Current User Experience
+
+Describe what a new visitor, signed-in user, room participant, room host, and 1v1 challenger experiences today.
+
+## 4. Current 1v1 System
+
+Map the complete 1v1 journey and relevant technical components.
+
+## 5. Current Gameday System
+
+Map the complete Gameday journey and relevant technical components.
+
+## 6. Current Product Hierarchy
+
+Explain which product is currently treated as primary and cite evidence from the application.
+
+## 7. Gameday-First Target Experience
+
+Describe the recommended future user journey and information architecture.
+
+## 8. Gap Analysis
+
+Create a table with these columns:
+
+| Area | Current State | Desired State | Required Change | Complexity | Seven-Day Priority | Relevant Files |
+
+## 9. Recommended UX and UI Changes
+
+Cover homepage, navigation, dashboard, room discovery, shared links, pick phases, CTAs, empty states, mobile, and results.
+
+## 10. Recommended Technical Changes
+
+Separate presentation changes, frontend changes, backend changes, data-model changes, analytics changes, and major architectural changes.
+
+## 11. Risks and Dependencies
+
+Include:
+
+* Authentication risk
+* Guest-user risk
+* Data integrity
+* Existing challenge links
+* Production data
+* Host controls
+* Manual resolution
+* Mobile behavior
+* Analytics continuity
+* Route redirects
+* Shared-component regressions
+
+## 12. Seven-Day Plan
+
+Create a prioritized sequence of work.
+
+For each item include:
+
+* Objective
+* Why it matters
+* Likely files affected
+* Dependencies
+* Complexity
+* Risk
+* Acceptance criteria
+
+## 13. Longer-Term Roadmap
+
+Explain how Gameday could eventually become the acquisition layer and 1v1 could become a secondary engagement and retention mechanic.
+
+## 14. Open Questions
+
+List all product or technical decisions that cannot be answered from the current codebase.
+
+## 15. Recommended Next Implementation Prompt
+
+At the end, draft a separate prompt that could later be given to Replit to implement only the approved Phase 1 changes.
+
+Do not execute that implementation prompt.
+
+---
+
+# Evidence requirements
+
+Do not give generic recommendations without inspecting the code.
+
+For every major conclusion:
+
+* Cite the relevant route
+* Cite the relevant file or component
+* Explain the current behavior
+* Explain the implication
+* Identify whether the change is presentation-only or structural
+
+Clearly distinguish among:
+
+* What is confirmed in the code
+* What is inferred from the code
+* What is a product recommendation
+* What requires clarification from the founder
+
+---
+
+# Final constraints
+
+* Do not modify code.
+* Do not create files unless needed only to present the report, and do not commit them.
+* Do not run database migrations.
+* Do not change production data.
+* Do not deploy.
+* Do not create branches or pull requests.
+* Do not install packages.
+* Do not expose secrets.
+* Do not assume Gameday needs a full rebuild.
+* Do not assume 1v1 should be deleted.
+* Favor the smallest reversible changes first.
+* Preserve direct links and existing user activity.
+* Make recommendations based on the current codebase, not on an imagined architecture.
