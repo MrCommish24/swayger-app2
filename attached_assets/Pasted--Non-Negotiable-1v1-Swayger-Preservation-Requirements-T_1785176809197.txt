@@ -1,0 +1,200 @@
+# Non-Negotiable 1v1 Swayger Preservation Requirements
+
+The Phase 1 Gameday prioritization is a change in product presentation and navigation priority only.
+
+It must not remove, replace, reset, migrate, rewrite, or change the behavior of the existing 1v1 Swayger system.
+
+The existing 1v1 functionality and data must remain fully intact.
+
+## Existing functionality that must remain available
+
+Users must continue to be able to:
+
+* Create a new 1v1 Swayger using the current creation flow
+* Join a 1v1 Swayger using the current join-code flow
+* Join through an existing invitation link
+* Join through any currently supported QR-code flow
+* View pending invitations
+* View Swaygers waiting for an opponent
+* View all active Swaygers
+* View all completed, settled, drawn, canceled, or no-contest Swaygers
+* View their complete historical Swayger activity
+* Open any existing Swayger detail page
+* Submit and review settlement proposals
+* Confirm or dispute settlement outcomes using the current supported workflow
+* Generate and share existing Swayger receipts
+* Use Run It Back
+* Use Double or Nothing
+* Access the existing 1v1 leaderboard
+* View leaderboard results by category
+* View all existing personal records, statistics, categories, wins, losses, and results
+* View and use existing profile functionality connected to 1v1 Swaygers
+
+## Swayger Points protection
+
+The Phase 1 work must not change any Swayger Points functionality.
+
+The following must remain unchanged:
+
+* Current user Swayger Points balances
+* Points awarded from completed Swaygers
+* Points deducted or escrowed when challenges are accepted
+* Points returned or redistributed during settlement
+* Stake amounts
+* Settlement calculations
+* Draw and no-contest treatment
+* Leaderboard calculations that depend on points
+* Historical point transactions
+* Any balance or transaction records associated with prior Swaygers
+* Any RPCs, database functions, triggers, or policies responsible for point movement
+
+Do not change the meaning, calculation, display source, or storage of Swayger Points as part of Phase 1.
+
+## Historical-data protection
+
+All existing production history must remain available after the navigation change.
+
+Do not:
+
+* Delete 1v1 records
+* Archive records solely because of the Gameday priority shift
+* Move 1v1 data to new tables
+* Rename or replace existing database tables
+* Migrate historical records
+* Recalculate historical results
+* Reset leaderboard totals
+* Reset category records
+* Reset user balances
+* Change existing record ownership
+* Modify existing invitation codes
+* Change existing challenge IDs
+* Break existing receipt URLs
+* Break existing invitation URLs
+* Break existing deep links
+
+No database migration should be required for the Phase 1 product-priority change.
+
+## Navigation requirements
+
+Demoting 1v1 means reducing its prominence, not hiding it.
+
+The proposed navigation must give users an obvious and reliable way to access:
+
+* Active Swaygers
+* Pending Swaygers
+* Swayger history
+* Create Swayger
+* Join Swayger
+* 1v1 leaderboard
+* Category history
+* Swayger Points balance
+* Profile records
+
+Do not bury active or pending Swaygers behind unclear labels.
+
+The proposed Challenges screen should clearly contain the existing My Swaygers functionality, including current filters, statuses, history, and actions.
+
+If the current `app/(tabs)/index.tsx` screen contains the most complete My Swaygers experience, prefer preserving or relocating that screen rather than recreating it from scratch.
+
+## Reuse requirement
+
+Favor moving, reusing, or relabeling existing 1v1 screens over rewriting them.
+
+The plan should identify:
+
+* Which existing My Swaygers screen will be preserved
+* Its proposed new route or tab location
+* How Create remains accessible
+* How Join remains accessible
+* How the current leaderboard remains accessible
+* How category-level leaderboard history remains accessible
+* How Swayger Points remain visible
+* How all existing filters and status groupings remain available
+* How active and pending Swaygers remain noticeable to users
+
+Do not replace the current 1v1 interface with a simplified version that omits existing functionality.
+
+## Required code-impact verification
+
+Before recommending implementation, inspect and list every 1v1-related file, route, table, RPC, and shared component that could be affected by the navigation change.
+
+At minimum, verify:
+
+* Current My Swaygers screen
+* Create tab and creation flow
+* Join screen
+* Invite route
+* Swayger detail route
+* Settlement flow
+* Receipt component
+* Rematch functionality
+* Double-or-Nothing functionality
+* Profile statistics
+* Main leaderboard
+* Category-level leaderboard views
+* Swayger Points balance display
+* Swayger Points transaction and settlement logic
+* Authentication redirects
+* Deep-link handling
+* Tab-navigation references
+* Back-navigation behavior
+
+For each item, state whether Phase 1:
+
+* Does not touch it
+* Moves its entry point only
+* Relabels its navigation only
+* Requires a code change
+* Presents a regression risk
+
+## Required 1v1 regression tests
+
+The Phase 1 plan must include tests proving that a user can still:
+
+1. Open their complete My Swaygers history
+2. View pending, active, and settled Swaygers
+3. Filter or review Swaygers by existing status and category
+4. Create a new Swayger
+5. Share the invitation
+6. Join through a code
+7. Join through an existing invitation link
+8. Accept a Swayger
+9. Verify the correct Swayger Points are escrowed
+10. Submit a settlement proposal
+11. Confirm the settlement
+12. Verify the correct Swayger Points are awarded
+13. View the settled receipt
+14. Run It Back
+15. Start a Double-or-Nothing challenge
+16. View the 1v1 leaderboard
+17. View leaderboard history by category
+18. Verify historical wins, losses, and records remain unchanged
+19. Verify the user’s Swayger Points balance remains correct
+20. Open an older Swayger deep link created before the Phase 1 release
+
+These tests should compare behavior before and after the proposed navigation changes.
+
+## Required data-integrity checks
+
+Before implementation, document baseline values for a controlled test account, including:
+
+* Total Swaygers
+* Pending Swaygers
+* Active Swaygers
+* Settled Swaygers
+* Wins
+* Losses
+* Draws
+* Category-level records
+* Leaderboard position
+* Swayger Points balance
+
+After implementation, confirm that all values remain unchanged unless a test transaction intentionally changes them.
+
+## Stop condition
+
+If making Gameday the primary tab would require rewriting, migrating, or materially changing the current 1v1 data model, Swayger Points system, settlement logic, historical records, or leaderboard calculations, stop and report the issue.
+
+Do not proceed with that approach.
+
+Recommend a presentation-only alternative that preserves the existing 1v1 system.
