@@ -465,6 +465,20 @@ export default function ProfileScreen() {
             <Ionicons name="open-outline" size={16} color={Colors.dark.tabIconDefault} />
           </Pressable>
 
+          <View style={styles.menuDivider} />
+
+          <Pressable
+            style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+            onPress={() => router.push("/how-game-day-works" as never)}
+          >
+            <Ionicons name="basketball-outline" size={20} color={Colors.dark.text} />
+            <View style={styles.menuItemBody}>
+              <Text style={styles.menuItemText}>How Game Day Rooms Work</Text>
+              <Text style={styles.menuItemSub}>Join a room, make picks during the game, and climb the leaderboard.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.dark.tabIconDefault} />
+          </Pressable>
+
         </View>
 
         {/* Legal section */}
