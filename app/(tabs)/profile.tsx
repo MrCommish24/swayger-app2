@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   StyleSheet,
   Text,
@@ -14,8 +15,9 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { gamedayFetch } from "@/lib/gameday-api";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { showError, showMessage, getAvatarColor } from "@/lib/helpers";
@@ -36,7 +38,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const router = useRouter();
-  const { user, profile, setProfile, retryProfileFetch, isLoading, profileError, signOut } = useAuth();
+  const { user, profile, setProfile, retryProfileFetch, isLoading, profileError, signOut, session } = useAuth() as any;
 
   useEffect(() => { Analytics.profileViewed(); }, []);
 
@@ -49,6 +51,13 @@ export default function ProfileScreen() {
   const [devChecks, setDevChecks] = useState<SchemaCheck[]>([]);
   const [devLoading, setDevLoading] = useState(false);
   const [claimingBankruptcy, setClaimingBankruptcy] = useState(false);
+
+  // Admin panel — visible only when token is saved on this device
+  const ADMIN_TOKEN_KEY = "swayger_admin_token";
+  const [hasAdminToken, setHasAdminToken] = useState(false);
+
+  // Host tools — visible only to confirmed hosts
+  const [isHost, setIsHost] = useState<boolean | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [showFeedbackSheet, setShowFeedbackSheet] = useState(false);
 
@@ -110,10 +119,26 @@ export default function ProfileScreen() {
     }
   }
 
+  // Refresh admin-token presence and host status each time this tab is focused
+  useFocusEffect(useCallback(() => {
+    AsyncStorage.getItem(ADMIN_TOKEN_KEY).then((t) => setHasAdminToken(!!t));
+    if (session) {
+      gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
+        .then((d) => setIsHost(d.isHost))
+        .catch(() => setIsHost(false));
+    } else {
+      setIsHost(false);
+    }
+  }, [session]));
+
   function handleVersionLongPress() {
-    if (!__DEV__) return;
-    setShowDevPanel((v) => !v);
-    if (!showDevPanel) runSchemaCheck();
+    if (__DEV__) {
+      setShowDevPanel((v) => !v);
+      if (!showDevPanel) runSchemaCheck();
+      return;
+    }
+    // Production: entry point for first-time admin token setup
+    router.push("/admin");
   }
 
   function openEditName() {
@@ -499,21 +524,28 @@ export default function ProfileScreen() {
             <Text style={styles.versionText}>Swayger v1.1</Text>
           </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/admin")}
-          >
-            <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.tabIconDefault} />
-            <Text style={styles.adminButtonText}>Admin Panel</Text>
-          </Pressable>
+          {hasAdminToken && (
+            <Pressable
+              style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
+              onPress={() => router.push("/admin")}
+            >
+              <Ionicons name="shield-checkmark-outline" size={18} color={Colors.dark.tabIconDefault} />
+              <Text style={styles.adminButtonText}>Admin Panel</Text>
+            </Pressable>
+          )}
 
-          <Pressable
-            style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
-            onPress={() => router.push("/gameday" as never)}
-          >
-            <Ionicons name="basketball-outline" size={18} color={Colors.dark.tabIconDefault} />
-            <Text style={styles.adminButtonText}>Game Day Swayger</Text>
-          </Pressable>
+          {isHost === true && (
+            <>
+              <Text style={styles.hostSectionLabel}>Host Tools</Text>
+              <Pressable
+                style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
+                onPress={() => router.push("/gameday" as never)}
+              >
+                <Ionicons name="basketball-outline" size={18} color={Colors.dark.tabIconDefault} />
+                <Text style={styles.adminButtonText}>Manage Game Day Rooms</Text>
+              </Pressable>
+            </>
+          )}
 
           <Pressable
             style={({ pressed }) => [styles.signOutButton, pressed && styles.buttonPressed]}
@@ -714,6 +746,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border, backgroundColor: Colors.dark.surface,
   },
   adminButtonText: { color: Colors.dark.tabIconDefault, fontSize: 15, fontWeight: "500" as const },
+  hostSectionLabel: {
+    fontSize: 11, color: Colors.dark.tabIconDefault, fontWeight: "600" as const,
+    textTransform: "uppercase" as const, letterSpacing: 0.8, textAlign: "center" as const,
+    marginTop: 4,
+  },
   signOutButton: {
     flexDirection: "row" as const, alignItems: "center", justifyContent: "center", gap: 8,
     paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: "#EF4444",
