@@ -372,7 +372,16 @@ export default function LeaderboardScreen() {
   const availableCategories = useMemo(() => {
     const cats = new Set<string>();
     allRows.forEach((r) => { if (r.category) cats.add(r.category); });
-    return Array.from(cats).sort();
+    // Sports first, then known sport sub-categories, then the rest alphabetically
+    const PRIORITY = ["Sports", "March Madness", "NBA Playoffs"];
+    return Array.from(cats).sort((a, b) => {
+      const ai = PRIORITY.indexOf(a);
+      const bi = PRIORITY.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [allRows]);
 
   const filteredRows = useMemo(() => {

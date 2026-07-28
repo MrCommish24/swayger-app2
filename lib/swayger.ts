@@ -584,6 +584,9 @@ export const CATEGORIES = [
 ];
 
 export function categoryIcon(category: string): string {
+  // Special categories not in the picker but present in settled data
+  if (category === "March Madness") return "basketball-outline";
+  if (category === "NBA Playoffs") return "basketball-outline";
   const found = CATEGORIES.find((c) => c.value === category);
   return found?.icon || "trophy-outline";
 }
