@@ -449,9 +449,9 @@ export default function ProfileScreen() {
 
         </View>
 
-        {/* Legal section */}
+        {/* How to Play section */}
         <View style={[styles.section, { marginTop: 8 }]}>
-          <Text style={styles.sectionTitle}>Legal</Text>
+          <Text style={styles.sectionTitle}>How to Play</Text>
 
           <Pressable
             style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
@@ -459,11 +459,17 @@ export default function ProfileScreen() {
           >
             <Ionicons name="information-circle-outline" size={20} color={Colors.dark.text} />
             <View style={styles.menuItemBody}>
-              <Text style={styles.menuItemText}>How Swayger Works</Text>
-              <Text style={styles.menuItemSub}>The 3-step guide to creating a wager</Text>
+              <Text style={styles.menuItemText}>How 1v1 Swaygers Work</Text>
+              <Text style={styles.menuItemSub}>Create a take, challenge a friend, and settle the result.</Text>
             </View>
             <Ionicons name="open-outline" size={16} color={Colors.dark.tabIconDefault} />
           </Pressable>
+
+        </View>
+
+        {/* Legal section */}
+        <View style={[styles.section, { marginTop: 8 }]}>
+          <Text style={styles.sectionTitle}>Legal</Text>
 
           <View style={styles.menuDivider} />
 
