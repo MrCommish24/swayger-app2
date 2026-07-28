@@ -1093,6 +1093,13 @@ export default function DashboardScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
+          <Text style={styles.emptySubtext}>
+            A 1v1 Swayger is a sports prediction between you and one other person.
+          </Text>
+          <Text style={styles.emptySubtext}>
+            Make your take. They counter. You both lock it in. Settle the result after the game.
+          </Text>
+
           <Text style={styles.emptyStateLabel}>HOW IT WORKS</Text>
 
           {/* Step 1 — Active */}
@@ -1164,6 +1171,14 @@ export default function DashboardScreen() {
           >
             <Ionicons name="flash" size={16} color="#FFFFFF" />
             <Text style={styles.emptyCreateButtonText}>Create Your First Swayger</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.actionButtonOutline, pressed && styles.actionButtonPressed]}
+            onPress={() => router.push("/join")}
+          >
+            <Ionicons name="enter-outline" size={16} color={Colors.dark.tint} />
+            <Text style={styles.actionButtonOutlineText}>Join with a Code</Text>
           </Pressable>
         </ScrollView>
       ) : sections.length === 0 && swaygers.length > 0 ? (

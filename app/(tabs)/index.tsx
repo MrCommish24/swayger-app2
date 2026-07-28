@@ -88,7 +88,18 @@ function MySwaygersCard() {
     >
       <Text style={cardStyles.title}>My Swaygers</Text>
 
-      {isReady ? (
+      {!isReady ? (
+        // Still loading — preserve static fallback, never briefly flash "zero Swaygers"
+        <Text style={cardStyles.body}>
+          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
+        </Text>
+      ) : swaygers.length === 0 ? (
+        // Query resolved and confirmed empty — show educational copy
+        <Text style={cardStyles.body}>
+          Challenge a friend to a 1v1 sports prediction.
+        </Text>
+      ) : (
+        // Existing users — show live activity summary unchanged
         <View style={cardStyles.statsRow}>
           <View style={cardStyles.statItem}>
             <Text style={cardStyles.statValue}>{activeCount}</Text>
@@ -106,10 +117,6 @@ function MySwaygersCard() {
             </>
           )}
         </View>
-      ) : (
-        <Text style={cardStyles.body}>
-          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
-        </Text>
       )}
 
       <View style={cardStyles.cta}>

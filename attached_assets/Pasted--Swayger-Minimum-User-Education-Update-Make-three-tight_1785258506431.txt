@@ -1,0 +1,147 @@
+# Swayger Minimum User-Education Update
+
+Make three tightly scoped education improvements across two existing files.
+
+Do not change any underlying product functionality.
+
+Do not change:
+
+- Navigation structure
+- Authentication
+- Database tables
+- Supabase RPCs
+- Swayger Points logic
+- 1v1 creation logic
+- Join-by-code logic
+- Invitation links
+- Settlement
+- Receipts
+- Run It Back
+- Double or Nothing
+- Game Day room behavior
+- Analytics
+- Backend routes
+
+## File 1: app/(tabs)/challenges.tsx
+
+Inspect the empty-state block rendered when the authenticated user has zero Swaygers.
+
+Preserve the existing:
+
+- StatsStrip
+- Create and Join action row
+- “HOW IT WORKS” example cards
+- Active and settled tutorial example
+- Existing tagline
+- Create CTA
+- Styles and layout
+
+### Add a definition above “HOW IT WORKS”
+
+Insert this copy immediately above the “HOW IT WORKS” label:
+
+“A 1v1 Swayger is a sports prediction between you and one other person.
+
+Make your take. They counter. You both lock it in. Settle the result after the game.”
+
+Use the existing secondary empty-state text style where possible.
+
+The copy should:
+
+- Be centered
+- Use the existing secondary text color
+- Be readable on mobile
+- Match the current spacing and typography
+- Not introduce a new component unless necessary
+
+### Add a second CTA at the bottom
+
+Below the existing “Create Your First Swayger” button, add a secondary button:
+
+“Join with a Code”
+
+The routes must remain:
+
+- Create Your First Swayger → `/(tabs)/create`
+- Join with a Code → `/join`
+
+Do not route Join with a Code through the Create screen.
+
+Do not introduce a new join-intent system.
+
+Reuse the same navigation behavior as the existing Join button already present near the top of the My Swaygers screen.
+
+Make “Join with a Code” visually secondary to “Create Your First Swayger,” using an existing outline or secondary button style where possible.
+
+## File 2: app/(tabs)/index.tsx
+
+Inside the My Swaygers card shown on the Game Day empty state, update the copy for an authenticated user whose Swaygers query has successfully resolved to an empty array.
+
+Replace:
+
+“Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.”
+
+With:
+
+“Challenge a friend to a 1v1 sports prediction.”
+
+Keep the existing CTA:
+
+“View My Swaygers →”
+
+Keep its route:
+
+`/(tabs)/challenges`
+
+### Loading-state requirement
+
+Do not treat loading as the same as zero Swaygers.
+
+The new zero-Swayger copy should display only when:
+
+- The user is authenticated
+- The Swaygers query has completed successfully
+- The returned Swaygers array is empty
+
+While loading, preserve the current loading or static fallback behavior without briefly showing “zero Swaygers.”
+
+For users with existing Swaygers, keep the current dynamic display unchanged:
+
+- Active count
+- Swayger Points balance
+- View My Swaygers CTA
+
+For unauthenticated users, preserve the existing static fallback behavior unless the current implementation already uses the same educational copy safely.
+
+## File scope
+
+Expected files changed:
+
+- `app/(tabs)/challenges.tsx`
+- `app/(tabs)/index.tsx`
+
+Do not change any other file unless required to reuse an existing style. If another file appears necessary, stop and explain why before making that change.
+
+## Acceptance criteria
+
+1. A zero-Swayger user sees a clear one-sentence definition of a 1v1 Swayger.
+2. The user sees the basic sequence: make a take, opponent counters, both lock it in, settle after the game.
+3. The existing tutorial example remains unchanged.
+4. Create Your First Swayger routes to `/(tabs)/create`.
+5. Join with a Code routes to `/join`.
+6. Existing users with Swaygers still see all history, filters, activity, and StatsStrip unchanged.
+7. The Game Day home shows “Challenge a friend to a 1v1 sports prediction” only after the Swaygers query confirms the user has zero Swaygers.
+8. Existing users continue seeing active count and SP balance.
+9. No backend, database, authentication, settlement, points, or Game Day logic changes.
+10. The layout works on mobile web, native mobile, and desktop web.
+
+## Verification report
+
+After implementation, report:
+
+- Exact files changed
+- Exact route used by Create
+- Exact route used by Join with a Code
+- How the code distinguishes loading from a successfully returned empty array
+- Confirmation that existing users still see active count and SP balance
+- Confirmation that no backend or database files changed
