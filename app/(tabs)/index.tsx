@@ -13,6 +13,8 @@ import React, { useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Analytics } from "@/lib/posthog";
 import { getApiUrl } from "@/lib/query-client";
+import { useAuth } from "@/lib/auth-context";
+import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -25,6 +27,96 @@ interface PublicGDRoom {
   game_date: string | null;
   status: string;
   room_code: string | null;
+}
+
+// ─── My Swaygers summary card ──────────────────────────────────────────────────
+// Shown in the empty state only. Reuses fetchMySwaygers + fetchMyBalance from
+// lib/swayger.ts (same functions used by challenges.tsx — no new backend work).
+function MySwaygersCard() {
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const swaygerQuery = useQuery({
+    queryKey: ["swaygers", user?.id],
+    queryFn: () => fetchMySwaygers(user!.id),
+    enabled: !!user,
+    staleTime: 60 * 1000,
+  });
+
+  const balanceQuery = useQuery({
+    queryKey: ["balance", user?.id],
+    queryFn: () => fetchMyBalance(user!.id),
+    enabled: !!user,
+    staleTime: 60 * 1000,
+  });
+
+  const onPress = useCallback(() => {
+    router.push("/(tabs)/challenges" as never);
+  }, [router]);
+
+  // Not signed in — static fallback card
+  if (!user) {
+    return (
+      <Pressable
+        style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
+        onPress={onPress}
+      >
+        <Text style={cardStyles.title}>My Swaygers</Text>
+        <Text style={cardStyles.body}>
+          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
+        </Text>
+        <View style={cardStyles.cta}>
+          <Text style={cardStyles.ctaText}>View My Swaygers →</Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  // Loading / errored — static fallback card (non-blocking)
+  const swaygers = swaygerQuery.data ?? null;
+  const balance = balanceQuery.data ?? null;
+  const isReady = swaygers !== null;
+
+  const activeCount = isReady
+    ? swaygers.filter((s) => s.status === "active").length
+    : null;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
+      onPress={onPress}
+    >
+      <Text style={cardStyles.title}>My Swaygers</Text>
+
+      {isReady ? (
+        <View style={cardStyles.statsRow}>
+          <View style={cardStyles.statItem}>
+            <Text style={cardStyles.statValue}>{activeCount}</Text>
+            <Text style={cardStyles.statLabel}>Active</Text>
+          </View>
+          {balance !== null && (
+            <>
+              <View style={cardStyles.statDivider} />
+              <View style={cardStyles.statItem}>
+                <Text style={[cardStyles.statValue, cardStyles.statValueGold]}>
+                  {balance.balance.toLocaleString()}
+                </Text>
+                <Text style={cardStyles.statLabel}>SP Balance</Text>
+              </View>
+            </>
+          )}
+        </View>
+      ) : (
+        <Text style={cardStyles.body}>
+          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
+        </Text>
+      )}
+
+      <View style={cardStyles.cta}>
+        <Text style={cardStyles.ctaText}>View My Swaygers →</Text>
+      </View>
+    </Pressable>
+  );
 }
 
 // ─── FeaturedRoomCard ─────────────────────────────────────────────────────────
@@ -162,28 +254,35 @@ export default function GameDayHomeScreen() {
           <ActivityIndicator color={C.tint} size="small" />
         </View>
       ) : featuredRoom ? (
+        // ── Live state: featured room + strip ─────────────────────────────────
         <>
           <FeaturedRoomCard room={featuredRoom} totalRooms={rooms.length} />
           <MoreRoomsStrip rooms={stripRooms} totalRooms={rooms.length} />
+          {/* Subtle link — stays below the live content, does not compete */}
+          <Pressable
+            style={({ pressed }) => [homeStyles.swaygerLink, pressed && homeStyles.swaygerLinkPressed]}
+            onPress={() => router.push("/(tabs)/challenges" as never)}
+          >
+            <Text style={homeStyles.swaygerLinkText}>My 1v1 Swaygers →</Text>
+          </Pressable>
         </>
       ) : (
-        <View style={homeStyles.emptyWrap}>
-          <Text style={homeStyles.emptyEmoji}>🏟️</Text>
-          <Text style={homeStyles.emptyTitle}>No live rooms right now</Text>
-          <Text style={homeStyles.emptySub}>
-            Rooms appear here when a game is live.{"\n"}
-            Have a room link? Tap it to join directly.
-          </Text>
-        </View>
-      )}
+        // ── Empty state ───────────────────────────────────────────────────────
+        <>
+          <View style={homeStyles.emptyWrap}>
+            <Text style={homeStyles.emptyEmoji}>🏟️</Text>
+            <Text style={homeStyles.emptyTitle}>Nothing live right now</Text>
+            <Text style={homeStyles.emptySub}>
+              Game Day Rooms appear here before and during featured games.
+            </Text>
+            <Text style={homeStyles.emptyInvite}>
+              Have an invite link? Open it from your text or group chat to join directly.
+            </Text>
+          </View>
 
-      {/* My Swaygers link */}
-      <Pressable
-        style={({ pressed }) => [homeStyles.swaygerLink, pressed && homeStyles.swaygerLinkPressed]}
-        onPress={() => router.push("/(tabs)/challenges" as never)}
-      >
-        <Text style={homeStyles.swaygerLinkText}>My 1v1 Swaygers →</Text>
-      </Pressable>
+          <MySwaygersCard />
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -204,11 +303,12 @@ const homeStyles = StyleSheet.create({
   loadingWrap: { alignItems: "center", paddingVertical: 40 },
   emptyWrap: {
     alignItems: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingVertical: 40,
+    paddingHorizontal: 8,
+    gap: 10,
+    marginBottom: 8,
   },
-  emptyEmoji: { fontSize: 48 },
+  emptyEmoji: { fontSize: 48, marginBottom: 4 },
   emptyTitle: {
     fontSize: 20,
     fontWeight: "700" as const,
@@ -221,9 +321,16 @@ const homeStyles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
+  emptyInvite: {
+    fontSize: 13,
+    color: C.textMuted,
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: 2,
+  },
   swaygerLink: {
-    marginTop: 32,
-    paddingVertical: 16,
+    marginTop: 24,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     borderTopWidth: 1,
     borderTopColor: C.border,
@@ -234,6 +341,70 @@ const homeStyles = StyleSheet.create({
     fontSize: 14,
     color: C.textSecondary,
     fontWeight: "500" as const,
+  },
+});
+
+const cardStyles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    gap: 14,
+  },
+  cardPressed: { opacity: 0.82 },
+  title: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: C.text,
+  },
+  body: {
+    fontSize: 14,
+    color: C.textSecondary,
+    lineHeight: 21,
+  },
+  statsRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center" as const,
+    gap: 3,
+  },
+  statValue: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 28,
+    color: C.text,
+  },
+  statValueGold: {
+    color: C.accentGold,
+    fontSize: 22,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: C.textSecondary,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.8,
+    fontWeight: "500" as const,
+  },
+  statDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: C.border,
+    marginHorizontal: 4,
+  },
+  cta: {
+    backgroundColor: C.tint,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  ctaText: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
   },
 });
 

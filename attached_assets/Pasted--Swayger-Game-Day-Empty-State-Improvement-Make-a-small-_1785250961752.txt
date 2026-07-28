@@ -1,0 +1,217 @@
+# Swayger Game Day Empty-State Improvement
+
+Make a small, tightly scoped UX improvement to the Game Day home screen when there are no live public Gameday rooms.
+
+This is not a redesign and should not change any existing product functionality, navigation, routing, database logic, authentication, Gameday room behavior, or 1v1 Swayger behavior.
+
+## Current state
+
+The Game Day tab is now the default landing screen.
+
+When no public rooms are live, the screen currently shows:
+
+- “No live rooms right now”
+- “Rooms appear here when a game is live.”
+- “Have a room link? Tap it to join directly.”
+- A small “My 1v1 Swaygers →” link near the bottom
+
+The screen is clean, but it leaves a large amount of empty space and makes the existing My Swaygers experience feel like a minor footer link.
+
+## Objective
+
+Keep Game Day as the default home screen, even when no room is live.
+
+Do not automatically redirect users to My Swaygers.
+
+Instead, make the no-live-rooms state more useful by:
+
+1. Clarifying how external Gameday invite links work
+2. Giving users a more visible path to their existing My Swaygers activity
+3. Preserving Game Day as the primary product experience
+4. Making no changes to underlying 1v1 or Gameday functionality
+
+## Required copy change
+
+Replace:
+
+“Have a room link? Tap it to join directly.”
+
+With:
+
+“Have an invite link? Open it from your text or group chat to join directly.”
+
+This is informational copy only. Do not add a room-code field, URL-entry field, or new join flow.
+
+Users will continue joining Gameday Rooms by tapping the URL they receive externally through text, Discord, WhatsApp, email, or another group chat.
+
+## Required My Swaygers fallback card
+
+Replace the small standalone “My 1v1 Swaygers →” footer link with a more visible card or contained section beneath the no-live-rooms message.
+
+The card should remain visually secondary to Game Day, but it should feel like a meaningful next action.
+
+Use existing 1v1 data already available in the app or already used by the prior My Swaygers home screen.
+
+Preferred authenticated-user content:
+
+Title:
+“My Swaygers”
+
+Supporting summary:
+- Number of active Swaygers
+- Number requiring action, if that can be determined using existing state without introducing new backend work
+- Current Swayger Points balance, if already easily available from the existing profile or dashboard query
+
+Primary CTA:
+“View My Swaygers →”
+
+The CTA must navigate to:
+
+`/(tabs)/challenges`
+
+Do not recreate or duplicate the full My Swaygers list on the Game Day screen.
+
+Do not place individual Swayger cards on the Game Day home.
+
+This card is only a summary and navigation entry point.
+
+## Safe fallback
+
+If displaying active count, action-required count, or Swayger Points would require:
+
+- A new backend endpoint
+- A database change
+- New Supabase RPCs
+- Reworking existing 1v1 queries
+- Duplicating substantial dashboard logic
+- Introducing data-loading or performance risk
+
+Then use a static version of the card instead:
+
+Title:
+“My Swaygers”
+
+Body:
+“Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.”
+
+CTA:
+“View My Swaygers →”
+
+Favor the static card over expanding scope.
+
+## Recommended no-room layout
+
+The screen should remain approximately:
+
+GAME DAY
+
+[Existing stadium or Gameday illustration]
+
+Nothing live right now
+
+Game Day Rooms appear here before and during featured games.
+
+Have an invite link? Open it from your text or group chat to join directly.
+
+[My Swaygers card]
+
+My Swaygers
+
+[Dynamic summary if safely available, otherwise static supporting copy]
+
+View My Swaygers →
+
+## Visual hierarchy
+
+- Keep “GAME DAY” as the page title.
+- Keep the existing empty-state illustration unless a small spacing adjustment is needed.
+- Keep the no-live-room message as the primary content.
+- Make the My Swaygers card clearly tappable.
+- Keep the My Swaygers card visually secondary to a live-room hero card.
+- Use the existing application design system, typography, spacing, border treatment, and dark theme.
+- Do not create a new visual style.
+- Avoid excessive empty vertical space.
+- Ensure the card works on mobile web, native iOS, native Android, and desktop web.
+
+## Behavior when a live room exists
+
+Do not change the live-room state.
+
+When at least one public room is live:
+
+- Continue showing the featured live room
+- Continue showing additional live-room cards
+- Continue using the existing “Join & Make Picks →” flow
+- Do not show the no-live-room empty state
+- The existing My Swaygers secondary link or card may remain at the bottom if already part of the current design, but do not let it compete with the featured live room
+
+## Non-negotiable preservation requirements
+
+Do not modify:
+
+- `app/(tabs)/challenges.tsx`, except only if necessary to confirm the destination route
+- `app/(tabs)/create.tsx`
+- `app/(tabs)/leaderboard.tsx`
+- `app/(tabs)/profile.tsx`
+- `app/swayger/[id].tsx`
+- `app/invite/[code].tsx`
+- `/join`
+- Any Supabase tables
+- Any Supabase RPCs
+- Swayger Points logic
+- Swayger Points balances
+- Settlement logic
+- Receipt logic
+- Run It Back
+- Double or Nothing
+- Gameday room APIs
+- Guest join logic
+- Authentication guards
+- Tab structure
+- Deep links
+
+Do not add:
+
+- Room-code entry
+- URL entry
+- A neutral product-choice landing page
+- Automatic redirects to My Swaygers
+- New database queries unless an existing safe query can be directly reused
+- New backend routes
+- New analytics infrastructure
+
+## File scope
+
+The expected primary file is:
+
+`app/(tabs)/index.tsx`
+
+Before changing anything, inspect the current implementation and confirm whether the existing My Swaygers counts or Swayger Points data can be reused safely without duplicating substantial logic.
+
+If not, use the static fallback card.
+
+## Acceptance criteria
+
+1. Game Day remains the first tab and default landing screen.
+2. When no room is live, users still see a clear Game Day empty state.
+3. The invite-link copy clearly explains that the URL comes from an external text or group chat.
+4. The screen contains a clearly visible My Swaygers card.
+5. Tapping the card navigates to `/(tabs)/challenges`.
+6. No existing 1v1 functionality changes.
+7. No existing Gameday functionality changes.
+8. No backend, database, authentication, or route changes are introduced.
+9. The live-room state continues working exactly as it does today.
+10. The updated empty state displays correctly across native and web layouts.
+
+## Verification
+
+After implementation, report:
+
+- Exact files changed
+- Whether the My Swaygers card uses dynamic or static content
+- Which existing query or state was reused, if dynamic
+- Confirmation that no backend or database files changed
+- Confirmation that the Game Day live-room state remains unchanged
+- Confirmation that the My Swaygers card routes correctly
+
+Make the change only after confirming it can remain within this narrow scope.
