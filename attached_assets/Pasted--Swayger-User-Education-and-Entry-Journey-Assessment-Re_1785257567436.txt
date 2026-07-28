@@ -1,0 +1,635 @@
+# Swayger User Education and Entry-Journey Assessment
+
+Review the current Swayger codebase and produce a focused UX assessment for how new users learn the difference between:
+
+1. Swayger Game Day Rooms
+2. My Swaygers, the 1v1 challenge experience
+
+This is a planning and inspection exercise only.
+
+Do not write or modify code.
+
+Do not:
+
+- Edit files
+- Create components
+- Change copy
+- Change navigation
+- Change authentication
+- Change routes
+- Change database logic
+- Add analytics
+- Add onboarding
+- Deploy
+- Commit changes
+
+The goal is to inspect the current experience, show us exactly what new users see today, and recommend the smallest improvements needed to educate users based on how they entered the app.
+
+---
+
+# Background
+
+Swayger now has two related product experiences.
+
+## Game Day Rooms
+
+Game Day Rooms are group experiences built around a live sporting event.
+
+A participant can:
+
+- Open a shared room link
+- Join as a guest or authenticated user
+- Make pregame picks
+- Return for halftime picks
+- Return for fourth-quarter or clutch picks
+- Follow the leaderboard
+- View final standings and receipts
+
+Game Day is now the primary app landing experience.
+
+## My Swaygers
+
+My Swaygers is the existing 1v1 product.
+
+A user can:
+
+- Create a sports take
+- Invite a specific opponent
+- Join through a code, QR code, or invitation link
+- Accept or respond to the challenge
+- Lock Swayger Points
+- Settle the result
+- View the receipt
+- View active, pending, settling, and historical Swaygers
+- Review leaderboard history and category results
+
+The full 1v1 experience must remain unchanged.
+
+---
+
+# Core product principle
+
+Do not teach every user both products before they can participate.
+
+The entry point should determine what the user learns first.
+
+The likely user journeys are:
+
+## Journey A: User arrives through a Game Day Room link
+
+Preferred flow:
+
+Open link → See room context → Join → Make picks → See leaderboard
+
+The user should not be interrupted with 1v1 education before joining the room.
+
+1v1 may be introduced later as a secondary discovery opportunity.
+
+## Journey B: User arrives through a 1v1 invitation
+
+Preferred flow:
+
+Open invitation → See the take and stake → Join or respond → Complete the Swayger
+
+The user should not be interrupted with Game Day education before responding to the invitation.
+
+Game Day may be introduced later as a secondary discovery opportunity.
+
+## Journey C: User opens the app without an invitation
+
+Preferred flow:
+
+Open app → Land on Game Day home → Understand what Game Day is → See live room, upcoming opportunity, or empty state → Discover My Swaygers as the secondary option
+
+This journey requires slightly more product education because there is no invitation providing context.
+
+---
+
+# Objective
+
+Inspect the current application and answer:
+
+1. What does a brand-new user see inside My Swaygers when they have no Swaygers?
+2. Does the current My Swaygers empty state clearly explain what a 1v1 Swayger is?
+3. Does it explain how the experience works?
+4. Are Create and Join actions clear?
+5. Does the Game Day home adequately explain Game Day to an uninvited user?
+6. How are users currently educated when they arrive through a Game Day link?
+7. How are users currently educated when they arrive through a 1v1 invitation?
+8. Where should cross-product education appear, if anywhere?
+9. What is the smallest safe improvement that would make the overall user journey clearer?
+10. What should not be built yet?
+
+---
+
+# Step 1: Inspect the current My Swaygers empty state
+
+Inspect the complete empty state shown to an authenticated user who:
+
+- Has no pending Swaygers
+- Has no active Swaygers
+- Has no settling Swaygers
+- Has no settled Swaygers
+- Has no historical Swayger activity
+
+Review the relevant files, including:
+
+- `app/(tabs)/challenges.tsx`
+- Any empty-state components it uses
+- Any tutorial cards or instructional copy
+- Create and Join CTAs
+- StatsStrip behavior when all values are zero
+- Swayger Points display
+- Any first-user onboarding logic
+- Any conditional copy based on account history
+
+Document the exact current experience in render order.
+
+Include:
+
+- Headline
+- Body copy
+- Supporting explanation
+- Buttons
+- Icons or illustrations
+- Example content
+- Whether the user sees Game Day content
+- Whether the user sees definitions for Swayger Points
+- Whether the user is told what happens after creating a challenge
+
+Quote the current UI copy exactly where practical.
+
+---
+
+# Step 2: Assess whether the empty state teaches the 1v1 product
+
+Evaluate whether a new user can understand these questions from the current screen:
+
+- What is a 1v1 Swayger?
+- Is this a prediction, bet, challenge, or conversation?
+- Who participates?
+- What does the creator do?
+- What does the opponent do?
+- What are Swayger Points?
+- What happens when both users agree?
+- How is the result settled?
+- What is the receipt?
+- What is the difference between Create and Join?
+- What should the user do first?
+
+Do not give generic UX advice.
+
+Base the assessment on the actual current screen.
+
+Label findings as:
+
+- Clear today
+- Partially clear
+- Missing
+- Potentially confusing
+
+---
+
+# Step 3: Show the current empty state visually in words
+
+Produce a simple text wireframe of the current empty state.
+
+For example:
+
+MY SWAYGERS
+
+[Stats]
+
+[Current headline]
+
+[Current explanation]
+
+[Current CTA]
+[Current CTA]
+
+This is not a redesign yet. It should reflect what exists today.
+
+Then provide a second text wireframe showing the smallest recommended improvement.
+
+The recommended version should remain lightweight.
+
+A possible direction is:
+
+MY SWAYGERS
+
+A 1v1 Swayger is a sports prediction between you and another person.
+
+Make your take.
+Invite an opponent.
+Settle the result.
+Keep the receipt.
+
+[Create a Swayger]
+[Join with a Code]
+
+Example:
+“The Bears will win by 7+.”
+
+Do not assume this exact copy is best. Recommend copy based on the existing product language and design.
+
+---
+
+# Step 4: Inspect the Game Day link journey
+
+Trace the current journey for a user who receives a Game Day URL through:
+
+- Text message
+- Group chat
+- Discord
+- WhatsApp
+- Email
+
+Review:
+
+- Direct room URL
+- Short room URL
+- Auth bypass
+- Room preview
+- Guest join
+- Authenticated auto-join
+- Room context shown before joining
+- Current phase status
+- Open or locked pick state
+- First pick card
+- Leaderboard
+- Return behavior
+
+Answer:
+
+- Is any general onboarding shown?
+- Is any onboarding needed?
+- Does the room itself teach the experience sufficiently?
+- What should the user learn before joining?
+- What should wait until after pick submission?
+- Where, if anywhere, should My Swaygers be introduced later?
+
+Do not recommend interrupting the join flow unless there is a genuine usability problem.
+
+---
+
+# Step 5: Inspect the 1v1 invitation journey
+
+Trace the current journey for a user who receives:
+
+- A direct invitation URL
+- A join code
+- A QR code
+
+Review:
+
+- Invitation preview
+- Authentication behavior
+- Creator take
+- Stake
+- Opponent response
+- Accept flow
+- Swayger Points explanation
+- Settlement explanation
+- Receipt expectation
+- Post-accept experience
+
+Answer:
+
+- Is the invitation itself enough to explain the product?
+- What does the user understand before accepting?
+- What information is missing?
+- Should Game Day be mentioned at all during this flow?
+- Where could Game Day be introduced later without distracting from the invitation?
+
+Protect this direct-response journey from unnecessary product education.
+
+---
+
+# Step 6: Inspect the uninvited app-entry journey
+
+Trace what happens when an authenticated user opens the app without:
+
+- A Game Day Room link
+- A 1v1 invitation
+- An active Game Day Room
+- Any existing Swaygers
+
+The current Game Day home may show:
+
+- “Nothing live right now”
+- A short explanation of when Game Day Rooms appear
+- Invite-link guidance
+- A My Swaygers card
+
+Assess whether this screen explains:
+
+- What Game Day is
+- What the user will do in a room
+- When rooms become available
+- How external invite links work
+- What My Swaygers is
+- Why the user might select My Swaygers
+
+Determine whether the current My Swaygers card should contain:
+
+- Only navigation
+- A one-sentence explanation
+- Dynamic activity counts
+- A new-user explanation when the user has zero Swaygers
+- Different copy for users with activity versus users without activity
+
+Recommend the smallest conditional behavior that would help.
+
+For example:
+
+## Existing 1v1 user
+
+Show:
+
+- Active count
+- SP balance
+- View My Swaygers
+
+## New user with no Swaygers
+
+Potentially show:
+
+- “Challenge a friend to a 1v1 sports prediction.”
+- “Create a Swayger or join one with a code.”
+- View My Swaygers
+
+Do not implement this. Assess whether it is warranted.
+
+---
+
+# Step 7: Recommend progressive education
+
+Develop a simple progressive-education model.
+
+For each journey, specify:
+
+| Entry Journey | What User Came To Do | What They Need To Learn First | What Should Not Interrupt Them | Best Time to Introduce the Other Product |
+
+Cover:
+
+- Game Day link
+- 1v1 invite link
+- App opened without invitation
+- Existing Game Day participant returning later
+- Existing 1v1 user opening the app
+- Completely new account with no activity
+
+The recommendation should follow this principle:
+
+> Teach users only what they need for the next action, then reveal the rest after they participate.
+
+---
+
+# Step 8: Identify the best cross-product education moments
+
+Assess these possible moments:
+
+## After Game Day pick submission
+
+Possible message:
+
+“Keep competing between games with a 1v1 Swayger.”
+
+## On final Game Day standings
+
+Possible message:
+
+“Challenge someone from your group before the next game.”
+
+Do not propose actual challenge-from-room functionality. This would only be educational navigation.
+
+## On the Game Day empty state
+
+Possible explanation of My Swaygers.
+
+## Inside an empty My Swaygers screen
+
+Possible explanation of Game Day as a group alternative.
+
+## After a 1v1 challenge is accepted or settled
+
+Possible message:
+
+“Want to compete with the whole group? Join the next Game Day Room.”
+
+For each moment, evaluate:
+
+- User relevance
+- Potential distraction
+- Existing screen availability
+- Implementation complexity
+- Whether it belongs in the early product
+- Whether it should be deferred
+
+Keep cross-promotion minimal.
+
+---
+
+# Step 9: Recommend the minimum viable education system
+
+Recommend the smallest education improvements needed now.
+
+Organize them into:
+
+## Must do now
+
+Only changes needed to prevent a new user from being confused.
+
+## Should do soon
+
+Lightweight improvements that help users discover the other product after participating.
+
+## Could do later
+
+Contextual education, tooltips, examples, or post-action prompts.
+
+## Do not build yet
+
+Include:
+
+- Mandatory onboarding carousel
+- Product-choice splash page
+- Forced tutorial
+- Preference setup
+- Multi-step onboarding
+- Large help center
+- Full cross-product recommendation engine
+- Complex user segmentation
+- Any change to the underlying Game Day or 1v1 functionality
+
+---
+
+# Step 10: Recommend copy directions
+
+Provide concise copy recommendations for:
+
+## My Swaygers empty state
+
+Include:
+
+- Headline
+- One-sentence definition
+- Three- or four-step explanation
+- Create CTA
+- Join CTA
+- Optional example take
+
+## Game Day home with no live room
+
+Include:
+
+- Game Day explanation
+- Invite-link explanation
+- My Swaygers summary for an existing user
+- My Swaygers explanation for a user with no Swaygers
+
+## Post-Game Day participation
+
+Provide one optional line introducing 1v1.
+
+## Post-1v1 completion
+
+Provide one optional line introducing Game Day.
+
+Keep all copy short, conversational, and consistent with the current Swayger voice.
+
+Do not use gambling language unless it already exists in the product.
+
+---
+
+# Step 11: Identify technical impact without implementing
+
+For each recommended change, identify:
+
+| Recommendation | Relevant File | Existing Data Available? | Frontend Only? | Complexity | Risk | Recommended Timing |
+
+Likely files may include:
+
+- `app/(tabs)/challenges.tsx`
+- `app/(tabs)/index.tsx`
+- `app/gameday/[roomId]/index.tsx`
+- `app/invite/[code].tsx`
+- `app/swayger/[id].tsx`
+- Any current empty-state component
+- Any onboarding or instructional components
+- `lib/posthog.ts`, only if analytics is relevant later
+
+Do not recommend backend or database work unless absolutely required.
+
+---
+
+# Non-negotiable preservation requirements
+
+Do not recommend changing:
+
+- 1v1 creation logic
+- Join-by-code logic
+- Invitation links
+- QR-code join
+- Swayger Points
+- Settlement
+- Receipts
+- Run It Back
+- Double or Nothing
+- Game Day guest join
+- Game Day pick submission
+- Game Day scoring
+- Leaderboards
+- Existing history
+- Database tables
+- Supabase RPCs
+- Authentication guards
+- Deep links
+
+This assessment is about education and journey clarity only.
+
+---
+
+# Required final report structure
+
+Return the report using these exact sections:
+
+## 1. Executive Recommendation
+
+State whether the current education is sufficient and identify the smallest improvement needed.
+
+## 2. Current My Swaygers Empty State
+
+Show exactly what a user with no Swaygers sees today.
+
+## 3. 1v1 Education Assessment
+
+Explain what is clear, partially clear, missing, or confusing.
+
+## 4. Current Game Day Link Journey
+
+Map what a user sees and what education is appropriate.
+
+## 5. Current 1v1 Invitation Journey
+
+Map what a user sees and what education is appropriate.
+
+## 6. Uninvited App-Entry Journey
+
+Explain the experience for someone who opens the app without an invitation or live room.
+
+## 7. Recommended Progressive-Education Model
+
+Use a journey-based table.
+
+## 8. Recommended My Swaygers Empty State
+
+Provide a text wireframe and recommended copy.
+
+## 9. Recommended Game Day Empty-State Education
+
+Explain how the My Swaygers card should differ for existing versus brand-new users.
+
+## 10. Cross-Product Education Opportunities
+
+Prioritize the best moments and defer unnecessary ones.
+
+## 11. Minimum Viable Scope
+
+Use:
+
+- Must do now
+- Should do soon
+- Could do later
+- Do not build yet
+
+## 12. File Impact Map
+
+Use:
+
+| File | Current Purpose | Possible Education Change | Complexity | Risk |
+
+## 13. Open Questions
+
+List only decisions that cannot be answered from the code.
+
+## 14. Recommended Implementation Prompt
+
+Draft a separate implementation prompt for only the approved minimum changes.
+
+Do not execute it.
+
+---
+
+# Final constraints
+
+- Do not modify code.
+- Do not create files.
+- Do not implement the recommendations.
+- Do not redesign the full application.
+- Do not introduce a neutral “choose your product” homepage.
+- Do not interrupt direct invitation journeys.
+- Do not overbuild onboarding.
+- Favor contextual education at the moment it becomes relevant.
+- Keep the early-stage product simple.
+- Ground every conclusion in the current code and UI.
