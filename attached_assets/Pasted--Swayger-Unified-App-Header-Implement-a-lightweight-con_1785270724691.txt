@@ -1,0 +1,328 @@
+# Swayger Unified App Header
+
+Implement a lightweight, consistent Swayger brand header across the four top-level tabs:
+
+1. Game Day
+2. My Swaygers
+3. Leaderboard
+4. Profile
+
+The goal is to make it immediately clear that all four experiences live inside the Swayger app, while preserving the current section titles and navigation labels.
+
+This is a focused UI-shell improvement only.
+
+Do not change:
+
+- Bottom tab labels
+- Bottom tab order
+- Navigation routes
+- Game Day functionality
+- My Swaygers functionality
+- Leaderboard functionality
+- Profile functionality
+- Authentication
+- Database logic
+- Supabase queries or RPCs
+- Swayger Points
+- Gameday room logic
+- Admin or host permissions
+- Deep links
+- Analytics
+- Nested detail-screen headers
+
+## Current issue
+
+The four top-level screens currently identify only the section:
+
+- Game Day
+- My Swaygers
+- Leaderboard
+- Profile
+
+A user can understand where they are, but the app shell does not consistently reinforce that they are inside Swayger.
+
+The sign-in screen already has strong branding and should remain unchanged.
+
+The in-app treatment should be lighter than the sign-in screen. Do not repeat the full logo lockup or tagline on every tab.
+
+## Desired hierarchy
+
+Each top-level tab should communicate both:
+
+- Product identity: Swayger
+- Current location: Game Day, My Swaygers, Leaderboard, or Profile
+
+Use a visual hierarchy similar to:
+
+SWAYGER
+GAME DAY
+
+SWAYGER
+MY SWAYGERS
+
+SWAYGER
+LEADERBOARD
+
+SWAYGER
+PROFILE
+
+The Swayger brand label should be smaller and visually secondary to the screen title.
+
+## Recommended visual treatment
+
+Create one reusable shared header component for top-level tabs.
+
+Suggested behavior:
+
+- Small Swayger wordmark or text label at the top
+- Current screen title directly beneath it
+- Left aligned
+- Consistent spacing across all four tabs
+- Existing dark theme
+- Existing typography system
+- Existing brand color treatment where appropriate
+- No tagline
+- No large centered logo
+- No banner
+- No floating branding
+- No extra navigation controls
+
+The component should feel like part of the app shell, not a marketing hero.
+
+## Scope
+
+Inspect the current header implementation in:
+
+- `app/(tabs)/index.tsx`
+- `app/(tabs)/challenges.tsx`
+- `app/(tabs)/leaderboard.tsx`
+- `app/(tabs)/profile.tsx`
+- `app/(tabs)/_layout.tsx`
+
+Determine whether titles are currently rendered:
+
+- Inside each screen
+- Through Expo Router options
+- Through native tab headers
+- Through custom JSX
+- Or through a combination
+
+Avoid duplicate titles.
+
+## Shared component
+
+Prefer creating a reusable component such as:
+
+`components/AppSectionHeader.tsx`
+
+Possible props:
+
+- `title`
+- Optional accessibility label
+- Optional test ID
+
+It should render:
+
+- Brand label: `SWAYGER`
+- Section title passed by prop
+
+Example use:
+
+`<AppSectionHeader title="GAME DAY" />`
+
+Do not hard-code four separate visual implementations unless the existing architecture makes a shared component materially riskier.
+
+## Screen requirements
+
+### Game Day
+
+Replace the current standalone `GAME DAY` header with the shared branded header.
+
+Do not change:
+
+- Featured room card
+- Live-room strip
+- Empty state
+- My Swaygers fallback card
+- Public-room query
+- Guest room journey
+
+### My Swaygers
+
+Replace the current standalone `MY SWAYGERS` header with the shared branded header.
+
+Preserve:
+
+- StatsStrip
+- Filters
+- Full Swayger history
+- Realtime subscriptions
+- SwaygerActionModal
+- Push notification banner
+- Create and Join actions
+- Empty-state education
+- Swayger Points display
+
+### Leaderboard
+
+Keep the bottom-tab label as `Leaderboard`.
+
+Do not rename it to `Swayger Board`.
+
+Use the shared header with:
+
+- Brand label: `SWAYGER`
+- Screen title: `LEADERBOARD`
+
+Preserve all:
+
+- Overall rankings
+- Category views
+- Filters
+- Historical records
+- Swayger Points-related calculations
+- Existing queries
+
+### Profile
+
+Use the shared header with:
+
+- Brand label: `SWAYGER`
+- Screen title: `PROFILE`
+
+Preserve all current profile content and role-based controls.
+
+Do not treat the version footer as the primary brand identifier.
+
+## Nested screens excluded
+
+Do not add the unified header to nested or task-specific screens in this phase, including:
+
+- Individual Game Day rooms
+- Host controls
+- Captain Center
+- Create Swayger
+- Join Swayger
+- Invite preview
+- Individual Swayger detail
+- Settlement
+- Receipt
+- Admin screen
+- Authentication screens
+
+Those screens should continue leading with task context, matchup, challenge, or back navigation.
+
+## Safe-area and scrolling behavior
+
+Verify the header behaves consistently across:
+
+- iOS native
+- Android native
+- Mobile web
+- Desktop web
+
+Confirm:
+
+- No duplicate top padding
+- No collision with the status bar
+- No double header from Expo Router
+- No clipping
+- No title wrapping on common mobile widths
+- Consistent left alignment
+- Consistent spacing below the header
+
+Use the existing SafeAreaView or layout pattern already used by the tab screens.
+
+Do not add a second SafeAreaView if one already exists at the screen or layout level.
+
+## Accessibility
+
+The visible text should remain readable by screen readers.
+
+Use an appropriate heading or accessibility role if already supported by the current component patterns.
+
+Avoid making the brand label excessively prominent in the accessibility tree if it causes repetitive announcements.
+
+## Visual acceptance criteria
+
+1. Every top-level tab clearly shows `SWAYGER`.
+2. Every top-level tab clearly shows its section title.
+3. The section title remains more prominent than the brand label.
+4. Bottom-tab labels remain unchanged.
+5. No screen displays duplicate titles.
+6. No screen gains a large marketing-style logo.
+7. The header uses one consistent visual treatment.
+8. The header does not materially reduce usable content space.
+9. Existing screen content and functionality remain unchanged.
+10. Screenshots of Game Day and Leaderboard are clearly attributable to Swayger.
+
+## Functional preservation
+
+Before and after implementation, verify:
+
+### Game Day
+- Live rooms still load
+- Empty state still renders
+- Featured room CTA still works
+- My Swaygers fallback card still works
+
+### My Swaygers
+- Existing baseline values remain unchanged
+- 1,671 SP
+- 104 total Swaygers
+- 41 settled
+- 3 active
+- Rank 1 of 11
+- Create still routes to `/(tabs)/create`
+- Join still routes to `/join`
+- Filters and history still work
+
+### Leaderboard
+- Overall leaderboard still loads
+- Category leaderboard still loads
+- Rankings and records are unchanged
+
+### Profile
+- Profile data still loads
+- Host/admin visibility logic remains unchanged
+- Sign-out and settings remain functional
+
+## Expected file impact
+
+Likely files:
+
+- `components/AppSectionHeader.tsx` — new shared component
+- `app/(tabs)/index.tsx`
+- `app/(tabs)/challenges.tsx`
+- `app/(tabs)/leaderboard.tsx`
+- `app/(tabs)/profile.tsx`
+
+Do not modify `app/(tabs)/_layout.tsx` unless necessary to disable duplicate native headers or preserve consistent screen behavior.
+
+If `_layout.tsx` must change, explain why before changing it.
+
+## Stop conditions
+
+Stop and report before implementing if:
+
+- The current router already renders a native header that would conflict with this design
+- A shared component requires restructuring tab navigation
+- The change would alter safe-area handling across nested routes
+- The change would affect data loading or screen functionality
+- The change requires backend, database, or authentication work
+
+In those cases, propose the smallest presentation-only alternative.
+
+## Verification report
+
+After implementation, report:
+
+- Exact files changed
+- Whether a shared component was created
+- How duplicate titles were avoided
+- Whether `_layout.tsx` changed and why
+- How safe-area behavior was handled
+- Confirmation that all four tab screens use the same pattern
+- Confirmation that nested screens were untouched
+- Confirmation that no backend, database, auth, or analytics files changed
+- Confirmation that the 1v1 baseline values remain unchanged

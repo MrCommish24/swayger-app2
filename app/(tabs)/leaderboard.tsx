@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, useCallback } from "react";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import AppSectionHeader from "@/components/AppSectionHeader";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate } from "@/lib/helpers";
@@ -475,7 +476,7 @@ export default function LeaderboardScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Leaderboard</Text>
+        <AppSectionHeader title="LEADERBOARD" />
       </View>
 
       {availableCategories.length > 0 && (

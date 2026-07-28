@@ -16,6 +16,7 @@ import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
+import AppSectionHeader from "@/components/AppSectionHeader";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gamedayFetch } from "@/lib/gameday-api";
 import { useAuth } from "@/lib/auth-context";
@@ -233,7 +234,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
+        <AppSectionHeader title="PROFILE" />
       </View>
 
       {/* Profile loading indicator */}

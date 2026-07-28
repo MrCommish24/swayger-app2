@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import AppSectionHeader from "@/components/AppSectionHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -254,7 +255,9 @@ export default function GameDayHomeScreen() {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={homeStyles.title}>GAME DAY</Text>
+      <View style={{ paddingHorizontal: 8, marginBottom: 20 }}>
+        <AppSectionHeader title="GAME DAY" />
+      </View>
 
       {isLoading ? (
         <View style={homeStyles.loadingWrap}>

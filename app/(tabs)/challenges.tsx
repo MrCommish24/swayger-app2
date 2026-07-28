@@ -12,6 +12,7 @@ import {
   Share,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import AppSectionHeader from "@/components/AppSectionHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useEffect, useState, useRef, useCallback } from "react";
@@ -964,7 +965,7 @@ export default function DashboardScreen() {
       )}
 
       <View style={styles.header}>
-        <Text style={styles.title}>My Swaygers</Text>
+        <AppSectionHeader title="MY SWAYGERS" />
         <View style={styles.headerRight}>
           {user && modalQueue.length > 0 && (
             <Pressable onPress={handleBellPress} style={styles.bellButton} hitSlop={8}>
