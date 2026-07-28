@@ -100,7 +100,9 @@ function MySwaygersCard() {
           Challenge a friend to a 1v1 sports prediction.
         </Text>
       ) : (
-        // Existing users — show live activity summary unchanged
+        // Existing users — show descriptor + live activity summary
+        <>
+        <Text style={cardStyles.descriptor}>Your 1v1 sports challenges</Text>
         <View style={cardStyles.statsRow}>
           <View style={cardStyles.statItem}>
             <Text style={cardStyles.statValue}>{activeCount}</Text>
@@ -118,6 +120,7 @@ function MySwaygersCard() {
             </>
           )}
         </View>
+        </>
       )}
 
       <View style={cardStyles.cta}>
@@ -283,7 +286,7 @@ export default function GameDayHomeScreen() {
             <Text style={homeStyles.emptyEmoji}>🏟️</Text>
             <Text style={homeStyles.emptyTitle}>Nothing live right now</Text>
             <Text style={homeStyles.emptySub}>
-              Game Day Rooms appear here before and during featured games.
+              Game Day Rooms are group pick'em competitions that open before and during featured games.
             </Text>
             <Text style={homeStyles.emptyInvite}>
               Have an invite link? Open it from your text or group chat to join directly.
@@ -373,6 +376,11 @@ const cardStyles = StyleSheet.create({
     fontSize: 14,
     color: C.textSecondary,
     lineHeight: 21,
+  },
+  descriptor: {
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 19,
   },
   statsRow: {
     flexDirection: "row" as const,

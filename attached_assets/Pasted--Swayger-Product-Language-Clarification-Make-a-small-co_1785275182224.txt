@@ -1,0 +1,222 @@
+# Swayger Product-Language Clarification
+
+Make a small copy-only improvement to the Game Day home screen so users can immediately understand the difference between:
+
+- Game Day Rooms: group competitions around live games
+- My Swaygers: 1v1 sports challenges
+
+Do not add onboarding screens, modals, tutorials, tooltips, or new navigation.
+
+Do not change functionality, layout structure, data fetching, routing, authentication, analytics, or styling beyond minor spacing required for the new text.
+
+## File scope
+
+Expected file:
+
+`app/(tabs)/index.tsx`
+
+Do not modify any other file unless absolutely necessary. If another file is required, stop and explain why before making changes.
+
+## Current screen
+
+When no Game Day Room is live, the Game Day home currently shows:
+
+Headline:
+“Nothing live right now”
+
+Body:
+“Game Day Rooms appear here before and during featured games.”
+
+Invite guidance:
+“Have an invite link? Open it from your text or group chat to join directly.”
+
+The My Swaygers card currently shows:
+
+“My Swaygers”
+
+For an existing user:
+
+- Active Swayger count
+- Swayger Points balance
+- “View My Swaygers →”
+
+For a zero-Swayger user:
+
+- “Challenge a friend to a 1v1 sports prediction.”
+- “View My Swaygers →”
+
+## Objective
+
+Clarify the product architecture directly on this screen:
+
+- Game Day Rooms are the group experience.
+- My Swaygers are the 1v1 experience.
+- Both are experiences within Swayger.
+
+This should be accomplished through concise descriptors, not through additional onboarding.
+
+## Change 1: Clarify Game Day Rooms
+
+Replace:
+
+“Game Day Rooms appear here before and during featured games.”
+
+With:
+
+“Game Day Rooms are group pick’em competitions that open before and during featured games.”
+
+Keep the invite guidance directly below it:
+
+“Have an invite link? Open it from your text or group chat to join directly.”
+
+Do not change how invite links work. Do not add an invite-code or URL-entry field.
+
+## Change 2: Clarify My Swaygers for existing users
+
+For authenticated users with one or more Swaygers, add this short descriptor directly beneath the “My Swaygers” card title:
+
+“Your 1v1 sports challenges”
+
+Then retain the existing dynamic statistics:
+
+- Active count
+- Swayger Points balance
+
+Retain the existing CTA:
+
+“View My Swaygers →”
+
+The intended structure is:
+
+My Swaygers
+
+Your 1v1 sports challenges
+
+3 Active | 1,671 SP Balance
+
+View My Swaygers →
+
+Use the existing secondary-text style where possible. The descriptor should be visually secondary to the card title and should not compete with the statistics.
+
+## Change 3: Preserve the zero-Swayger version
+
+For an authenticated user with zero Swaygers, retain the existing educational copy:
+
+“Challenge a friend to a 1v1 sports prediction.”
+
+Do not also show “Your 1v1 sports challenges” in this state. Avoid redundant wording.
+
+The zero-Swayger structure should remain:
+
+My Swaygers
+
+Challenge a friend to a 1v1 sports prediction.
+
+View My Swaygers →
+
+## Change 4: Preserve loading and unauthenticated behavior
+
+Do not treat loading as a confirmed zero-Swayger state.
+
+Preserve the existing logic that distinguishes:
+
+- Query loading
+- Confirmed empty Swayger array
+- Existing Swayger activity
+- Unauthenticated user
+
+Do not introduce a flash of zero-state copy while the Swaygers query is still loading.
+
+## Live-room behavior
+
+Do not change the live-room experience.
+
+When a public room is live:
+
+- Keep the featured room hero unchanged
+- Keep the “LIVE NOW” badge unchanged
+- Keep “Join & Make Picks →” unchanged
+- Keep additional-room behavior unchanged
+- Do not insert educational copy that competes with the live-room CTA
+
+This prompt is focused on the no-live-room screen and the My Swaygers fallback card.
+
+## Terminology standards
+
+Use these names consistently:
+
+- Overall product: `Swayger`
+- Group live-game experience: `Game Day`
+- Individual group competition: `Game Day Room`
+- 1v1 experience: `My Swaygers`
+- Individual head-to-head experience: `1v1 Swayger`
+
+Do not use:
+
+- Game Day Swayger
+- Gameday Swayger
+- Swayger Room
+- Swayger Board
+
+Use `Game Day` as two words.
+
+## Non-negotiable preservation requirements
+
+Do not modify:
+
+- Game Day room queries
+- Featured room logic
+- Guest joining
+- Room links
+- My Swaygers queries
+- Active-count calculation
+- Swayger Points balance calculation
+- `/(tabs)/challenges` routing
+- 1v1 creation
+- Join by code
+- Settlement
+- Receipts
+- Leaderboards
+- Authentication
+- Database tables
+- Supabase RPCs
+- Backend routes
+- Analytics
+- Bottom-tab navigation
+- Shared branded header
+
+## Visual requirements
+
+- Preserve the current dark theme and card design.
+- Reuse existing text styles where possible.
+- Keep the new descriptor concise and readable.
+- Avoid significantly increasing the card height.
+- Ensure the copy wraps cleanly on narrow mobile screens.
+- Keep “My Swaygers” as the main card title.
+- Keep the active count and SP balance visually prominent.
+
+## Acceptance criteria
+
+1. The Game Day empty state clearly identifies Game Day Rooms as group pick’em competitions.
+2. Existing 1v1 users see “Your 1v1 sports challenges” beneath “My Swaygers.”
+3. Zero-Swayger users continue seeing “Challenge a friend to a 1v1 sports prediction.”
+4. The two descriptors never appear together.
+5. Loading is not mistaken for a confirmed zero-Swayger state.
+6. Active count and SP balance remain unchanged.
+7. The My Swaygers CTA still routes to `/(tabs)/challenges`.
+8. The live-room state remains unchanged.
+9. No backend, database, navigation, auth, or analytics files change.
+10. The screen remains visually balanced across mobile and web.
+
+## Verification report
+
+After implementation, report:
+
+- Exact files changed
+- Final Game Day description copy
+- Copy shown for a user with existing Swaygers
+- Copy shown for a user with zero Swaygers
+- How loading remains distinct from the zero-Swayger state
+- Confirmation that active count and SP balance calculations were untouched
+- Confirmation that the live-room branch was untouched
+- Confirmation that no backend, database, auth, analytics, or navigation files changed
