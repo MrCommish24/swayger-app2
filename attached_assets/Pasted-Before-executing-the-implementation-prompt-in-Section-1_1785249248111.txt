@@ -1,0 +1,175 @@
+Before executing the implementation prompt in Section 16, revise it using the following binding decisions.
+
+### Final Phase 1 tab structure
+
+Use exactly these four visible tabs:
+
+1. **Game Day** → `app/(tabs)/index.tsx`
+2. **My Swaygers** → `app/(tabs)/challenges.tsx`
+3. **Leaderboard** → `app/(tabs)/leaderboard.tsx`
+4. **Profile** → `app/(tabs)/profile.tsx`
+
+Do not use “Challenges” as the visible label for Tab 2. Use **My Swaygers** because this screen must include all pending, active, settling, settled, and historical 1v1 activity.
+
+### Preserve the existing Create route
+
+Keep `app/(tabs)/create.tsx` intact as the existing 1v1 creation screen.
+
+It should no longer be a visible bottom tab, but it must remain routable.
+
+Inside `app/(tabs)/challenges.tsx`:
+
+* The Create Swayger button must continue routing to `/(tabs)/create`.
+* The Join Swayger button must continue routing to `/join`.
+* Rematch, counter, open challenge, and Double-or-Nothing routes must continue working exactly as they do today.
+
+Do not move creation logic into `challenges.tsx`.
+
+### Preserve the complete My Swaygers experience
+
+Create `app/(tabs)/challenges.tsx` by moving and reusing the current My Swaygers experience from `app/(tabs)/index.tsx`.
+
+It must preserve:
+
+* StatsStrip
+* Swayger Points balance
+* Total Swaygers
+* Active count
+* Win percentage
+* All existing filters
+* Pending Swaygers
+* Active Swaygers
+* Settling Swaygers
+* Settled Swaygers
+* Complete history
+* Existing grouping and ordering
+* Existing card actions
+* SwaygerActionModal
+* Create and Join actions
+* Existing loading, error, and empty states
+
+Do not simplify, rewrite, or omit any portion of the existing My Swaygers functionality.
+
+### Protect all 1v1 logic and data
+
+Do not modify:
+
+* `app/swayger/[id].tsx`
+* `app/invite/[code].tsx`
+* `/join`
+* `app/(tabs)/create.tsx`, except only if a navigation reference absolutely requires it
+* `app/(tabs)/leaderboard.tsx`
+* 1v1 Supabase tables
+* 1v1 RPCs
+* Settlement functions
+* Receipt generation
+* Rematch logic
+* Double-or-Nothing logic
+* Swayger Points balances
+* Points escrow
+* Points awards
+* Historical records
+* Category leaderboard calculations
+* Overall leaderboard calculations
+* Existing challenge IDs
+* Existing invite codes
+* Existing deep links
+
+No database migration is permitted.
+
+### SwaygerActionModal requirement
+
+Move the existing `SwaygerActionModal` into `app/(tabs)/challenges.tsx` with its current logic unchanged.
+
+Verify all existing modal states:
+
+* Pending action
+* Accepted challenge
+* Settlement action
+* Any other currently supported state
+
+Do not globalize or redesign the modal during Phase 1.
+
+### Limit the Game Day homepage to existing data
+
+The initial Game Day homepage should use the existing `/api/gameday/public-rooms` response.
+
+Do not make the following dependencies for the first implementation:
+
+* Adding `current_phase` to the endpoint
+* Creating `/api/gameday/my-rooms`
+* Building a Your Rooms section
+* Changing the database
+* Changing authentication
+
+A featured room card may use fields already available, including:
+
+* Room name
+* Matchup
+* Game date
+* Status
+* Participant count
+
+Additional backend-supported fields can be proposed as a separate follow-up.
+
+### Preserve the Leaderboard tab unchanged
+
+The existing Leaderboard tab must remain a visible tab and must work exactly as it does today.
+
+Preserve:
+
+* Overall leaderboard
+* Category leaderboard views
+* Category navigation
+* Historical records
+* Wins and losses
+* Rankings
+* Swayger Points-related displays or calculations
+* Existing queries and filters
+
+Do not refactor the Leaderboard during Phase 1.
+
+### Required pre-implementation baseline
+
+Before changing code, capture baseline values for at least one controlled test account:
+
+* Swayger Points balance
+* Total Swaygers
+* Pending Swaygers
+* Active Swaygers
+* Settling Swaygers
+* Settled Swaygers
+* Wins
+* Losses
+* Draws
+* Win percentage
+* Category records
+* Overall leaderboard position
+* Category leaderboard positions
+
+Do not modify production data to create the baseline.
+
+### Required post-implementation verification
+
+After implementation, verify that all baseline values remain identical unless an intentional test transaction changes them.
+
+Run the full 20-item 1v1 regression checklist from the planning report.
+
+Also verify:
+
+* `/(tabs)/create` remains reachable from My Swaygers
+* `/join` remains reachable
+* Old `/swayger/[id]` links still open
+* Old `/invite/[code]` links still open
+* Create, accept, settle, receipt, rematch, and Double-or-Nothing flows work
+* Correct Swayger Points are escrowed and awarded
+* Overall and category leaderboards remain unchanged
+* Back navigation returns users to My Swaygers appropriately
+
+### Stop condition
+
+If separating the Game Day homepage from My Swaygers requires modifying the 1v1 data model, Swayger Points logic, settlement logic, leaderboard calculations, historical data, or deep-link structure, stop.
+
+Report the issue instead of implementing it.
+
+The Phase 1 objective is a navigation and presentation reprioritization, not a rewrite of the 1v1 system.

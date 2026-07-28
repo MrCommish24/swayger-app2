@@ -30,12 +30,12 @@ function NativeTabLayout() {
     return (
       <NativeTabs>
         <NativeTabs.Trigger name="index">
-          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
-          <Label>Swaygers</Label>
+          <Icon sf={{ default: "tv", selected: "tv.fill" }} />
+          <Label>Game Day</Label>
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="create">
-          <Icon sf={{ default: "plus.circle", selected: "plus.circle.fill" }} />
-          <Label>Create</Label>
+        <NativeTabs.Trigger name="challenges">
+          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
+          <Label>My Swaygers</Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="leaderboard">
           <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
@@ -81,18 +81,18 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Swaygers",
+          title: "Game Day",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="flash-outline" color={color} size={size} />
+            <Ionicons name="tv-outline" color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
-        name="create"
+        name="challenges"
         options={{
-          title: "Create",
+          title: "My Swaygers",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" color={color} size={size} />
+            <Ionicons name="flash-outline" color={color} size={size} />
           ),
         }}
       />
@@ -112,6 +112,13 @@ function ClassicTabLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" color={color} size={size} />
           ),
+        }}
+      />
+      {/* create.tsx stays routable via router.push("/(tabs)/create") but is not a visible tab */}
+      <Tabs.Screen
+        name="create"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
