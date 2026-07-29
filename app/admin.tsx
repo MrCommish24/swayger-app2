@@ -83,6 +83,9 @@ export default function AdminScreen() {
   const router = useRouter();
 
   const [token, setToken] = useState("");
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenValidating, setTokenValidating] = useState(false);
   const [savedToken, setSavedToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(true);
 
@@ -278,18 +281,21 @@ export default function AdminScreen() {
   async function saveToken() {
     const t = token.trim();
     if (!t) return;
-    // Validate against server before accepting
+    setTokenError(null);
+    setTokenValidating(true);
     try {
       const url = new URL("/api/admin/gameday/prop-library?sport=nba", getApiUrl());
       const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
       const json = await res.json();
       if (!json.ok) {
-        Alert.alert("Invalid token", "That token wasn't accepted. Check your MM_ADMIN_TOKEN in Replit Secrets.");
+        setTokenError("Incorrect token. Check MM_ADMIN_TOKEN in Replit Secrets.");
         return;
       }
     } catch {
-      Alert.alert("Error", "Could not reach the server to validate token.");
+      setTokenError("Could not reach the server. Try again.");
       return;
+    } finally {
+      setTokenValidating(false);
     }
     await AsyncStorage.setItem(ADMIN_TOKEN_KEY, t);
     setSavedToken(t);
@@ -419,17 +425,37 @@ export default function AdminScreen() {
           <Ionicons name="shield-checkmark-outline" size={40} color={NBA_GOLD} />
           <Text style={styles.tokenTitle}>Admin Access</Text>
           <Text style={styles.tokenSub}>Enter your admin token to continue.</Text>
-          <TextInput
-            style={styles.tokenInput}
-            placeholder="Admin token"
-            placeholderTextColor={Colors.dark.tabIconDefault}
-            value={token}
-            onChangeText={setToken}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-          <Pressable style={styles.primaryBtn} onPress={saveToken}>
-            <Text style={styles.primaryBtnText}>Unlock</Text>
+          <View style={styles.tokenInputRow}>
+            <TextInput
+              style={styles.tokenInputInner}
+              placeholder="Admin token"
+              placeholderTextColor={Colors.dark.tabIconDefault}
+              value={token}
+              onChangeText={(v) => { setToken(v); setTokenError(null); }}
+              secureTextEntry={!tokenVisible}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable onPress={() => setTokenVisible((v) => !v)} style={styles.tokenEyeBtn}>
+              <Ionicons
+                name={tokenVisible ? "eye-off-outline" : "eye-outline"}
+                size={20}
+                color={Colors.dark.tabIconDefault}
+              />
+            </Pressable>
+          </View>
+          {tokenError && (
+            <Text style={styles.tokenErrorText}>{tokenError}</Text>
+          )}
+          <Pressable
+            style={[styles.primaryBtn, tokenValidating && { opacity: 0.6 }]}
+            onPress={saveToken}
+            disabled={tokenValidating}
+          >
+            {tokenValidating
+              ? <ActivityIndicator size="small" color="#000" />
+              : <Text style={styles.primaryBtnText}>Unlock</Text>
+            }
           </Pressable>
           <Pressable style={styles.backLink} onPress={() => router.back()}>
             <Text style={styles.backLinkText}>← Back</Text>
@@ -926,6 +952,20 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border, borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 14, fontSize: 15,
     color: Colors.dark.text,
+  },
+  tokenInputRow: {
+    width: "100%", flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1, borderColor: Colors.dark.border, borderRadius: 12,
+  },
+  tokenInputInner: {
+    flex: 1, paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 15, color: Colors.dark.text,
+  },
+  tokenEyeBtn: { paddingHorizontal: 14, paddingVertical: 14 },
+  tokenErrorText: {
+    width: "100%", fontSize: 13, color: "#F87171",
+    textAlign: "center", marginTop: -4,
   },
   backLink: { marginTop: 8 },
   backLinkText: { fontSize: 14, color: Colors.dark.tabIconDefault },
