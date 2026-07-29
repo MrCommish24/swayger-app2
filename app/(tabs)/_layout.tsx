@@ -3,6 +3,7 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
+import SwaygerMark from "@/components/SwaygerMark";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
@@ -35,7 +36,7 @@ function NativeTabLayout() {
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="challenges">
           <Icon sf={{ default: "flame", selected: "flame.fill" }} />
-          <Label>My Swaygers</Label>
+          <Label>Swaygers</Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="leaderboard">
           <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
@@ -90,9 +91,9 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="challenges"
         options={{
-          title: "My Swaygers",
+          title: "Swaygers",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="flash-outline" color={color} size={size} />
+            <SwaygerMark color={color} size={size} />
           ),
         }}
       />

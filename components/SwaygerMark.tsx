@@ -1,40 +1,36 @@
+/**
+ * SwaygerMark — the brand logo mark (·/·) as a tintable SVG component.
+ * Used as the tab bar icon for the Swaygers tab.
+ *
+ * The mark consists of two small filled squares flanking a diagonal slash,
+ * matching the Swayger brand system. Accepts `color` and `size` props so
+ * it responds to active/inactive tinting exactly like Ionicons.
+ */
 import React from "react";
-import { View, StyleSheet } from "react-native";
-import Svg, { Rect, Polygon } from "react-native-svg";
-import Colors from "@/constants/colors";
+import Svg, { Rect, Line } from "react-native-svg";
 
 interface SwaygerMarkProps {
-  size?: number;
   color?: string;
+  size?: number;
 }
 
-export default function SwaygerMark({ size = 40, color = Colors.dark.text }: SwaygerMarkProps) {
+export default function SwaygerMark({ color = "#FFFFFF", size = 24 }: SwaygerMarkProps) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 80 80">
-      <Rect x="9" y="34" width="12" height="12" rx="2" fill={color} />
-      <Polygon points="25,55 36,60 55,25 44,20" fill={color} />
-      <Rect x="59" y="34" width="12" height="12" rx="2" fill={color} />
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {/* Left dot — small filled square, top-left of the slash */}
+      <Rect x="1" y="4" width="4.5" height="4.5" rx="0.5" fill={color} />
+      {/* Slash — diagonal stroke from lower-left to upper-right */}
+      <Line
+        x1="6.5"
+        y1="21"
+        x2="17.5"
+        y2="3"
+        stroke={color}
+        strokeWidth="2.6"
+        strokeLinecap="square"
+      />
+      {/* Right dot — small filled square, top-right of the slash */}
+      <Rect x="18.5" y="4" width="4.5" height="4.5" rx="0.5" fill={color} />
     </Svg>
   );
 }
-
-interface SwaygerLogoProps {
-  markSize?: number;
-  markColor?: string;
-  showTagline?: boolean;
-}
-
-export function SwaygerLogoStacked({ markSize = 48, markColor = Colors.dark.text, showTagline = true }: SwaygerLogoProps) {
-  return (
-    <View style={logoStyles.stacked}>
-      <SwaygerMark size={markSize} color={markColor} />
-    </View>
-  );
-}
-
-const logoStyles = StyleSheet.create({
-  stacked: {
-    alignItems: "center",
-    gap: 8,
-  },
-});
