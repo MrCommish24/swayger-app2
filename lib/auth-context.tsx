@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [needsUsername, setNeedsUsername] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const profileFetchedRef = useRef<string | null>(null);
+  const isSigningOutRef = useRef(false);
 
   useEffect(() => {
     // In Supabase v2, onAuthStateChange fires immediately with INITIAL_SESSION
@@ -57,6 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             fetchProfile(s.user.id);
           }
         } else if (event === "SIGNED_OUT") {
+          // If we intentionally signed out, skip the getSession() check —
+          // on web there's a race where getSession() can still return the old
+          // session briefly, causing it to re-set and cancel the logout.
+          if (isSigningOutRef.current) {
+            isSigningOutRef.current = false;
+            setSession(null);
+            setProfile(null);
+            setNeedsUsername(false);
+            setProfileError(null);
+            profileFetchedRef.current = null;
+            setIsLoading(false);
+            return;
+          }
           // Verify the sign-out is real before clearing state.
           // Supabase can fire a transient SIGNED_OUT on web during token
           // refresh races or storage read timing issues. Confirm with
@@ -163,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
+    isSigningOutRef.current = true;
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
