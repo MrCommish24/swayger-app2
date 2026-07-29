@@ -276,10 +276,26 @@ export default function AdminScreen() {
   }
 
   async function saveToken() {
-    if (!token.trim()) return;
-    await AsyncStorage.setItem(ADMIN_TOKEN_KEY, token.trim());
-    setSavedToken(token.trim());
-    loadNights(token.trim());
+    const t = token.trim();
+    if (!t) return;
+    // Validate against server before accepting
+    try {
+      const url = new URL("/api/admin/gameday/prop-library?sport=nba", getApiUrl());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
+      const json = await res.json();
+      if (!json.ok) {
+        Alert.alert("Invalid token", "That token wasn't accepted. Check your MM_ADMIN_TOKEN in Replit Secrets.");
+        return;
+      }
+    } catch {
+      Alert.alert("Error", "Could not reach the server to validate token.");
+      return;
+    }
+    await AsyncStorage.setItem(ADMIN_TOKEN_KEY, t);
+    setSavedToken(t);
+    loadNights(t);
+    loadPropLibrary(t, libSport);
+    loadGsTemplProps(t, gsSport);
   }
 
   async function clearToken() {
