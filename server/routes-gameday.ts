@@ -221,6 +221,27 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ isHost });
   });
 
+  // ── GET /api/admin/is-admin ──────────────────────────────────────────────
+  // Returns { isAdmin } for the requesting user based on their JWT email.
+  // Uses GAMEDAY_ADMIN_EMAILS if set; falls back to GAMEDAY_HOST_EMAILS.
+  // This drives the Admin Panel button visibility on the profile screen.
+  app.get("/api/admin/is-admin", (req: Request, res: Response) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.json({ isAdmin: false });
+      return;
+    }
+    const payload = decodeJwtPayload(auth.slice(7));
+    const email = (payload?.email ?? "").toLowerCase();
+    const adminEmails = (
+      process.env.GAMEDAY_ADMIN_EMAILS ?? process.env.GAMEDAY_HOST_EMAILS ?? ""
+    )
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    res.json({ isAdmin: adminEmails.includes(email) });
+  });
+
   // ── GET /api/gameday/public-rooms ─────────────────────────────────────────
   // Returns active, non-archived, public (is_private=false) rooms. No auth required.
   app.get("/api/gameday/public-rooms", async (req: Request, res: Response) => {

@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   StyleSheet,
   Text,
@@ -53,9 +52,8 @@ export default function ProfileScreen() {
   const [devLoading, setDevLoading] = useState(false);
   const [claimingBankruptcy, setClaimingBankruptcy] = useState(false);
 
-  // Admin panel — visible only when token is saved on this device
-  const ADMIN_TOKEN_KEY = "swayger_admin_token";
-  const [hasAdminToken, setHasAdminToken] = useState(false);
+  // Admin panel — visible to registered admins (checked server-side by email)
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Host tools — visible only to confirmed hosts
   const [isHost, setIsHost] = useState<boolean | null>(null);
@@ -120,9 +118,15 @@ export default function ProfileScreen() {
     }
   }
 
-  // Refresh admin-token presence and host status each time this tab is focused
+  // Refresh admin status and host status each time this tab is focused
   useFocusEffect(useCallback(() => {
-    AsyncStorage.getItem(ADMIN_TOKEN_KEY).then((t) => setHasAdminToken(!!t));
+    if (session) {
+      gamedayFetch<{ isAdmin: boolean }>("/api/admin/is-admin", {}, { session })
+        .then((d) => setIsAdmin(d.isAdmin))
+        .catch(() => setIsAdmin(false));
+    } else {
+      setIsAdmin(false);
+    }
     if (session) {
       gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
         .then((d) => setIsHost(d.isHost))
@@ -545,7 +549,7 @@ export default function ProfileScreen() {
             <Text style={styles.versionText}>Swayger v1.1</Text>
           </Pressable>
 
-          {hasAdminToken && (
+          {isAdmin && (
             <Pressable
               style={({ pressed }) => [styles.adminButton, pressed && styles.buttonPressed]}
               onPress={() => router.push("/admin")}
