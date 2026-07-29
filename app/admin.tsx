@@ -100,6 +100,17 @@ export default function AdminScreen() {
   const [resolving, setResolving] = useState<string | null>(null);
   const [pendingResults, setPendingResults] = useState<Record<string, Record<string, "over" | "under" | "voided">>>({});
 
+  // Global Settlement
+  const [gsSport, setGsSport] = useState<"nba" | "soccer">("nba");
+  const [gsTemplProps, setGsTemplProps] = useState<any[]>([]);
+  const [gsTemplLoading, setGsTemplLoading] = useState(false);
+  const [gsSelectedProp, setGsSelectedProp] = useState<any | null>(null);
+  const [gsAnswer, setGsAnswer] = useState<string | null>(null);
+  const [gsPreview, setGsPreview] = useState<{ props_count: number; rooms_count: number; picks_count: number; rooms: { room_code: string; room_name: string }[] } | null>(null);
+  const [gsPreviewLoading, setGsPreviewLoading] = useState(false);
+  const [gsSettling, setGsSettling] = useState(false);
+  const [gsMsg, setGsMsg] = useState<string | null>(null);
+
   // Prop Library
   const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
   const [libProps, setLibProps] = useState<any[]>([]);
@@ -118,7 +129,7 @@ export default function AdminScreen() {
     AsyncStorage.getItem(ADMIN_TOKEN_KEY).then((t) => {
       setSavedToken(t);
       setTokenLoading(false);
-      if (t) { loadNights(t); loadPropLibrary(t, libSport); }
+      if (t) { loadNights(t); loadPropLibrary(t, libSport); loadGsTemplProps(t, gsSport); }
     });
   }, []));
 
@@ -196,6 +207,71 @@ export default function AdminScreen() {
       setAddPropMsg(`❌ ${String(e)}`);
     } finally {
       setAddingProp(false);
+    }
+  }
+
+  async function loadGsTemplProps(t: string, sport: "nba" | "soccer") {
+    setGsTemplLoading(true);
+    setGsSelectedProp(null);
+    setGsAnswer(null);
+    setGsPreview(null);
+    setGsMsg(null);
+    try {
+      const url = new URL(`/api/admin/gameday/prop-library?sport=${sport}`, getApiUrl());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
+      const json = await res.json();
+      if (json.ok) setGsTemplProps((json.props ?? []).filter((p: any) => p.is_active));
+    } catch { /* ignore */ } finally {
+      setGsTemplLoading(false);
+    }
+  }
+
+  async function loadGsPreview(propId: string, answer: string) {
+    if (!savedToken) return;
+    setGsPreviewLoading(true);
+    setGsPreview(null);
+    setGsMsg(null);
+    try {
+      const url = new URL(
+        `/api/admin/gameday/global-settle/preview?template_prop_id=${encodeURIComponent(propId)}&correct_answer=${encodeURIComponent(answer)}`,
+        getApiUrl()
+      );
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": savedToken } });
+      const json = await res.json();
+      if (json.ok) setGsPreview(json);
+      else setGsMsg(`❌ ${json.error}`);
+    } catch (e) {
+      setGsMsg(`❌ ${String(e)}`);
+    } finally {
+      setGsPreviewLoading(false);
+    }
+  }
+
+  async function handleGlobalSettle() {
+    if (!savedToken || !gsSelectedProp || !gsAnswer || !gsPreview) return;
+    if (gsPreview.props_count === 0) { setGsMsg("Nothing to settle."); return; }
+    setGsSettling(true);
+    setGsMsg(null);
+    try {
+      const url = new URL("/api/admin/gameday/global-settle", getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": savedToken },
+        body: JSON.stringify({ template_prop_id: gsSelectedProp.id, correct_answer: gsAnswer }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setGsMsg(`✅ Settled ${json.settled} prop${json.settled === 1 ? "" : "s"} across ${json.rooms_count} room${json.rooms_count === 1 ? "" : "s"}.`);
+        setGsSelectedProp(null);
+        setGsAnswer(null);
+        setGsPreview(null);
+      } else {
+        setGsMsg(`❌ ${json.error}`);
+      }
+    } catch (e) {
+      setGsMsg(`❌ ${String(e)}`);
+    } finally {
+      setGsSettling(false);
     }
   }
 
@@ -548,6 +624,165 @@ export default function AdminScreen() {
             );
           })
         )}
+      </View>
+
+      {/* ── Global Settlement ── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.sectionTitle}>Global Settlement</Text>
+            <Text style={styles.sectionSub}>Settle one prop across all active rooms at once.</Text>
+          </View>
+          <Pressable onPress={() => savedToken && loadGsTemplProps(savedToken, gsSport)} style={styles.refreshBtn}>
+            <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
+          </Pressable>
+        </View>
+
+        {/* Sport toggle */}
+        <View style={styles.sportRow}>
+          {(["nba", "soccer"] as const).map((s) => {
+            const active = gsSport === s;
+            return (
+              <Pressable
+                key={s}
+                style={[styles.sportBtn, active && { borderColor: NBA_GOLD, backgroundColor: NBA_GOLD + "18" }]}
+                onPress={() => {
+                  setGsSport(s);
+                  setGsSelectedProp(null);
+                  setGsAnswer(null);
+                  setGsPreview(null);
+                  setGsMsg(null);
+                  if (savedToken) loadGsTemplProps(savedToken, s);
+                }}
+              >
+                <Text style={[styles.sportBtnText, active && { color: NBA_GOLD }]}>
+                  {s === "nba" ? "🏀 NBA" : "⚽ Soccer"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Prop picker */}
+        {gsTemplLoading ? (
+          <ActivityIndicator color={NBA_GOLD} style={{ marginVertical: 8 }} />
+        ) : gsTemplProps.length === 0 ? (
+          <Text style={styles.emptyText}>No active props. Load the prop library first.</Text>
+        ) : (
+          <View style={{ gap: 6 }}>
+            <Text style={styles.label}>Select a prop to settle</Text>
+            {gsTemplProps.map((prop) => {
+              const selected = gsSelectedProp?.id === prop.id;
+              return (
+                <Pressable
+                  key={prop.id}
+                  style={[
+                    styles.nightCard,
+                    selected && { borderColor: NBA_GOLD, backgroundColor: NBA_GOLD + "12" },
+                  ]}
+                  onPress={() => {
+                    setGsSelectedProp(prop);
+                    setGsAnswer(null);
+                    setGsPreview(null);
+                    setGsMsg(null);
+                  }}
+                >
+                  <Text style={[styles.propQuestion, selected && { color: Colors.dark.text }]}>
+                    {prop.question}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: Colors.dark.tabIconDefault, marginTop: 2 }}>
+                    {prop.phase.toUpperCase()} · {prop.settlement_window}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Answer picker */}
+        {gsSelectedProp && (
+          <View style={{ gap: 8, marginTop: 4 }}>
+            <Text style={styles.label}>Winning answer</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {(gsSelectedProp.answer_options as string[]).map((opt) => {
+                const chosen = gsAnswer === opt;
+                return (
+                  <Pressable
+                    key={opt}
+                    style={[
+                      styles.resultBtn,
+                      { paddingHorizontal: 14, paddingVertical: 10, flex: 0 },
+                      chosen && styles.resultBtnYes,
+                    ]}
+                    onPress={() => {
+                      setGsAnswer(opt);
+                      setGsPreview(null);
+                      setGsMsg(null);
+                      loadGsPreview(gsSelectedProp.id, opt);
+                    }}
+                  >
+                    <Text style={[styles.resultBtnText, chosen && styles.resultBtnTextActive]}>
+                      {opt}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Preview panel */}
+        {gsPreviewLoading && <ActivityIndicator color={NBA_GOLD} style={{ marginTop: 8 }} />}
+        {gsPreview && (
+          <View style={{ backgroundColor: Colors.dark.background, borderRadius: 10, padding: 14, gap: 6, borderWidth: 1, borderColor: Colors.dark.border, marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: Colors.dark.text, fontWeight: "700" }}>
+              Settlement preview
+            </Text>
+            <Text style={{ fontSize: 13, color: Colors.dark.textSecondary }}>
+              {gsPreview.props_count} prop{gsPreview.props_count !== 1 ? "s" : ""} · {gsPreview.rooms_count} room{gsPreview.rooms_count !== 1 ? "s" : ""} · {gsPreview.picks_count} pick{gsPreview.picks_count !== 1 ? "s" : ""} scored
+            </Text>
+            {gsPreview.rooms.length > 0 && (
+              <View style={{ marginTop: 4, gap: 2 }}>
+                {gsPreview.rooms.map((r) => (
+                  <Text key={r.room_code} style={{ fontSize: 11, color: Colors.dark.tabIconDefault }}>
+                    · {r.room_name} ({r.room_code})
+                  </Text>
+                ))}
+              </View>
+            )}
+            {gsPreview.props_count === 0 && (
+              <Text style={{ fontSize: 12, color: Colors.dark.tabIconDefault, fontStyle: "italic" }}>
+                No unsettled props found in active rooms — nothing to do.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Confirm button */}
+        {gsPreview && gsPreview.props_count > 0 && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.resolveBtn,
+              gsSettling && styles.resolveBtnDisabled,
+              pressed && !gsSettling && { opacity: 0.85 },
+            ]}
+            onPress={handleGlobalSettle}
+            disabled={gsSettling}
+          >
+            {gsSettling
+              ? <ActivityIndicator color="#fff" size="small" />
+              : (
+                <>
+                  <Ionicons name="flash" size={16} color="#fff" />
+                  <Text style={styles.resolveBtnText}>
+                    Settle {gsPreview.props_count} Prop{gsPreview.props_count !== 1 ? "s" : ""} in {gsPreview.rooms_count} Room{gsPreview.rooms_count !== 1 ? "s" : ""}
+                  </Text>
+                </>
+              )}
+          </Pressable>
+        )}
+
+        {gsMsg && <Text style={styles.createMsg}>{gsMsg}</Text>}
       </View>
 
       {/* ── Prop Library ── */}

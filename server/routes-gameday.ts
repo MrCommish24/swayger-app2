@@ -2506,6 +2506,154 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ ok: true, prop: data });
   });
 
+  // ── GET /api/admin/gameday/global-settle/preview ─────────────────────────
+  // Returns counts of props/rooms/picks that would be settled.
+  app.get("/api/admin/gameday/global-settle/preview", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const template_prop_id = req.query.template_prop_id as string | undefined;
+    const correct_answer   = req.query.correct_answer   as string | undefined;
+    if (!template_prop_id || !correct_answer) {
+      res.status(400).json({ error: "template_prop_id and correct_answer are required" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+
+    // Validate the template prop exists and the answer is valid
+    const { data: tpl } = await supabase
+      .from("gameday_prop_library")
+      .select("id, question, answer_options")
+      .eq("id", template_prop_id)
+      .single();
+    if (!tpl) { res.status(404).json({ error: "Template prop not found" }); return; }
+    const options = tpl.answer_options as string[];
+    if (!options.includes(correct_answer)) {
+      res.status(400).json({ error: "correct_answer is not one of the template prop's options" });
+      return;
+    }
+
+    // Find all unsettled props linked to this template, in active rooms
+    const { data: props } = await supabase
+      .from("gameday_props")
+      .select("id, card_id, gameday_pick_cards(room_id, gameday_rooms(status, room_code, room_name))")
+      .eq("template_prop_id", template_prop_id)
+      .neq("status", "settled");
+
+    const activeProps = ((props ?? []) as any[]).filter((p) => {
+      const room = p.gameday_pick_cards?.gameday_rooms;
+      return room && room.status === "active";
+    });
+
+    const propIds = activeProps.map((p: any) => p.id);
+    const roomSet = new Map<string, { room_code: string; room_name: string }>();
+    for (const p of activeProps) {
+      const r = p.gameday_pick_cards?.gameday_rooms;
+      if (r) roomSet.set(p.gameday_pick_cards.room_id, { room_code: r.room_code, room_name: r.room_name });
+    }
+
+    let picks_count = 0;
+    if (propIds.length > 0) {
+      const { count } = await supabase
+        .from("gameday_picks")
+        .select("id", { count: "exact", head: true })
+        .in("prop_id", propIds);
+      picks_count = count ?? 0;
+    }
+
+    res.json({
+      ok: true,
+      template_prop_id,
+      question: tpl.question,
+      correct_answer,
+      props_count: activeProps.length,
+      rooms_count: roomSet.size,
+      picks_count,
+      rooms: Array.from(roomSet.values()),
+    });
+  });
+
+  // ── POST /api/admin/gameday/global-settle ─────────────────────────────────
+  // Settles all active-room props linked to a template prop in one operation.
+  app.post("/api/admin/gameday/global-settle", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const { template_prop_id, correct_answer } = req.body as {
+      template_prop_id?: string;
+      correct_answer?: string;
+    };
+    if (!template_prop_id || !correct_answer) {
+      res.status(400).json({ error: "template_prop_id and correct_answer are required" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+
+    // Validate template prop
+    const { data: tpl } = await supabase
+      .from("gameday_prop_library")
+      .select("id, answer_options")
+      .eq("id", template_prop_id)
+      .single();
+    if (!tpl) { res.status(404).json({ error: "Template prop not found" }); return; }
+    if (!(tpl.answer_options as string[]).includes(correct_answer)) {
+      res.status(400).json({ error: "Invalid correct_answer for this template prop" });
+      return;
+    }
+
+    // Find all unsettled props for this template in active rooms
+    const { data: props } = await supabase
+      .from("gameday_props")
+      .select("id, card_id, gameday_pick_cards(room_id, gameday_rooms(status))")
+      .eq("template_prop_id", template_prop_id)
+      .neq("status", "settled");
+
+    const activeProps = ((props ?? []) as any[]).filter(
+      (p) => p.gameday_pick_cards?.gameday_rooms?.status === "active"
+    );
+
+    if (activeProps.length === 0) {
+      res.json({ ok: true, settled: 0, message: "No unsettled props found in active rooms." });
+      return;
+    }
+
+    const propIds = activeProps.map((p: any) => p.id as string);
+    const cardIds = [...new Set(activeProps.map((p: any) => p.card_id as string))];
+
+    // 1. Mark all matching props as settled
+    await supabase
+      .from("gameday_props")
+      .update({ correct_answer, status: "settled", updated_at: new Date().toISOString() })
+      .in("id", propIds);
+
+    // 2. Mark picks correct / incorrect (two bulk updates)
+    await supabase
+      .from("gameday_picks")
+      .update({ is_correct: true })
+      .in("prop_id", propIds)
+      .eq("selected_answer", correct_answer);
+
+    await supabase
+      .from("gameday_picks")
+      .update({ is_correct: false })
+      .in("prop_id", propIds)
+      .neq("selected_answer", correct_answer);
+
+    // 3. For each affected card, check if all props are now settled → mark card settled
+    for (const cardId of cardIds) {
+      const { data: remaining } = await supabase
+        .from("gameday_props")
+        .select("id")
+        .eq("card_id", cardId)
+        .neq("status", "settled");
+      if (!remaining?.length) {
+        await supabase
+          .from("gameday_pick_cards")
+          .update({ status: "settled", updated_at: new Date().toISOString() })
+          .eq("id", cardId);
+      }
+    }
+
+    console.log(`[global-settle] settled ${propIds.length} props for template "${template_prop_id}" → "${correct_answer}"`);
+    res.json({ ok: true, settled: propIds.length, rooms_count: new Set(activeProps.map((p: any) => p.gameday_pick_cards?.room_id)).size });
+  });
+
   // ── Card Auto-Open / Auto-Lock Scheduler ──────────────────────────────────
   // Runs every 60 seconds. Opens cards at scheduled_open_at and locks them at
   // scheduled_lock_at — only for rooms that are still active.
