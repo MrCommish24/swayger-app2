@@ -100,13 +100,104 @@ export default function AdminScreen() {
   const [resolving, setResolving] = useState<string | null>(null);
   const [pendingResults, setPendingResults] = useState<Record<string, Record<string, "over" | "under" | "voided">>>({});
 
+  // Prop Library
+  const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
+  const [libProps, setLibProps] = useState<any[]>([]);
+  const [libLoading, setLibLoading] = useState(false);
+  const [libTogglingId, setLibTogglingId] = useState<string | null>(null);
+  const [showAddProp, setShowAddProp] = useState(false);
+  const [newPropId, setNewPropId] = useState("");
+  const [newPropPhase, setNewPropPhase] = useState("");
+  const [newPropQuestion, setNewPropQuestion] = useState("");
+  const [newPropAnswers, setNewPropAnswers] = useState("");
+  const [newPropWindow, setNewPropWindow] = useState("");
+  const [addingProp, setAddingProp] = useState(false);
+  const [addPropMsg, setAddPropMsg] = useState<string | null>(null);
+
   useFocusEffect(useCallback(() => {
     AsyncStorage.getItem(ADMIN_TOKEN_KEY).then((t) => {
       setSavedToken(t);
       setTokenLoading(false);
-      if (t) loadNights(t);
+      if (t) { loadNights(t); loadPropLibrary(t, libSport); }
     });
   }, []));
+
+  async function loadPropLibrary(t: string, sport: "nba" | "soccer") {
+    setLibLoading(true);
+    try {
+      const url = new URL(`/api/admin/gameday/prop-library?sport=${sport}`, getApiUrl());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
+      const json = await res.json();
+      if (json.ok) setLibProps(json.props ?? []);
+    } catch { /* ignore */ } finally {
+      setLibLoading(false);
+    }
+  }
+
+  async function handleTogglePropActive(propId: string, currentActive: boolean) {
+    if (!savedToken) return;
+    setLibTogglingId(propId);
+    try {
+      const url = new URL(`/api/admin/gameday/prop-library/${propId}`, getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-token": savedToken },
+        body: JSON.stringify({ is_active: !currentActive }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setLibProps((prev) => prev.map((p) => p.id === propId ? { ...p, is_active: !currentActive } : p));
+      }
+    } catch { /* ignore */ } finally {
+      setLibTogglingId(null);
+    }
+  }
+
+  async function handleAddProp() {
+    if (!savedToken || !newPropId.trim() || !newPropPhase.trim() || !newPropQuestion.trim() || !newPropAnswers.trim()) {
+      setAddPropMsg("❌ Fill in ID, phase, question, and answers.");
+      return;
+    }
+    let parsedAnswers: string[];
+    try {
+      parsedAnswers = newPropAnswers.split("|").map((s) => s.trim()).filter(Boolean);
+      if (parsedAnswers.length < 2) throw new Error("Need at least 2 answers");
+    } catch {
+      setAddPropMsg("❌ Answers: separate with | (e.g. Yes | No)");
+      return;
+    }
+    setAddingProp(true);
+    setAddPropMsg(null);
+    try {
+      const url = new URL("/api/admin/gameday/prop-library", getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": savedToken },
+        body: JSON.stringify({
+          id: newPropId.trim().toLowerCase().replace(/\s+/g, "_"),
+          sport: libSport,
+          phase: newPropPhase.trim().toLowerCase(),
+          question: newPropQuestion.trim(),
+          answer_options: parsedAnswers,
+          settlement_window: newPropWindow.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setAddPropMsg("✅ Prop added.");
+        setNewPropId(""); setNewPropPhase(""); setNewPropQuestion("");
+        setNewPropAnswers(""); setNewPropWindow("");
+        setShowAddProp(false);
+        loadPropLibrary(savedToken, libSport);
+      } else {
+        setAddPropMsg(`❌ ${json.error}`);
+      }
+    } catch (e) {
+      setAddPropMsg(`❌ ${String(e)}`);
+    } finally {
+      setAddingProp(false);
+    }
+  }
 
   async function saveToken() {
     if (!token.trim()) return;
@@ -135,7 +226,6 @@ export default function AdminScreen() {
 
   function updateDate(d: string) {
     setDate(d);
-    setLockTime(defaultLockTime(d));
   }
 
   function setQuestion(i: number, v: string) {
@@ -457,6 +547,108 @@ export default function AdminScreen() {
               </View>
             );
           })
+        )}
+      </View>
+
+      {/* ── Prop Library ── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.sectionTitle}>Prop Library</Text>
+            <Text style={styles.sectionSub}>Enable/disable props available to hosts.</Text>
+          </View>
+          <Pressable onPress={() => savedToken && loadPropLibrary(savedToken, libSport)} style={styles.refreshBtn}>
+            <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
+          </Pressable>
+        </View>
+
+        {/* Sport filter */}
+        <View style={[styles.sportRow, { marginBottom: 16 }]}>
+          {(["nba", "soccer"] as const).map((s) => {
+            const active = libSport === s;
+            return (
+              <Pressable
+                key={s}
+                style={[styles.sportBtn, active && { borderColor: NBA_GOLD, backgroundColor: NBA_GOLD + "18" }]}
+                onPress={() => {
+                  setLibSport(s);
+                  if (savedToken) loadPropLibrary(savedToken, s);
+                }}
+              >
+                <Text style={[styles.sportBtnText, active && { color: NBA_GOLD }]}>
+                  {s === "nba" ? "🏀 NBA" : "⚽ Soccer"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {libLoading ? (
+          <ActivityIndicator color={NBA_GOLD} style={{ marginVertical: 16 }} />
+        ) : libProps.length === 0 ? (
+          <Text style={styles.emptyText}>No props found. Run the phase 2 migration first.</Text>
+        ) : (
+          libProps.map((prop) => (
+            <View key={prop.id} style={[styles.propRow, { flexDirection: "row", alignItems: "flex-start", gap: 10 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.propQuestion, !prop.is_active && { color: Colors.dark.tabIconDefault, textDecorationLine: "line-through" }]}>
+                  {prop.question}
+                </Text>
+                <Text style={{ fontSize: 10, color: Colors.dark.tabIconDefault, marginTop: 2 }}>
+                  {prop.phase.toUpperCase()} · {prop.settlement_window}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => handleTogglePropActive(prop.id, prop.is_active)}
+                disabled={libTogglingId === prop.id}
+                style={[
+                  styles.resultBtn,
+                  { paddingHorizontal: 10, paddingVertical: 6 },
+                  prop.is_active ? styles.resultBtnYes : {},
+                ]}
+              >
+                {libTogglingId === prop.id
+                  ? <ActivityIndicator size="small" color={Colors.dark.text} />
+                  : <Text style={[styles.resultBtnText, styles.resultBtnTextActive]}>
+                      {prop.is_active ? "ON" : "OFF"}
+                    </Text>
+                }
+              </Pressable>
+            </View>
+          ))
+        )}
+
+        {/* Add prop */}
+        <Pressable
+          style={[styles.addQuestionBtn, { marginTop: 12 }]}
+          onPress={() => setShowAddProp((v) => !v)}
+        >
+          <Ionicons name={showAddProp ? "chevron-up" : "add-circle-outline"} size={16} color={Colors.dark.tint} />
+          <Text style={styles.addQuestionText}>{showAddProp ? "Cancel" : "Add a prop"}</Text>
+        </Pressable>
+
+        {showAddProp && (
+          <View style={{ gap: 8, marginTop: 12 }}>
+            <TextInput style={styles.input} placeholder="ID (e.g. pg_new_prop)" placeholderTextColor={Colors.dark.tabIconDefault}
+              value={newPropId} onChangeText={setNewPropId} autoCapitalize="none" />
+            <TextInput style={styles.input} placeholder="Phase (pregame / halftime / fourth / final_push / penalties)"
+              placeholderTextColor={Colors.dark.tabIconDefault} value={newPropPhase} onChangeText={setNewPropPhase} autoCapitalize="none" />
+            <TextInput style={styles.input} placeholder="Question text" placeholderTextColor={Colors.dark.tabIconDefault}
+              value={newPropQuestion} onChangeText={setNewPropQuestion} />
+            <TextInput style={styles.input} placeholder="Answers separated by | (e.g. Yes | No)" placeholderTextColor={Colors.dark.tabIconDefault}
+              value={newPropAnswers} onChangeText={setNewPropAnswers} />
+            <TextInput style={styles.input} placeholder="Settlement window (e.g. End Game)" placeholderTextColor={Colors.dark.tabIconDefault}
+              value={newPropWindow} onChangeText={setNewPropWindow} />
+            <Pressable
+              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.8 }, addingProp && { opacity: 0.5 }]}
+              onPress={handleAddProp} disabled={addingProp}
+            >
+              {addingProp
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.primaryBtnText}>Add Prop →</Text>}
+            </Pressable>
+            {addPropMsg && <Text style={styles.createMsg}>{addPropMsg}</Text>}
+          </View>
         )}
       </View>
     </ScrollView>

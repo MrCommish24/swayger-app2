@@ -334,10 +334,43 @@ export function registerGamedayRoutes(app: Express) {
   });
 
   // ── GET /api/gameday/template ───────────────────────────────────────────
-  app.get("/api/gameday/template", (_req: Request, res: Response) => {
+  // Reads from gameday_prop_library table. Falls back to hardcoded templates
+  // if the table is empty or unavailable (safe during migration).
+  app.get("/api/gameday/template", async (req: Request, res: Response) => {
+    const sportParam = (req.query.sport as string) ?? "nba";
+    const isSoccer = sportParam === "soccer";
+    const supabase = getServiceSupabase();
+
+    try {
+      const { data: libraryProps, error } = await supabase
+        .from("gameday_prop_library")
+        .select("id, phase, question, answer_options, settlement_window, is_default")
+        .eq("sport", isSoccer ? "soccer" : "nba")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (!error && libraryProps && libraryProps.length > 0) {
+        const template = libraryProps.map((p: any) => ({
+          id: p.id,
+          phase: p.phase,
+          question: p.question,
+          answers: p.answer_options,
+          settlement_window: p.settlement_window,
+        }));
+        const defaultPropIds = libraryProps
+          .filter((p: any) => p.is_default)
+          .map((p: any) => p.id);
+        res.json({ template, defaultPropIds });
+        return;
+      }
+    } catch (e) {
+      console.warn("[gameday] prop library query failed, falling back to hardcoded:", e);
+    }
+
+    // Fallback to hardcoded templates
     res.json({
-      template: NBA_PLAYOFF_TEMPLATE,
-      defaultPropIds: DEFAULT_PROP_IDS,
+      template: isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE,
+      defaultPropIds: isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS,
     });
   });
 
@@ -366,6 +399,8 @@ export function registerGamedayRoutes(app: Express) {
       discord_user_id,
       is_private,
       sport,
+      game_start_time,
+      card_schedules,
     } = req.body as {
       room_name?: string;
       game_label?: string;
@@ -381,6 +416,8 @@ export function registerGamedayRoutes(app: Express) {
       discord_user_id?: string;
       is_private?: boolean;
       sport?: "nba" | "soccer";
+      game_start_time?: string;
+      card_schedules?: Record<string, { open_at?: string; lock_at?: string }>;
     };
 
     // Accept either room_name or game_label (Discord bot compat)
@@ -423,10 +460,12 @@ export function registerGamedayRoutes(app: Express) {
       source: source ?? (botAuthed ? "discord" : "app"),
       is_private: resolvedIsPrivate,
     };
-    if (roomCode) insertPayload.room_code = roomCode;
-    if (discord_guild_id)   insertPayload.discord_guild_id   = discord_guild_id;
+    if (roomCode)          insertPayload.room_code          = roomCode;
+    if (discord_guild_id)  insertPayload.discord_guild_id   = discord_guild_id;
     if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
-    if (discord_user_id)    insertPayload.discord_user_id    = discord_user_id;
+    if (discord_user_id)   insertPayload.discord_user_id    = discord_user_id;
+    if (sport)             insertPayload.sport              = isSoccer ? "soccer" : "nba";
+    if (game_start_time)   insertPayload.game_start_time    = game_start_time;
 
     let { data: room, error: roomError } = await supabase
       .from("gameday_rooms")
@@ -480,9 +519,16 @@ export function registerGamedayRoutes(app: Express) {
     };
 
     for (const cardDef of cardPhases) {
+      const cardSchedule = card_schedules?.[cardDef.phase] ?? {};
       const { data: card } = await supabase
         .from("gameday_pick_cards")
-        .insert({ room_id: room.id, ...cardDef, status: "closed" })
+        .insert({
+          room_id: room.id,
+          ...cardDef,
+          status: "closed",
+          ...(cardSchedule.open_at ? { scheduled_open_at: cardSchedule.open_at } : {}),
+          ...(cardSchedule.lock_at ? { scheduled_lock_at: cardSchedule.lock_at } : {}),
+        })
         .select()
         .single();
 
@@ -500,6 +546,7 @@ export function registerGamedayRoutes(app: Express) {
           answer_options: tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
           display_order: i,
           status: "pending",
+          template_prop_id: tmpl.id,
         });
       }
     }
@@ -2373,4 +2420,153 @@ export function registerGamedayRoutes(app: Express) {
       res.json({ ok: true });
     }
   );
+
+  // ── Admin: Prop Library ────────────────────────────────────────────────────
+  // CRUD endpoints for the gameday_prop_library table.
+  // Auth: x-admin-token header checked against MM_ADMIN_TOKEN env var.
+
+  function checkPropLibraryAdmin(req: Request, res: Response): boolean {
+    const token = req.header("x-admin-token");
+    const adminToken = process.env.MM_ADMIN_TOKEN;
+    if (!adminToken || token !== adminToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  }
+
+  app.get("/api/admin/gameday/prop-library", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const sport = req.query.sport as string | undefined;
+    const supabase = getServiceSupabase();
+    let query = supabase
+      .from("gameday_prop_library")
+      .select("*")
+      .order("sport")
+      .order("phase")
+      .order("display_order");
+    if (sport) (query as any) = (query as any).eq("sport", sport);
+    const { data, error } = await (query as any);
+    if (error) { res.status(500).json({ error: error.message }); return; }
+    res.json({ ok: true, props: data ?? [] });
+  });
+
+  app.post("/api/admin/gameday/prop-library", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const { id, sport, phase, question, answer_options, settlement_window, is_default } = req.body;
+    if (!id || !sport || !phase || !question || !answer_options) {
+      res.status(400).json({ error: "Missing required fields: id, sport, phase, question, answer_options" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: existing } = await supabase
+      .from("gameday_prop_library")
+      .select("display_order")
+      .eq("sport", sport)
+      .eq("phase", phase)
+      .order("display_order", { ascending: false })
+      .limit(1);
+    const maxOrder = (existing as any)?.[0]?.display_order ?? -1;
+    const { data, error } = await supabase
+      .from("gameday_prop_library")
+      .insert({
+        id, sport, phase, question,
+        answer_options,
+        settlement_window: settlement_window ?? "",
+        is_default: is_default ?? false,
+        display_order: maxOrder + 1,
+      })
+      .select()
+      .single();
+    if (error) { res.status(500).json({ error: error.message }); return; }
+    res.json({ ok: true, prop: data });
+  });
+
+  app.patch("/api/admin/gameday/prop-library/:propId", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const { propId } = req.params;
+    const updates: Record<string, unknown> = {};
+    const allowed = ["is_active", "is_default", "question", "answer_options", "settlement_window", "display_order"];
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "No valid fields to update" });
+      return;
+    }
+    updates.updated_at = new Date().toISOString();
+    const supabase = getServiceSupabase();
+    const { data, error } = await supabase
+      .from("gameday_prop_library")
+      .update(updates)
+      .eq("id", propId)
+      .select()
+      .single();
+    if (error) { res.status(500).json({ error: error.message }); return; }
+    res.json({ ok: true, prop: data });
+  });
+
+  // ── Card Auto-Open / Auto-Lock Scheduler ──────────────────────────────────
+  // Runs every 60 seconds. Opens cards at scheduled_open_at and locks them at
+  // scheduled_lock_at — only for rooms that are still active.
+  // Hosts set these schedules at room creation time. When a sports data
+  // integration is added later, these same DB columns can be driven by live
+  // game-clock events instead of preset times — no schema change needed.
+
+  const _cardSchedulerInterval = setInterval(async () => {
+    const now = new Date().toISOString();
+    const supabase = getServiceSupabase();
+    try {
+      // Auto-open
+      const { data: toOpen } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, room_id")
+        .eq("status", "closed")
+        .not("scheduled_open_at", "is", null)
+        .lte("scheduled_open_at", now);
+
+      for (const card of (toOpen ?? []) as any[]) {
+        const { data: room } = await supabase
+          .from("gameday_rooms")
+          .select("status")
+          .eq("id", card.room_id)
+          .maybeSingle();
+        if ((room as any)?.status === "active") {
+          await supabase
+            .from("gameday_pick_cards")
+            .update({ status: "open", updated_at: now })
+            .eq("id", card.id);
+          console.log(`[scheduler] auto-opened card ${card.id}`);
+        }
+      }
+
+      // Auto-lock
+      const { data: toLock } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, room_id")
+        .eq("status", "open")
+        .not("scheduled_lock_at", "is", null)
+        .lte("scheduled_lock_at", now);
+
+      for (const card of (toLock ?? []) as any[]) {
+        const { data: room } = await supabase
+          .from("gameday_rooms")
+          .select("status")
+          .eq("id", card.room_id)
+          .maybeSingle();
+        if ((room as any)?.status === "active") {
+          await supabase
+            .from("gameday_pick_cards")
+            .update({ status: "locked", updated_at: now })
+            .eq("id", card.id);
+          console.log(`[scheduler] auto-locked card ${card.id}`);
+        }
+      }
+    } catch (e) {
+      console.error("[scheduler] card schedule check error:", e);
+    }
+  }, 60_000);
+
+  process.once("SIGTERM", () => clearInterval(_cardSchedulerInterval));
+  process.once("SIGINT",  () => clearInterval(_cardSchedulerInterval));
 }
