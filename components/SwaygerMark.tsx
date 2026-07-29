@@ -16,24 +16,24 @@ interface SwaygerMarkProps {
 
 export default function SwaygerMark({ color = "#FFFFFF", size = 24 }: SwaygerMarkProps) {
   // All three elements are vertically centered at y=12 in a 24×24 viewBox.
-  // Slash: gentle ~30° diagonal, from (7, 15) to (17, 9).
+  // Slash: steep ~65° diagonal, from (10, 18.5) to (14, 5.5).
   // Dots: 4×4 squares centered at y=12, flanking the slash.
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {/* Left dot */}
-      <Rect x="1" y="10" width="4" height="4" rx="0.5" fill={color} />
-      {/* Slash — gentle diagonal, same visual center as the dots */}
+      <Rect x="2" y="10" width="4" height="4" rx="0.5" fill={color} />
+      {/* Slash — steep diagonal, reads clearly as a dividing / */}
       <Line
-        x1="7"
-        y1="15"
-        x2="17"
-        y2="9"
+        x1="10"
+        y1="18.5"
+        x2="14"
+        y2="5.5"
         stroke={color}
         strokeWidth="2.5"
         strokeLinecap="square"
       />
       {/* Right dot */}
-      <Rect x="19" y="10" width="4" height="4" rx="0.5" fill={color} />
+      <Rect x="18" y="10" width="4" height="4" rx="0.5" fill={color} />
     </Svg>
   );
 }
