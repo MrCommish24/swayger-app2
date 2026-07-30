@@ -1,0 +1,181 @@
+# Administrator Device and Mobile UX Requirements
+
+Global settlement is likely to be operated during live games from a mobile phone. Mobile usability is therefore a core requirement, not only a testing consideration.
+
+## Delivery surface
+
+Implement the Global Game Day Settlement workspace as a responsive web-first admin experience.
+
+The workspace must:
+
+- Work well in a mobile browser
+- Expand appropriately for desktop browsers
+- Remain protected by the existing server-side admin authorization
+- Be accessible from the current Admin Tools experience
+- Support opening in the device browser from the Swayger app
+- Not expose or pass an admin token through the URL
+
+Before implementation, confirm:
+
+- The intended protected web route
+- How the admin session or token is validated in the browser
+- Whether the current app uses `Linking.openURL`, router navigation, or another approach for protected admin web pages
+- Whether opening the route externally will preserve authentication
+- What the fallback is when the browser does not have a valid admin session
+
+Do not assume the browser is authenticated merely because the route was opened from the app.
+
+## Mobile-first information architecture
+
+Do not render the queue as a wide desktop table on mobile.
+
+On narrow screens, organize the workspace as:
+
+1. Game cards
+2. Phase sections within each game
+3. Collapsed settlement-group cards
+4. Answer-selection controls
+5. Confirmation sheet or modal
+6. Settlement-result feedback
+
+Recommended mobile hierarchy:
+
+### Game card
+
+Show:
+
+- Matchup
+- Game date or status
+- Number of unsettled groups
+- Total props represented
+- Conflict count
+
+### Phase section
+
+Show:
+
+- Phase name
+- Number remaining
+- Number settled
+- Number blocked by conflicts
+
+Only expand content when selected.
+
+### Settlement-group card
+
+Show without expansion:
+
+- Rendered question
+- Phase
+- Room count
+- Prop count
+- Answer choices
+- Conflict indicator, when applicable
+
+Do not require the administrator to open room-level details for a clean, eligible group.
+
+On expansion, show:
+
+- Included rooms
+- Exact question per room
+- Answer mapping
+- Any warnings
+- Excluded props
+
+## Mobile interaction requirements
+
+Design for one-handed, time-sensitive use.
+
+Require:
+
+- Minimum comfortable touch targets
+- No horizontal scrolling
+- No tiny inline controls
+- No answer selection by dropdown when two to four visible buttons are clearer
+- Clear selected-answer state
+- Confirmation before every bulk settlement
+- Disabled state while submission is in progress
+- Protection against double submission
+- Visible success, partial-success, and failure feedback
+- Preservation of the user’s game, phase, and scroll position after settlement
+- Automatic removal or completed-state treatment after successful settlement
+- Fast refresh without returning the administrator to the top of the queue
+- A clear route from conflict groups to individual room settlement
+- A visible indication of how many rooms and props will be affected before confirmation
+
+## Mobile confirmation flow
+
+Before writing, show a confirmation such as:
+
+Settle “Which team scores first?” as “Chicago Bears” across 12 props in 12 rooms?
+
+Include:
+
+- Game
+- Phase
+- Selected answer
+- Room count
+- Prop count
+- Warning count
+- Confirm
+- Cancel
+- Review rooms
+
+Do not settle when the administrator first taps an answer.
+
+## Post-settlement flow
+
+After a successful settlement:
+
+- Show the number of props settled
+- Show the number of rooms updated
+- Show any skipped or failed props
+- Keep the administrator within the same game and phase
+- Advance naturally to the next unsettled group
+- Do not reload the entire workspace unless required
+- Preserve the ability to inspect the audit result
+
+## Desktop adaptation
+
+On wider screens, the same route may use:
+
+- Side-by-side game navigation and settlement queue
+- More room-level details
+- Denser summary information
+
+Do not create a separate settlement implementation for desktop.
+
+Use one responsive workflow and the same settlement API.
+
+## Required device testing
+
+Test on:
+
+- Narrow mobile browser
+- Typical modern iPhone viewport
+- Typical modern Android viewport
+- Tablet viewport
+- Desktop browser
+
+Test operational scenarios:
+
+- Settling ten groups sequentially
+- Switching between two simultaneous games
+- A group with 20+ rooms
+- Long questions and player names
+- Reversed answer order
+- Conflict requiring individual settlement
+- Network delay during submission
+- Accidental double tap
+- Partial failure
+- Browser refresh after settlement
+- App-to-browser launch with and without a valid admin session
+
+## Stop condition
+
+If the existing admin authentication cannot be safely used from an external browser route, do not weaken authorization or place the token in the URL.
+
+Report the limitation and propose either:
+
+1. A protected in-app web view or native route using the same responsive workspace, or
+2. A separate secure browser authentication step.

@@ -1,0 +1,1008 @@
+# Swayger Global Game Day Settlement System
+
+Build a safe, scalable global settlement system for Swayger Game Day Rooms.
+
+The goal is to allow an authorized administrator or global Game Day operator to settle the same real-world prop once across multiple rooms, while preserving the existing ability for each room host to settle props individually from the current host panel.
+
+This is an additive feature.
+
+The existing room-level settlement workflow must remain fully functional and unchanged.
+
+---
+
+# Core product requirement
+
+Swayger must support two parallel settlement options:
+
+## Option 1: Existing room-level settlement
+
+A host can continue opening an individual Game Day Room and settling each prop manually from that room’s host panel.
+
+This workflow must remain available.
+
+Do not remove, replace, simplify, redirect, or materially change it.
+
+## Option 2: New global settlement
+
+An authorized global operator can view locked, unsettled props across multiple active rooms and settle equivalent real-world props in bulk.
+
+The operator should answer one real-world question once and apply that result safely to every matching room prop.
+
+Example:
+
+If 12 rooms contain the exact same real-world prop for the same game:
+
+“Which team scores first: Knicks or Celtics?”
+
+The global operator should be able to select the correct team once and settle all 12 matching room props.
+
+However, props must only be grouped when they truly represent the same real-world question.
+
+---
+
+# Critical safety principle
+
+Do not group props using only:
+
+- `template_prop_id`
+- Rendered question text
+- Answer-option position
+- `TEAM_A` or `TEAM_B` placeholder position
+- Template name alone
+
+Those fields are not sufficient to prove that two props should share the same settlement.
+
+The same template can render different questions:
+
+- LeBron vs. Tatum
+- Curry vs. Luka
+
+The same generic question text can appear in different games:
+
+- “Who scores first?”
+- “Will the home team score next?”
+- “Which star finishes with more points?”
+
+Team A and Team B can also be reversed between rooms.
+
+The system must establish that props belong to:
+
+1. The same sporting event
+2. The same phase or settlement context
+3. The same real-world prop definition
+4. The same underlying teams, players, threshold, or entities
+5. A compatible answer schema
+
+Only then may they be bulk settled.
+
+---
+
+# First requirement: inspect before implementing
+
+Before writing code, inspect the current Game Day implementation and report the confirmed state of:
+
+- `gameday_rooms`
+- `gameday_pick_cards`
+- `gameday_props`
+- `gameday_picks`
+- Game Day participant records
+- Room creation and template-rendering logic
+- Existing room-level prop settlement endpoint
+- Existing leaderboard recalculation logic
+- Existing admin authentication
+- Existing host authorization
+- Existing audit or activity tracking
+- Existing room status values
+- Existing card status values
+- Existing prop settlement fields
+- Existing answer-option structure
+
+Inspect likely relevant files, including:
+
+- `server/routes-gameday.ts`
+- `server/gameday-template.ts`
+- `server/routes.ts`
+- `app/gameday/[roomId]/host.tsx`
+- `app/gameday/index.tsx`
+- `app/admin.tsx`
+- Any shared Game Day settlement helpers
+- Any database migrations or schema definitions
+- Any RPCs or SQL functions involved in Game Day scoring
+
+Do not assume the prior design is correct. Confirm the actual current code.
+
+---
+
+# Preflight questions that must be answered
+
+Before implementation, explicitly answer:
+
+## Event identity
+
+- Does each room store a stable event or game identifier?
+- Is there an external sports-data event ID?
+- If not, what fields identify the game?
+- Are team names stored structurally?
+- Is league or sport stored?
+- Is game date and time stored?
+- Can two unrelated games accidentally share the same matchup text?
+- How are rematches or games on different dates distinguished?
+
+## Prop identity
+
+- Does each generated prop retain its template ID?
+- Does it retain the resolved team/player values?
+- Are players and teams stored only inside rendered text?
+- Are thresholds, spreads, totals, quarters, or periods stored structurally?
+- Is phase stored directly on the prop or inherited from the pick card?
+- Is there a template version?
+
+## Answer options
+
+- Are answer options stored as labels only?
+- Do answer options have stable IDs or keys?
+- Can answer options appear in different orders across rooms?
+- Are values stored as strings, arrays, JSON, or relational records?
+- Does settlement currently select an option by index, label, value, or ID?
+- Can two props show the same question but use incompatible answer schemas?
+
+## Settlement behavior
+
+- Is room-level settlement idempotent?
+- What prevents the same prop from awarding points twice?
+- Does settlement update a prop first and then score picks?
+- Is scoring executed transactionally?
+- How are room leaderboards recalculated?
+- Can a settled prop be corrected?
+- What happens if a settlement request partially fails?
+- Is there currently an audit trail?
+
+## Authorization
+
+- Who can settle a prop today?
+- How does the host endpoint verify room ownership or host permission?
+- How does the admin panel authenticate?
+- Should ordinary hosts be able to bulk settle only their own rooms?
+- Should global settlement across all rooms be admin-only?
+
+Do not begin implementation until these questions are resolved from the codebase.
+
+---
+
+# Authorization model
+
+Use the safest role model supported by the current application.
+
+## Room hosts
+
+Room hosts must continue settling props individually inside rooms they are authorized to manage.
+
+Do not give ordinary hosts global access to other hosts’ rooms.
+
+If host-level bulk settlement is supported, it must be scoped only to rooms that host owns or is explicitly authorized to manage.
+
+## Global operator or administrator
+
+Bulk settlement across all active rooms should only be available to:
+
+- Existing admins
+- Or a clearly defined global Game Day operator role
+
+Do not infer global authorization merely because a user can host one room.
+
+Do not expose the global settlement queue to ordinary participants.
+
+All write endpoints must enforce authorization on the server.
+
+Client-side hiding is not sufficient.
+
+---
+
+# Preferred long-term grouping model
+
+The durable solution should use a canonical settlement identity.
+
+Conceptually, equivalent props should share a settlement signature derived from:
+
+- Event identity
+- Canonical prop definition
+- Phase
+- Resolved entities
+- Threshold or line, when applicable
+- Answer schema
+- Prop/template version
+
+Example:
+
+`event_key + canonical_prop_key + phase + entity_bindings + answer_schema_version`
+
+Possible examples:
+
+`NBA_2026_LAL_BOS_2026-11-18 + PLAYER_MORE_POINTS + LEBRON_JAMES|JAYSON_TATUM + PREGAME + PLAYER_CHOICE_V1`
+
+`NFL_2026_CHI_GB_2026-09-13 + FIRST_TEAM_TO_SCORE + CHI|GB + PREGAME + TEAM_CHOICE_V1`
+
+The exact implementation must be based on the current schema.
+
+Do not invent external IDs that the application does not currently have.
+
+---
+
+# Safe Phase 1 grouping fallback
+
+If the current schema does not support a complete canonical settlement key yet, build a safe transitional signature using the strongest current data available.
+
+At minimum, the grouping signature should include:
+
+- Stable game or event identity
+- Phase or pick-card type
+- Normalized rendered question
+- Normalized answer schema
+- Resolved team/player identities or names
+- Threshold or line value, if applicable
+- Template version or template ID as an additional signal
+
+A transitional signature might resemble:
+
+`normalized_event_key + phase + normalized_question + normalized_answer_schema + normalized_entities`
+
+Do not use question text by itself.
+
+Do not use template ID by itself.
+
+If the application cannot reliably establish event identity or entity equivalence, stop and report the limitation before enabling bulk settlement.
+
+---
+
+# Event grouping in the interface
+
+The global settlement queue should be organized first by sporting event.
+
+Example:
+
+## Knicks vs. Celtics
+November 18, 2026
+
+### Pregame
+- Which team scores first? — 12 rooms
+- Jalen Brunson or Jayson Tatum: more points? — 8 rooms
+- Total points over 221.5? — 6 rooms
+
+### Halftime
+- Which team wins the third quarter? — 10 rooms
+- Will the game be within 5 points entering the fourth? — 7 rooms
+
+Do not show one undifferentiated list of every question across every game.
+
+Recommended hierarchy:
+
+1. Sport or league
+2. Game/event
+3. Phase
+4. Unique settlement group
+5. Included rooms and props
+
+---
+
+# Global settlement queue
+
+Create a read endpoint for the global queue.
+
+A possible route is:
+
+`GET /api/admin/gameday/settlement-queue`
+
+Use current routing conventions if a better route already exists.
+
+The queue should return only props that are:
+
+- In rooms eligible for settlement
+- On locked pick cards
+- Not already settled
+- Associated with active, live, finalizing, or otherwise valid room statuses
+- Within the authorized user’s settlement scope
+
+Do not include:
+
+- Draft rooms
+- Archived rooms unless explicitly requested
+- Open cards
+- Closed but not locked cards if settlement is not currently allowed
+- Already settled props
+- Deleted or invalid props
+- Props from rooms the operator is not authorized to manage
+
+---
+
+# Required settlement-group response fields
+
+Each returned group should include enough information for safe review.
+
+At minimum:
+
+- `group_key`
+- `event_key`
+- `game_label`
+- `sport`
+- `league`, if available
+- `game_date`
+- `phase`
+- `question`
+- `canonical_prop_key`, if available
+- `template_prop_id`, if available
+- `answer_options`
+- Stable answer keys or normalized values
+- `prop_count`
+- `room_count`
+- `room_ids`
+- `room_names`
+- `prop_ids`
+- `has_question_conflict`
+- `has_answer_schema_conflict`
+- `has_entity_mapping_conflict`
+- `has_phase_conflict`
+- `eligible_for_bulk_settlement`
+- Explanation of why a group is blocked, if blocked
+
+Avoid returning secrets or unnecessary participant data.
+
+---
+
+# Conflict detection
+
+The backend must detect and block unsafe groups.
+
+A settlement group must not be bulk-settleable when:
+
+- Props belong to different games
+- Phases do not match
+- Questions appear similar but entity bindings differ
+- Thresholds differ
+- Answer schemas differ
+- One prop uses Yes/No and another uses Team A/Team B
+- Answer labels match but stable values do not
+- One room has reversed team mappings that cannot be safely resolved
+- One prop is already settled
+- One pick card is not locked
+- One room is not eligible
+- The group changed after the operator loaded the queue
+- Any included prop cannot map the selected answer safely
+
+Blocked groups may still appear in the interface as an exception requiring individual room settlement.
+
+Do not silently split or merge ambiguous props without making the reason visible.
+
+---
+
+# Answer-option mapping
+
+Never apply an answer by array position.
+
+Do not assume:
+
+- Option 0 means Team A
+- Option 1 means Team B
+- First displayed answer is equivalent across rooms
+
+Bulk settlement must map the selected real-world answer to each prop using a stable value or normalized entity identity.
+
+Example:
+
+The operator selects:
+
+`Boston Celtics`
+
+Room A may store options:
+
+- Boston Celtics
+- New York Knicks
+
+Room B may store:
+
+- New York Knicks
+- Boston Celtics
+
+Both can still be settled safely if the backend maps by stable team identity or normalized value.
+
+If mapping cannot be proven, block bulk settlement for that group.
+
+---
+
+# Global settlement write endpoint
+
+Create a separate server endpoint for the write operation.
+
+A possible route is:
+
+`POST /api/admin/gameday/settle-group`
+
+Use current route conventions where appropriate.
+
+The request should include:
+
+- `group_key`
+- Selected answer key or canonical answer value
+- Expected prop IDs
+- Expected prop count
+- Optional client-generated idempotency key
+- Optional operator note
+
+Do not allow the client to send only question text and request that every matching row be updated.
+
+The backend must settle an explicitly reviewed set of prop IDs.
+
+---
+
+# Required server-side revalidation
+
+Before applying a global settlement, the server must revalidate every included prop.
+
+Confirm:
+
+- Operator is authorized
+- Prop still exists
+- Room is still eligible
+- Card is still locked
+- Prop is still unsettled
+- Prop still belongs to the requested event
+- Prop still belongs to the settlement group
+- Selected answer is valid
+- Selected answer maps safely to that prop
+- Expected prop set or count still matches
+- No conflicting update occurred since preview
+
+If the queue changed, do not automatically include new props.
+
+Return a message such as:
+
+“Settlement group changed. Refresh and review before continuing.”
+
+---
+
+# Idempotency
+
+Global settlement must be idempotent.
+
+Repeated submission of the same request must not:
+
+- Award points twice
+- Rescore the same picks twice
+- Duplicate transactions
+- Duplicate audit records incorrectly
+- Produce inconsistent room totals
+
+Use the current room-level settlement protections if they already exist.
+
+If those protections are not sufficient, add a safe idempotency mechanism.
+
+Do not weaken the existing individual settlement path.
+
+---
+
+# Transaction and scoring requirements
+
+Use the existing room-level settlement logic as the single source of truth whenever possible.
+
+Do not create a second independent scoring implementation that could diverge.
+
+The global settlement endpoint should preferably:
+
+1. Validate the group
+2. Invoke the same underlying settlement/scoring function for each prop
+3. Capture success or failure for each prop
+4. Recalculate or refresh affected room leaderboards through the existing mechanism
+5. Return a detailed result summary
+
+If the current settlement logic cannot be safely reused, refactor it into a shared server-side helper used by both:
+
+- Individual room settlement
+- Global group settlement
+
+Do not duplicate point-award calculations in two places.
+
+---
+
+# Atomicity and partial failure
+
+Inspect whether a single database transaction across all affected rooms is practical and safe.
+
+Preferred behavior:
+
+- A settlement group is applied atomically when feasible
+- Either all eligible props settle or none do
+
+If true cross-room atomicity is not feasible with the current architecture, implement explicit partial-failure handling.
+
+The response must identify:
+
+- Props successfully settled
+- Props skipped because they were already settled
+- Props that failed
+- Rooms affected
+- Error reason for each failure
+- Whether a retry is safe
+
+Do not return only a generic success message when some props failed.
+
+---
+
+# Audit log
+
+Every global settlement must create an audit record.
+
+At minimum, capture:
+
+- Operator user ID
+- Operator email or admin identity, if currently available
+- Timestamp
+- Group key
+- Event key
+- Question
+- Selected canonical answer
+- Affected prop IDs
+- Affected room IDs
+- Expected count
+- Successful count
+- Failed count
+- Previous values
+- New values
+- Source: `global_settlement`
+- Idempotency key
+- Optional correction or override relationship
+
+If an audit table already exists, reuse it.
+
+If not, propose the smallest suitable audit structure.
+
+Do not log secrets, admin tokens, or participant private information.
+
+---
+
+# Corrections and overrides
+
+Preserve the existing ability to correct an individual room prop if a global result was wrong or one room was configured differently.
+
+The system should make it visible that a prop was settled through global settlement.
+
+If the current application supports reversing or correcting settlement, keep using that workflow.
+
+If corrections are not currently supported, do not invent an unsafe automatic reversal system.
+
+Instead:
+
+- Clearly document the limitation
+- Add audit visibility
+- Preserve individual room controls
+- Require explicit confirmation for any future correction feature
+
+---
+
+# Admin interface
+
+Add a new Global Settlement section to the existing protected admin experience.
+
+Do not replace the existing admin functions.
+
+Do not place this tool in the participant-facing Game Day tab.
+
+A possible label:
+
+`Global Game Day Settlement`
+
+The screen should show:
+
+- Number of eligible games
+- Number of unique settlement groups
+- Total locked, unsettled props
+- Total rooms represented
+- Exceptions or conflicts requiring individual settlement
+
+---
+
+# Group-row UI
+
+Each settlement group should show:
+
+- Question
+- Game
+- Phase
+- Answer options
+- Number of rooms
+- Number of props
+- Settlement status
+- Conflict status
+- Expand/collapse control
+
+Example:
+
+`Which team scores first?`
+`Knicks vs. Celtics · Pregame`
+`12 rooms · 12 props`
+
+On expansion, show:
+
+- Room names
+- Room IDs or short identifiers
+- Host name or email if appropriate
+- Exact rendered question per room
+- Answer-option mapping per room
+- Any warnings
+- Any props excluded from bulk settlement
+
+---
+
+# Confirmation flow
+
+Before settlement, show a confirmation such as:
+
+`Settle “Which team scores first?” as Boston Celtics across 12 props in 12 rooms?`
+
+The confirmation should include:
+
+- Game
+- Phase
+- Selected answer
+- Number of rooms
+- Number of props
+- Any warnings
+- Explicit confirmation button
+- Cancel button
+
+Do not settle immediately when the operator first taps an answer option.
+
+---
+
+# Results feedback
+
+After submission, show:
+
+- Number of props settled
+- Number of rooms updated
+- Number skipped
+- Number failed
+- Clear error details
+- Ability to refresh the queue
+- Ability to open an affected room
+- Audit reference, if available
+
+Remove successfully settled groups from the pending queue after refresh.
+
+Do not hide failed props.
+
+---
+
+# Preserve current room-level settlement
+
+This is a non-negotiable requirement.
+
+Do not remove or disable:
+
+- Existing host settlement controls
+- Individual prop settlement
+- Room-specific answer selection
+- Host ability to manage one room at a time
+- Room-specific scoring
+- Room-specific leaderboard refresh
+- Existing host workflow
+- Existing host routes
+
+The global system is optional.
+
+Hosts must still be able to use the current workflow if:
+
+- A global group has a conflict
+- A room was configured differently
+- Only one room needs correction
+- A prop is unique
+- The operator prefers manual settlement
+
+---
+
+# Legacy template-based global settlement
+
+Do not delete the current template-based settlement system immediately.
+
+If it currently exists:
+
+- Keep the underlying code intact during the initial build
+- Hide it behind a legacy section or feature flag if needed
+- Do not expose two confusing global settlement interfaces to users
+- Validate the new system before removing anything
+
+After the new system is proven, provide a separate recommendation for retiring or preserving the legacy interface.
+
+Do not remove it as part of this build unless explicitly approved later.
+
+---
+
+# Read-only preview mode first
+
+Build the feature in two internal milestones.
+
+## Milestone 1: Preview-only queue
+
+Before enabling writes:
+
+- Display the proposed event groups
+- Display proposed settlement groups
+- Display included rooms and props
+- Display answer mappings
+- Display conflicts
+- Display blocked groups
+- Do not allow settlement yet
+
+Use representative existing room data to verify grouping accuracy.
+
+Produce a report showing:
+
+- Number of props inspected
+- Number of groups created
+- Number of conflicts
+- Examples of groups
+- Any unexpected merges
+- Any unexpected splits
+
+Do not enable bulk settlement until grouping is validated.
+
+## Milestone 2: Settlement action
+
+After the grouping preview is verified:
+
+- Add answer selection
+- Add confirmation
+- Add server-side revalidation
+- Add idempotency
+- Add audit logging
+- Add detailed results
+- Preserve individual settlement
+
+If the development workflow requires implementing both milestones together, keep the write action behind a disabled flag until the preview has been reviewed.
+
+---
+
+# Canonical settlement key for future rooms
+
+After inspecting the existing schema, recommend whether to add structured settlement identity fields for newly created props.
+
+Potential fields may include:
+
+- `event_key`
+- `canonical_prop_key`
+- `settlement_group_key`
+- `answer_schema_key`
+- `prop_definition_version`
+- `resolved_entity_data`
+- `threshold_value`
+
+Do not add all of these automatically.
+
+Choose the smallest structure that makes future grouping deterministic.
+
+If a database migration is required:
+
+1. Explain why
+2. Show the proposed schema
+3. Explain how existing props are handled
+4. Avoid destructive backfills
+5. Preserve old rooms
+6. Make legacy props fall back to the transitional grouping logic
+7. Stop for approval before applying the migration
+
+Do not silently change the database.
+
+---
+
+# Legacy and historical-room compatibility
+
+The global queue must handle older rooms safely.
+
+Older props may lack:
+
+- Stable event IDs
+- Structured entities
+- Versioned templates
+- Stable answer keys
+
+For legacy props:
+
+- Use the safe transitional signature only when equivalence can be proven
+- Otherwise mark them as requiring individual settlement
+- Never force them into a bulk group based solely on text similarity
+
+It is acceptable for some legacy props to remain manual.
+
+Safety is more important than grouping every prop.
+
+---
+
+# Testing requirements
+
+Create tests for at least the following scenarios.
+
+## Correct grouping
+
+- Same event, same question, same entities, same options
+- Same event, same template, different player matchup
+- Same event, same question, reversed option order
+- Same event, same question, different phase
+- Same event, same question, different threshold
+- Different events, identical rendered question
+- Different sports, identical rendered question
+- Same event, minor capitalization or whitespace differences
+- Legacy room with missing structured identity
+
+## Settlement safety
+
+- All props settle successfully
+- One prop already settled before confirmation
+- One card reopened after preview
+- One room archived after preview
+- Group count changes between preview and submit
+- Operator submits twice
+- Selected answer is missing from one prop
+- Answer options reversed in one room
+- Scoring fails for one prop
+- Leaderboards refresh correctly
+- Individual host settlement still works afterward
+
+## Authorization
+
+- Normal participant cannot load queue
+- Normal host cannot access other hosts’ rooms
+- Authorized admin can access all eligible rooms
+- Host-scoped global settlement, if supported, includes only owned rooms
+- Missing or invalid admin token is rejected server-side
+
+## UI
+
+- No eligible props
+- One event
+- Multiple events
+- 50+ groups
+- Conflict group
+- Partially failed group
+- Mobile web
+- Desktop web
+- Long question text
+- Long team/player names
+- Large room counts
+
+---
+
+# Performance requirements
+
+The system should scale to at least:
+
+- 20 active rooms
+- 500 locked props
+- 50–100 unique settlement groups
+
+Avoid:
+
+- One database request per prop during queue loading
+- N+1 room queries
+- Sending unnecessary pick-level participant data to the client
+- Recalculating unaffected rooms
+- Rendering hundreds of expanded rows by default
+
+Use grouped queries and collapsed UI sections where possible.
+
+Do not prematurely optimize beyond the current architecture, but avoid obvious scaling problems.
+
+---
+
+# Analytics and operational monitoring
+
+Do not make analytics a blocker, but identify whether existing analytics can capture:
+
+- Global settlement queue viewed
+- Group expanded
+- Settlement attempted
+- Settlement succeeded
+- Settlement partially failed
+- Conflict encountered
+- Individual settlement used after a conflict
+
+If analytics are added, keep them additive.
+
+Do not include question text, participant information, or sensitive admin data in analytics properties.
+
+---
+
+# Required implementation report
+
+Before building, return:
+
+## 1. Confirmed Current Architecture
+
+Document event identity, prop identity, answer schema, settlement flow, scoring, authorization, and audit behavior.
+
+## 2. Risks Found
+
+List any issue that could make global settlement unsafe.
+
+## 3. Proposed Grouping Signature
+
+Show the exact fields used and why.
+
+## 4. Proposed API Design
+
+List read and write endpoints, request schemas, response schemas, and authorization.
+
+## 5. Proposed UI
+
+Describe event grouping, phase grouping, question rows, expansion, confirmation, and results.
+
+## 6. Data-Model Impact
+
+State whether a migration is required.
+
+## 7. Preservation Plan
+
+Explain how current room-level settlement remains unchanged.
+
+## 8. Testing Plan
+
+Show automated and manual tests.
+
+## 9. Implementation Sequence
+
+Provide ordered implementation steps.
+
+## 10. Stop/Approval Items
+
+Identify decisions requiring founder approval.
+
+After that report, proceed with implementation only if:
+
+- No destructive migration is required
+- Existing settlement can be reused safely
+- Group equivalence can be established reliably
+- Existing room-level settlement remains intact
+
+If any of these conditions fail, stop and explain the safest next step.
+
+---
+
+# Required post-build verification report
+
+After implementation, report:
+
+- Exact files changed
+- Database changes, if any
+- Final grouping signature
+- How event identity is established
+- How answer options are mapped
+- How conflicts are detected
+- How idempotency is enforced
+- How authorization is enforced
+- How audit records are created
+- How partial failures are handled
+- How the existing room-level system was preserved
+- Preview-mode validation results
+- Number of test groups inspected
+- Examples of correctly separated questions
+- Examples of reversed-option handling
+- Confirmation that template ID alone is not used
+- Confirmation that question text alone is not used
+- Confirmation that no participant can access global settlement
+- Confirmation that individual host settlement still works
+- Any known limitations
+
+---
+
+# Final constraints
+
+- Do not replace the existing settlement system.
+- Do not remove individual room settlement.
+- Do not group by template ID alone.
+- Do not group by rendered question alone.
+- Do not settle by answer-option index.
+- Do not permit cross-event grouping.
+- Do not award points twice.
+- Do not trust client-side authorization.
+- Do not silently include props added after confirmation.
+- Do not hide partial failures.
+- Do not delete legacy code during the first release.
+- Do not apply a database migration without explaining it and receiving approval.
+- Favor safety, auditability, and reversibility over grouping every prop.
