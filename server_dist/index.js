@@ -2,8 +2,8 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+var __esm = (fn, res2) => function __init() {
+  return fn && (res2 = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res2;
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -2785,28 +2785,28 @@ async function sendR32WrapupBlast(supabase) {
   console.log(`[mm-admin] R32 wrapup blast: sent to ${sent}/${totalPlayers}`);
 }
 function registerMMAdminRoutes(app2) {
-  app2.get("/admin/mm", (req, res) => {
+  app2.get("/admin/mm", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("<h1>401 \u2014 Invalid or missing admin token</h1><p>Append ?token=YOUR_TOKEN to the URL.</p>");
+      res2.status(401).send("<h1>401 \u2014 Invalid or missing admin token</h1><p>Append ?token=YOUR_TOKEN to the URL.</p>");
       return;
     }
     const htmlPath = path.resolve(process.cwd(), "server", "templates", "mm-admin.html");
     if (fs.existsSync(htmlPath)) {
-      res.sendFile(htmlPath);
+      res2.sendFile(htmlPath);
     } else {
-      res.status(404).send("Admin template not found");
+      res2.status(404).send("Admin template not found");
     }
   });
-  app2.post("/admin/mm/api/resolve", async (req, res) => {
+  app2.post("/admin/mm/api/resolve", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     const { round_id, matchup_id, winner_name, winner_seed, loser_name, loser_seed, winner_score, loser_score, was_upset } = req.body;
     if (!round_id || !matchup_id || !winner_name) {
-      res.status(400).json({ ok: false, error: "round_id, matchup_id, winner_name are required" });
+      res2.status(400).json({ ok: false, error: "round_id, matchup_id, winner_name are required" });
       return;
     }
     try {
@@ -2828,64 +2828,64 @@ function registerMMAdminRoutes(app2) {
         { onConflict: "round_id,matchup_id" }
       );
       if (error) {
-        res.status(500).json({ ok: false, error: error.message });
+        res2.status(500).json({ ok: false, error: error.message });
         return;
       }
-      res.json({ ok: true, message: `Result saved: ${winner_name} wins in ${round_id}` });
+      res2.json({ ok: true, message: `Result saved: ${winner_name} wins in ${round_id}` });
     } catch (err) {
       console.error("[mm-admin] resolve error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/score", async (req, res) => {
+  app2.post("/admin/mm/api/score", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { scored, error } = await computeAndSaveScores(supabase);
       if (error) {
-        res.status(500).json({ ok: false, error });
+        res2.status(500).json({ ok: false, error });
         return;
       }
-      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s). Use /score-and-email to send the blast.` });
+      res2.json({ ok: true, message: `Scores recomputed for ${scored} user(s). Use /score-and-email to send the blast.` });
     } catch (err) {
       console.error("[mm-admin] score error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/score-and-email", async (req, res) => {
+  app2.post("/admin/mm/api/score-and-email", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (SCORE_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Score emails are paused (SCORE_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Score emails are paused (SCORE_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
       const supabase = getSupabase();
       const { scored, error } = await computeAndSaveScores(supabase);
       if (error) {
-        res.status(500).json({ ok: false, error });
+        res2.status(500).json({ ok: false, error });
         return;
       }
-      res.json({ ok: true, message: `Scores recomputed for ${scored} user(s) \u2014 sending score update emails now` });
+      res2.json({ ok: true, message: `Scores recomputed for ${scored} user(s) \u2014 sending score update emails now` });
       sendScoreUpdateBlast(supabase).catch(
         (e) => console.error("[mm-admin] score-and-email blast error:", e)
       );
     } catch (err) {
       console.error("[mm-admin] score-and-email error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/debug-picks", async (req, res) => {
+  app2.get("/admin/mm/api/debug-picks", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -2930,40 +2930,40 @@ function registerMMAdminRoutes(app2) {
           reason
         };
       });
-      res.json({ ok: true, total_picks: picks.length, debug });
+      res2.json({ ok: true, total_picks: picks.length, debug });
     } catch (err) {
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/results", async (req, res) => {
+  app2.get("/admin/mm/api/results", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { data, error } = await supabase.from("mm_game_results").select("*").order("resolved_at", { ascending: false });
       if (error) {
-        res.status(500).json({ ok: false, error: error.message });
+        res2.status(500).json({ ok: false, error: error.message });
         return;
       }
-      res.json({ ok: true, results: data });
+      res2.json({ ok: true, results: data });
     } catch (err) {
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/leaderboard", async (req, res) => {
+  app2.get("/admin/mm/api/leaderboard", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { data: scores } = await supabase.from("mm_pick_scores").select("*").order("total_points", { ascending: false }).limit(20);
       if (!scores?.length) {
-        res.json({ ok: true, entries: [] });
+        res2.json({ ok: true, entries: [] });
         return;
       }
       const userIds = scores.map((s) => s.user_id);
@@ -2976,26 +2976,26 @@ function registerMMAdminRoutes(app2) {
         username: profileMap.get(s.user_id)?.username ?? "?",
         display_name: profileMap.get(s.user_id)?.display_name ?? null
       }));
-      res.json({ ok: true, entries });
+      res2.json({ ok: true, entries });
     } catch (err) {
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/email-preview/leaderboard-blast", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildLeaderboardBlastHtml());
+  app2.get("/admin/mm/email-preview/leaderboard-blast", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildLeaderboardBlastHtml());
   });
-  app2.get("/admin/mm/email-preview/last-chance", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildLastChanceBlastHtml());
+  app2.get("/admin/mm/email-preview/last-chance", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildLastChanceBlastHtml());
   });
-  app2.get("/admin/mm/email-preview/second-shot", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildSecondShotEmailHtml("Swayger User"));
+  app2.get("/admin/mm/email-preview/second-shot", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildSecondShotEmailHtml("Swayger User"));
   });
-  app2.get("/admin/mm/email-preview/r32-wrapup", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildR32WrapupEmailHtml({
+  app2.get("/admin/mm/email-preview/r32-wrapup", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildR32WrapupEmailHtml({
       displayName: "Swayger User",
       totalPoints: 9,
       upsetPts: 6,
@@ -3008,37 +3008,37 @@ function registerMMAdminRoutes(app2) {
       totalPlayers: 17
     }));
   });
-  app2.get("/admin/mm/email-preview/r32-picks", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildMMR32PicksEmailHtml("Swayger User"));
+  app2.get("/admin/mm/email-preview/r32-picks", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildMMR32PicksEmailHtml("Swayger User"));
   });
-  app2.get("/admin/mm/email-preview/s16-tipoff", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildS16TipoffAlertEmailHtml("Swayger User"));
+  app2.get("/admin/mm/email-preview/s16-tipoff", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildS16TipoffAlertEmailHtml("Swayger User"));
   });
-  app2.get("/admin/mm/email-preview/s16-launch-a", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildS16LaunchEmailHtml("Swayger User", true));
+  app2.get("/admin/mm/email-preview/s16-launch-a", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildS16LaunchEmailHtml("Swayger User", true));
   });
-  app2.get("/admin/mm/email-preview/s16-launch-b", (_req, res) => {
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildS16LaunchEmailHtml("Swayger User", false));
+  app2.get("/admin/mm/email-preview/s16-launch-b", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildS16LaunchEmailHtml("Swayger User", false));
   });
-  app2.post("/admin/mm/api/blast-s16-launch", async (req, res) => {
+  app2.post("/admin/mm/api/blast-s16-launch", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
       const { sendS16LaunchEmail: sendS16LaunchEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed
       );
       const { data: lockedTakesRows } = await supabase.from("mm_locked_takes").select("user_id").eq("is_submitted", true).eq("is_second_chance", false);
@@ -3048,7 +3048,7 @@ function registerMMAdminRoutes(app2) {
       let sentA = 0;
       let sentB = 0;
       let failed = 0;
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           const hasLockedTakes = usersWithLockedTakes.has(profile.id);
           await sendS16LaunchEmail2({
@@ -3065,7 +3065,7 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-admin] S16 launch blast: variantA=${sentA} variantB=${sentB} failed=${failed}`);
-      res.json({
+      res2.json({
         ok: true,
         message: `S16 launch blast sent: ${sentA} variant A (has picks), ${sentB} variant B (second chance)${failed > 0 ? `, ${failed} failed` : ""}`,
         sentA,
@@ -3074,29 +3074,29 @@ function registerMMAdminRoutes(app2) {
       });
     } catch (err) {
       console.error("[mm-admin] s16-launch blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-r32-picks", async (req, res) => {
+  app2.post("/admin/mm/api/blast-r32-picks", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
       const { sendMMR32PicksEmail: sendMMR32PicksEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed
       );
       let sent = 0;
       let failed = 0;
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendMMR32PicksEmail2({
             to: profile.notification_email,
@@ -3110,20 +3110,20 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-admin] R32 picks blast: sent=${sent} failed=${failed}`);
-      res.json({ ok: true, message: `R32 picks blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
+      res2.json({ ok: true, message: `R32 picks blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
     } catch (err) {
       console.error("[mm-admin] r32-picks blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-s16-tipoff", async (req, res) => {
+  app2.post("/admin/mm/api/blast-s16-tipoff", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused." });
       return;
     }
     const excludeUsernames = (req.body?.exclude_usernames ?? []).map((u) => u.toLowerCase());
@@ -3131,12 +3131,12 @@ function registerMMAdminRoutes(app2) {
       const { sendS16TipoffAlertEmail: sendS16TipoffAlertEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed && !excludeUsernames.includes((p.username ?? "").toLowerCase())
       );
       let sent = 0;
       let failed = 0;
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendS16TipoffAlertEmail2({
             to: profile.notification_email,
@@ -3150,32 +3150,32 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-admin] S16 tipoff blast: sent=${sent} failed=${failed}`);
-      res.json({ ok: true, message: `S16 tipoff alert sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}`, sent, failed });
+      res2.json({ ok: true, message: `S16 tipoff alert sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}`, sent, failed });
     } catch (err) {
       console.error("[mm-admin] s16-tipoff blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-leaderboard", async (req, res) => {
+  app2.post("/admin/mm/api/blast-leaderboard", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
       const { sendLeaderboardBlast: sendLeaderboardBlast2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const supabase = getSupabase();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed
       );
       let sent = 0;
       let failed = 0;
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendLeaderboardBlast2({
             to: profile.notification_email,
@@ -3189,20 +3189,20 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-admin] Leaderboard blast: sent=${sent} failed=${failed}`);
-      res.json({ ok: true, message: `Blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
+      res2.json({ ok: true, message: `Blast sent to ${sent} user(s)${failed > 0 ? `, ${failed} failed` : ""}` });
     } catch (err) {
       console.error("[mm-admin] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/remind", async (req, res) => {
+  app2.post("/admin/mm/api/remind", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
@@ -3211,11 +3211,11 @@ function registerMMAdminRoutes(app2) {
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const { data: takes } = await supabase.from("mm_locked_takes").select("user_id").eq("is_submitted", true);
       const usersWithTakes = new Set((takes ?? []).map((t) => t.user_id));
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => !usersWithTakes.has(p.id) && p.notification_email
       );
       let sent = 0;
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendMMReminderEmail2({
             to: profile.notification_email,
@@ -3226,52 +3226,52 @@ function registerMMAdminRoutes(app2) {
           console.error("[mm-admin] reminder email failed for", profile.id, e);
         }
       }
-      res.json({ ok: true, message: `Reminders sent to ${sent} user(s)` });
+      res2.json({ ok: true, message: `Reminders sent to ${sent} user(s)` });
     } catch (err) {
       console.error("[mm-admin] remind error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/debug-locked-takes", async (req, res) => {
+  app2.get("/admin/mm/api/debug-locked-takes", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     const supabase = getSupabase();
     const { data: rpcData, error: rpcErr } = await supabase.rpc("get_all_mm_locked_takes");
     const { data: directData, error: directErr } = await supabase.from("mm_locked_takes").select("user_id, take_type, teams, is_submitted").eq("is_submitted", true).limit(5);
-    res.json({ ok: true, rpcCount: (rpcData ?? []).length, rpcError: rpcErr?.message ?? null, rpcSample: (rpcData ?? []).slice(0, 3), directCount: (directData ?? []).length, directError: directErr?.message ?? null });
+    res2.json({ ok: true, rpcCount: (rpcData ?? []).length, rpcError: rpcErr?.message ?? null, rpcSample: (rpcData ?? []).slice(0, 3), directCount: (directData ?? []).length, directError: directErr?.message ?? null });
   });
-  app2.post("/admin/mm/api/delete-result", async (req, res) => {
+  app2.post("/admin/mm/api/delete-result", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const { id } = req.body;
       if (!id) {
-        res.status(400).json({ ok: false, error: "Missing required field: id" });
+        res2.status(400).json({ ok: false, error: "Missing required field: id" });
         return;
       }
       const supabase = getSupabase();
       const { error } = await supabase.from("mm_game_results").delete().eq("id", id);
       if (error) {
-        res.status(500).json({ ok: false, error: error.message });
+        res2.status(500).json({ ok: false, error: error.message });
         return;
       }
       console.log(`[mm-admin] Result deleted: id=${id}`);
-      res.json({ ok: true, message: `Result ${id} deleted` });
+      res2.json({ ok: true, message: `Result ${id} deleted` });
     } catch (err) {
       console.error("[mm-admin] delete-result error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/insert-result", async (req, res) => {
+  app2.post("/admin/mm/api/insert-result", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -3287,7 +3287,7 @@ function registerMMAdminRoutes(app2) {
         was_upset
       } = req.body;
       if (!round_id || !matchup_id || !winner_name || !loser_name) {
-        res.status(400).json({ ok: false, error: "Missing required fields: round_id, matchup_id, winner_name, loser_name" });
+        res2.status(400).json({ ok: false, error: "Missing required fields: round_id, matchup_id, winner_name, loser_name" });
         return;
       }
       const supabase = getSupabase();
@@ -3304,36 +3304,36 @@ function registerMMAdminRoutes(app2) {
         resolved_at: (/* @__PURE__ */ new Date()).toISOString()
       }, { onConflict: "round_id,matchup_id" });
       if (error) {
-        res.status(500).json({ ok: false, error: error.message });
+        res2.status(500).json({ ok: false, error: error.message });
         return;
       }
       console.log(`[mm-admin] Manual result inserted: ${round_id} / ${matchup_id} \u2014 ${winner_name} def. ${loser_name}`);
-      res.json({ ok: true, message: `Result recorded: ${winner_name} def. ${loser_name}` });
+      res2.json({ ok: true, message: `Result recorded: ${winner_name} def. ${loser_name}` });
     } catch (err) {
       console.error("[mm-admin] insert-result error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/email-preview/thankyou", (req, res) => {
+  app2.get("/admin/mm/email-preview/thankyou", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildThankyouEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildThankyouEmailPreview());
   });
-  app2.get("/admin/mm/api/blast-thankyou/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-thankyou/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { data: scores } = await supabase.from("mm_pick_scores").select("*").order("total_points", { ascending: false });
       if (!scores?.length) {
-        res.json({ ok: true, recipients: [], note: "No scores found" });
+        res2.json({ ok: true, recipients: [], note: "No scores found" });
         return;
       }
       const userIds = scores.map((s) => s.user_id);
@@ -3362,20 +3362,20 @@ function registerMMAdminRoutes(app2) {
         };
       });
       const willSend = recipients.filter((r) => r.would_receive).length;
-      res.json({ ok: true, total_scored: scores.length, will_send: willSend, recipients });
+      res2.json({ ok: true, total_scored: scores.length, will_send: willSend, recipients });
     } catch (err) {
       console.error("[mm-admin] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-thankyou", async (req, res) => {
+  app2.post("/admin/mm/api/blast-thankyou", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart before calling this endpoint." });
       return;
     }
     try {
@@ -3383,7 +3383,7 @@ function registerMMAdminRoutes(app2) {
       const supabase = getSupabase();
       const { data: scores } = await supabase.from("mm_pick_scores").select("*").order("total_points", { ascending: false });
       if (!scores?.length) {
-        res.status(400).json({ ok: false, error: "No scores found \u2014 run scoring first" });
+        res2.status(400).json({ ok: false, error: "No scores found \u2014 run scoring first" });
         return;
       }
       const totalPlayers = scores.length;
@@ -3439,29 +3439,29 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-admin] Thank-you blast: sent=${sent} skipped=${skipped} failed=${failed}`);
-      res.json({ ok: true, message: `Thank-you blast sent to ${sent} user(s)${skipped > 0 ? `, ${skipped} skipped (no email/unsubscribed)` : ""}${failed > 0 ? `, ${failed} failed` : ""}` });
+      res2.json({ ok: true, message: `Thank-you blast sent to ${sent} user(s)${skipped > 0 ? `, ${skipped} skipped (no email/unsubscribed)` : ""}${failed > 0 ? `, ${failed} failed` : ""}` });
     } catch (err) {
       console.error("[mm-admin] thankyou blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/blast-thankyou-catchup/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-thankyou-catchup/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { data: scores } = await supabase.from("mm_pick_scores").select("user_id, total_points").order("total_points", { ascending: false });
       if (!scores?.length) {
-        res.json({ ok: true, note: "No scores found \u2014 run scoring first", recipients: [] });
+        res2.json({ ok: true, note: "No scores found \u2014 run scoring first", recipients: [] });
         return;
       }
       const mmUserIds = new Set((scores ?? []).map((s) => s.user_id));
       const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
       if (rpcErr) {
-        res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
+        res2.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
         return;
       }
       const missedMM = (authProfiles ?? []).filter((p) => mmUserIds.has(p.id));
@@ -3473,20 +3473,20 @@ function registerMMAdminRoutes(app2) {
         email_unsubscribed: p.email_unsubscribed,
         would_receive: !p.email_unsubscribed
       }));
-      res.json({ ok: true, total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[catchup-thankyou] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-thankyou-catchup", async (req, res) => {
+  app2.post("/admin/mm/api/blast-thankyou-catchup", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." });
       return;
     }
     try {
@@ -3494,7 +3494,7 @@ function registerMMAdminRoutes(app2) {
       const supabase = getSupabase();
       const { data: scores } = await supabase.from("mm_pick_scores").select("*").order("total_points", { ascending: false });
       if (!scores?.length) {
-        res.status(400).json({ ok: false, error: "No scores found \u2014 run scoring first" });
+        res2.status(400).json({ ok: false, error: "No scores found \u2014 run scoring first" });
         return;
       }
       const totalPlayers = scores.length;
@@ -3504,7 +3504,7 @@ function registerMMAdminRoutes(app2) {
       const nameMap = new Map((profileData ?? []).map((p) => [p.id, p]));
       const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
       if (rpcErr) {
-        res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
+        res2.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
         return;
       }
       const mmUserIdSet = new Set(userIds);
@@ -3542,23 +3542,23 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[catchup-thankyou] sent=${sent} skipped=${skipped} failed=${failed}`);
-      res.json({ ok: true, sent, skipped, failed, note: "Catch-up blast \u2014 only auth-email users (not already reached)" });
+      res2.json({ ok: true, sent, skipped, failed, note: "Catch-up blast \u2014 only auth-email users (not already reached)" });
     } catch (err) {
       console.error("[catchup-thankyou] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/blast-outreach-a-catchup/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-outreach-a-catchup/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
       const supabase = getSupabase();
       const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
       if (rpcErr) {
-        res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
+        res2.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
         return;
       }
       const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
@@ -3579,20 +3579,20 @@ function registerMMAdminRoutes(app2) {
         in_mm: mmUserIds.has(p.id),
         has_swayger: swaygerIds.has(p.id)
       }));
-      res.json({ ok: true, segment: "no_swayger_catchup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "no_swayger_catchup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[catchup-outreach-a] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-outreach-a-catchup", async (req, res) => {
+  app2.post("/admin/mm/api/blast-outreach-a-catchup", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused. Flip BLAST_EMAILS_PAUSED and restart." });
       return;
     }
     try {
@@ -3600,7 +3600,7 @@ function registerMMAdminRoutes(app2) {
       const supabase = getSupabase();
       const { data: authProfiles, error: rpcErr } = await supabase.rpc("get_auth_only_profiles");
       if (rpcErr) {
-        res.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
+        res2.status(500).json({ ok: false, error: `get_auth_only_profiles RPC failed: ${rpcErr.message}. Did you run add_auth_only_profiles_rpc.sql?` });
         return;
       }
       const { data: scores } = await supabase.from("mm_pick_scores").select("user_id");
@@ -3611,9 +3611,9 @@ function registerMMAdminRoutes(app2) {
         ...(swaygerCreators ?? []).map((s) => s.creator_id),
         ...(swaygerOpponents ?? []).map((s) => s.opponent_id)
       ]);
-      const eligible = (authProfiles ?? []).filter((p) => !mmUserIds.has(p.id) && !swaygerIds.has(p.id) && !p.email_unsubscribed);
+      const eligible2 = (authProfiles ?? []).filter((p) => !mmUserIds.has(p.id) && !swaygerIds.has(p.id) && !p.email_unsubscribed);
       let sent = 0, failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendOutreachAEmail2({ to: user.notification_email, displayName: user.display_name || user.username, userId: user.id });
           sent++;
@@ -3624,42 +3624,42 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[catchup-outreach-a] sent=${sent} failed=${failed}`);
-      res.json({ ok: true, segment: "no_swayger_catchup", sent, failed, note: "Catch-up blast \u2014 only auth-email users not already reached" });
+      res2.json({ ok: true, segment: "no_swayger_catchup", sent, failed, note: "Catch-up blast \u2014 only auth-email users not already reached" });
     } catch (err) {
       console.error("[catchup-outreach-a] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/feedback", async (req, res) => {
+  app2.get("/admin/mm/api/feedback", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
-      res.json({
+      res2.json({
         ok: true,
         note: "Feedback is INSERT-only via anon key (RLS blocks SELECT). Read responses at: https://supabase.com/dashboard \u2192 Table Editor \u2192 mm_feedback"
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/outreach-feedback-a", (_req, res) => {
+  app2.get("/outreach-feedback-a", (_req, res2) => {
     const html = fs.readFileSync(path.join(process.cwd(), "server", "templates", "outreach-feedback-a.html"), "utf-8");
-    res.setHeader("Content-Type", "text/html");
-    res.send(html);
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(html);
   });
-  app2.get("/outreach-feedback-b", (_req, res) => {
+  app2.get("/outreach-feedback-b", (_req, res2) => {
     const html = fs.readFileSync(path.join(process.cwd(), "server", "templates", "outreach-feedback-b.html"), "utf-8");
-    res.setHeader("Content-Type", "text/html");
-    res.send(html);
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(html);
   });
-  app2.post("/api/outreach/feedback", async (req, res) => {
+  app2.post("/api/outreach/feedback", async (req, res2) => {
     try {
       const { user_id, segment, q1, q2, q3, q4, open_text } = req.body ?? {};
       if (!segment || !["no_swayger", "swayger_no_mm"].includes(segment)) {
-        res.status(400).json({ ok: false, error: "Invalid segment" });
+        res2.status(400).json({ ok: false, error: "Invalid segment" });
         return;
       }
       const supabase = getSupabase();
@@ -3674,32 +3674,32 @@ function registerMMAdminRoutes(app2) {
       });
       if (error) {
         console.error("[outreach] feedback insert error:", error);
-        res.status(500).json({ ok: false, error: "Failed to save" });
+        res2.status(500).json({ ok: false, error: "Failed to save" });
         return;
       }
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
       console.error("[outreach] feedback error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/email-preview/outreach-a", (req, res) => {
+  app2.get("/admin/mm/email-preview/outreach-a", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildOutreachAEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildOutreachAEmailPreview());
   });
-  app2.get("/admin/mm/email-preview/outreach-b", (req, res) => {
+  app2.get("/admin/mm/email-preview/outreach-b", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildOutreachBEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildOutreachBEmailPreview());
   });
   async function getOutreachSegments() {
     const supabase = getSupabase();
@@ -3727,10 +3727,10 @@ function registerMMAdminRoutes(app2) {
     }));
     return { segmentA, segmentB, mmUserIds, swaygerUserIds };
   }
-  app2.get("/admin/mm/api/blast-outreach-a/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-outreach-a/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -3744,16 +3744,16 @@ function registerMMAdminRoutes(app2) {
         in_mm: mmUserIds.has(u.id),
         has_swayger: swaygerUserIds.has(u.id)
       }));
-      res.json({ ok: true, segment: "no_swayger", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "no_swayger", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[outreach] dry-run A error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/blast-outreach-b/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-outreach-b/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -3767,29 +3767,29 @@ function registerMMAdminRoutes(app2) {
         in_mm: mmUserIds.has(u.id),
         has_swayger: swaygerUserIds.has(u.id)
       }));
-      res.json({ ok: true, segment: "swayger_no_mm", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "swayger_no_mm", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[outreach] dry-run B error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-outreach-a", async (req, res) => {
+  app2.post("/admin/mm/api/blast-outreach-a", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
       return;
     }
     try {
       const { sendOutreachAEmail: sendOutreachAEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const { segmentA } = await getOutreachSegments();
-      const eligible = segmentA.filter((u) => !u.email_unsubscribed);
+      const eligible2 = segmentA.filter((u) => !u.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendOutreachAEmail2({ to: user.email, displayName: user.resolved_name, userId: user.id });
           sent++;
@@ -3800,29 +3800,29 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[outreach-a] blast complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, segment: "no_swayger", sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, segment: "no_swayger", sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[outreach] blast A error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-outreach-b", async (req, res) => {
+  app2.post("/admin/mm/api/blast-outreach-b", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
       return;
     }
     try {
       const { sendOutreachBEmail: sendOutreachBEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const { segmentB } = await getOutreachSegments();
-      const eligible = segmentB.filter((u) => !u.email_unsubscribed);
+      const eligible2 = segmentB.filter((u) => !u.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendOutreachBEmail2({ to: user.email, displayName: user.resolved_name, userId: user.id });
           sent++;
@@ -3833,43 +3833,43 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[outreach-b] blast complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, segment: "swayger_no_mm", sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, segment: "swayger_no_mm", sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[outreach] blast B error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/email-preview/mm-followup", (req, res) => {
+  app2.get("/admin/mm/email-preview/mm-followup", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildMMFollowupEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildMMFollowupEmailPreview());
   });
-  app2.get("/admin/mm/email-preview/outreach-a-followup", (req, res) => {
+  app2.get("/admin/mm/email-preview/outreach-a-followup", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildOutreachAFollowupEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildOutreachAFollowupEmailPreview());
   });
-  app2.get("/admin/mm/email-preview/outreach-b-followup", (req, res) => {
+  app2.get("/admin/mm/email-preview/outreach-b-followup", (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).send("Unauthorized");
+      res2.status(401).send("Unauthorized");
       return;
     }
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildOutreachBFollowupEmailPreview());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildOutreachBFollowupEmailPreview());
   });
-  app2.get("/admin/mm/api/blast-mm-followup/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-mm-followup/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -3895,20 +3895,20 @@ function registerMMAdminRoutes(app2) {
         email_unsubscribed: p.email_unsubscribed,
         would_receive: !p.email_unsubscribed
       }));
-      res.json({ ok: true, segment: "mm_participants", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "mm_participants", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[mm-followup] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-mm-followup", async (req, res) => {
+  app2.post("/admin/mm/api/blast-mm-followup", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
       return;
     }
     try {
@@ -3928,10 +3928,10 @@ function registerMMAdminRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => mmUserIds.has(p.id) && !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => mmUserIds.has(p.id) && !p.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendMMFollowupEmail2({ to: user.notification_email, displayName: user.display_name || user.username, userId: user.id });
           sent++;
@@ -3942,16 +3942,16 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[mm-followup] blast complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, segment: "mm_participants", sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, segment: "mm_participants", sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[mm-followup] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/blast-outreach-a-followup/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-outreach-a-followup/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -3963,29 +3963,29 @@ function registerMMAdminRoutes(app2) {
         email_unsubscribed: u.email_unsubscribed,
         would_receive: !u.email_unsubscribed
       }));
-      res.json({ ok: true, segment: "no_swayger_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "no_swayger_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[outreach-a-followup] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-outreach-a-followup", async (req, res) => {
+  app2.post("/admin/mm/api/blast-outreach-a-followup", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
       return;
     }
     try {
       const { sendOutreachAFollowupEmail: sendOutreachAFollowupEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const { segmentA } = await getOutreachSegments();
-      const eligible = segmentA.filter((u) => !u.email_unsubscribed);
+      const eligible2 = segmentA.filter((u) => !u.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendOutreachAFollowupEmail2({ to: user.email, displayName: user.resolved_name, userId: user.id });
           sent++;
@@ -3996,16 +3996,16 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[outreach-a-followup] blast complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, segment: "no_swayger_followup", sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, segment: "no_swayger_followup", sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[outreach-a-followup] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/blast-outreach-b-followup/dry-run", async (req, res) => {
+  app2.get("/admin/mm/api/blast-outreach-b-followup/dry-run", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     try {
@@ -4017,29 +4017,29 @@ function registerMMAdminRoutes(app2) {
         email_unsubscribed: u.email_unsubscribed,
         would_receive: !u.email_unsubscribed
       }));
-      res.json({ ok: true, segment: "swayger_no_mm_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
+      res2.json({ ok: true, segment: "swayger_no_mm_followup", total: recipients.length, will_send: recipients.filter((r) => r.would_receive).length, recipients });
     } catch (err) {
       console.error("[outreach-b-followup] dry-run error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/admin/mm/api/blast-outreach-b-followup", async (req, res) => {
+  app2.post("/admin/mm/api/blast-outreach-b-followup", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag and restart." });
       return;
     }
     try {
       const { sendOutreachBFollowupEmail: sendOutreachBFollowupEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       const { segmentB } = await getOutreachSegments();
-      const eligible = segmentB.filter((u) => !u.email_unsubscribed);
+      const eligible2 = segmentB.filter((u) => !u.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendOutreachBFollowupEmail2({ to: user.email, displayName: user.resolved_name, userId: user.id });
           sent++;
@@ -4050,21 +4050,21 @@ function registerMMAdminRoutes(app2) {
         }
       }
       console.log(`[outreach-b-followup] blast complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, segment: "swayger_no_mm_followup", sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, segment: "swayger_no_mm_followup", sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[outreach-b-followup] blast error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/admin/mm/api/send-test-emails", async (req, res) => {
+  app2.get("/admin/mm/api/send-test-emails", async (req, res2) => {
     const token = req.query.token;
     if (!isAdminToken(token)) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     const to = req.query.to;
     if (!to) {
-      res.status(400).json({ ok: false, error: "Missing ?to= address" });
+      res2.status(400).json({ ok: false, error: "Missing ?to= address" });
       return;
     }
     const template = req.query.template ?? "all";
@@ -4140,10 +4140,10 @@ function registerMMAdminRoutes(app2) {
           results["outreach-b-followup"] = `error: ${e}`;
         }
       }
-      res.json({ ok: true, to, results });
+      res2.json({ ok: true, to, results });
     } catch (err) {
       console.error("[test-emails] error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
 }
@@ -5087,12 +5087,12 @@ async function buildOddsBasedMatchups(roundId) {
   if (!dateRange) return null;
   try {
     const url = `https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&commenceTimeFrom=${dateRange.start}T00:00:00Z&commenceTimeTo=${dateRange.end}T23:59:59Z`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.error(`[odds-api] HTTP ${res.status}:`, await res.text());
+    const res2 = await fetch(url);
+    if (!res2.ok) {
+      console.error(`[odds-api] HTTP ${res2.status}:`, await res2.text());
       return null;
     }
-    const games = await res.json();
+    const games = await res2.json();
     if (!games.length) return null;
     const matchups = games.map((game) => {
       let spread;
@@ -5220,7 +5220,7 @@ async function persistRankedMatchups(supabase, roundId, upset, blowout, highScor
 function registerMMSpecialRoutes(app2) {
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  app2.get("/api/mm/round-matchups/:roundId", async (req, res) => {
+  app2.get("/api/mm/round-matchups/:roundId", async (req, res2) => {
     const roundId = req.params.roundId;
     const lockDates = {
       "first-four": "2026-03-17T12:00:00-05:00",
@@ -5236,7 +5236,7 @@ function registerMMSpecialRoutes(app2) {
     const cacheKey = `round-matchups-${roundId}`;
     const cached = getCached(cacheKey);
     if (cached) {
-      return res.json(cached);
+      return res2.json(cached);
     }
     const supabase = createClient2(supabaseUrl, supabaseKey);
     if (isLocked) {
@@ -5268,7 +5268,7 @@ function registerMMSpecialRoutes(app2) {
         console.log(`[mm-special] ${roundId} (locked) served from DB: upset=${upset.length} blowout=${blowout.length} hs=${highScorer.length}`);
         const response2 = { roundId, upset, blowout, highScorer, isLocked: true, lockedAt: lockDate, oddsSource: "persisted" };
         setCache(cacheKey, response2);
-        return res.json(response2);
+        return res2.json(response2);
       }
     }
     let ranked = await buildOddsBasedMatchups(roundId);
@@ -5300,21 +5300,21 @@ function registerMMSpecialRoutes(app2) {
       oddsSource: source
     };
     setCache(cacheKey, response);
-    return res.json(response);
+    return res2.json(response);
   });
   function generateReferralCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
   }
-  app2.get("/api/mm/my-referral-code", async (req, res) => {
+  app2.get("/api/mm/my-referral-code", async (req, res2) => {
     const { userId, matchupId, roundId } = req.query;
-    if (!userId || !matchupId || !roundId) return res.status(400).json({ error: "Missing params" });
+    if (!userId || !matchupId || !roundId) return res2.status(400).json({ error: "Missing params" });
     const supabase = createClient2(
       process.env.EXPO_PUBLIC_SUPABASE_URL,
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
     );
     const { data: profile, error } = await supabase.from("profiles").select("referral_code").eq("id", userId).single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return res2.status(500).json({ error: error.message });
     let code = profile?.referral_code;
     if (!code) {
       for (let attempt = 0; attempt < 10; attempt++) {
@@ -5325,26 +5325,26 @@ function registerMMSpecialRoutes(app2) {
           break;
         }
       }
-      if (!code) return res.status(500).json({ error: "Could not generate referral code" });
+      if (!code) return res2.status(500).json({ error: "Could not generate referral code" });
     }
     const rawDomain = (process.env.EXPO_PUBLIC_DOMAIN || "localhost:8081").replace(/:5000$/, "");
     const shareUrl = `https://${rawDomain}/mm-pick/${encodeURIComponent(matchupId)}?ref=${code}&round_id=${encodeURIComponent(roundId)}`;
-    return res.json({ referralCode: code, shareUrl });
+    return res2.json({ referralCode: code, shareUrl });
   });
-  app2.get("/api/mm/referral-info", async (req, res) => {
+  app2.get("/api/mm/referral-info", async (req, res2) => {
     const { code } = req.query;
-    if (!code) return res.status(400).json({ error: "Missing code" });
+    if (!code) return res2.status(400).json({ error: "Missing code" });
     const supabase = createClient2(
       process.env.EXPO_PUBLIC_SUPABASE_URL,
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
     );
     const { data, error } = await supabase.from("profiles").select("username, display_name").eq("referral_code", code.toUpperCase()).single();
-    if (error || !data) return res.json({ found: false });
+    if (error || !data) return res2.json({ found: false });
     const name = data.display_name || `@${data.username}`;
-    return res.json({ found: true, name });
+    return res2.json({ found: true, name });
   });
-  app2.post("/api/mm/unlock-referral-reward", async (req, res) => {
-    res.json({ ok: true });
+  app2.post("/api/mm/unlock-referral-reward", async (req, res2) => {
+    res2.json({ ok: true });
     const { userId } = req.body ?? {};
     if (!userId) return;
     const nextRound = getActivePicksRoundId();
@@ -5367,10 +5367,10 @@ function registerMMSpecialRoutes(app2) {
   const verifiedBoostSessions = /* @__PURE__ */ new Map();
   const ELITE8_BOOST_LOCK = /* @__PURE__ */ new Date("2026-03-28T17:00:00-05:00");
   const ELITE8_PRICE_ID = "price_1TENDw3fMFuGw9AQgaji65TN";
-  app2.post("/api/mm/boost-checkout", async (req, res) => {
+  app2.post("/api/mm/boost-checkout", async (req, res2) => {
     const { userId } = req.body ?? {};
     if (!userId) {
-      res.status(400).json({ ok: false, error: "userId required" });
+      res2.status(400).json({ ok: false, error: "userId required" });
       return;
     }
     try {
@@ -5379,12 +5379,12 @@ function registerMMSpecialRoutes(app2) {
         process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
       );
       if (/* @__PURE__ */ new Date() >= ELITE8_BOOST_LOCK) {
-        res.json({ ok: false, error: "Elite 8 boost is no longer available", code: "lock_passed" });
+        res2.json({ ok: false, error: "Elite 8 boost is no longer available", code: "lock_passed" });
         return;
       }
       const { data: profile } = await supabase.from("profiles").select("referral_reward_round, paid_2x_round").eq("id", userId).single();
       if (profile?.referral_reward_round === "elite-8" || profile?.paid_2x_round === "elite-8") {
-        res.json({ ok: false, error: "You already have 2X active for the Elite 8", code: "already_boosted" });
+        res2.json({ ok: false, error: "You already have 2X active for the Elite 8", code: "already_boosted" });
         return;
       }
       const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
@@ -5404,19 +5404,19 @@ function registerMMSpecialRoutes(app2) {
         metadata: { type: "elite8_boost", userId, round: "elite-8" }
       });
       console.log(`[mm-boost] Checkout session created for ${userId.slice(0, 8)}\u2026 \u2192 ${session.id}`);
-      res.json({ ok: true, checkoutUrl: session.url });
+      res2.json({ ok: true, checkoutUrl: session.url });
     } catch (err) {
       console.error("[mm-boost] checkout error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.get("/api/mm/boost-success", async (req, res) => {
+  app2.get("/api/mm/boost-success", async (req, res2) => {
     const { session_id, user_id } = req.query;
     const domains = process.env.REPLIT_DOMAINS?.split(",") ?? [];
     const appDomain = domains[0]?.trim() || "www.swayger.app";
     const baseUrl = appDomain.startsWith("http") ? appDomain : `https://${appDomain}`;
     if (!session_id || !user_id) {
-      return res.redirect(`${baseUrl}/march-madness/picks`);
+      return res2.redirect(`${baseUrl}/march-madness/picks`);
     }
     try {
       const { getUncachableStripeClient: getUncachableStripeClient2 } = await Promise.resolve().then(() => (init_stripeClient(), stripeClient_exports));
@@ -5424,7 +5424,7 @@ function registerMMSpecialRoutes(app2) {
       const session = await stripe.checkout.sessions.retrieve(session_id);
       if (session.payment_status !== "paid" || session.metadata?.type !== "elite8_boost" || session.metadata?.userId !== user_id) {
         console.warn(`[mm-boost] Session ${session_id} invalid \u2014 payment_status=${session.payment_status}`);
-        return res.redirect(`${baseUrl}/march-madness/picks`);
+        return res2.redirect(`${baseUrl}/march-madness/picks`);
       }
       verifiedBoostSessions.set(session_id, {
         userId: user_id,
@@ -5468,19 +5468,19 @@ function registerMMSpecialRoutes(app2) {
   </script>
 </body>
 </html>`;
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.status(200).send(html);
+      res2.setHeader("Content-Type", "text/html; charset=utf-8");
+      res2.status(200).send(html);
     } catch (err) {
       console.error("[mm-boost] Success handler error:", err);
-      res.redirect(`${baseUrl}/march-madness/picks`);
+      res2.redirect(`${baseUrl}/march-madness/picks`);
     }
   });
-  app2.post("/api/mm/boost-claim", async (req, res) => {
+  app2.post("/api/mm/boost-claim", async (req, res2) => {
     const { session_id } = req.body ?? {};
     const authHeader = req.headers.authorization ?? "";
     const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
     if (!session_id || !jwt) {
-      res.status(400).json({ ok: false, error: "session_id and Authorization required" });
+      res2.status(400).json({ ok: false, error: "session_id and Authorization required" });
       return;
     }
     const now = Date.now();
@@ -5489,7 +5489,7 @@ function registerMMSpecialRoutes(app2) {
     });
     const entry = verifiedBoostSessions.get(session_id);
     if (!entry || entry.expiresAt < now) {
-      res.status(400).json({ ok: false, error: "Session not found or expired. Contact support." });
+      res2.status(400).json({ ok: false, error: "Session not found or expired. Contact support." });
       return;
     }
     try {
@@ -5501,27 +5501,27 @@ function registerMMSpecialRoutes(app2) {
       const { error } = await supabase.from("profiles").update({ paid_2x_round: "elite-8" }).eq("id", entry.userId).is("paid_2x_round", null);
       if (error) {
         console.error("[mm-boost] boost-claim DB error:", error.message);
-        res.status(500).json({ ok: false, error: "Failed to activate boost. Please try again." });
+        res2.status(500).json({ ok: false, error: "Failed to activate boost. Please try again." });
         return;
       }
       verifiedBoostSessions.delete(session_id);
       console.log(`[mm-boost] Boost claimed and granted to ${entry.userId.slice(0, 8)}\u2026`);
-      res.json({ ok: true, message: "2X boost activated for Elite 8" });
+      res2.json({ ok: true, message: "2X boost activated for Elite 8" });
     } catch (err) {
       console.error("[mm-boost] boost-claim error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/api/mm/boost-admin-grant", async (req, res) => {
+  app2.post("/api/mm/boost-admin-grant", async (req, res2) => {
     const token = req.headers["x-admin-token"];
     const { userId, userJwt } = req.body ?? {};
     const adminToken = process.env.MM_ADMIN_TOKEN ?? "MySwayger24!!";
     if (!token || token !== adminToken) {
-      res.status(401).json({ ok: false, error: "Unauthorized" });
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
       return;
     }
     if (!userId || !userJwt) {
-      res.status(400).json({ ok: false, error: "userId and userJwt required" });
+      res2.status(400).json({ ok: false, error: "userId and userJwt required" });
       return;
     }
     try {
@@ -5532,18 +5532,18 @@ function registerMMSpecialRoutes(app2) {
       );
       const { error } = await supabase.from("profiles").update({ paid_2x_round: "elite-8" }).eq("id", userId);
       if (error) {
-        res.status(500).json({ ok: false, error: error.message });
+        res2.status(500).json({ ok: false, error: error.message });
         return;
       }
       console.log(`[mm-boost] Admin granted boost to ${userId.slice(0, 8)}\u2026`);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
       console.error("[mm-boost] admin-grant error:", err);
-      res.status(500).json({ ok: false, error: "Server error" });
+      res2.status(500).json({ ok: false, error: "Server error" });
     }
   });
-  app2.post("/api/mm/log-share", async (req, res) => {
-    res.json({ ok: true });
+  app2.post("/api/mm/log-share", async (req, res2) => {
+    res2.json({ ok: true });
     const { user_id, pick_type, round_id, matchup_id } = req.body ?? {};
     if (!user_id || !pick_type || !round_id || !matchup_id) return;
     try {
@@ -5567,17 +5567,17 @@ function registerMMSpecialRoutes(app2) {
       console.warn("[mm-share] Unexpected error:", e);
     }
   });
-  app2.get("/feedback", (_req, res) => {
+  app2.get("/feedback", (_req, res2) => {
     const filePath = path2.join(process.cwd(), "server", "templates", "mm-feedback.html");
     if (!fs2.existsSync(filePath)) {
-      res.status(404).send("Feedback page not found");
+      res2.status(404).send("Feedback page not found");
       return;
     }
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache");
-    res.send(fs2.readFileSync(filePath, "utf8"));
+    res2.setHeader("Content-Type", "text/html; charset=utf-8");
+    res2.setHeader("Cache-Control", "no-cache");
+    res2.send(fs2.readFileSync(filePath, "utf8"));
   });
-  app2.post("/api/mm/feedback", async (req, res) => {
+  app2.post("/api/mm/feedback", async (req, res2) => {
     const { user_id, q1_ux, q2_next_use, q3_friction, q4_priority, open_text } = req.body ?? {};
     const supabase = createClient2(
       process.env.EXPO_PUBLIC_SUPABASE_URL,
@@ -5593,11 +5593,11 @@ function registerMMSpecialRoutes(app2) {
     });
     if (error) {
       console.error("[mm-feedback] insert error:", error.message);
-      res.status(500).json({ ok: false, error: "Could not save feedback" });
+      res2.status(500).json({ ok: false, error: "Could not save feedback" });
       return;
     }
     console.log(`[mm-feedback] Saved: uid=${user_id ?? "anon"} q1=${q1_ux} q2=${q2_next_use} q3=${q3_friction} q4=${q4_priority}`);
-    res.json({ ok: true });
+    res2.json({ ok: true });
   });
 }
 
@@ -5609,10 +5609,10 @@ function getSupabase2() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   return createClient3(url, key);
 }
-function requireAdmin(req, res) {
+function requireAdmin(req, res2) {
   const token = req.headers["x-admin-token"] || req.query["token"];
   if (token !== process.env.MM_ADMIN_TOKEN) {
-    res.status(401).json({ ok: false, error: "Unauthorized" });
+    res2.status(401).json({ ok: false, error: "Unauthorized" });
     return false;
   }
   return true;
@@ -5635,12 +5635,12 @@ async function fetchOddsGames() {
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) return [];
   const url = `https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.error("[nba] Odds API error:", res.status);
+  const res2 = await fetch(url);
+  if (!res2.ok) {
+    console.error("[nba] Odds API error:", res2.status);
     return [];
   }
-  const events = await res.json();
+  const events = await res2.json();
   return events.map((e) => {
     const fanduel = e.bookmakers.find((b) => b.key === "fanduel") ?? e.bookmakers[0];
     const h2hMkt = fanduel?.markets.find((m) => m.key === "h2h");
@@ -5729,39 +5729,39 @@ async function recomputeScores(supabase) {
   }
 }
 function registerNBARoutes(app2) {
-  app2.get("/api/nba/games", async (_req, res) => {
+  app2.get("/api/nba/games", async (_req, res2) => {
     try {
       const now = Date.now();
       if (gamesCache && now - gamesCache.fetchedAt < CACHE_TTL_MS2) {
-        res.json(gamesCache.data);
+        res2.json(gamesCache.data);
         return;
       }
       const games = await fetchOddsGames();
       gamesCache = { data: games, fetchedAt: now };
-      res.json(games);
+      res2.json(games);
     } catch (err) {
       console.error("[nba/games]", err);
-      res.status(500).json({ error: "Failed to fetch games" });
+      res2.status(500).json({ error: "Failed to fetch games" });
     }
   });
-  app2.get("/api/nba/series", async (_req, res) => {
+  app2.get("/api/nba/series", async (_req, res2) => {
     try {
       const supabase = getSupabase2();
       const { data, error } = await supabase.from("nba_playoff_series").select("*").eq("season", "2026").order("sort_order");
       if (error) throw error;
-      res.json(data ?? []);
+      res2.json(data ?? []);
     } catch (err) {
       console.error("[nba/series]", err);
-      res.status(500).json({ error: "Failed to fetch series" });
+      res2.status(500).json({ error: "Failed to fetch series" });
     }
   });
-  app2.get("/api/nba/leaderboard", async (_req, res) => {
+  app2.get("/api/nba/leaderboard", async (_req, res2) => {
     try {
       const supabase = getSupabase2();
       const { data: scores, error } = await supabase.from("nba_playoff_scores").select("*").eq("season", "2026").order("total_pts", { ascending: false }).order("correct_picks", { ascending: false });
       if (error) throw error;
       if (!scores || scores.length === 0) {
-        res.json([]);
+        res2.json([]);
         return;
       }
       const userIds = scores.map((s) => s.user_id);
@@ -5775,19 +5775,19 @@ function registerNBARoutes(app2) {
         username: profileMap.get(s.user_id)?.username ?? null,
         display_name: profileMap.get(s.user_id)?.display_name ?? null
       }));
-      res.json(result);
+      res2.json(result);
     } catch (err) {
       console.error("[nba/leaderboard]", err);
-      res.status(500).json({ error: "Failed to fetch leaderboard" });
+      res2.status(500).json({ error: "Failed to fetch leaderboard" });
     }
   });
-  app2.post("/api/nba/admin/series", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/series", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const body = req.body;
       if (!body.id || !body.round || !body.team1 || !body.team2) {
-        res.status(400).json({ ok: false, error: "id, round, team1, team2 required" });
+        res2.status(400).json({ ok: false, error: "id, round, team1, team2 required" });
         return;
       }
       const { error } = await supabase.from("nba_playoff_series").upsert({
@@ -5796,53 +5796,53 @@ function registerNBARoutes(app2) {
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       }, { onConflict: "id" });
       if (error) throw error;
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
       const msg = err && typeof err === "object" && "message" in err ? err.message : String(err);
       console.error("[nba/admin/series]", err);
-      res.status(500).json({ ok: false, error: msg });
+      res2.status(500).json({ ok: false, error: msg });
     }
   });
-  app2.patch("/api/nba/admin/series/:id/resolve", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.patch("/api/nba/admin/series/:id/resolve", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const { id } = req.params;
       const { winner, games } = req.body;
       if (!winner || !games) {
-        res.status(400).json({ ok: false, error: "winner and games (4-7) required" });
+        res2.status(400).json({ ok: false, error: "winner and games (4-7) required" });
         return;
       }
       if (games < 4 || games > 7) {
-        res.status(400).json({ ok: false, error: "games must be 4\u20137" });
+        res2.status(400).json({ ok: false, error: "games must be 4\u20137" });
         return;
       }
       const { data: updateData, error: updateError } = await supabase.from("nba_playoff_series").update({ winner, games, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).eq("season", "2026").select();
       if (updateError) throw updateError;
       if (!updateData || updateData.length === 0) {
-        res.status(403).json({ ok: false, error: `Series '${id}' not found or write blocked by DB policy. Run the RLS fix SQL in Supabase.` });
+        res2.status(403).json({ ok: false, error: `Series '${id}' not found or write blocked by DB policy. Run the RLS fix SQL in Supabase.` });
         return;
       }
       await recomputeScores(supabase);
-      res.json({ ok: true, message: `Resolved: ${winner} in ${games} games. Scores updated.` });
+      res2.json({ ok: true, message: `Resolved: ${winner} in ${games} games. Scores updated.` });
     } catch (err) {
       console.error("[nba/admin/resolve]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/nba/admin/scores/recompute", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.get("/api/nba/admin/scores/recompute", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       await recomputeScores(supabase);
-      res.json({ ok: true, message: "Scores recomputed" });
+      res2.json({ ok: true, message: "Scores recomputed" });
     } catch (err) {
       console.error("[nba/admin/recompute]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/reset-to-tbd", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/reset-to-tbd", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const { error, count } = await supabase.from("nba_playoff_series").update({
@@ -5854,14 +5854,14 @@ function registerNBARoutes(app2) {
       }).eq("season", "2026").eq("round", "round1");
       if (error) throw error;
       console.log(`[nba/reset-to-tbd] Reset ${count ?? "?"} series to TBD`);
-      res.json({ ok: true, message: `All R1 series reset to TBD` });
+      res2.json({ ok: true, message: `All R1 series reset to TBD` });
     } catch (err) {
       console.error("[nba/reset-to-tbd]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/seed-known-r1", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/seed-known-r1", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const canonicalIds = [
@@ -5908,17 +5908,17 @@ function registerNBARoutes(app2) {
         { onConflict: "id" }
       );
       if (error) throw error;
-      res.json({ ok: true, seeded: knownRows.length });
+      res2.json({ ok: true, seeded: knownRows.length });
     } catch (err) {
       console.error("[nba/seed-known-r1]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/seed-from-odds", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/seed-from-odds", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     const apiKey = process.env.ODDS_API_KEY;
     if (!apiKey) {
-      res.status(400).json({ ok: false, error: "ODDS_API_KEY not configured" });
+      res2.status(400).json({ ok: false, error: "ODDS_API_KEY not configured" });
       return;
     }
     const EAST_TEAMS = /* @__PURE__ */ new Set([
@@ -5946,7 +5946,7 @@ function registerNBARoutes(app2) {
       const oddsRes = await fetch(url);
       if (!oddsRes.ok) {
         const body = await oddsRes.text();
-        res.status(502).json({ ok: false, error: `Odds API error ${oddsRes.status}`, detail: body });
+        res2.status(502).json({ ok: false, error: `Odds API error ${oddsRes.status}`, detail: body });
         return;
       }
       const events = await oddsRes.json();
@@ -5974,7 +5974,7 @@ function registerNBARoutes(app2) {
         }
       }
       if (seen.size === 0) {
-        res.json({ ok: true, message: "No NBA games found from Odds API", upserted: 0 });
+        res2.json({ ok: true, message: "No NBA games found from Odds API", upserted: 0 });
         return;
       }
       const supabase = getSupabase2();
@@ -6015,52 +6015,52 @@ function registerNBARoutes(app2) {
       const { error } = await supabase.from("nba_playoff_series").upsert(rows, { onConflict: "id" });
       if (error) throw error;
       console.log(`[nba/seed-from-odds] Upserted ${rows.length} series`);
-      res.json({
+      res2.json({
         ok: true,
         upserted: rows.length,
         series: rows.map((r) => ({ id: r.id, team1: r.team1, team2: r.team2, conf: r.conference, starts_at: r.starts_at }))
       });
     } catch (err) {
       console.error("[nba/seed-from-odds]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/test-launch-email", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/test-launch-email", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     const { email } = req.body;
-    if (!email) return res.status(400).json({ ok: false, error: "email required" });
+    if (!email) return res2.status(400).json({ ok: false, error: "email required" });
     try {
       await sendNBALaunchBlast({ to: email, userId: "preview" });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
       console.error("[nba/test-launch-email]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/test-reminder-email", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/test-reminder-email", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     const { email } = req.body;
-    if (!email) return res.status(400).json({ ok: false, error: "email required" });
+    if (!email) return res2.status(400).json({ ok: false, error: "email required" });
     try {
       await sendNBAReminderBlast({ to: email, userId: "preview" });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
       console.error("[nba/test-reminder-email]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/blast-reminder", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/blast-reminder", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed
       );
-      console.log(`[nba/blast-reminder] Sending to ${eligible.length} users`);
+      console.log(`[nba/blast-reminder] Sending to ${eligible2.length} users`);
       let sent = 0;
       const errors = [];
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendNBAReminderBlast({ to: profile.notification_email, userId: profile.id });
           sent++;
@@ -6071,24 +6071,24 @@ function registerNBARoutes(app2) {
         }
       }
       console.log(`[nba/blast-reminder] Done \u2014 sent: ${sent}, errors: ${errors.length}`);
-      res.json({ ok: true, sent, errors: errors.length > 0 ? errors : void 0 });
+      res2.json({ ok: true, sent, errors: errors.length > 0 ? errors : void 0 });
     } catch (err) {
       console.error("[nba/blast-reminder]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/nba/admin/blast-launch", async (req, res) => {
-    if (!requireAdmin(req, res)) return;
+  app2.post("/api/nba/admin/blast-launch", async (req, res2) => {
+    if (!requireAdmin(req, res2)) return;
     try {
       const supabase = getSupabase2();
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-      const eligible = (allProfiles ?? []).filter(
+      const eligible2 = (allProfiles ?? []).filter(
         (p) => p.notification_email && !p.email_unsubscribed
       );
-      console.log(`[nba/blast-launch] Sending to ${eligible.length} users`);
+      console.log(`[nba/blast-launch] Sending to ${eligible2.length} users`);
       let sent = 0;
       const errors = [];
-      for (const profile of eligible) {
+      for (const profile of eligible2) {
         try {
           await sendNBALaunchBlast({
             to: profile.notification_email,
@@ -6102,10 +6102,10 @@ function registerNBARoutes(app2) {
         }
       }
       console.log(`[nba/blast-launch] Done \u2014 sent: ${sent}, errors: ${errors.length}`);
-      res.json({ ok: true, sent, errors: errors.length > 0 ? errors : void 0 });
+      res2.json({ ok: true, sent, errors: errors.length > 0 ? errors : void 0 });
     } catch (err) {
       console.error("[nba/blast-launch]", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
 }
@@ -6231,10 +6231,10 @@ async function autoSettlePicksChallenges(nightId, label) {
     }
   }
 }
-function requireAdmin2(req, res) {
+function requireAdmin2(req, res2) {
   const token = req.headers["x-admin-token"] || req.query["token"];
   if (token !== process.env.MM_ADMIN_TOKEN) {
-    res.status(401).json({ ok: false, error: "Unauthorized" });
+    res2.status(401).json({ ok: false, error: "Unauthorized" });
     return false;
   }
   return true;
@@ -6263,9 +6263,9 @@ async function fetchSGOEventMap(eventIDs, nightDate) {
       url.searchParams.set("startsAfter", windowStart);
       url.searchParams.set("includeResults", "true");
       if (cursor) url.searchParams.set("cursor", cursor);
-      const res = await fetch(url.toString(), { headers: { "X-Api-Key": apiKey } });
-      if (!res.ok) break;
-      const data = await res.json();
+      const res2 = await fetch(url.toString(), { headers: { "X-Api-Key": apiKey } });
+      if (!res2.ok) break;
+      const data = await res2.json();
       if (!data.success) break;
       pageCount++;
       for (const event of data.data || []) {
@@ -6414,7 +6414,7 @@ function computeScore(correctCount, totalProps) {
   return correctCount * 25;
 }
 function registerPropsRoutes(app2) {
-  app2.get("/api/props/tonight", async (_req, res) => {
+  app2.get("/api/props/tonight", async (_req, res2) => {
     try {
       const supabase = getSupabase3();
       const todayUTC = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
@@ -6423,69 +6423,69 @@ function registerPropsRoutes(app2) {
       const dayAfterTomorrowUTC = new Date(Date.now() + 2 * 24 * 60 * 60 * 1e3).toISOString().slice(0, 10);
       const { data: upcoming, error: upcomingErr } = await supabase.from("prop_nights").select("*").in("status", ["open", "locked"]).gte("date", yesterdayUTC).lte("date", dayAfterTomorrowUTC).order("date", { ascending: true }).limit(1).maybeSingle();
       if (upcomingErr) throw upcomingErr;
-      if (upcoming) return res.json({ ok: true, night: upcoming });
+      if (upcoming) return res2.json({ ok: true, night: upcoming });
       const { data: recent, error: recentErr } = await supabase.from("prop_nights").select("*").in("date", [todayUTC, yesterdayUTC]).eq("status", "resolved").order("date", { ascending: false }).limit(1).maybeSingle();
       if (recentErr) throw recentErr;
-      res.json({ ok: true, night: recent ?? null });
+      res2.json({ ok: true, night: recent ?? null });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/last-night", async (req, res) => {
+  app2.get("/api/props/last-night", async (req, res2) => {
     try {
       const { user_id } = req.query;
       const supabase = getSupabase3();
       const { data: night, error } = await supabase.from("prop_nights").select("*").eq("status", "resolved").order("date", { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
-      if (!night) return res.json({ ok: true, night: null, pick: null });
+      if (!night) return res2.json({ ok: true, night: null, pick: null });
       let pick = null;
       if (user_id) {
         const { data } = await supabase.from("prop_user_picks").select("*").eq("night_id", night.id).eq("user_id", user_id).maybeSingle();
         pick = data;
       }
-      res.json({ ok: true, night, pick });
+      res2.json({ ok: true, night, pick });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/history", async (_req, res) => {
+  app2.get("/api/props/history", async (_req, res2) => {
     try {
       const supabase = getSupabase3();
       const { data, error } = await supabase.from("prop_nights").select("id, date, status, props").eq("status", "resolved").order("date", { ascending: false }).limit(10);
       if (error) throw error;
-      res.json({ ok: true, nights: data ?? [] });
+      res2.json({ ok: true, nights: data ?? [] });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/my-picks", async (req, res) => {
+  app2.get("/api/props/my-picks", async (req, res2) => {
     try {
       const { night_id, user_id } = req.query;
       if (!night_id || !user_id) {
-        return res.status(400).json({ ok: false, error: "night_id and user_id required" });
+        return res2.status(400).json({ ok: false, error: "night_id and user_id required" });
       }
       const supabase = getSupabase3();
       const { data, error } = await supabase.from("prop_user_picks").select("*").eq("night_id", night_id).eq("user_id", user_id).maybeSingle();
       if (error) throw error;
-      res.json({ ok: true, pick: data ?? null });
+      res2.json({ ok: true, pick: data ?? null });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/props/pick", async (req, res) => {
+  app2.post("/api/props/pick", async (req, res2) => {
     try {
       const { night_id, user_id, picks } = req.body;
       if (!night_id || !user_id || !Array.isArray(picks)) {
-        return res.status(400).json({ ok: false, error: "night_id, user_id, picks required" });
+        return res2.status(400).json({ ok: false, error: "night_id, user_id, picks required" });
       }
       const supabase = getSupabase3();
       const { data: night, error: nightErr } = await supabase.from("prop_nights").select("status, lock_time, props").eq("id", night_id).maybeSingle();
       if (nightErr) throw nightErr;
-      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+      if (!night) return res2.status(404).json({ ok: false, error: "Night not found" });
       const now = /* @__PURE__ */ new Date();
       const lockTime = new Date(night.lock_time);
       if (now >= lockTime || night.status !== "open") {
-        return res.status(403).json({ ok: false, error: "Picks are locked" });
+        return res2.status(403).json({ ok: false, error: "Picks are locked" });
       }
       const { error } = await supabase.from("prop_user_picks").upsert(
         {
@@ -6499,12 +6499,12 @@ function registerPropsRoutes(app2) {
         { onConflict: "user_id,night_id" }
       );
       if (error) throw error;
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/leaderboard", async (req, res) => {
+  app2.get("/api/props/leaderboard", async (req, res2) => {
     try {
       const supabase = getSupabase3();
       const roundParam = req.query.round ? Number(req.query.round) : null;
@@ -6513,7 +6513,7 @@ function registerPropsRoutes(app2) {
         const { start, end } = PICK_ROUNDS[roundParam];
         const { data: nights } = await supabase.from("prop_nights").select("id").gte("date", start).lte("date", end);
         const nightIds = (nights ?? []).map((n) => n.id);
-        if (nightIds.length === 0) return res.json({ ok: true, leaderboard: [], round: roundParam });
+        if (nightIds.length === 0) return res2.json({ ok: true, leaderboard: [], round: roundParam });
         const { data: p, error } = await supabase.from("prop_user_picks").select("user_id, score, correct_count").in("night_id", nightIds);
         if (error) throw error;
         picks = p;
@@ -6532,7 +6532,7 @@ function registerPropsRoutes(app2) {
         userMap[p.user_id].nights_played += 1;
       }
       const userIds = Object.keys(userMap);
-      if (userIds.length === 0) return res.json({ ok: true, leaderboard: [], round: roundParam ?? null });
+      if (userIds.length === 0) return res2.json({ ok: true, leaderboard: [], round: roundParam ?? null });
       const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
       const profileMap = {};
       for (const p of allProfiles ?? []) {
@@ -6546,17 +6546,17 @@ function registerPropsRoutes(app2) {
         display_name: profileMap[user_id]?.display_name ?? "",
         ...stats
       })).sort((a, b) => b.total_score - a.total_score || b.total_correct - a.total_correct).slice(0, 50);
-      res.json({ ok: true, leaderboard, round: roundParam ?? null });
+      res2.json({ ok: true, leaderboard, round: roundParam ?? null });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/night", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/night", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const { date, lock_time, props, id, sport } = req.body;
       if (!date || !lock_time || !Array.isArray(props)) {
-        return res.status(400).json({ ok: false, error: "date, lock_time, props required" });
+        return res2.status(400).json({ ok: false, error: "date, lock_time, props required" });
       }
       const supabase = getSupabase3();
       if (id) {
@@ -6564,21 +6564,21 @@ function registerPropsRoutes(app2) {
         if (sport) updatePayload.sport = sport;
         const { error: error2 } = await supabase.from("prop_nights").update(updatePayload).eq("id", id);
         if (error2) throw error2;
-        return res.json({ ok: true, updated: true });
+        return res2.json({ ok: true, updated: true });
       }
       const { data, error } = await supabase.from("prop_nights").insert({ date, lock_time, props, status: "open", sport: sport ?? "NBA" }).select("id").single();
       if (error) throw error;
-      res.json({ ok: true, id: data.id });
+      res2.json({ ok: true, id: data.id });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/manual-night", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/manual-night", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const { date, lock_time, questions, sport } = req.body;
       if (!date || !lock_time || !Array.isArray(questions) || questions.length === 0) {
-        return res.status(400).json({ ok: false, error: "date, lock_time, questions[] required" });
+        return res2.status(400).json({ ok: false, error: "date, lock_time, questions[] required" });
       }
       const props = questions.map((q, i) => ({
         id: `prop_${i + 1}`,
@@ -6598,24 +6598,24 @@ function registerPropsRoutes(app2) {
       const supabase = getSupabase3();
       const { data, error } = await supabase.from("prop_nights").insert({ date, lock_time, props, status: "open", sport: sport ?? "Other" }).select("id").single();
       if (error) throw error;
-      res.json({ ok: true, id: data.id, props });
+      res2.json({ ok: true, id: data.id, props });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/admin/props/open-nights", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/open-nights", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data, error } = await supabase.from("prop_nights").select("id, date, lock_time, status, props, sport").in("status", ["open", "locked"]).order("date", { ascending: true });
       if (error) throw error;
-      res.json({ ok: true, nights: data ?? [] });
+      res2.json({ ok: true, nights: data ?? [] });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/admin/props/hq-challenge-link", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/hq-challenge-link", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const nightId = req.query.night_id;
@@ -6633,11 +6633,11 @@ function registerPropsRoutes(app2) {
         }
       }
       if (!night) {
-        return res.status(404).json({ ok: false, error: "No open prop night found" });
+        return res2.status(404).json({ ok: false, error: "No open prop night found" });
       }
       const baseUrl = "https://www.swayger.app";
       const url = `${baseUrl}/picks?hq=1`;
-      res.json({
+      res2.json({
         ok: true,
         night_id: night.id,
         night_date: night.date,
@@ -6653,14 +6653,14 @@ function registerPropsRoutes(app2) {
         }
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/send-challenge-email", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/send-challenge-email", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const { to, displayName, userId, lockTime, props, hqChallengeUrl, picksUrl } = req.body;
-      if (!to) return res.status(400).json({ ok: false, error: "to is required" });
+      if (!to) return res2.status(400).json({ ok: false, error: "to is required" });
       const { sendNightlyPicksChallenge: sendNightlyPicksChallenge2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       await sendNightlyPicksChallenge2({
         to,
@@ -6676,24 +6676,24 @@ function registerPropsRoutes(app2) {
         hqChallengeUrl: hqChallengeUrl ?? "https://www.swayger.app/picks?hq=1",
         picksUrl: picksUrl ?? "https://www.swayger.app/picks"
       });
-      res.json({ ok: true, sent_to: to });
+      res2.json({ ok: true, sent_to: to });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/admin/props/preview-challenge-email", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/preview-challenge-email", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { buildNightlyPicksChallengePreview: buildNightlyPicksChallengePreview2 } = await Promise.resolve().then(() => (init_email(), email_exports));
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildNightlyPicksChallengePreview2());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildNightlyPicksChallengePreview2());
   });
-  app2.get("/admin/props/email-preview/challenge", async (_req, res) => {
+  app2.get("/admin/props/email-preview/challenge", async (_req, res2) => {
     const { buildNightlyPicksChallengePreview: buildNightlyPicksChallengePreview2 } = await Promise.resolve().then(() => (init_email(), email_exports));
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildNightlyPicksChallengePreview2());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildNightlyPicksChallengePreview2());
   });
-  app2.get("/api/admin/props/blast-challenge-email/dry-run", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-challenge-email/dry-run", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -6708,22 +6708,22 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => !p.email_unsubscribed);
-      const recipients = eligible.map((u) => ({
+      const eligible2 = deduped.filter((p) => !p.email_unsubscribed);
+      const recipients = eligible2.map((u) => ({
         user_id: u.id,
         email: u.notification_email,
         display_name: u.display_name || u.username,
         hq_url: `https://www.swayger.app/picks?hq=1&uid=${u.id}`
       }));
-      res.json({ ok: true, total_eligible: eligible.length, recipients });
+      res2.json({ ok: true, total_eligible: eligible2.length, recipients });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-challenge-email", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-challenge-email", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
       return;
     }
     try {
@@ -6741,10 +6741,10 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => !p.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendNightlyPicksChallenge2({
             to: user.notification_email,
@@ -6761,19 +6761,19 @@ function registerPropsRoutes(app2) {
         }
       }
       console.log(`[challenge-blast] complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[challenge-blast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/admin/props/email-preview/weekend-picks", (_req, res) => {
+  app2.get("/admin/props/email-preview/weekend-picks", (_req, res2) => {
     const { buildWeekendPicksBlastPreview: buildWeekendPicksBlastPreview2 } = (init_email(), __toCommonJS(email_exports));
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildWeekendPicksBlastPreview2());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildWeekendPicksBlastPreview2());
   });
-  app2.get("/api/admin/props/blast-weekend-picks/dry-run", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-weekend-picks/dry-run", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -6788,25 +6788,25 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
-      res.json({
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res2.json({
         ok: true,
-        total_eligible: eligible.length,
-        recipients: eligible.map((u) => ({
+        total_eligible: eligible2.length,
+        recipients: eligible2.map((u) => ({
           user_id: u.id,
           email: u.notification_email,
           display_name: u.display_name || u.username
         }))
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-weekend-picks/test", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-weekend-picks/test", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { email, name } = req.body;
     if (!email) {
-      res.status(400).json({ ok: false, error: "email is required" });
+      res2.status(400).json({ ok: false, error: "email is required" });
       return;
     }
     try {
@@ -6817,15 +6817,15 @@ function registerPropsRoutes(app2) {
         userId: "test-preview",
         picksUrl: "https://www.swayger.app/picks"
       });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-weekend-picks", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-weekend-picks", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
       return;
     }
     try {
@@ -6843,10 +6843,10 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendWeekendPicksBlast2({
             to: user.notification_email,
@@ -6862,19 +6862,19 @@ function registerPropsRoutes(app2) {
         }
       }
       console.log(`[weekend-blast] complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[weekend-blast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/admin/props/email-preview/cf-bracket", (_req, res) => {
+  app2.get("/admin/props/email-preview/cf-bracket", (_req, res2) => {
     const { buildCFBracketBlastPreview: buildCFBracketBlastPreview2 } = (init_email(), __toCommonJS(email_exports));
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildCFBracketBlastPreview2());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildCFBracketBlastPreview2());
   });
-  app2.get("/api/admin/props/blast-cf-bracket/dry-run", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-cf-bracket/dry-run", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -6886,17 +6886,17 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
-      res.json({ ok: true, total_eligible: eligible.length, recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, name: u.display_name || u.username })) });
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res2.json({ ok: true, total_eligible: eligible2.length, recipients: eligible2.map((u) => ({ user_id: u.id, email: u.notification_email, name: u.display_name || u.username })) });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-cf-bracket/test", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-cf-bracket/test", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { email, name } = req.body;
     if (!email) {
-      res.status(400).json({ ok: false, error: "email is required" });
+      res2.status(400).json({ ok: false, error: "email is required" });
       return;
     }
     try {
@@ -6908,15 +6908,15 @@ function registerPropsRoutes(app2) {
         bracketUrl: "https://www.swayger.app/playoffs/bracket",
         picksUrl: "https://www.swayger.app/picks"
       });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-cf-bracket", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-cf-bracket", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused" });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused" });
       return;
     }
     try {
@@ -6930,11 +6930,11 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
       const { sendCFBracketBlast: sendCFBracketBlast2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendCFBracketBlast2({
             to: user.notification_email,
@@ -6951,20 +6951,20 @@ function registerPropsRoutes(app2) {
         }
       }
       console.log(`[cf-bracket-blast] complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[cf-bracket-blast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/admin/props/blast-game-six/preview", (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-game-six/preview", (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { buildGameSixBlastPreview: buildGameSixBlastPreview2 } = (init_email(), __toCommonJS(email_exports));
-    res.setHeader("Content-Type", "text/html");
-    res.send(buildGameSixBlastPreview2());
+    res2.setHeader("Content-Type", "text/html");
+    res2.send(buildGameSixBlastPreview2());
   });
-  app2.get("/api/admin/props/blast-game-six/dry-run", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-game-six/dry-run", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -6976,21 +6976,21 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
-      res.json({
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res2.json({
         ok: true,
-        total_eligible: eligible.length,
-        recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username }))
+        total_eligible: eligible2.length,
+        recipients: eligible2.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username }))
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-game-six/test", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-game-six/test", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { email, name } = req.body;
     if (!email) {
-      res.status(400).json({ ok: false, error: "email is required" });
+      res2.status(400).json({ ok: false, error: "email is required" });
       return;
     }
     try {
@@ -7002,13 +7002,13 @@ function registerPropsRoutes(app2) {
         picksUrl: "https://www.swayger.app/picks",
         swaygerUrl: "https://www.swayger.app"
       });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-game-six", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-game-six", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -7020,11 +7020,11 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
       const { sendGameSixBlast: sendGameSixBlast2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendGameSixBlast2({
             to: user.notification_email,
@@ -7040,43 +7040,43 @@ function registerPropsRoutes(app2) {
         }
       }
       console.log(`[game-six-blast] complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[game-six-blast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/lock/:nightId", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/lock/:nightId", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { error } = await supabase.from("prop_nights").update({ status: "locked" }).eq("id", req.params.nightId);
       if (error) throw error;
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/night/:nightId", async (req, res) => {
+  app2.get("/api/props/night/:nightId", async (req, res2) => {
     try {
       const supabase = getSupabase3();
       const { nightId } = req.params;
       const { data: night, error } = await supabase.from("prop_nights").select("id, date, status, lock_time, props").eq("id", nightId).maybeSingle();
       if (error) throw error;
-      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
-      res.json({ ok: true, night });
+      if (!night) return res2.status(404).json({ ok: false, error: "Night not found" });
+      res2.json({ ok: true, night });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/resolve/:nightId", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/resolve/:nightId", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { nightId } = req.params;
       const { data: night, error: nightErr } = await supabase.from("prop_nights").select("*").eq("id", nightId).maybeSingle();
       if (nightErr) throw nightErr;
-      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+      if (!night) return res2.status(404).json({ ok: false, error: "Night not found" });
       const props = night.props;
       const nightSport = night.sport ?? "NBA";
       let resolvedProps;
@@ -7136,23 +7136,23 @@ function registerPropsRoutes(app2) {
       } catch (autoErr) {
         console.error("[props] auto-settle picks challenge error:", autoErr);
       }
-      res.json({ ok: true, resolvedProps });
+      res2.json({ ok: true, resolvedProps });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/manual-resolve/:nightId", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/manual-resolve/:nightId", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { nightId } = req.params;
       const { results } = req.body;
       if (!results || typeof results !== "object") {
-        return res.status(400).json({ ok: false, error: "results object required: {prop_id: 'over'|'under'|'voided'}" });
+        return res2.status(400).json({ ok: false, error: "results object required: {prop_id: 'over'|'under'|'voided'}" });
       }
       const { data: night, error: nightErr } = await supabase.from("prop_nights").select("*").eq("id", nightId).maybeSingle();
       if (nightErr) throw nightErr;
-      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+      if (!night) return res2.status(404).json({ ok: false, error: "Night not found" });
       const props = night.props;
       const resolvedProps = props.map((prop) => {
         const manualResult = results[prop.id];
@@ -7184,26 +7184,26 @@ function registerPropsRoutes(app2) {
       } catch (autoErr) {
         console.error("[props] manual-resolve auto-settle error:", autoErr);
       }
-      res.json({ ok: true, resolvedProps, picksScored: (userPicks ?? []).length });
+      res2.json({ ok: true, resolvedProps, picksScored: (userPicks ?? []).length });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/api/props/challenge-result", async (req, res) => {
+  app2.get("/api/props/challenge-result", async (req, res2) => {
     try {
       const supabase = getSupabase3();
       const { swayger_id } = req.query;
-      if (!swayger_id) return res.status(400).json({ ok: false, error: "swayger_id required" });
+      if (!swayger_id) return res2.status(400).json({ ok: false, error: "swayger_id required" });
       const { data: sw } = await supabase.from("swaygers").select("id, creator_id, opponent_id, description, settled_outcome").eq("id", swayger_id).maybeSingle();
-      if (!sw) return res.status(404).json({ ok: false, error: "Swayger not found" });
+      if (!sw) return res2.status(404).json({ ok: false, error: "Swayger not found" });
       const nightMatch = (sw.description ?? "").match(/\[night:([^\]]+)\]/);
       const nightId = nightMatch?.[1] ?? null;
-      if (!nightId) return res.json({ ok: true, nightId: null, creator_score: null, opp_score: null });
+      if (!nightId) return res2.json({ ok: true, nightId: null, creator_score: null, opp_score: null });
       const [{ data: creatorRow }, { data: oppRow }] = await Promise.all([
         supabase.from("prop_user_picks").select("correct_count").eq("night_id", nightId).eq("user_id", sw.creator_id).maybeSingle(),
         sw.opponent_id ? supabase.from("prop_user_picks").select("correct_count").eq("night_id", nightId).eq("user_id", sw.opponent_id).maybeSingle() : Promise.resolve({ data: null })
       ]);
-      res.json({
+      res2.json({
         ok: true,
         nightId,
         creator_score: creatorRow?.correct_count ?? null,
@@ -7211,23 +7211,23 @@ function registerPropsRoutes(app2) {
         settled_outcome: sw.settled_outcome ?? null
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/void/:nightId/:propId", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/void/:nightId/:propId", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { nightId, propId } = req.params;
       const { data: night } = await supabase.from("prop_nights").select("props").eq("id", nightId).maybeSingle();
-      if (!night) return res.status(404).json({ ok: false, error: "Night not found" });
+      if (!night) return res2.status(404).json({ ok: false, error: "Night not found" });
       const props = night.props.map(
         (p) => p.id === propId ? { ...p, status: "voided" } : p
       );
       await supabase.from("prop_nights").update({ props }).eq("id", nightId);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
   async function getRoundLeaderboard(roundNum) {
@@ -7265,29 +7265,29 @@ function registerPropsRoutes(app2) {
     })).sort((a, b) => b.total_score - a.total_score || b.total_correct - a.total_correct);
     return { leaderboard, nightsInRound: nightIds.length, roundLabel: roundConfig.label };
   }
-  app2.get("/api/admin/props/round/:roundNum/leaderboard", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/round/:roundNum/leaderboard", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const roundNum = Number(req.params.roundNum);
-      if (!PICK_ROUNDS[roundNum]) return res.status(400).json({ ok: false, error: `Unknown round: ${roundNum}` });
+      if (!PICK_ROUNDS[roundNum]) return res2.status(400).json({ ok: false, error: `Unknown round: ${roundNum}` });
       const result = await getRoundLeaderboard(roundNum);
-      if (result.error) return res.status(500).json({ ok: false, error: result.error });
-      res.json({ ok: true, round: roundNum, round_label: result.roundLabel, nights_in_round: result.nightsInRound, leaderboard: result.leaderboard });
+      if (result.error) return res2.status(500).json({ ok: false, error: result.error });
+      res2.json({ ok: true, round: roundNum, round_label: result.roundLabel, nights_in_round: result.nightsInRound, leaderboard: result.leaderboard });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/send-round-winner-email", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/send-round-winner-email", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { round } = req.body;
-    if (!round) return res.status(400).json({ ok: false, error: "round is required in body" });
-    if (!PICK_ROUNDS[round]) return res.status(400).json({ ok: false, error: `Unknown round: ${round}` });
+    if (!round) return res2.status(400).json({ ok: false, error: "round is required in body" });
+    if (!PICK_ROUNDS[round]) return res2.status(400).json({ ok: false, error: `Unknown round: ${round}` });
     try {
       const result = await getRoundLeaderboard(round);
-      if (result.error) return res.status(500).json({ ok: false, error: result.error });
-      if (result.leaderboard.length === 0) return res.json({ ok: false, error: "No participants found for this round." });
+      if (result.error) return res2.status(500).json({ ok: false, error: result.error });
+      if (result.leaderboard.length === 0) return res2.json({ ok: false, error: "No participants found for this round." });
       const winner = result.leaderboard[0];
-      if (!winner.email) return res.status(404).json({ ok: false, error: `Winner (${winner.username}) has no email on file.` });
+      if (!winner.email) return res2.status(404).json({ ok: false, error: `Winner (${winner.username}) has no email on file.` });
       const { sendRoundWinnerEmail: sendRoundWinnerEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       await sendRoundWinnerEmail2({
         to: winner.email,
@@ -7301,24 +7301,24 @@ function registerPropsRoutes(app2) {
         rank: 1,
         totalPlayers: result.leaderboard.length
       });
-      res.json({
+      res2.json({
         ok: true,
         sent_to: winner.email,
         winner: { username: winner.username, score: winner.total_score, correct: winner.total_correct, nights: winner.nights_played },
         total_players: result.leaderboard.length
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.get("/admin/props/email-preview/round-launch", (_req, res) => {
+  app2.get("/admin/props/email-preview/round-launch", (_req, res2) => {
     Promise.resolve().then(() => (init_email(), email_exports)).then(({ buildRoundLaunchBlastPreview: buildRoundLaunchBlastPreview2 }) => {
-      res.setHeader("Content-Type", "text/html");
-      res.send(buildRoundLaunchBlastPreview2());
-    }).catch((err) => res.status(500).send(String(err)));
+      res2.setHeader("Content-Type", "text/html");
+      res2.send(buildRoundLaunchBlastPreview2());
+    }).catch((err) => res2.status(500).send(String(err)));
   });
-  app2.get("/api/admin/props/blast-round-launch/dry-run", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.get("/api/admin/props/blast-round-launch/dry-run", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     try {
       const supabase = getSupabase3();
       const { data: emailProfiles } = await supabase.rpc("get_all_notification_profiles");
@@ -7330,28 +7330,28 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
-      res.json({ ok: true, total_eligible: eligible.length, recipients: eligible.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username })) });
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      res2.json({ ok: true, total_eligible: eligible2.length, recipients: eligible2.map((u) => ({ user_id: u.id, email: u.notification_email, display_name: u.display_name || u.username })) });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-round-launch/test", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-round-launch/test", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     const { email, name } = req.body;
-    if (!email) return res.status(400).json({ ok: false, error: "email is required" });
+    if (!email) return res2.status(400).json({ ok: false, error: "email is required" });
     try {
       const { sendRoundLaunchBlast: sendRoundLaunchBlast2 } = await Promise.resolve().then(() => (init_email(), email_exports));
       await sendRoundLaunchBlast2({ to: email, displayName: name || "Friend", userId: "test-preview", picksUrl: "https://www.swayger.app/picks" });
-      res.json({ ok: true, sent_to: email });
+      res2.json({ ok: true, sent_to: email });
     } catch (err) {
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/props/blast-round-launch", async (req, res) => {
-    if (!requireAdmin2(req, res)) return;
+  app2.post("/api/admin/props/blast-round-launch", async (req, res2) => {
+    if (!requireAdmin2(req, res2)) return;
     if (BLAST_EMAILS_PAUSED) {
-      res.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
+      res2.status(403).json({ ok: false, error: "Blast emails are paused (BLAST_EMAILS_PAUSED=true). Flip the flag in routes-mm-admin.ts and restart." });
       return;
     }
     try {
@@ -7366,10 +7366,10 @@ function registerPropsRoutes(app2) {
         seen.add(p.id);
         return true;
       });
-      const eligible = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
+      const eligible2 = deduped.filter((p) => p.notification_email && !p.email_unsubscribed);
       let sent = 0;
       let failed = 0;
-      for (const user of eligible) {
+      for (const user of eligible2) {
         try {
           await sendRoundLaunchBlast2({
             to: user.notification_email,
@@ -7385,10 +7385,10 @@ function registerPropsRoutes(app2) {
         }
       }
       console.log(`[round-launch-blast] complete: ${sent} sent, ${failed} failed`);
-      res.json({ ok: true, sent, failed, total_eligible: eligible.length });
+      res2.json({ ok: true, sent, failed, total_eligible: eligible2.length });
     } catch (err) {
       console.error("[round-launch-blast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
 }
@@ -8316,7 +8316,221 @@ function phaseLabel(phase) {
   return phase.charAt(0).toUpperCase() + phase.slice(1).toLowerCase();
 }
 
+// server/gameday-settle-helper.ts
+async function settlePropCore(supabase, { propId, cardId, correctAnswer }) {
+  await supabase.from("gameday_props").update({
+    correct_answer: correctAnswer,
+    status: "settled",
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("id", propId);
+  await supabase.from("gameday_picks").update({ is_correct: true }).eq("prop_id", propId).eq("selected_answer", correctAnswer);
+  await supabase.from("gameday_picks").update({ is_correct: false }).eq("prop_id", propId).neq("selected_answer", correctAnswer);
+  const { data: remaining } = await supabase.from("gameday_props").select("id").eq("card_id", cardId).neq("status", "settled");
+  const cardAutoSettled = !remaining?.length;
+  if (cardAutoSettled) {
+    await supabase.from("gameday_pick_cards").update({ status: "settled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", cardId);
+  }
+  return { propId, cardId, cardAutoSettled };
+}
+
 // server/routes-gameday.ts
+var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
+var _idemCache = /* @__PURE__ */ new Map();
+var _IDEM_TTL_MS = 24 * 60 * 60 * 1e3;
+function _checkIdem(key) {
+  const entry = _idemCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > _IDEM_TTL_MS) {
+    _idemCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+function _storeIdem(key, payload) {
+  for (const [k, v] of _idemCache) {
+    if (Date.now() - v.ts > _IDEM_TTL_MS) _idemCache.delete(k);
+  }
+  _idemCache.set(key, { ts: Date.now(), payload });
+}
+function _genOpId() {
+  return `gso-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+var _PHASE_ORDER = {
+  pregame: 0,
+  halftime: 1,
+  fourth: 2,
+  final_push: 3,
+  penalties: 4
+};
+async function buildSettlementQueue(supabase) {
+  const { data: rawProps, error } = await supabase.from("gameday_props").select(
+    `id, question, answer_options, status, template_prop_id,
+       gameday_pick_cards(
+         id, phase, status, room_id,
+         gameday_rooms(
+           id, room_code, room_name, status,
+           team_a_name, team_b_name, team_a_star, team_b_star,
+           game_date, sport
+         )
+       )`
+  ).neq("status", "settled");
+  if (error) return { error: error.message };
+  const props = rawProps ?? [];
+  const eligible2 = props.filter((p) => {
+    const card = p.gameday_pick_cards;
+    const room = card?.gameday_rooms;
+    return card?.status === "locked" && room?.status === "active";
+  });
+  const eventMap = /* @__PURE__ */ new Map();
+  const LEGACY_KEY = "__legacy__";
+  for (const prop of eligible2) {
+    const card = prop.gameday_pick_cards;
+    const room = card?.gameday_rooms;
+    const evKey = buildEventKey(room?.sport, room?.team_a_name, room?.team_b_name, room?.game_date);
+    const mapKey = evKey ?? LEGACY_KEY + "|" + (room?.id ?? "unknown");
+    if (!eventMap.has(mapKey)) {
+      eventMap.set(mapKey, {
+        event_key: evKey,
+        is_legacy: !evKey,
+        team_a: room?.team_a_name ?? "Unknown",
+        team_b: room?.team_b_name ?? "Unknown",
+        game_date: room?.game_date ?? null,
+        sport: room?.sport ?? null,
+        groups: /* @__PURE__ */ new Map()
+      });
+    }
+    const event = eventMap.get(mapKey);
+    const options = prop.answer_options ?? [];
+    const normQuestion = (prop.question ?? "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    const normOptions = options.map((o) => normalizeAnswerOption(o)).sort();
+    const grpKey = evKey ? buildGroupKey(evKey, card?.phase ?? "", prop.question ?? "", options) : `${mapKey}|${card?.phase ?? ""}|${normQuestion}|${normOptions.join("||")}`;
+    if (!event.groups.has(grpKey)) {
+      event.groups.set(grpKey, {
+        group_key: grpKey,
+        phase: card?.phase ?? "",
+        question: prop.question ?? "",
+        answer_options: options,
+        normalized_options: normOptions,
+        prop_ids: [],
+        room_ids: /* @__PURE__ */ new Set(),
+        template_prop_ids: /* @__PURE__ */ new Set(),
+        unique_questions: /* @__PURE__ */ new Set()
+      });
+    }
+    const grp = event.groups.get(grpKey);
+    grp.prop_ids.push(prop.id);
+    grp.room_ids.add(card.room_id);
+    grp.template_prop_ids.add(prop.template_prop_id ?? null);
+    grp.unique_questions.add(normQuestion);
+  }
+  const events = [];
+  for (const [, ev] of eventMap) {
+    const groupsOut = [];
+    for (const [, grp] of ev.groups) {
+      const templateIds = [...grp.template_prop_ids].filter(Boolean);
+      const uniqueTemplates = new Set(templateIds);
+      let templateConsistency;
+      if (grp.template_prop_ids.has(null) && templateIds.length === 0) {
+        templateConsistency = "none";
+      } else if (uniqueTemplates.size <= 1) {
+        templateConsistency = "consistent";
+      } else {
+        templateConsistency = "mixed";
+      }
+      const conflicts = [];
+      if (grp.unique_questions.size > 1) {
+        conflicts.push(
+          `${grp.unique_questions.size} slightly different question texts detected \u2014 review before settling`
+        );
+      }
+      if (templateConsistency === "mixed") {
+        conflicts.push(
+          `Props link to ${uniqueTemplates.size} different template IDs (${[...uniqueTemplates].join(", ")})`
+        );
+      }
+      const answer_map = grp.answer_options.map((stored) => {
+        const normalized = normalizeAnswerOption(stored);
+        const roundTripResult = mapNormalizedToStored(stored, grp.answer_options);
+        return { stored, normalized, round_trips: roundTripResult === stored };
+      });
+      const ambiguousDetails = detectAmbiguousOptions(grp.answer_options);
+      const hasAmbiguous = ambiguousDetails.length > 0;
+      if (hasAmbiguous) {
+        conflicts.push(`Answer options are ambiguous after normalization \u2014 bulk settlement blocked`);
+      }
+      let settlement_status;
+      if (ev.is_legacy || hasAmbiguous) {
+        settlement_status = "manual_only";
+      } else if (conflicts.length > 0) {
+        settlement_status = "review_required";
+      } else {
+        settlement_status = "safe";
+      }
+      groupsOut.push({
+        group_key: grp.group_key,
+        phase: grp.phase,
+        phase_label: phaseLabel(grp.phase),
+        question: grp.question,
+        answer_options: grp.answer_options,
+        normalized_options: grp.normalized_options,
+        answer_map,
+        has_ambiguous_options: hasAmbiguous,
+        ambiguous_option_details: ambiguousDetails,
+        prop_count: grp.prop_ids.length,
+        room_count: grp.room_ids.size,
+        prop_ids: grp.prop_ids,
+        room_ids: [...grp.room_ids],
+        template_prop_ids: [...grp.template_prop_ids],
+        template_consistency: templateConsistency,
+        conflicts,
+        settlement_status
+      });
+    }
+    groupsOut.sort((a, b) => {
+      const pa = _PHASE_ORDER[a.phase] ?? 9;
+      const pb = _PHASE_ORDER[b.phase] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return a.question.localeCompare(b.question);
+    });
+    const totalPropsEv = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+    const safeCount = groupsOut.filter((g) => g.settlement_status === "safe").length;
+    const reviewCount = groupsOut.filter((g) => g.settlement_status === "review_required").length;
+    const manualCount = groupsOut.filter((g) => g.settlement_status === "manual_only").length;
+    events.push({
+      event_key: ev.event_key,
+      is_legacy: ev.is_legacy,
+      game_label: gameLabel(ev.team_a, ev.team_b, ev.game_date),
+      sport: ev.sport,
+      game_date: ev.game_date,
+      team_a: ev.team_a,
+      team_b: ev.team_b,
+      group_count: groupsOut.length,
+      prop_count: totalPropsEv,
+      safe_count: safeCount,
+      review_count: reviewCount,
+      manual_count: manualCount,
+      groups: groupsOut
+    });
+  }
+  events.sort((a, b) => {
+    if (a.is_legacy !== b.is_legacy) return a.is_legacy ? 1 : -1;
+    return (a.game_date ?? "").localeCompare(b.game_date ?? "");
+  });
+  const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
+  const totalProps = events.reduce((s, e) => s + e.prop_count, 0);
+  const totalSafe = events.reduce((s, e) => s + e.safe_count, 0);
+  const totalReview = events.reduce((s, e) => s + e.review_count, 0);
+  const totalManual = events.reduce((s, e) => s + e.manual_count, 0);
+  return {
+    events,
+    total_events: events.length,
+    total_groups: totalGroups,
+    total_props: totalProps,
+    total_safe: totalSafe,
+    total_review: totalReview,
+    total_manual: totalManual
+  };
+}
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -8378,21 +8592,21 @@ function parseGameDate(raw) {
   const year = parts[2] ? parts[2].replace(/\D/g, "") : currentYearCDT();
   return `${year}-${month}-${day}`;
 }
-async function requireGamedayHost(req, res) {
+async function requireGamedayHost(req, res2) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized" });
+    res2.status(401).json({ error: "Unauthorized" });
     return null;
   }
   const token = auth.slice(7);
   const payload = decodeJwtPayload(token);
   if (!payload?.sub) {
-    res.status(401).json({ error: "Invalid token" });
+    res2.status(401).json({ error: "Invalid token" });
     return null;
   }
   const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
   if (!allowedEmails.includes((payload.email ?? "").toLowerCase())) {
-    res.status(403).json({ error: "Not authorized as Game Day host" });
+    res2.status(403).json({ error: "Not authorized as Game Day host" });
     return null;
   }
   return payload.sub;
@@ -8442,15 +8656,15 @@ async function logEvent(supabase, roomId, participantId, userId, eventType, meta
   }
 }
 function registerGamedayRoutes(app2) {
-  app2.use("/api/gameday", (req, res, next) => {
-    res.setHeader("Cache-Control", "no-store");
+  app2.use("/api/gameday", (req, res2, next) => {
+    res2.setHeader("Cache-Control", "no-store");
     Object.defineProperty(req, "fresh", { get: () => false, configurable: true });
     next();
   });
-  app2.get("/api/gameday/is-host", (req, res) => {
+  app2.get("/api/gameday/is-host", (req, res2) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
-      res.json({ isHost: false });
+      res2.json({ isHost: false });
       return;
     }
     const payload = decodeJwtPayload(auth.slice(7));
@@ -8458,38 +8672,38 @@ function registerGamedayRoutes(app2) {
     const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
     const isHost = allowedEmails.includes(email.toLowerCase());
     console.log(`[gameday] is-host: jwt_email="${email}" allowed=${JSON.stringify(allowedEmails)} \u2192 ${isHost}`);
-    res.json({ isHost });
+    res2.json({ isHost });
   });
-  app2.get("/api/admin/is-admin", (req, res) => {
+  app2.get("/api/admin/is-admin", (req, res2) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
-      res.json({ isAdmin: false });
+      res2.json({ isAdmin: false });
       return;
     }
     const payload = decodeJwtPayload(auth.slice(7));
     const email = (payload?.email ?? "").toLowerCase();
     const adminEmails = (process.env.GAMEDAY_ADMIN_EMAILS ?? process.env.GAMEDAY_HOST_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-    res.json({ isAdmin: adminEmails.includes(email) });
+    res2.json({ isAdmin: adminEmails.includes(email) });
   });
-  app2.get("/api/gameday/public-rooms", async (req, res) => {
+  app2.get("/api/gameday/public-rooms", async (req, res2) => {
     const supabase = getServiceSupabase();
     const { data: rooms, error } = await supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, room_code").eq("is_private", false).is("archived_at", null).neq("status", "finalized").order("created_at", { ascending: false });
     if (error) {
       console.error("[gameday] public-rooms error:", error.message);
-      res.status(500).json({ error: error.message });
+      res2.status(500).json({ error: error.message });
       return;
     }
-    res.json({ rooms: rooms ?? [] });
+    res2.json({ rooms: rooms ?? [] });
   });
-  app2.get("/api/gameday/rooms", async (req, res) => {
+  app2.get("/api/gameday/rooms", async (req, res2) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
-      res.status(401).json({ error: "Unauthorized" });
+      res2.status(401).json({ error: "Unauthorized" });
       return;
     }
     const payload = decodeJwtPayload(auth.slice(7));
     if (!payload?.sub) {
-      res.status(401).json({ error: "Invalid token" });
+      res2.status(401).json({ error: "Invalid token" });
       return;
     }
     const supabase = getServiceSupabase();
@@ -8504,7 +8718,7 @@ function registerGamedayRoutes(app2) {
       if (!isAdminUser) retryQuery = retryQuery.eq("host_user_id", payload.sub);
       const retry = await retryQuery;
       if (retry.error) {
-        res.status(500).json({ error: retry.error.message });
+        res2.status(500).json({ error: retry.error.message });
         return;
       }
       rooms = retry.data;
@@ -8537,7 +8751,7 @@ function registerGamedayRoutes(app2) {
         counts[p.room_id] = (counts[p.room_id] ?? 0) + 1;
       });
     }
-    res.json({
+    res2.json({
       rooms: roomList.map((r) => ({
         ...r,
         participant_count: counts[r.id] ?? 0,
@@ -8545,7 +8759,7 @@ function registerGamedayRoutes(app2) {
       }))
     });
   });
-  app2.get("/api/gameday/template", async (req, res) => {
+  app2.get("/api/gameday/template", async (req, res2) => {
     const sportParam = req.query.sport ?? "nba";
     const isSoccer = sportParam === "soccer";
     const supabase = getServiceSupabase();
@@ -8560,22 +8774,22 @@ function registerGamedayRoutes(app2) {
           settlement_window: p.settlement_window
         }));
         const defaultPropIds = libraryProps.filter((p) => p.is_default).map((p) => p.id);
-        res.json({ template, defaultPropIds });
+        res2.json({ template, defaultPropIds });
         return;
       }
     } catch (e) {
       console.warn("[gameday] prop library query failed, falling back to hardcoded:", e);
     }
-    res.json({
+    res2.json({
       template: isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE,
       defaultPropIds: isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS
     });
   });
-  app2.post("/api/gameday/rooms", async (req, res) => {
+  app2.post("/api/gameday/rooms", async (req, res2) => {
     let hostId = null;
     const botAuthed = isBotApiKeyValid(req);
     if (!botAuthed) {
-      hostId = await requireGamedayHost(req, res);
+      hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
     }
     const {
@@ -8598,7 +8812,7 @@ function registerGamedayRoutes(app2) {
     } = req.body;
     const room_name = _room_name ?? game_label;
     if (!room_name || !team_a_name || !team_b_name || !team_a_star || !team_b_star) {
-      res.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
+      res2.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
       return;
     }
     const isSoccer = sport === "soccer";
@@ -8641,7 +8855,7 @@ function registerGamedayRoutes(app2) {
     }
     if (roomError || !room) {
       console.error("[gameday] create room error:", roomError);
-      res.status(500).json({
+      res2.status(500).json({
         error: `Could not create room: ${roomError?.message ?? "unknown database error"}`
       });
       return;
@@ -8699,7 +8913,7 @@ function registerGamedayRoutes(app2) {
     const returnedCode = room.room_code ?? roomCode ?? null;
     const publicLink = returnedCode ? `${APP_URL2}/g/${returnedCode}` : `${APP_URL2}/gameday/${room.id}`;
     const hostLink = `${APP_URL2}/gameday/${room.id}/host`;
-    res.json({
+    res2.json({
       ok: true,
       room_id: room.id,
       room_code: returnedCode,
@@ -8708,28 +8922,28 @@ function registerGamedayRoutes(app2) {
       room
     });
   });
-  app2.get("/api/gameday/rooms/by-code/:roomCode", async (req, res) => {
+  app2.get("/api/gameday/rooms/by-code/:roomCode", async (req, res2) => {
     const roomCode = (req.params.roomCode ?? "").toUpperCase().trim();
     if (!roomCode) {
-      res.status(400).json({ error: "Missing room code" });
+      res2.status(400).json({ error: "Missing room code" });
       return;
     }
     const supabase = getServiceSupabase();
     const { data: room } = await supabase.from("gameday_rooms").select("id").eq("room_code", roomCode).maybeSingle();
     if (!room) {
-      res.status(404).json({ error: "Room not found" });
+      res2.status(404).json({ error: "Room not found" });
       return;
     }
-    res.json({ room_id: room.id });
+    res2.json({ room_id: room.id });
   });
   app2.get(
     "/api/gameday/rooms/:roomId",
-    async (req, res) => {
+    async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room, error } = await supabase.from("gameday_rooms").select("*").eq("id", roomId).single();
       if (error || !room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select("*, gameday_props(*)").eq("room_id", roomId).order("display_order");
@@ -8790,7 +9004,7 @@ function registerGamedayRoutes(app2) {
         }))
       }));
       const { count } = await supabase.from("gameday_participants").select("id", { count: "exact", head: true }).eq("room_id", roomId);
-      res.json({
+      res2.json({
         room,
         cards: sanitizedCards,
         participant,
@@ -8802,23 +9016,23 @@ function registerGamedayRoutes(app2) {
   );
   app2.post(
     "/api/gameday/rooms/:roomId/join",
-    async (req, res) => {
+    async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("id, status, archived_at").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.archived_at) {
-        res.status(410).json({ error: "This Game Day room is no longer active." });
+        res2.status(410).json({ error: "This Game Day room is no longer active." });
         return;
       }
       const { userId, guestSessionId: existingSession } = await getCallerIdentity(req);
       if (userId) {
         const { data: existing } = await supabase.from("gameday_participants").select("*").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         if (existing) {
-          res.json({ participant: existing });
+          res2.json({ participant: existing });
           return;
         }
         const { data: profile } = await supabase.from("profiles").select("display_name, username").eq("id", userId).maybeSingle();
@@ -8836,7 +9050,7 @@ function registerGamedayRoutes(app2) {
         }).select().single();
         if (error2) {
           console.error("[gameday] join error (logged-in):", error2);
-          res.status(500).json({
+          res2.status(500).json({
             error: `Could not join room: ${error2.message ?? "unknown database error"}`
           });
           return;
@@ -8849,18 +9063,18 @@ function registerGamedayRoutes(app2) {
           "participant_joined",
           { participant_type: "logged_in" }
         );
-        res.json({ participant: participant2 });
+        res2.json({ participant: participant2 });
         return;
       }
       const { display_name } = req.body;
       if (!display_name?.trim()) {
-        res.status(400).json({ error: "display_name is required" });
+        res2.status(400).json({ error: "display_name is required" });
         return;
       }
       const trimmedName = display_name.trim();
       const { data: nameTaken } = await supabase.from("gameday_participants").select("id").eq("room_id", roomId).ilike("display_name", trimmedName).maybeSingle();
       if (nameTaken) {
-        res.status(409).json({
+        res2.status(409).json({
           error: `${trimmedName} is already taken in this room. Try ${trimmedName[0]}. or another name.`
         });
         return;
@@ -8875,10 +9089,10 @@ function registerGamedayRoutes(app2) {
       if (error) {
         console.error("[gameday] join error (guest):", error);
         if (error.code === "23505") {
-          res.status(409).json({ error: `${trimmedName} is already taken in this room.` });
+          res2.status(409).json({ error: `${trimmedName} is already taken in this room.` });
           return;
         }
-        res.status(500).json({
+        res2.status(500).json({
           error: `Could not join room: ${error.message ?? "unknown database error"}`
         });
         return;
@@ -8891,24 +9105,24 @@ function registerGamedayRoutes(app2) {
         "participant_joined",
         { participant_type: "guest" }
       );
-      res.json({ participant, guest_session_id: guestSessionId });
+      res2.json({ participant, guest_session_id: guestSessionId });
     }
   );
   app2.patch(
     "/api/gameday/cards/:cardId/open",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { cardId } = req.params;
       const supabase = getServiceSupabase();
       const { data: card } = await supabase.from("gameday_pick_cards").select("*, gameday_rooms(host_user_id)").eq("id", cardId).single();
       if (!card) {
-        res.status(404).json({ error: "Card not found" });
+        res2.status(404).json({ error: "Card not found" });
         return;
       }
       const openCardRoomHost = card.gameday_rooms?.host_user_id;
       if (openCardRoomHost !== null && openCardRoomHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       await supabase.from("gameday_pick_cards").update({ status: "closed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("room_id", card.room_id).eq("status", "open");
@@ -8916,61 +9130,61 @@ function registerGamedayRoutes(app2) {
       await logEvent(supabase, card.room_id, null, hostId, "card_opened", {
         card_id: cardId
       });
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.patch(
     "/api/gameday/cards/:cardId/lock",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { cardId } = req.params;
       const supabase = getServiceSupabase();
       const { data: card } = await supabase.from("gameday_pick_cards").select("*, gameday_rooms(host_user_id)").eq("id", cardId).single();
       if (!card) {
-        res.status(404).json({ error: "Card not found" });
+        res2.status(404).json({ error: "Card not found" });
         return;
       }
       const lockCardRoomHost = card.gameday_rooms?.host_user_id;
       if (lockCardRoomHost !== null && lockCardRoomHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", cardId);
       await logEvent(supabase, card.room_id, null, hostId, "card_locked", {
         card_id: cardId
       });
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.post(
     "/api/gameday/props/:propId/pick",
-    async (req, res) => {
+    async (req, res2) => {
       const { propId } = req.params;
       const { selected_answer } = req.body;
       if (!selected_answer) {
-        res.status(400).json({ error: "selected_answer is required" });
+        res2.status(400).json({ error: "selected_answer is required" });
         return;
       }
       const supabase = getServiceSupabase();
       const { data: prop } = await supabase.from("gameday_props").select("*, gameday_pick_cards(status, room_id, gameday_rooms(archived_at))").eq("id", propId).single();
       if (!prop) {
-        res.status(404).json({ error: "Prop not found" });
+        res2.status(404).json({ error: "Prop not found" });
         return;
       }
       const roomArchived = prop.gameday_pick_cards?.gameday_rooms?.archived_at;
       if (roomArchived) {
-        res.status(410).json({ error: "This Game Day room is no longer active." });
+        res2.status(410).json({ error: "This Game Day room is no longer active." });
         return;
       }
       const cardStatus = prop.gameday_pick_cards?.status;
       if (cardStatus !== "open") {
-        res.status(400).json({ error: "This pick card is not open" });
+        res2.status(400).json({ error: "This pick card is not open" });
         return;
       }
       const options = prop.answer_options;
       if (!options.includes(selected_answer)) {
-        res.status(400).json({ error: "Invalid answer option" });
+        res2.status(400).json({ error: "Invalid answer option" });
         return;
       }
       const { userId, guestSessionId } = await getCallerIdentity(req);
@@ -8984,7 +9198,7 @@ function registerGamedayRoutes(app2) {
         participant = data;
       }
       if (!participant) {
-        res.status(401).json({ error: "Join the room first before picking" });
+        res2.status(401).json({ error: "Join the room first before picking" });
         return;
       }
       const { data: pick, error } = await supabase.from("gameday_picks").upsert(
@@ -8998,7 +9212,7 @@ function registerGamedayRoutes(app2) {
       ).select().single();
       if (error) {
         console.error("[gameday] pick error:", error);
-        res.status(500).json({
+        res2.status(500).json({
           error: `Could not save pick: ${error.message ?? "unknown database error"}`
         });
         return;
@@ -9006,18 +9220,18 @@ function registerGamedayRoutes(app2) {
       await logEvent(supabase, roomId, participant.id, userId, "pick_submitted", {
         prop_id: propId
       });
-      res.json({ ok: true, pick });
+      res2.json({ ok: true, pick });
     }
   );
   app2.patch(
     "/api/gameday/props/:propId/settle",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { propId } = req.params;
       const { correct_answer } = req.body;
       if (!correct_answer) {
-        res.status(400).json({ error: "correct_answer is required" });
+        res2.status(400).json({ error: "correct_answer is required" });
         return;
       }
       const supabase = getServiceSupabase();
@@ -9025,35 +9239,25 @@ function registerGamedayRoutes(app2) {
         "*, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
       ).eq("id", propId).single();
       if (!prop) {
-        res.status(404).json({ error: "Prop not found" });
+        res2.status(404).json({ error: "Prop not found" });
         return;
       }
       const card = prop.gameday_pick_cards;
       const gdRoom = card?.gameday_rooms;
       if (gdRoom?.host_user_id !== null && gdRoom?.host_user_id !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (gdRoom?.status === "finalized") {
-        res.status(400).json({ error: "Room is finalized \u2014 results are read-only" });
+        res2.status(400).json({ error: "Room is finalized \u2014 results are read-only" });
         return;
       }
       const options = prop.answer_options;
       if (!options.includes(correct_answer)) {
-        res.status(400).json({ error: "Invalid correct answer" });
+        res2.status(400).json({ error: "Invalid correct answer" });
         return;
       }
-      await supabase.from("gameday_props").update({
-        correct_answer,
-        status: "settled",
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      }).eq("id", propId);
-      await supabase.from("gameday_picks").update({ is_correct: true }).eq("prop_id", propId).eq("selected_answer", correct_answer);
-      await supabase.from("gameday_picks").update({ is_correct: false }).eq("prop_id", propId).neq("selected_answer", correct_answer);
-      const { data: remainingProps } = await supabase.from("gameday_props").select("id").eq("card_id", card.id).neq("status", "settled");
-      if (!remainingProps?.length) {
-        await supabase.from("gameday_pick_cards").update({ status: "settled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
-      }
+      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswer: correct_answer });
       const roomId = card?.room_id;
       await logEvent(supabase, roomId, null, hostId, "prop_settled", {
         prop_id: propId,
@@ -9061,73 +9265,73 @@ function registerGamedayRoutes(app2) {
         phase: card?.phase,
         correct_answer
       });
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.patch(
     "/api/gameday/rooms/:roomId/finalize",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (room.status === "finalized") {
         console.log(`[gameday] finalize: room ${roomId} already finalized`);
-        res.json({ ok: true, already: true });
+        res2.json({ ok: true, already: true });
         return;
       }
       console.log(`[gameday] finalize: attempting to write status=finalized for room ${roomId}, hostId=${hostId}, stored host_user_id=${room.host_user_id}`);
       const { error: updateError } = await supabase.from("gameday_rooms").update({ status: "finalized" }).eq("id", roomId);
       if (updateError) {
         console.error(`[gameday] finalize: DB update FAILED for room ${roomId}:`, updateError.message, updateError);
-        res.status(500).json({ error: `Failed to finalize room: ${updateError.message}` });
+        res2.status(500).json({ error: `Failed to finalize room: ${updateError.message}` });
         return;
       }
       const { data: verify } = await supabase.from("gameday_rooms").select("status").eq("id", roomId).single();
       console.log(`[gameday] finalize: write confirmed, status is now: ${verify?.status}`);
       await logEvent(supabase, roomId, null, hostId, "room_finalized", {});
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.patch(
     "/api/gameday/rooms/:roomId/archive",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at, source").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (room.status === "finalized") {
-        res.status(400).json({
+        res2.status(400).json({
           error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
         });
         return;
       }
       if (room.archived_at) {
-        res.json({ ok: true, already: true });
+        res2.json({ ok: true, already: true });
         return;
       }
       const { error: updateError } = await supabase.from("gameday_rooms").update({ archived_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", roomId);
       if (updateError) {
         console.error("[gameday] archive error:", updateError.message);
-        res.status(500).json({ error: "Failed to archive room" });
+        res2.status(500).json({ error: "Failed to archive room" });
         return;
       }
       await logEvent(supabase, roomId, null, hostId, "room_archived", {
@@ -9135,104 +9339,104 @@ function registerGamedayRoutes(app2) {
         source: room.source ?? "app"
       });
       console.log(`[gameday] room archived: ${roomId} by ${hostId.slice(0, 8)}\u2026`);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.patch(
     "/api/gameday/rooms/:roomId/rename",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const { room_name } = req.body;
       const trimmed = (room_name ?? "").trim();
       if (!trimmed) {
-        res.status(400).json({ error: "room_name is required" });
+        res2.status(400).json({ error: "room_name is required" });
         return;
       }
       if (trimmed.length > 120) {
-        res.status(400).json({ error: "room_name must be 120 characters or fewer" });
+        res2.status(400).json({ error: "room_name must be 120 characters or fewer" });
         return;
       }
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, archived_at").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (room.archived_at) {
-        res.status(400).json({ error: "Archived rooms cannot be renamed" });
+        res2.status(400).json({ error: "Archived rooms cannot be renamed" });
         return;
       }
       const { error: updateError } = await supabase.from("gameday_rooms").update({ room_name: trimmed }).eq("id", roomId);
       if (updateError) {
         console.error("[gameday] rename error:", updateError.message);
-        res.status(500).json({ error: "Failed to rename room" });
+        res2.status(500).json({ error: "Failed to rename room" });
         return;
       }
       await logEvent(supabase, roomId, null, hostId, "room_renamed", {
         new_name: trimmed
       });
       console.log(`[gameday] room renamed: ${roomId} \u2192 "${trimmed}"`);
-      res.json({ ok: true, room_name: trimmed });
+      res2.json({ ok: true, room_name: trimmed });
     }
   );
   app2.patch(
     "/api/gameday/rooms/:roomId/visibility",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const { is_private } = req.body;
       if (typeof is_private !== "boolean") {
-        res.status(400).json({ error: "is_private must be a boolean" });
+        res2.status(400).json({ error: "is_private must be a boolean" });
         return;
       }
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, archived_at").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       const { error: updateError } = await supabase.from("gameday_rooms").update({ is_private }).eq("id", roomId);
       if (updateError) {
         console.error("[gameday] visibility update error:", updateError.message);
-        res.status(500).json({ error: "Failed to update visibility" });
+        res2.status(500).json({ error: "Failed to update visibility" });
         return;
       }
       console.log(`[gameday] room ${roomId} visibility \u2192 is_private=${is_private}`);
-      res.json({ ok: true, is_private });
+      res2.json({ ok: true, is_private });
     }
   );
   app2.post(
     "/api/gameday/rooms/:roomId/duplicate",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const { room_name: customName } = req.body;
       const supabase = getServiceSupabase();
       const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private").eq("id", roomId).single();
       if (!srcRoom) {
-        res.status(404).json({ error: "Source room not found" });
+        res2.status(404).json({ error: "Source room not found" });
         return;
       }
       const { data: srcCards } = await supabase.from("gameday_pick_cards").select("phase, title, display_order, gameday_props(question, answer_options, display_order)").eq("room_id", roomId).order("display_order");
       if (!srcCards || srcCards.length === 0) {
-        res.status(400).json({ error: "Source room has no cards to duplicate" });
+        res2.status(400).json({ error: "Source room has no cards to duplicate" });
         return;
       }
       const newName = (customName ?? "").trim() || `Copy of ${srcRoom.room_name}`;
       if (newName.length > 120) {
-        res.status(400).json({ error: "room_name must be 120 characters or fewer" });
+        res2.status(400).json({ error: "room_name must be 120 characters or fewer" });
         return;
       }
       let roomCode;
@@ -9257,7 +9461,7 @@ function registerGamedayRoutes(app2) {
       const { data: newRoom, error: roomErr } = await supabase.from("gameday_rooms").insert(newRoomPayload).select().single();
       if (roomErr || !newRoom) {
         console.error("[gameday] duplicate room insert error:", roomErr);
-        res.status(500).json({ error: "Failed to create duplicate room" });
+        res2.status(500).json({ error: "Failed to create duplicate room" });
         return;
       }
       for (const srcCard of srcCards) {
@@ -9287,21 +9491,21 @@ function registerGamedayRoutes(app2) {
         duplicated_from: roomId
       });
       console.log(`[gameday] room duplicated: ${roomId} \u2192 ${newRoom.id} "${newName}"`);
-      res.json({ ok: true, room_id: newRoom.id, room_name: newName, room_code: newRoom.room_code ?? null });
+      res2.json({ ok: true, room_id: newRoom.id, room_name: newName, room_code: newRoom.room_code ?? null });
     }
   );
   app2.get(
     "/api/gameday/rooms/:roomRef/leaderboard",
-    async (req, res) => {
+    async (req, res2) => {
       const supabase = getServiceSupabase();
       const roomId = await resolveRoomRef(supabase, req.params.roomRef);
       if (!roomId) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       const { data: roomMeta } = await supabase.from("gameday_rooms").select("archived_at").eq("id", roomId).single();
       if (roomMeta?.archived_at) {
-        res.status(410).json({
+        res2.status(410).json({
           ok: false,
           archived: true,
           message: "This Game Day room has been archived and is no longer active."
@@ -9310,7 +9514,7 @@ function registerGamedayRoutes(app2) {
       }
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       if (!participants?.length) {
-        res.json({ leaderboard: [] });
+        res2.json({ leaderboard: [] });
         return;
       }
       const participantIds = participants.map((p) => p.id);
@@ -9343,25 +9547,25 @@ function registerGamedayRoutes(app2) {
           rank = i + 1;
         return { ...s, rank };
       });
-      res.json({ leaderboard });
+      res2.json({ leaderboard });
     }
   );
   app2.get(
     "/api/gameday/rooms/:roomRef/final-standings",
-    async (req, res) => {
+    async (req, res2) => {
       const supabase = getServiceSupabase();
       const roomId = await resolveRoomRef(supabase, req.params.roomRef);
       if (!roomId) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       const { data: room } = await supabase.from("gameday_rooms").select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date").eq("id", roomId).single();
       if (!room) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       if (room.archived_at) {
-        res.status(410).json({
+        res2.status(410).json({
           ok: false,
           archived: true,
           message: "This Game Day room has been archived and is no longer active."
@@ -9369,7 +9573,7 @@ function registerGamedayRoutes(app2) {
         return;
       }
       if (room.status !== "finalized") {
-        res.json({
+        res2.json({
           finalized: false,
           message: "This Game Day room is not finalized yet."
         });
@@ -9410,7 +9614,7 @@ function registerGamedayRoutes(app2) {
         "card_id",
         (await supabase.from("gameday_pick_cards").select("id").eq("room_id", roomId)).data?.map((c) => c.id) ?? []
       );
-      res.json({
+      res2.json({
         finalized: true,
         room_id: roomId,
         room_code: roomCode,
@@ -9432,7 +9636,7 @@ function registerGamedayRoutes(app2) {
   );
   app2.post(
     "/api/gameday/rooms/:roomId/final-standings-viewed",
-    async (req, res) => {
+    async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { userId, guestSessionId } = await getCallerIdentity(req);
@@ -9447,20 +9651,20 @@ function registerGamedayRoutes(app2) {
       await logEvent(supabase, roomId, participantId, userId, "final_standings_viewed", {
         participant_type: userId ? "logged_in" : "guest"
       });
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.get(
     "/api/gameday/rooms/:roomId/host-data",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("*").eq("id", roomId).single();
       const hdRoomHost = room.host_user_id;
       if (!room || hdRoomHost !== null && hdRoomHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (!room.room_code) {
@@ -9522,7 +9726,7 @@ function registerGamedayRoutes(app2) {
           return { ...s, rank };
         });
       }
-      res.json({
+      res2.json({
         room,
         cards,
         pick_counts: pickCounts,
@@ -9533,31 +9737,31 @@ function registerGamedayRoutes(app2) {
   );
   app2.patch(
     "/api/gameday/rooms/:roomId/status",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const { status } = req.body;
       const allowed = ["draft", "active", "finalized"];
       if (!status || !allowed.includes(status)) {
-        res.status(400).json({ error: "Invalid status" });
+        res2.status(400).json({ error: "Invalid status" });
         return;
       }
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id").eq("id", roomId).single();
       const spRoomHost = room.host_user_id;
       if (!room || spRoomHost !== null && spRoomHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       await supabase.from("gameday_rooms").update({ status, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", roomId);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   app2.post(
     "/api/gameday/rooms/:roomId/countdown",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const { phase, countdown_type, duration_minutes } = req.body;
@@ -9565,30 +9769,30 @@ function registerGamedayRoutes(app2) {
       const validTypes = ["opens_soon", "locks_soon"];
       const validDurations = [5, 10];
       if (!phase || !validPhases.includes(phase)) {
-        res.status(400).json({ error: "Invalid phase" });
+        res2.status(400).json({ error: "Invalid phase" });
         return;
       }
       if (!countdown_type || !validTypes.includes(countdown_type)) {
-        res.status(400).json({ error: "Invalid countdown_type" });
+        res2.status(400).json({ error: "Invalid countdown_type" });
         return;
       }
       if (!duration_minutes || !validDurations.includes(duration_minutes)) {
-        res.status(400).json({ error: "duration_minutes must be 5 or 10" });
+        res2.status(400).json({ error: "duration_minutes must be 5 or 10" });
         return;
       }
       const supabase = getServiceSupabase();
       const { data: cdRoom } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at").eq("id", roomId).single();
       if (!cdRoom) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       const cdHost = cdRoom.host_user_id;
       if (cdHost !== null && cdHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       if (cdRoom.archived_at || cdRoom.status === "finalized") {
-        res.status(400).json({ error: "Cannot set countdown on archived or finalized room" });
+        res2.status(400).json({ error: "Cannot set countdown on archived or finalized room" });
         return;
       }
       const now = /* @__PURE__ */ new Date();
@@ -9600,12 +9804,12 @@ function registerGamedayRoutes(app2) {
         countdown_started_at: now.toISOString()
       }).eq("id", roomId);
       console.log(`[gameday] countdown set: room=${roomId} phase=${phase} type=${countdown_type} ends=${endsAt.toISOString()}`);
-      res.json({ ok: true, countdown_ends_at: endsAt.toISOString() });
+      res2.json({ ok: true, countdown_ends_at: endsAt.toISOString() });
     }
   );
   app2.post(
     "/api/gameday/rooms/:roomId/next-room-interest",
-    async (req, res) => {
+    async (req, res2) => {
       const { roomId } = req.params;
       const {
         email,
@@ -9620,7 +9824,7 @@ function registerGamedayRoutes(app2) {
       const supabase = getServiceSupabase();
       const { data: rm } = await supabase.from("gameday_rooms").select("id, room_code, source").eq("id", roomId).maybeSingle();
       if (!rm) {
-        res.status(404).json({ ok: false, error: "Room not found" });
+        res2.status(404).json({ ok: false, error: "Room not found" });
         return;
       }
       let userId = null;
@@ -9646,7 +9850,7 @@ function registerGamedayRoutes(app2) {
         console.error("[gameday] next-room-interest insert error:", insertError.message, insertError.code);
       }
       console.log(`[gameday] next-room-interest: room=${roomId} email=${email ?? "none"} user=${userId ?? "guest"}`);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
   function isBlastAdmin(req) {
@@ -9658,7 +9862,7 @@ function registerGamedayRoutes(app2) {
     const sep = roomLink.includes("?") ? "&" : "?";
     return `${roomLink}${sep}src=email&utm_source=email&utm_campaign=gameday_tonight`;
   }
-  app2.get("/admin/gameday/email-preview/blast", (req, res) => {
+  app2.get("/admin/gameday/email-preview/blast", (req, res2) => {
     const gameName = req.query.game_name || "Thunder vs Spurs \u2014 WCF Game 6";
     const roomLink = req.query.room_link || "https://swayger.app/g/GDS-R78VR";
     const trackedRoomLink = buildTrackedLink(roomLink);
@@ -9667,17 +9871,17 @@ function registerGamedayRoutes(app2) {
       trackedRoomLink,
       displayName: "Jordan"
     });
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(html);
+    res2.setHeader("Content-Type", "text/html; charset=utf-8");
+    res2.send(html);
   });
-  app2.post("/admin/gameday/blast-test", async (req, res) => {
+  app2.post("/admin/gameday/blast-test", async (req, res2) => {
     if (!isBlastAdmin(req)) {
-      res.status(403).json({ ok: false, error: "Forbidden" });
+      res2.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
     const { game_name, room_link, subject } = req.body;
     if (!game_name || !room_link) {
-      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      res2.status(400).json({ ok: false, error: "game_name and room_link are required" });
       return;
     }
     const trackedRoomLink = buildTrackedLink(room_link);
@@ -9736,25 +9940,25 @@ ${html.slice(0, 800)}`);
       }).then(({ error }) => {
         if (error) console.warn("[gameday-blast] Failed to log test send:", error.message);
       });
-      res.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink, subject: resolvedSubject, cta: ctaText, resend_message_id: resendId });
+      res2.json({ ok: true, sent_to: TEST_EMAIL, tracked_link: trackedRoomLink, subject: resolvedSubject, cta: ctaText, resend_message_id: resendId });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[gameday-blast] Test send failed:", msg);
-      res.status(500).json({ ok: false, error: msg });
+      res2.status(500).json({ ok: false, error: msg });
     }
   });
-  app2.post("/admin/gameday/blast-send", async (req, res) => {
+  app2.post("/admin/gameday/blast-send", async (req, res2) => {
     if (!isBlastAdmin(req)) {
-      res.status(403).json({ ok: false, error: "Forbidden" });
+      res2.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
     const { game_name, room_link, confirmed, subject } = req.body;
     if (!game_name || !room_link) {
-      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      res2.status(400).json({ ok: false, error: "game_name and room_link are required" });
       return;
     }
     if (confirmed !== true) {
-      res.status(400).json({ ok: false, error: "confirmed: true is required to send the full blast" });
+      res2.status(400).json({ ok: false, error: "confirmed: true is required to send the full blast" });
       return;
     }
     const supabase = getServiceSupabase();
@@ -9763,7 +9967,7 @@ ${html.slice(0, 800)}`);
     const { data: profiles, error: profilesErr } = await supabase.from("profiles").select("id, notification_email, display_name, username, email_unsubscribed").not("notification_email", "is", null).neq("email_unsubscribed", true);
     if (profilesErr) {
       console.error("[gameday-blast] Failed to fetch profiles:", profilesErr.message);
-      res.status(500).json({ ok: false, error: profilesErr.message });
+      res2.status(500).json({ ok: false, error: profilesErr.message });
       return;
     }
     for (const p of profiles ?? []) {
@@ -9824,30 +10028,30 @@ ${html.slice(0, 800)}`);
       }
     }
     console.log(`[gameday-blast] Full blast complete \u2014 sent=${sent} failed=${failed} stored=${stored} total=${recipients.length} game="${game_name}"`);
-    res.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: recipients.length, tracked_link: trackedRoomLink });
+    res2.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: recipients.length, tracked_link: trackedRoomLink });
   });
-  app2.post("/admin/gameday/blast-catchup", async (req, res) => {
+  app2.post("/admin/gameday/blast-catchup", async (req, res2) => {
     if (!isBlastAdmin(req)) {
-      res.status(403).json({ ok: false, error: "Forbidden" });
+      res2.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
     const { game_name, room_link, confirmed, subject } = req.body;
     if (!game_name || !room_link) {
-      res.status(400).json({ ok: false, error: "game_name and room_link are required" });
+      res2.status(400).json({ ok: false, error: "game_name and room_link are required" });
       return;
     }
     if (confirmed !== true) {
-      res.status(400).json({ ok: false, error: "confirmed: true is required" });
+      res2.status(400).json({ ok: false, error: "confirmed: true is required" });
       return;
     }
     const supabase = getServiceSupabase();
     const { data: authProfiles, error: authErr } = await supabase.rpc("get_auth_only_profiles");
     if (authErr) {
       console.error("[gameday-blast-catchup] get_auth_only_profiles RPC failed:", authErr.message);
-      res.status(500).json({ ok: false, error: authErr.message });
+      res2.status(500).json({ ok: false, error: authErr.message });
       return;
     }
-    const eligible = (authProfiles ?? []).filter((p) => p.notification_email && !p.email_unsubscribed);
+    const eligible2 = (authProfiles ?? []).filter((p) => p.notification_email && !p.email_unsubscribed);
     const trackedRoomLink = buildTrackedLink(room_link);
     const roomCodeMatch = room_link.match(/\/g\/([A-Z0-9-]+)/i);
     const roomCode = roomCodeMatch ? roomCodeMatch[1] : null;
@@ -9855,7 +10059,7 @@ ${html.slice(0, 800)}`);
     let failed = 0;
     let stored = 0;
     const logRows = [];
-    for (const p of eligible) {
+    for (const p of eligible2) {
       try {
         const resendId = await sendGameDayBlastEmail({
           to: p.notification_email,
@@ -9891,24 +10095,24 @@ ${html.slice(0, 800)}`);
         stored = logRows.length;
       }
     }
-    console.log(`[gameday-blast-catchup] Catchup complete \u2014 sent=${sent} failed=${failed} stored=${stored} total=${eligible.length}`);
-    res.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: eligible.length, tracked_link: trackedRoomLink });
+    console.log(`[gameday-blast-catchup] Catchup complete \u2014 sent=${sent} failed=${failed} stored=${stored} total=${eligible2.length}`);
+    res2.json({ ok: true, sent, failed, stored_message_ids: stored, total_eligible: eligible2.length, tracked_link: trackedRoomLink });
   });
   app2.delete(
     "/api/gameday/rooms/:roomId/countdown",
-    async (req, res) => {
-      const hostId = await requireGamedayHost(req, res);
+    async (req, res2) => {
+      const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: clrRoom } = await supabase.from("gameday_rooms").select("host_user_id").eq("id", roomId).single();
       if (!clrRoom) {
-        res.status(404).json({ error: "Room not found" });
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
       const clrHost = clrRoom.host_user_id;
       if (clrHost !== null && clrHost !== hostId) {
-        res.status(403).json({ error: "Not your room" });
+        res2.status(403).json({ error: "Not your room" });
         return;
       }
       await supabase.from("gameday_rooms").update({
@@ -9918,36 +10122,36 @@ ${html.slice(0, 800)}`);
         countdown_started_at: null
       }).eq("id", roomId);
       console.log(`[gameday] countdown cleared: room=${roomId}`);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     }
   );
-  function checkPropLibraryAdmin(req, res) {
+  function checkPropLibraryAdmin(req, res2) {
     const token = req.header("x-admin-token");
     const adminToken = process.env.MM_ADMIN_TOKEN;
     if (!adminToken || token !== adminToken) {
-      res.status(401).json({ error: "Unauthorized" });
+      res2.status(401).json({ error: "Unauthorized" });
       return false;
     }
     return true;
   }
-  app2.get("/api/admin/gameday/prop-library", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
+  app2.get("/api/admin/gameday/prop-library", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
     const sport = req.query.sport;
     const supabase = getServiceSupabase();
     let query = supabase.from("gameday_prop_library").select("*").order("sport").order("phase").order("display_order");
     if (sport) query = query.eq("sport", sport);
     const { data, error } = await query;
     if (error) {
-      res.status(500).json({ error: error.message });
+      res2.status(500).json({ error: error.message });
       return;
     }
-    res.json({ ok: true, props: data ?? [] });
+    res2.json({ ok: true, props: data ?? [] });
   });
-  app2.post("/api/admin/gameday/prop-library", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
+  app2.post("/api/admin/gameday/prop-library", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
     const { id, sport, phase, question, answer_options, settlement_window, is_default } = req.body;
     if (!id || !sport || !phase || !question || !answer_options) {
-      res.status(400).json({ error: "Missing required fields: id, sport, phase, question, answer_options" });
+      res2.status(400).json({ error: "Missing required fields: id, sport, phase, question, answer_options" });
       return;
     }
     const supabase = getServiceSupabase();
@@ -9964,13 +10168,13 @@ ${html.slice(0, 800)}`);
       display_order: maxOrder + 1
     }).select().single();
     if (error) {
-      res.status(500).json({ error: error.message });
+      res2.status(500).json({ error: error.message });
       return;
     }
-    res.json({ ok: true, prop: data });
+    res2.json({ ok: true, prop: data });
   });
-  app2.patch("/api/admin/gameday/prop-library/:propId", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
+  app2.patch("/api/admin/gameday/prop-library/:propId", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
     const { propId } = req.params;
     const updates = {};
     const allowed = ["is_active", "is_default", "question", "answer_options", "settlement_window", "display_order"];
@@ -9978,35 +10182,35 @@ ${html.slice(0, 800)}`);
       if (req.body[key] !== void 0) updates[key] = req.body[key];
     }
     if (Object.keys(updates).length === 0) {
-      res.status(400).json({ error: "No valid fields to update" });
+      res2.status(400).json({ error: "No valid fields to update" });
       return;
     }
     updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
     const supabase = getServiceSupabase();
     const { data, error } = await supabase.from("gameday_prop_library").update(updates).eq("id", propId).select().single();
     if (error) {
-      res.status(500).json({ error: error.message });
+      res2.status(500).json({ error: error.message });
       return;
     }
-    res.json({ ok: true, prop: data });
+    res2.json({ ok: true, prop: data });
   });
-  app2.get("/api/admin/gameday/global-settle/preview", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
+  app2.get("/api/admin/gameday/global-settle/preview", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
     const template_prop_id = req.query.template_prop_id;
     const correct_answer = req.query.correct_answer;
     if (!template_prop_id || !correct_answer) {
-      res.status(400).json({ error: "template_prop_id and correct_answer are required" });
+      res2.status(400).json({ error: "template_prop_id and correct_answer are required" });
       return;
     }
     const supabase = getServiceSupabase();
     const { data: tpl } = await supabase.from("gameday_prop_library").select("id, question, answer_options").eq("id", template_prop_id).single();
     if (!tpl) {
-      res.status(404).json({ error: "Template prop not found" });
+      res2.status(404).json({ error: "Template prop not found" });
       return;
     }
     const options = tpl.answer_options;
     if (!options.includes(correct_answer)) {
-      res.status(400).json({ error: "correct_answer is not one of the template prop's options" });
+      res2.status(400).json({ error: "correct_answer is not one of the template prop's options" });
       return;
     }
     const { data: props } = await supabase.from("gameday_props").select("id, card_id, gameday_pick_cards(room_id, gameday_rooms(status, room_code, room_name))").eq("template_prop_id", template_prop_id).neq("status", "settled");
@@ -10025,7 +10229,7 @@ ${html.slice(0, 800)}`);
       const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds);
       picks_count = count ?? 0;
     }
-    res.json({
+    res2.json({
       ok: true,
       template_prop_id,
       question: tpl.question,
@@ -10036,21 +10240,21 @@ ${html.slice(0, 800)}`);
       rooms: Array.from(roomSet.values())
     });
   });
-  app2.post("/api/admin/gameday/global-settle", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
+  app2.post("/api/admin/gameday/global-settle", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
     const { template_prop_id, correct_answer } = req.body;
     if (!template_prop_id || !correct_answer) {
-      res.status(400).json({ error: "template_prop_id and correct_answer are required" });
+      res2.status(400).json({ error: "template_prop_id and correct_answer are required" });
       return;
     }
     const supabase = getServiceSupabase();
     const { data: tpl } = await supabase.from("gameday_prop_library").select("id, answer_options").eq("id", template_prop_id).single();
     if (!tpl) {
-      res.status(404).json({ error: "Template prop not found" });
+      res2.status(404).json({ error: "Template prop not found" });
       return;
     }
     if (!tpl.answer_options.includes(correct_answer)) {
-      res.status(400).json({ error: "Invalid correct_answer for this template prop" });
+      res2.status(400).json({ error: "Invalid correct_answer for this template prop" });
       return;
     }
     const { data: props } = await supabase.from("gameday_props").select("id, card_id, gameday_pick_cards(room_id, gameday_rooms(status))").eq("template_prop_id", template_prop_id).neq("status", "settled");
@@ -10058,7 +10262,7 @@ ${html.slice(0, 800)}`);
       (p) => p.gameday_pick_cards?.gameday_rooms?.status === "active"
     );
     if (activeProps.length === 0) {
-      res.json({ ok: true, settled: 0, message: "No unsettled props found in active rooms." });
+      res2.json({ ok: true, settled: 0, message: "No unsettled props found in active rooms." });
       return;
     }
     const propIds = activeProps.map((p) => p.id);
@@ -10073,32 +10277,168 @@ ${html.slice(0, 800)}`);
       }
     }
     console.log(`[global-settle] settled ${propIds.length} props for template "${template_prop_id}" \u2192 "${correct_answer}"`);
-    res.json({ ok: true, settled: propIds.length, rooms_count: new Set(activeProps.map((p) => p.gameday_pick_cards?.room_id)).size });
+    res2.json({ ok: true, settled: propIds.length, rooms_count: new Set(activeProps.map((p) => p.gameday_pick_cards?.room_id)).size });
   });
-  app2.get("/api/admin/gameday/settlement-queue", async (req, res) => {
-    if (!checkPropLibraryAdmin(req, res)) return;
-    const supabase = getServiceSupabase();
-    const { data: rawProps, error } = await supabase.from("gameday_props").select(
-      `id, question, answer_options, status, template_prop_id,
-         gameday_pick_cards(
-           id, phase, status, room_id,
-           gameday_rooms(
-             id, room_code, room_name, status,
-             team_a_name, team_b_name, team_a_star, team_b_star,
-             game_date, sport
-           )
-         )`
-    ).neq("status", "settled");
-    if (error) {
-      res.status(500).json({ error: error.message });
+  app2.get("/api/admin/gameday/settlement-queue", async (req, res2) => {
+    if (!checkPropLibraryAdmin(req, res2)) return;
+    const result = await buildSettlementQueue(getServiceSupabase());
+    if ("error" in result) {
+      res2.status(500).json({ error: result.error });
       return;
     }
-    const props = rawProps ?? [];
-    const eligible = props.filter((p) => {
-      const card = p.gameday_pick_cards;
-      const room = card?.gameday_rooms;
-      return card?.status === "locked" && room?.status === "active";
-    });
+    res2.json({ ok: true, ...result });
+  });
+  app2.post("/api/admin/gameday/settle-group", async (req, res2) => {
+    if (!GLOBAL_SETTLEMENT_WRITE_ENABLED) {
+      res2.status(503).json({ error: "Global settlement is not yet enabled.", code: "FLAG_DISABLED" });
+      return;
+    }
+    if (!checkPropLibraryAdmin(req, res2)) return;
+    const supabase = getServiceSupabase();
+    const {
+      group_key,
+      prop_ids,
+      expected_count,
+      canonical_answer_normalized,
+      idempotency_key
+    } = req.body;
+    if (!group_key || !prop_ids?.length || !canonical_answer_normalized || !idempotency_key) {
+      res2.status(400).json({ error: "group_key, prop_ids, canonical_answer_normalized, and idempotency_key are required." });
+      return;
+    }
+    if (typeof expected_count !== "number" || expected_count <= 0) {
+      res2.status(400).json({ error: "expected_count must be a positive integer." });
+      return;
+    }
+    if (prop_ids.length !== expected_count) {
+      res2.status(400).json({ error: `prop_ids.length (${prop_ids.length}) \u2260 expected_count (${expected_count}).` });
+      return;
+    }
+    const cached = _checkIdem(idempotency_key);
+    if (cached) {
+      res2.json(cached);
+      return;
+    }
+    const queue = await buildSettlementQueue(supabase);
+    if ("error" in queue) {
+      res2.status(500).json({ error: queue.error });
+      return;
+    }
+    let liveGroup = null;
+    for (const ev of queue.events) {
+      for (const g of ev.groups) {
+        if (g.group_key === group_key) {
+          liveGroup = g;
+          break;
+        }
+      }
+      if (liveGroup) break;
+    }
+    if (!liveGroup) {
+      res2.status(409).json({
+        error: "Group not found \u2014 it may have been fully settled or room status changed. Refresh.",
+        code: "GROUP_NOT_FOUND",
+        refresh_required: true
+      });
+      return;
+    }
+    if (liveGroup.settlement_status !== "safe") {
+      res2.status(409).json({
+        error: `This group cannot be bulk-settled (status: ${liveGroup.settlement_status}).`,
+        code: "NOT_SAFE"
+      });
+      return;
+    }
+    const liveSet = new Set(liveGroup.prop_ids);
+    const submittedSet = new Set(prop_ids);
+    const setsMatch = liveSet.size === submittedSet.size && [...liveSet].every((id) => submittedSet.has(id));
+    if (!setsMatch || liveGroup.prop_ids.length !== expected_count) {
+      res2.status(409).json({
+        error: "The prop set for this group has changed since your last queue load. Refresh before settling.",
+        code: "STALE_GROUP",
+        refresh_required: true,
+        live_count: liveGroup.prop_ids.length,
+        submitted_count: prop_ids.length,
+        expected_count
+      });
+      return;
+    }
+    const { data: propRows, error: propFetchErr } = await supabase.from("gameday_props").select("id, answer_options, gameday_pick_cards(id, room_id)").in("id", prop_ids).neq("status", "settled");
+    if (propFetchErr || !propRows?.length) {
+      res2.status(409).json({
+        error: "Failed to fetch prop details \u2014 some may have been settled already. Refresh and retry.",
+        code: "PROP_FETCH_FAILED",
+        refresh_required: true
+      });
+      return;
+    }
+    if (propRows.length !== expected_count) {
+      res2.status(409).json({
+        error: `Expected ${expected_count} unsettled props but found ${propRows.length}. Refresh and retry.`,
+        code: "STALE_GROUP",
+        refresh_required: true
+      });
+      return;
+    }
+    const settleSpecs = [];
+    for (const row of propRows) {
+      const card = row.gameday_pick_cards;
+      const opts = row.answer_options;
+      const storedAnswer = mapNormalizedToStored(canonical_answer_normalized, opts);
+      if (!storedAnswer) {
+        res2.status(409).json({
+          error: `Cannot map "${canonical_answer_normalized}" to a stored option for prop ${row.id}. Options: ${JSON.stringify(opts)}. No props settled.`,
+          code: "MAPPING_FAILED",
+          prop_id: row.id
+        });
+        return;
+      }
+      settleSpecs.push({ propId: row.id, cardId: card?.id, roomId: card?.room_id, correctAnswer: storedAnswer });
+    }
+    const opId = _genOpId();
+    const settleResults = [];
+    const affectedRoomIds = /* @__PURE__ */ new Set();
+    for (const spec of settleSpecs) {
+      try {
+        const r = await settlePropCore(supabase, spec);
+        settleResults.push(r);
+        affectedRoomIds.add(spec.roomId);
+      } catch (e) {
+        console.error(`[settle-group] op=${opId} settlePropCore error for prop ${spec.propId}:`, e);
+        res2.status(500).json({
+          error: `Settlement failed mid-operation after ${settleResults.length}/${settleSpecs.length} props. Op: ${opId}. Check DB state.`,
+          code: "PARTIAL_SETTLE_ERROR",
+          operation_id: opId,
+          settled_so_far: settleResults.length
+        });
+        return;
+      }
+    }
+    for (const roomId of affectedRoomIds) {
+      await logEvent(supabase, roomId, null, null, "global_prop_settled", {
+        operation_id: opId,
+        group_key,
+        canonical_answer_normalized,
+        settled_prop_ids: settleSpecs.filter((s) => s.roomId === roomId).map((s) => s.propId),
+        total_prop_count: settleSpecs.length,
+        total_room_count: affectedRoomIds.size
+      });
+    }
+    console.log(
+      `[settle-group] op=${opId} settled=${settleResults.length} rooms=${affectedRoomIds.size} group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`
+    );
+    const response = {
+      ok: true,
+      operation_id: opId,
+      settled_count: settleResults.length,
+      rooms_count: affectedRoomIds.size,
+      cards_auto_settled: settleResults.filter((r) => r.cardAutoSettled).length,
+      canonical_answer_normalized
+    };
+    _storeIdem(idempotency_key, response);
+    res2.json(response);
+  });
+  if (false) {
     const eventMap = /* @__PURE__ */ new Map();
     const LEGACY_KEY = "__legacy__";
     for (const prop of eligible) {
@@ -10260,7 +10600,7 @@ ${html.slice(0, 800)}`);
       total_manual: totalManual,
       events
     });
-  });
+  }
   const _cardSchedulerInterval = setInterval(async () => {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const supabase = getServiceSupabase();
@@ -10296,45 +10636,45 @@ function getSupabase4() {
   return createClient6(url, key);
 }
 async function registerRoutes(app2) {
-  app2.get("/promo", (_req, res) => {
-    res.sendFile(path3.resolve(process.cwd(), "server/templates/promo.html"));
+  app2.get("/promo", (_req, res2) => {
+    res2.sendFile(path3.resolve(process.cwd(), "server/templates/promo.html"));
   });
-  app2.get("/how-it-works", (_req, res) => {
-    res.sendFile(path3.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"));
+  app2.get("/how-it-works", (_req, res2) => {
+    res2.sendFile(path3.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"));
   });
-  app2.get("/api/config", (_req, res) => {
+  app2.get("/api/config", (_req, res2) => {
     const domains = (process.env.REPLIT_DOMAINS || "").split(",").map((d) => d.trim()).filter(Boolean);
     const primaryDomain = domains[0] || process.env.REPLIT_DEV_DOMAIN || "";
-    res.json({ appUrl: primaryDomain ? `https://${primaryDomain}` : "" });
+    res2.json({ appUrl: primaryDomain ? `https://${primaryDomain}` : "" });
   });
-  app2.get("/api/invite/:code/preview", async (req, res) => {
+  app2.get("/api/invite/:code/preview", async (req, res2) => {
     try {
       const code = String(req.params.code || "").toUpperCase().trim();
       if (!code) {
-        res.status(400).json({ error: "No code" });
+        res2.status(400).json({ error: "No code" });
         return;
       }
       const supabase = getSupabase4();
       const { data: invite, error: inviteErr } = await supabase.from("swayger_invites").select("swayger_id, invite_code, expires_at").eq("invite_code", code).maybeSingle();
       if (inviteErr || !invite) {
-        res.status(404).json({ error: "Invite not found" });
+        res2.status(404).json({ error: "Invite not found" });
         return;
       }
       if (invite.expires_at && new Date(invite.expires_at) < /* @__PURE__ */ new Date()) {
-        res.status(410).json({ error: "expired" });
+        res2.status(410).json({ error: "expired" });
         return;
       }
       const { data: swayger, error: swaygerErr } = await supabase.from("swaygers").select("id, title, category, stake_units, creator_pick, description, status, creator_id, expires_at").eq("id", invite.swayger_id).maybeSingle();
       if (swaygerErr || !swayger) {
-        res.status(404).json({ error: "Swayger not found" });
+        res2.status(404).json({ error: "Swayger not found" });
         return;
       }
       if (swayger.status !== "pending_invite") {
-        res.status(409).json({ error: swayger.status === "active" ? "already_accepted" : "unavailable", status: swayger.status });
+        res2.status(409).json({ error: swayger.status === "active" ? "already_accepted" : "unavailable", status: swayger.status });
         return;
       }
       const { data: creator } = await supabase.from("profiles").select("username, display_name").eq("id", swayger.creator_id).maybeSingle();
-      res.json({
+      res2.json({
         code,
         swayger_id: swayger.id,
         title: swayger.title,
@@ -10349,20 +10689,20 @@ async function registerRoutes(app2) {
       });
     } catch (err) {
       console.error("[invite-preview]", err);
-      res.status(500).json({ error: "Server error" });
+      res2.status(500).json({ error: "Server error" });
     }
   });
-  app2.post("/api/push/send", async (req, res) => {
+  app2.post("/api/push/send", async (req, res2) => {
     try {
       const { toUserId, title, body, data } = req.body;
       if (!toUserId || !title || !body) {
-        res.status(400).json({ ok: false, error: "Missing fields" });
+        res2.status(400).json({ ok: false, error: "Missing fields" });
         return;
       }
       const appId = "6c7fe969-e694-4977-819a-f10fbc4159c6";
       const apiKey = process.env.ONESIGNAL_REST_API_KEY;
       if (!apiKey) {
-        res.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
+        res2.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
         return;
       }
       const response = await fetch("https://api.onesignal.com/notifications", {
@@ -10383,33 +10723,33 @@ async function registerRoutes(app2) {
       const json = await response.json();
       if (!response.ok) {
         console.error("[push] OneSignal error:", json);
-        res.status(500).json({ ok: false, error: "OneSignal send failed" });
+        res2.status(500).json({ ok: false, error: "OneSignal send failed" });
         return;
       }
-      res.json({ ok: true, recipients: json.recipients ?? 0 });
+      res2.json({ ok: true, recipients: json.recipients ?? 0 });
     } catch (err) {
       console.error("[push] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/push/tag-user", async (req, res) => {
+  app2.post("/api/push/tag-user", async (req, res2) => {
     try {
       const { userId, username, email } = req.body;
       if (!userId) {
-        res.status(400).json({ ok: false, error: "Missing userId" });
+        res2.status(400).json({ ok: false, error: "Missing userId" });
         return;
       }
       const appId = "6c7fe969-e694-4977-819a-f10fbc4159c6";
       const apiKey = process.env.ONESIGNAL_REST_API_KEY;
       if (!apiKey) {
-        res.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
+        res2.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
         return;
       }
       const tags = {};
       if (username) tags.username = username;
       if (email) tags.email = email;
       if (!Object.keys(tags).length) {
-        res.json({ ok: true, skipped: true });
+        res2.json({ ok: true, skipped: true });
         return;
       }
       const response = await fetch(
@@ -10423,31 +10763,31 @@ async function registerRoutes(app2) {
       const json = await response.json();
       if (!response.ok) {
         console.error("[push/tag-user] OneSignal error:", json);
-        res.status(500).json({ ok: false, error: "OneSignal tag update failed" });
+        res2.status(500).json({ ok: false, error: "OneSignal tag update failed" });
         return;
       }
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
       console.error("[push/tag-user] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/admin/push/broadcast", async (req, res) => {
+  app2.post("/api/admin/push/broadcast", async (req, res2) => {
     const adminToken = process.env.MM_ADMIN_TOKEN;
     if (!adminToken || req.headers["x-admin-token"] !== adminToken) {
-      res.status(403).json({ ok: false, error: "Forbidden" });
+      res2.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
     try {
       const { title, body, data, segment } = req.body;
       if (!title || !body) {
-        res.status(400).json({ ok: false, error: "title and body are required" });
+        res2.status(400).json({ ok: false, error: "title and body are required" });
         return;
       }
       const appId = "6c7fe969-e694-4977-819a-f10fbc4159c6";
       const apiKey = process.env.ONESIGNAL_REST_API_KEY;
       if (!apiKey) {
-        res.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
+        res2.status(500).json({ ok: false, error: "OneSignal REST key not configured" });
         return;
       }
       const response = await fetch("https://api.onesignal.com/notifications", {
@@ -10468,28 +10808,28 @@ async function registerRoutes(app2) {
       const json = await response.json();
       if (!response.ok) {
         console.error("[push/broadcast] OneSignal error:", json);
-        res.status(500).json({ ok: false, error: "OneSignal send failed", details: json });
+        res2.status(500).json({ ok: false, error: "OneSignal send failed", details: json });
         return;
       }
       console.log(`[push/broadcast] sent \u2014 id=${json.id} recipients=${json.recipients}`);
-      res.json({ ok: true, notification_id: json.id, recipients: json.recipients ?? 0 });
+      res2.json({ ok: true, notification_id: json.id, recipients: json.recipients ?? 0 });
     } catch (err) {
       console.error("[push/broadcast] error:", err);
-      res.status(500).json({ ok: false, error: String(err) });
+      res2.status(500).json({ ok: false, error: String(err) });
     }
   });
-  app2.post("/api/notify", async (req, res) => {
+  app2.post("/api/notify", async (req, res2) => {
     try {
       const payload = req.body;
       if (!payload.event || !payload.swayger || !payload.recipients) {
-        res.status(400).json({ ok: false, error: "Invalid payload" });
+        res2.status(400).json({ ok: false, error: "Invalid payload" });
         return;
       }
       await sendNotificationEmail(payload);
-      res.json({ ok: true });
+      res2.json({ ok: true });
     } catch (err) {
       console.error("[notify] error:", err);
-      res.status(500).json({ ok: false, error: "Failed to send notification" });
+      res2.status(500).json({ ok: false, error: "Failed to send notification" });
     }
   });
   registerMMAdminRoutes(app2);
@@ -10542,12 +10882,12 @@ async function fetchESPNScoresForWindow(window) {
   for (const date of datesToFetch) {
     const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?groups=50&dates=${date}&limit=50`;
     try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.error(`[auto-score] ESPN API error for ${date}: HTTP ${res.status}`);
+      const res2 = await fetch(url);
+      if (!res2.ok) {
+        console.error(`[auto-score] ESPN API error for ${date}: HTTP ${res2.status}`);
         continue;
       }
-      const data = await res.json();
+      const data = await res2.json();
       const events = data.events ?? [];
       for (const event of events) {
         const comp = event.competitions?.[0];
@@ -10801,11 +11141,11 @@ async function sendReminderBlast(label) {
     const usersWithTakes = new Set(
       (takes ?? []).map((t) => t.user_id)
     );
-    const eligible = (allProfiles ?? []).filter(
+    const eligible2 = (allProfiles ?? []).filter(
       (p) => !usersWithTakes.has(p.id) && p.notification_email && !p.email_unsubscribed
     );
     let sent = 0;
-    for (const profile of eligible) {
+    for (const profile of eligible2) {
       try {
         await sendMMReminderEmail({
           to: profile.notification_email,
@@ -10827,11 +11167,11 @@ async function sendLastChanceBlastAll(label) {
   try {
     const supabase = getSupabase6();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-    const eligible = (allProfiles ?? []).filter(
+    const eligible2 = (allProfiles ?? []).filter(
       (p) => p.notification_email && !p.email_unsubscribed
     );
     let sent = 0;
-    for (const profile of eligible) {
+    for (const profile of eligible2) {
       try {
         await sendLastChanceBlast({ to: profile.notification_email, userId: profile.id });
         sent++;
@@ -10849,11 +11189,11 @@ async function sendLeaderboardReminderBlastAll(label) {
   try {
     const supabase = getSupabase6();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-    const eligible = (allProfiles ?? []).filter(
+    const eligible2 = (allProfiles ?? []).filter(
       (p) => p.notification_email && !p.email_unsubscribed
     );
     let sent = 0;
-    for (const profile of eligible) {
+    for (const profile of eligible2) {
       try {
         await sendLeaderboardReminderBlast({ to: profile.notification_email, userId: profile.id });
         sent++;
@@ -10885,11 +11225,11 @@ async function sendSecondShotBlast(label) {
     const usersWithTakes = new Set(
       (takes ?? []).map((t) => t.user_id)
     );
-    const eligible = (allProfiles ?? []).filter(
+    const eligible2 = (allProfiles ?? []).filter(
       (p) => !usersWithTakes.has(p.id) && p.notification_email && !p.email_unsubscribed
     );
     let sent = 0;
-    for (const profile of eligible) {
+    for (const profile of eligible2) {
       try {
         await sendSecondShotEmail({
           to: profile.notification_email,
@@ -10911,11 +11251,11 @@ async function sendQuickPickReminderBlast(label, roundLabel, lockDateLabel, isLa
   try {
     const supabase = getSupabase6();
     const { data: allProfiles } = await supabase.rpc("get_all_notification_profiles");
-    const eligible = (allProfiles ?? []).filter(
+    const eligible2 = (allProfiles ?? []).filter(
       (p) => p.notification_email && !p.email_unsubscribed
     );
     let sent = 0;
-    for (const profile of eligible) {
+    for (const profile of eligible2) {
       try {
         await sendQuickPickReminderEmail({
           to: profile.notification_email,
@@ -11210,17 +11550,17 @@ var ERROR_HTML = (msg) => `<!DOCTYPE html>
 </body>
 </html>`;
 function registerUnsubscribeRoutes(app2) {
-  app2.get("/unsubscribe", async (req, res) => {
+  app2.get("/unsubscribe", async (req, res2) => {
     const uid = req.query.uid?.trim();
     const sig = req.query.sig?.trim();
     if (!uid || !sig) {
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.status(400).send(ERROR_HTML("Invalid unsubscribe link \u2014 missing parameters."));
+      res2.setHeader("Content-Type", "text/html; charset=utf-8");
+      res2.status(400).send(ERROR_HTML("Invalid unsubscribe link \u2014 missing parameters."));
       return;
     }
     if (!verifyUnsubscribeToken(uid, sig)) {
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.status(403).send(ERROR_HTML("Invalid or expired unsubscribe link."));
+      res2.setHeader("Content-Type", "text/html; charset=utf-8");
+      res2.status(403).send(ERROR_HTML("Invalid or expired unsubscribe link."));
       return;
     }
     try {
@@ -11228,17 +11568,17 @@ function registerUnsubscribeRoutes(app2) {
       const { error } = await supabase.from("profiles").update({ email_unsubscribed: true }).eq("id", uid);
       if (error) {
         console.error("[unsubscribe] Supabase error:", error.message);
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.status(500).send(ERROR_HTML("Could not process your request. Please try again."));
+        res2.setHeader("Content-Type", "text/html; charset=utf-8");
+        res2.status(500).send(ERROR_HTML("Could not process your request. Please try again."));
         return;
       }
       console.log(`[unsubscribe] User ${uid} unsubscribed from blast emails`);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.status(200).send(CONFIRMED_HTML);
+      res2.setHeader("Content-Type", "text/html; charset=utf-8");
+      res2.status(200).send(CONFIRMED_HTML);
     } catch (err) {
       console.error("[unsubscribe] Error:", err);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.status(500).send(ERROR_HTML("Server error. Please try again later."));
+      res2.setHeader("Content-Type", "text/html; charset=utf-8");
+      res2.status(500).send(ERROR_HTML("Server error. Please try again later."));
     }
   });
 }
@@ -11251,7 +11591,7 @@ import { createClient as createClient10 } from "@supabase/supabase-js";
 var app = express();
 var log = console.log;
 function setupCors(app2) {
-  app2.use((req, res, next) => {
+  app2.use((req, res2, next) => {
     const origins = /* @__PURE__ */ new Set();
     if (process.env.REPLIT_DEV_DOMAIN) {
       origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
@@ -11266,25 +11606,25 @@ function setupCors(app2) {
     const origin = req.header("origin");
     const isLocalhost = origin?.startsWith("http://localhost:") || origin?.startsWith("http://127.0.0.1:");
     if (origin && (origins.has(origin) || isLocalhost)) {
-      res.header("Access-Control-Allow-Origin", origin);
-      res.header(
+      res2.header("Access-Control-Allow-Origin", origin);
+      res2.header(
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, PATCH, DELETE, OPTIONS"
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Session, x-admin-token");
-      res.header("Access-Control-Allow-Credentials", "true");
+      res2.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Session, x-admin-token");
+      res2.header("Access-Control-Allow-Credentials", "true");
     }
     if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
+      return res2.sendStatus(200);
     }
     next();
   });
 }
 function setupWwwRedirect(app2) {
-  app2.use((req, res, next) => {
+  app2.use((req, res2, next) => {
     const host = req.headers.host || "";
     if (host === "swayger.app" || host === "swayger.app:443") {
-      return res.redirect(301, `https://www.swayger.app${req.originalUrl}`);
+      return res2.redirect(301, `https://www.swayger.app${req.originalUrl}`);
     }
     next();
   });
@@ -11300,19 +11640,19 @@ function setupBodyParsing(app2) {
   app2.use(express.urlencoded({ extended: false }));
 }
 function setupRequestLogging(app2) {
-  app2.use((req, res, next) => {
+  app2.use((req, res2, next) => {
     const start = Date.now();
     const path6 = req.path;
     let capturedJsonResponse = void 0;
-    const originalResJson = res.json;
-    res.json = function(bodyJson, ...args) {
+    const originalResJson = res2.json;
+    res2.json = function(bodyJson, ...args) {
       capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
+      return originalResJson.apply(res2, [bodyJson, ...args]);
     };
-    res.on("finish", () => {
+    res2.on("finish", () => {
       if (!path6.startsWith("/api")) return;
       const duration = Date.now() - start;
-      let logLine = `${req.method} ${path6} ${res.statusCode} in ${duration}ms`;
+      let logLine = `${req.method} ${path6} ${res2.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -11422,7 +11762,7 @@ function getAppName() {
     return "App Landing Page";
   }
 }
-function serveExpoManifest(platform, res) {
+function serveExpoManifest(platform, res2) {
   const manifestPath = path5.resolve(
     process.cwd(),
     "static-build",
@@ -11430,17 +11770,17 @@ function serveExpoManifest(platform, res) {
     "manifest.json"
   );
   if (!fs4.existsSync(manifestPath)) {
-    return res.status(404).json({ error: `Manifest not found for platform: ${platform}` });
+    return res2.status(404).json({ error: `Manifest not found for platform: ${platform}` });
   }
-  res.setHeader("expo-protocol-version", "1");
-  res.setHeader("expo-sfv-version", "0");
-  res.setHeader("content-type", "application/json");
+  res2.setHeader("expo-protocol-version", "1");
+  res2.setHeader("expo-sfv-version", "0");
+  res2.setHeader("content-type", "application/json");
   const manifest = fs4.readFileSync(manifestPath, "utf-8");
-  res.send(manifest);
+  res2.send(manifest);
 }
 function serveLandingPage({
   req,
-  res,
+  res: res2,
   landingPageTemplate,
   appName
 }) {
@@ -11453,8 +11793,8 @@ function serveLandingPage({
   log(`baseUrl`, baseUrl);
   log(`expsUrl`, expsUrl);
   const html = landingPageTemplate.replace(/BASE_URL_PLACEHOLDER/g, baseUrl).replace(/EXPS_URL_PLACEHOLDER/g, expsUrl).replace(/APP_NAME_PLACEHOLDER/g, appName);
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.status(200).send(html);
+  res2.setHeader("Content-Type", "text/html; charset=utf-8");
+  res2.status(200).send(html);
 }
 function configureExpoAndLanding(app2) {
   const templatePath = path5.resolve(
@@ -11467,23 +11807,23 @@ function configureExpoAndLanding(app2) {
   const appName = getAppName();
   const privacyPolicyPath = path5.resolve(process.cwd(), "server", "templates", "privacy-policy.html");
   const privacyPolicyHtml = fs4.readFileSync(privacyPolicyPath, "utf-8");
-  app2.get("/privacy", (_req, res) => {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(200).send(privacyPolicyHtml);
+  app2.get("/privacy", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/html; charset=utf-8");
+    res2.status(200).send(privacyPolicyHtml);
   });
-  app2.get("/robots.txt", (_req, res) => {
-    res.setHeader("Content-Type", "text/plain");
-    res.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
+  app2.get("/robots.txt", (_req, res2) => {
+    res2.setHeader("Content-Type", "text/plain");
+    res2.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
   });
-  app2.get("/OneSignalSDKWorker.js", (_req, res) => {
-    res.setHeader("Content-Type", "application/javascript");
-    res.setHeader("Service-Worker-Allowed", "/");
-    res.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
+  app2.get("/OneSignalSDKWorker.js", (_req, res2) => {
+    res2.setHeader("Content-Type", "application/javascript");
+    res2.setHeader("Service-Worker-Allowed", "/");
+    res2.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
   });
-  app2.get("/g/:roomCode", async (req, res) => {
+  app2.get("/g/:roomCode", async (req, res2) => {
     const code = (req.params.roomCode ?? "").toUpperCase().trim();
     if (!code) {
-      res.status(400).send("Missing room code");
+      res2.status(400).send("Missing room code");
       return;
     }
     const { createClient: createClient11 } = await import("@supabase/supabase-js");
@@ -11493,14 +11833,14 @@ function configureExpoAndLanding(app2) {
     );
     const { data: room } = await supabase.from("gameday_rooms").select("id").eq("room_code", code).maybeSingle();
     if (!room) {
-      res.status(404).send("Room not found");
+      res2.status(404).send("Room not found");
       return;
     }
-    res.redirect(302, `/gameday/${room.id}`);
+    res2.redirect(302, `/gameday/${room.id}`);
   });
   registerUnsubscribeRoutes(app2);
   log("Serving static Expo files with dynamic manifest routing");
-  app2.use((req, res, next) => {
+  app2.use((req, res2, next) => {
     if (req.path.startsWith("/api")) {
       return next();
     }
@@ -11509,7 +11849,7 @@ function configureExpoAndLanding(app2) {
     }
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+      return serveExpoManifest(platform, res2);
     }
     if (req.path === "/") {
       const webIndexPath = path5.resolve(process.cwd(), "dist", "index.html");
@@ -11519,12 +11859,12 @@ function configureExpoAndLanding(app2) {
         html = injectOneSignal(html);
         const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
         html = html.replace("</body>", `${privacyFooter}</body>`);
-        res.setHeader("Content-Type", "text/html");
-        return res.send(html);
+        res2.setHeader("Content-Type", "text/html");
+        return res2.send(html);
       }
       return serveLandingPage({
         req,
-        res,
+        res: res2,
         landingPageTemplate,
         appName
       });
@@ -11535,7 +11875,7 @@ function configureExpoAndLanding(app2) {
   app2.use(express.static(path5.resolve(process.cwd(), "dist")));
   app2.use(express.static(path5.resolve(process.cwd(), "static-build")));
   const SERVER_PATHS = ["/api", "/assets", "/admin", "/feedback", "/outreach-feedback", "/unsubscribe", "/promo", "/how-it-works", "/privacy"];
-  app2.use((req, res, next) => {
+  app2.use((req, res2, next) => {
     if (SERVER_PATHS.some((p) => req.path.startsWith(p))) {
       return next();
     }
@@ -11544,23 +11884,23 @@ function configureExpoAndLanding(app2) {
       let html = fs4.readFileSync(webIndexPath, "utf-8");
       html = injectSeoTags(html);
       html = injectOneSignal(html);
-      res.setHeader("Content-Type", "text/html");
-      return res.send(html);
+      res2.setHeader("Content-Type", "text/html");
+      return res2.send(html);
     }
     next();
   });
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 function setupErrorHandler(app2) {
-  app2.use((err, _req, res, next) => {
+  app2.use((err, _req, res2, next) => {
     const error = err;
     const status = error.status || error.statusCode || 500;
     const message = error.message || "Internal Server Error";
     console.error("Internal Server Error:", err);
-    if (res.headersSent) {
+    if (res2.headersSent) {
       return next(err);
     }
-    return res.status(status).json({ message });
+    return res2.status(status).json({ message });
   });
 }
 async function runSettlementExpiry() {

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, ActivityIndicator, Alert, Platform,
+  StyleSheet, ActivityIndicator, Alert, Platform, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +15,11 @@ const NBA_GOLD = "#FFC72C";
 
 // Set to true to restore the legacy template-based global settlement UI.
 const LEGACY_GS_ENABLED = false;
+
+// Set to true (and restart backend with GLOBAL_SETTLE_ENABLED=true) to show
+// the Settle Group button and confirmation sheet on safe groups.
+// Keep false until Milestone 2 is approved and tested.
+const GLOBAL_SETTLEMENT_WRITE_ENABLED = false;
 
 // ── Settlement Queue types ──────────────────────────────────────────────────
 interface SQAnswerMapEntry {
@@ -177,6 +182,12 @@ export default function AdminScreen() {
   const [sqExpandedEvent, setSqExpandedEvent] = useState<string | null>(null);
   const [sqExpandedGroup, setSqExpandedGroup] = useState<string | null>(null);
 
+  // Global Settlement write-path state (Milestone 2)
+  const [sqSettleTarget, setSqSettleTarget] = useState<{ event: SQEvent; group: SQGroup } | null>(null);
+  const [sqSettleAnswer, setSqSettleAnswer] = useState<string | null>(null);
+  const [sqSettleSubmitting, setSqSettleSubmitting] = useState(false);
+  const [sqSettleResult, setSqSettleResult] = useState<{ ok: boolean; message: string; refresh_required?: boolean } | null>(null);
+
   // Prop Library
   const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
   const [libProps, setLibProps] = useState<any[]>([]);
@@ -203,6 +214,62 @@ export default function AdminScreen() {
       }
     });
   }, []));
+
+  /** POST /api/admin/gameday/settle-group — called from the confirmation modal. */
+  async function handleSettleConfirm() {
+    if (!sqSettleTarget || !sqSettleAnswer || !savedToken || sqSettleSubmitting) return;
+    setSqSettleSubmitting(true);
+    setSqSettleResult(null);
+
+    const { event: ev, group: grp } = sqSettleTarget;
+
+    // The canonical normalized form comes from the answer_map already computed
+    // server-side — no need to re-run client-side normalization.
+    const answerEntry = grp.answer_map.find((e) => e.stored === sqSettleAnswer);
+    const canonicalNormalized = answerEntry?.normalized ?? sqSettleAnswer.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+    // One-time idempotency key — prevents double-settlement on accidental double-tap.
+    const idempotencyKey = `${ev.event_key ?? "legacy"}-${grp.group_key.slice(-12)}-${Date.now().toString(36)}`;
+
+    try {
+      const url = new URL("/api/admin/gameday/settle-group", getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-token": savedToken },
+        body: JSON.stringify({
+          group_key: grp.group_key,
+          prop_ids: grp.prop_ids,
+          expected_count: grp.prop_count,
+          canonical_answer_normalized: canonicalNormalized,
+          idempotency_key: idempotencyKey,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setSqSettleResult({
+          ok: true,
+          message: `✓ Settled ${json.settled_count} props across ${json.rooms_count} rooms.\nOp: ${json.operation_id}`,
+        });
+        // Refresh queue and auto-close sheet after brief success pause.
+        setTimeout(() => {
+          setSqSettleTarget(null);
+          setSqSettleAnswer(null);
+          setSqSettleResult(null);
+          loadSettlementQueue(savedToken!);
+        }, 2200);
+      } else {
+        setSqSettleResult({
+          ok: false,
+          message: json.error ?? "Settlement failed.",
+          refresh_required: json.refresh_required,
+        });
+      }
+    } catch (e) {
+      setSqSettleResult({ ok: false, message: String(e) });
+    } finally {
+      setSqSettleSubmitting(false);
+    }
+  }
 
   async function loadSettlementQueue(t: string) {
     setSqLoading(true);
@@ -968,6 +1035,23 @@ export default function AdminScreen() {
                                 </Text>
                               </View>
                             )}
+
+                            {/* ── Settle Group button (flag-gated, safe groups only) ── */}
+                            {GLOBAL_SETTLEMENT_WRITE_ENABLED && grp.settlement_status === "safe" && (
+                              <Pressable
+                                style={styles.sqSettleBtn}
+                                onPress={() => {
+                                  setSqSettleTarget({ event: ev, group: grp });
+                                  setSqSettleAnswer(null);
+                                  setSqSettleResult(null);
+                                }}
+                              >
+                                <Ionicons name="checkmark-done-circle" size={15} color="#000" />
+                                <Text style={styles.sqSettleBtnText}>
+                                  Settle {grp.prop_count} props across {grp.room_count} rooms
+                                </Text>
+                              </Pressable>
+                            )}
                           </View>
                         );
                       })}
@@ -978,11 +1062,90 @@ export default function AdminScreen() {
             })}
 
             <Text style={[styles.sqNormText, { textAlign: "center", marginTop: 2 }]}>
-              Read-only preview — settlement controls enabled after approval.
+              {GLOBAL_SETTLEMENT_WRITE_ENABLED
+                ? "Settle Group buttons visible on safe groups above."
+                : "Read-only preview — settlement controls enabled after approval."}
             </Text>
           </View>
         )}
       </View>
+
+      {/* ── Global Settlement Confirmation Modal ─────────────────────────── */}
+      <Modal
+        visible={sqSettleTarget !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { if (!sqSettleSubmitting) { setSqSettleTarget(null); setSqSettleAnswer(null); setSqSettleResult(null); } }}
+      >
+        <View style={styles.sqModalOverlay}>
+          <View style={styles.sqModalSheet}>
+            {/* Handle bar */}
+            <View style={styles.sqModalHandle} />
+
+            {sqSettleTarget && (
+              <>
+                <Text style={styles.sqModalTitle}>Settle Group</Text>
+                <Text style={styles.sqModalGameLabel}>{sqSettleTarget.event.game_label}</Text>
+
+                <Text style={styles.sqModalQuestion}>{sqSettleTarget.group.question}</Text>
+                <Text style={styles.sqModalMeta}>
+                  {sqSettleTarget.group.prop_count} props · {sqSettleTarget.group.room_count} rooms · {sqSettleTarget.group.phase_label}
+                </Text>
+
+                {/* Answer option pills */}
+                <View style={styles.sqModalOptionRow}>
+                  {sqSettleTarget.group.answer_options.map((opt) => {
+                    const selected = sqSettleAnswer === opt;
+                    return (
+                      <Pressable
+                        key={opt}
+                        style={[styles.sqModalOption, selected && styles.sqModalOptionSelected]}
+                        onPress={() => { if (!sqSettleSubmitting) setSqSettleAnswer(opt); }}
+                      >
+                        <Text style={[styles.sqModalOptionText, selected && styles.sqModalOptionTextSelected]}>
+                          {opt}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Result feedback */}
+                {sqSettleResult && (
+                  <Text style={[
+                    styles.sqNormText,
+                    { color: sqSettleResult.ok ? "#34D399" : "#F87171", textAlign: "center" }
+                  ]}>
+                    {sqSettleResult.message}
+                    {sqSettleResult.refresh_required ? "\n(Refreshing queue…)" : ""}
+                  </Text>
+                )}
+
+                {/* Action row */}
+                <View style={styles.sqModalBtnRow}>
+                  <Pressable
+                    style={styles.sqModalCancelBtn}
+                    onPress={() => { if (!sqSettleSubmitting) { setSqSettleTarget(null); setSqSettleAnswer(null); setSqSettleResult(null); } }}
+                    disabled={sqSettleSubmitting}
+                  >
+                    <Text style={styles.sqModalCancelBtnText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.sqModalConfirmBtn, (!sqSettleAnswer || sqSettleSubmitting) && styles.sqModalConfirmBtnDisabled]}
+                    onPress={handleSettleConfirm}
+                    disabled={!sqSettleAnswer || sqSettleSubmitting}
+                  >
+                    {sqSettleSubmitting
+                      ? <ActivityIndicator size="small" color="#000" />
+                      : <Text style={styles.sqModalConfirmBtnText}>Confirm Settlement</Text>
+                    }
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Legacy Global Settlement (hidden for rollback safety) ── */}
       {LEGACY_GS_ENABLED && (
@@ -1511,5 +1674,81 @@ const styles = StyleSheet.create({
   },
   sqAnswerMapStored: {
     fontSize: 12, color: Colors.dark.text, fontWeight: "500",
+  },
+
+  // ── Settle Group button (flag-gated, safe groups only) ────────────────────
+  sqSettleBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: "#34D399",
+    borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14,
+    marginHorizontal: 12, marginBottom: 10, marginTop: 6,
+  },
+  sqSettleBtnText: {
+    fontSize: 13, fontWeight: "700", color: "#000",
+  },
+
+  // ── Confirmation modal (bottom sheet) ────────────────────────────────────
+  sqModalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end",
+  },
+  sqModalSheet: {
+    backgroundColor: Colors.dark.card,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 16, paddingHorizontal: 20, paddingBottom: 40,
+    gap: 12,
+  },
+  sqModalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.dark.border, alignSelf: "center", marginBottom: 4,
+  },
+  sqModalTitle: {
+    fontSize: 18, fontWeight: "700", color: Colors.dark.text,
+  },
+  sqModalGameLabel: {
+    fontSize: 12, color: Colors.dark.tabIconDefault,
+  },
+  sqModalQuestion: {
+    fontSize: 15, color: Colors.dark.text, lineHeight: 22,
+  },
+  sqModalMeta: {
+    fontSize: 12, color: Colors.dark.tabIconDefault,
+  },
+  sqModalOptionRow: {
+    flexDirection: "row", flexWrap: "wrap", gap: 8,
+  },
+  sqModalOption: {
+    flex: 1, minWidth: 110,
+    alignItems: "center", paddingVertical: 13,
+    borderRadius: 10, borderWidth: 2, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.background,
+  },
+  sqModalOptionSelected: {
+    borderColor: "#34D399", backgroundColor: "rgba(52,211,153,0.12)",
+  },
+  sqModalOptionText: {
+    fontSize: 14, fontWeight: "600", color: Colors.dark.text, textAlign: "center",
+  },
+  sqModalOptionTextSelected: {
+    color: "#34D399",
+  },
+  sqModalBtnRow: {
+    flexDirection: "row", gap: 10, marginTop: 4,
+  },
+  sqModalCancelBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 13,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  sqModalCancelBtnText: {
+    fontSize: 15, fontWeight: "600", color: Colors.dark.tabIconDefault,
+  },
+  sqModalConfirmBtn: {
+    flex: 2, alignItems: "center", justifyContent: "center",
+    paddingVertical: 13, borderRadius: 10, backgroundColor: "#34D399",
+  },
+  sqModalConfirmBtnDisabled: {
+    backgroundColor: Colors.dark.border,
+  },
+  sqModalConfirmBtnText: {
+    fontSize: 15, fontWeight: "700", color: "#000",
   },
 });

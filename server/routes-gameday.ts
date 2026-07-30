@@ -20,6 +20,325 @@ import {
   gameLabel,
   phaseLabel,
 } from "./gameday-normalize.js";
+import { settlePropCore } from "./gameday-settle-helper.js";
+
+// ── Global Settlement write-path feature flag ─────────────────────────────────
+// Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
+// POST /api/admin/gameday/settle-group endpoint.
+// Keep false (or unset) in production until Milestone 2 is approved and tested.
+const GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
+
+// ── Request-level idempotency cache (in-memory, 24-hour TTL) ─────────────────
+// Prevents double-settlement if the admin taps twice or the network retries.
+// Upgrade to a DB-backed table before high-volume production use.
+const _idemCache = new Map<string, { ts: number; payload: unknown }>();
+const _IDEM_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
+
+function _checkIdem(key: string): unknown | null {
+  const entry = _idemCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > _IDEM_TTL_MS) { _idemCache.delete(key); return null; }
+  return entry.payload;
+}
+function _storeIdem(key: string, payload: unknown): void {
+  // Evict expired entries on every write to prevent unbounded growth.
+  for (const [k, v] of _idemCache) {
+    if (Date.now() - v.ts > _IDEM_TTL_MS) _idemCache.delete(k);
+  }
+  _idemCache.set(key, { ts: Date.now(), payload });
+}
+
+/** Short, human-readable operation ID for audit correlation. */
+function _genOpId(): string {
+  return `gso-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ── Settlement queue shared types (GET queue + POST settle-group) ──────────────
+// Defined at module scope so both routes can reference them without duplication.
+
+interface GSDGroupOut {
+  group_key: string;
+  phase: string;
+  phase_label: string;
+  question: string;
+  answer_options: string[];
+  normalized_options: string[];
+  answer_map: Array<{ stored: string; normalized: string; round_trips: boolean }>;
+  has_ambiguous_options: boolean;
+  ambiguous_option_details: string[];
+  prop_count: number;
+  room_count: number;
+  prop_ids: string[];
+  room_ids: string[];
+  template_prop_ids: (string | null)[];
+  template_consistency: "consistent" | "mixed" | "none";
+  conflicts: string[];
+  settlement_status: "safe" | "review_required" | "manual_only";
+}
+
+interface GSDEventOut {
+  event_key: string | null;
+  is_legacy: boolean;
+  game_label: string;
+  sport: string | null;
+  game_date: string | null;
+  team_a: string;
+  team_b: string;
+  group_count: number;
+  prop_count: number;
+  safe_count: number;
+  review_count: number;
+  manual_count: number;
+  groups: GSDGroupOut[];
+}
+
+interface GSDQueueResult {
+  events: GSDEventOut[];
+  total_events: number;
+  total_groups: number;
+  total_props: number;
+  total_safe: number;
+  total_review: number;
+  total_manual: number;
+}
+
+const _PHASE_ORDER: Record<string, number> = {
+  pregame: 0, halftime: 1, fourth: 2, final_push: 3, penalties: 4,
+};
+
+/**
+ * Fetches all unsettled props from locked cards in active rooms and groups them
+ * by real-world game (event_key) and question (group_key).
+ *
+ * Shared by GET /api/admin/gameday/settlement-queue (read-only display)
+ *        and POST /api/admin/gameday/settle-group  (stale-detection + validation).
+ */
+async function buildSettlementQueue(
+  supabase: ReturnType<typeof getServiceSupabase>,
+): Promise<GSDQueueResult | { error: string }> {
+  const { data: rawProps, error } = await supabase
+    .from("gameday_props")
+    .select(
+      `id, question, answer_options, status, template_prop_id,
+       gameday_pick_cards(
+         id, phase, status, room_id,
+         gameday_rooms(
+           id, room_code, room_name, status,
+           team_a_name, team_b_name, team_a_star, team_b_star,
+           game_date, sport
+         )
+       )`
+    )
+    .neq("status", "settled");
+
+  if (error) return { error: error.message };
+
+  const props = (rawProps ?? []) as any[];
+
+  // Filter to locked cards in active rooms only.
+  const eligible = props.filter((p) => {
+    const card = p.gameday_pick_cards;
+    const room = card?.gameday_rooms;
+    return card?.status === "locked" && room?.status === "active";
+  });
+
+  // Internal accumulator types — not part of the public interface.
+  type GroupAcc = {
+    group_key: string;
+    phase: string;
+    question: string;
+    answer_options: string[];
+    normalized_options: string[];
+    prop_ids: string[];
+    room_ids: Set<string>;
+    template_prop_ids: Set<string | null>;
+    unique_questions: Set<string>;
+  };
+  type EventAcc = {
+    event_key: string | null;
+    is_legacy: boolean;
+    team_a: string;
+    team_b: string;
+    game_date: string | null;
+    sport: string | null;
+    groups: Map<string, GroupAcc>;
+  };
+
+  const eventMap = new Map<string, EventAcc>();
+  const LEGACY_KEY = "__legacy__";
+
+  for (const prop of eligible) {
+    const card = prop.gameday_pick_cards as any;
+    const room = card?.gameday_rooms as any;
+
+    const evKey = buildEventKey(room?.sport, room?.team_a_name, room?.team_b_name, room?.game_date);
+    const mapKey = evKey ?? (LEGACY_KEY + "|" + (room?.id ?? "unknown"));
+
+    if (!eventMap.has(mapKey)) {
+      eventMap.set(mapKey, {
+        event_key: evKey,
+        is_legacy: !evKey,
+        team_a: room?.team_a_name ?? "Unknown",
+        team_b: room?.team_b_name ?? "Unknown",
+        game_date: room?.game_date ?? null,
+        sport: room?.sport ?? null,
+        groups: new Map(),
+      });
+    }
+    const event = eventMap.get(mapKey)!;
+
+    const options = (prop.answer_options ?? []) as string[];
+    const normQuestion = (prop.question ?? "")
+      .toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    const normOptions = options.map((o: string) => normalizeAnswerOption(o)).sort();
+
+    const grpKey = evKey
+      ? buildGroupKey(evKey, card?.phase ?? "", prop.question ?? "", options)
+      : `${mapKey}|${card?.phase ?? ""}|${normQuestion}|${normOptions.join("||")}`;
+
+    if (!event.groups.has(grpKey)) {
+      event.groups.set(grpKey, {
+        group_key: grpKey,
+        phase: card?.phase ?? "",
+        question: prop.question ?? "",
+        answer_options: options,
+        normalized_options: normOptions,
+        prop_ids: [],
+        room_ids: new Set(),
+        template_prop_ids: new Set(),
+        unique_questions: new Set(),
+      });
+    }
+    const grp = event.groups.get(grpKey)!;
+    grp.prop_ids.push(prop.id);
+    grp.room_ids.add(card.room_id);
+    grp.template_prop_ids.add(prop.template_prop_id ?? null);
+    grp.unique_questions.add(normQuestion);
+  }
+
+  // Build output arrays.
+  const events: GSDEventOut[] = [];
+
+  for (const [, ev] of eventMap) {
+    const groupsOut: GSDGroupOut[] = [];
+
+    for (const [, grp] of ev.groups) {
+      const templateIds = [...grp.template_prop_ids].filter(Boolean) as string[];
+      const uniqueTemplates = new Set(templateIds);
+
+      let templateConsistency: "consistent" | "mixed" | "none";
+      if (grp.template_prop_ids.has(null) && templateIds.length === 0) {
+        templateConsistency = "none";
+      } else if (uniqueTemplates.size <= 1) {
+        templateConsistency = "consistent";
+      } else {
+        templateConsistency = "mixed";
+      }
+
+      const conflicts: string[] = [];
+      if (grp.unique_questions.size > 1) {
+        conflicts.push(
+          `${grp.unique_questions.size} slightly different question texts detected — review before settling`
+        );
+      }
+      if (templateConsistency === "mixed") {
+        conflicts.push(
+          `Props link to ${uniqueTemplates.size} different template IDs (${[...uniqueTemplates].join(", ")})`
+        );
+      }
+
+      const answer_map = grp.answer_options.map((stored: string) => {
+        const normalized = normalizeAnswerOption(stored);
+        const roundTripResult = mapNormalizedToStored(stored, grp.answer_options);
+        return { stored, normalized, round_trips: roundTripResult === stored };
+      });
+
+      const ambiguousDetails = detectAmbiguousOptions(grp.answer_options);
+      const hasAmbiguous = ambiguousDetails.length > 0;
+      if (hasAmbiguous) {
+        conflicts.push(`Answer options are ambiguous after normalization — bulk settlement blocked`);
+      }
+
+      let settlement_status: "safe" | "review_required" | "manual_only";
+      if (ev.is_legacy || hasAmbiguous) {
+        settlement_status = "manual_only";
+      } else if (conflicts.length > 0) {
+        settlement_status = "review_required";
+      } else {
+        settlement_status = "safe";
+      }
+
+      groupsOut.push({
+        group_key: grp.group_key,
+        phase: grp.phase,
+        phase_label: phaseLabel(grp.phase),
+        question: grp.question,
+        answer_options: grp.answer_options,
+        normalized_options: grp.normalized_options,
+        answer_map,
+        has_ambiguous_options: hasAmbiguous,
+        ambiguous_option_details: ambiguousDetails,
+        prop_count: grp.prop_ids.length,
+        room_count: grp.room_ids.size,
+        prop_ids: grp.prop_ids,
+        room_ids: [...grp.room_ids],
+        template_prop_ids: [...grp.template_prop_ids],
+        template_consistency: templateConsistency,
+        conflicts,
+        settlement_status,
+      });
+    }
+
+    groupsOut.sort((a, b) => {
+      const pa = _PHASE_ORDER[a.phase] ?? 9;
+      const pb = _PHASE_ORDER[b.phase] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return a.question.localeCompare(b.question);
+    });
+
+    const totalPropsEv = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+    const safeCount    = groupsOut.filter((g) => g.settlement_status === "safe").length;
+    const reviewCount  = groupsOut.filter((g) => g.settlement_status === "review_required").length;
+    const manualCount  = groupsOut.filter((g) => g.settlement_status === "manual_only").length;
+
+    events.push({
+      event_key: ev.event_key,
+      is_legacy: ev.is_legacy,
+      game_label: gameLabel(ev.team_a, ev.team_b, ev.game_date),
+      sport: ev.sport,
+      game_date: ev.game_date,
+      team_a: ev.team_a,
+      team_b: ev.team_b,
+      group_count: groupsOut.length,
+      prop_count: totalPropsEv,
+      safe_count: safeCount,
+      review_count: reviewCount,
+      manual_count: manualCount,
+      groups: groupsOut,
+    });
+  }
+
+  events.sort((a, b) => {
+    if (a.is_legacy !== b.is_legacy) return a.is_legacy ? 1 : -1;
+    return (a.game_date ?? "").localeCompare(b.game_date ?? "");
+  });
+
+  const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
+  const totalProps  = events.reduce((s, e) => s + e.prop_count, 0);
+  const totalSafe   = events.reduce((s, e) => s + e.safe_count, 0);
+  const totalReview = events.reduce((s, e) => s + e.review_count, 0);
+  const totalManual = events.reduce((s, e) => s + e.manual_count, 0);
+
+  return {
+    events,
+    total_events: events.length,
+    total_groups: totalGroups,
+    total_props: totalProps,
+    total_safe: totalSafe,
+    total_review: totalReview,
+    total_manual: totalManual,
+  };
+}
 
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -1142,42 +1461,8 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      // Update prop
-      await supabase
-        .from("gameday_props")
-        .update({
-          correct_answer,
-          status: "settled",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", propId);
-
-      // Bulk-mark picks correct/incorrect (two queries instead of N)
-      await supabase
-        .from("gameday_picks")
-        .update({ is_correct: true })
-        .eq("prop_id", propId)
-        .eq("selected_answer", correct_answer);
-
-      await supabase
-        .from("gameday_picks")
-        .update({ is_correct: false })
-        .eq("prop_id", propId)
-        .neq("selected_answer", correct_answer);
-
-      // If all props in the card are now settled → mark card as settled
-      const { data: remainingProps } = await supabase
-        .from("gameday_props")
-        .select("id")
-        .eq("card_id", card.id)
-        .neq("status", "settled");
-
-      if (!remainingProps?.length) {
-        await supabase
-          .from("gameday_pick_cards")
-          .update({ status: "settled", updated_at: new Date().toISOString() })
-          .eq("id", card.id);
-      }
+      // Shared helper: update prop, score picks, cascade card status if complete.
+      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswer: correct_answer });
 
       const roomId = card?.room_id;
       await logEvent(supabase, roomId, null, hostId, "prop_settled", {
@@ -2687,49 +2972,214 @@ export function registerGamedayRoutes(app: Express) {
   // ── GET /api/admin/gameday/settlement-queue ──────────────────────────────
   // Read-only. Returns all unsettled props from locked cards in active rooms,
   // grouped by real-world game (event_key) and question (group_key).
-  // Includes template_prop_id consistency metadata per group.
-  // Legacy rooms (null sport or null game_date) are surfaced separately.
+  // Uses buildSettlementQueue() shared with the write path for consistency.
   // Auth: x-admin-token. No writes performed.
   app.get("/api/admin/gameday/settlement-queue", async (req: Request, res: Response) => {
     if (!checkPropLibraryAdmin(req, res)) return;
-    const supabase = getServiceSupabase();
+    const result = await buildSettlementQueue(getServiceSupabase());
+    if ("error" in result) { res.status(500).json({ error: result.error }); return; }
+    res.json({ ok: true, ...result });
+  });
 
-    // Fetch all props that are unsettled, belonging to locked cards in active rooms.
-    // We join the full chain: prop → card → room.
-    const { data: rawProps, error } = await supabase
-      .from("gameday_props")
-      .select(
-        `id, question, answer_options, status, template_prop_id,
-         gameday_pick_cards(
-           id, phase, status, room_id,
-           gameday_rooms(
-             id, room_code, room_name, status,
-             team_a_name, team_b_name, team_a_star, team_b_star,
-             game_date, sport
-           )
-         )`
-      )
-      .neq("status", "settled");
-
-    if (error) {
-      res.status(500).json({ error: error.message });
+  // ── POST /api/admin/gameday/settle-group ──────────────────────────────────
+  // Bulk-settles all props in a safe group in one operation.
+  // Gate: GLOBAL_SETTLEMENT_WRITE_ENABLED (env GLOBAL_SETTLE_ENABLED=true).
+  // Auth: x-admin-token.
+  //
+  // Body fields:
+  //   group_key                   — from the queue response
+  //   prop_ids                    — exact prop_id list from the last queue load
+  //   expected_count              — must equal prop_ids.length and live group size
+  //   canonical_answer_normalized — normalized form of the correct answer
+  //   idempotency_key             — client UUID; prevents double-settlement on retry
+  //
+  // Stale detection re-runs the full queue grouping and compares live prop_id
+  // set against the submitted set — any difference → 409 STALE_GROUP.
+  // Answer mapping calls mapNormalizedToStored() per-prop against that prop's
+  // own stored options — missing mapping → 409 MAPPING_FAILED.
+  app.post("/api/admin/gameday/settle-group", async (req: Request, res: Response) => {
+    // 1. Feature flag gate
+    if (!GLOBAL_SETTLEMENT_WRITE_ENABLED) {
+      res.status(503).json({ error: "Global settlement is not yet enabled.", code: "FLAG_DISABLED" });
       return;
     }
 
-    const props = (rawProps ?? []) as any[];
+    // 2. Admin auth
+    if (!checkPropLibraryAdmin(req, res)) return;
 
-    // Filter to locked cards in active rooms only (PostgREST nested filters
-    // are not guaranteed when the FK is not a direct join, so we filter in JS).
-    const eligible = props.filter((p) => {
-      const card = p.gameday_pick_cards;
-      const room = card?.gameday_rooms;
-      return card?.status === "locked" && room?.status === "active";
-    });
+    const supabase = getServiceSupabase();
 
-    // ── Group props into events and settlement groups ────────────────────────
-    // event_key  → { meta, groups: Map<group_key, GroupAccumulator> }
-    // Null event_key = legacy room (missing sport or game_date).
+    // 3. Parse and validate body
+    const {
+      group_key,
+      prop_ids,
+      expected_count,
+      canonical_answer_normalized,
+      idempotency_key,
+    } = req.body as {
+      group_key?: string;
+      prop_ids?: string[];
+      expected_count?: number;
+      canonical_answer_normalized?: string;
+      idempotency_key?: string;
+    };
 
+    if (!group_key || !prop_ids?.length || !canonical_answer_normalized || !idempotency_key) {
+      res.status(400).json({ error: "group_key, prop_ids, canonical_answer_normalized, and idempotency_key are required." });
+      return;
+    }
+    if (typeof expected_count !== "number" || expected_count <= 0) {
+      res.status(400).json({ error: "expected_count must be a positive integer." });
+      return;
+    }
+    if (prop_ids.length !== expected_count) {
+      res.status(400).json({ error: `prop_ids.length (${prop_ids.length}) ≠ expected_count (${expected_count}).` });
+      return;
+    }
+
+    // 4. Idempotency — return the cached result for replayed/retried requests
+    const cached = _checkIdem(idempotency_key);
+    if (cached) { res.json(cached); return; }
+
+    // 5. Re-run the full queue grouping for server-side revalidation.
+    //    Client cannot influence which props are in scope — only DB state does.
+    const queue = await buildSettlementQueue(supabase);
+    if ("error" in queue) { res.status(500).json({ error: queue.error }); return; }
+
+    // 6. Find the group matching the submitted group_key
+    let liveGroup: GSDGroupOut | null = null;
+    for (const ev of queue.events) {
+      for (const g of ev.groups) { if (g.group_key === group_key) { liveGroup = g; break; } }
+      if (liveGroup) break;
+    }
+    if (!liveGroup) {
+      res.status(409).json({
+        error: "Group not found — it may have been fully settled or room status changed. Refresh.",
+        code: "GROUP_NOT_FOUND", refresh_required: true,
+      });
+      return;
+    }
+
+    // 7. Only safe groups may be globally settled
+    if (liveGroup.settlement_status !== "safe") {
+      res.status(409).json({
+        error: `This group cannot be bulk-settled (status: ${liveGroup.settlement_status}).`,
+        code: "NOT_SAFE",
+      });
+      return;
+    }
+
+    // 8. Stale detection — live prop_id set must exactly match submitted set.
+    //    Catches: props settled individually since last load, new rooms added.
+    const liveSet = new Set(liveGroup.prop_ids);
+    const submittedSet = new Set(prop_ids);
+    const setsMatch = liveSet.size === submittedSet.size && [...liveSet].every((id) => submittedSet.has(id));
+    if (!setsMatch || liveGroup.prop_ids.length !== expected_count) {
+      res.status(409).json({
+        error: "The prop set for this group has changed since your last queue load. Refresh before settling.",
+        code: "STALE_GROUP", refresh_required: true,
+        live_count: liveGroup.prop_ids.length,
+        submitted_count: prop_ids.length,
+        expected_count,
+      });
+      return;
+    }
+
+    // 9. Fetch full prop data for each prop — needed for per-prop answer mapping.
+    //    (The queue only stores representative options; individual props may differ in order.)
+    const { data: propRows, error: propFetchErr } = await supabase
+      .from("gameday_props")
+      .select("id, answer_options, gameday_pick_cards(id, room_id)")
+      .in("id", prop_ids)
+      .neq("status", "settled");
+
+    if (propFetchErr || !propRows?.length) {
+      res.status(409).json({
+        error: "Failed to fetch prop details — some may have been settled already. Refresh and retry.",
+        code: "PROP_FETCH_FAILED", refresh_required: true,
+      });
+      return;
+    }
+    if (propRows.length !== expected_count) {
+      res.status(409).json({
+        error: `Expected ${expected_count} unsettled props but found ${propRows.length}. Refresh and retry.`,
+        code: "STALE_GROUP", refresh_required: true,
+      });
+      return;
+    }
+
+    // 10. Map canonical answer → stored option per prop.
+    //     A missing or ambiguous mapping blocks the entire operation — no props settled.
+    type SettleSpec = { propId: string; cardId: string; roomId: string; correctAnswer: string };
+    const settleSpecs: SettleSpec[] = [];
+
+    for (const row of propRows as any[]) {
+      const card = row.gameday_pick_cards as any;
+      const opts = row.answer_options as string[];
+      const storedAnswer = mapNormalizedToStored(canonical_answer_normalized, opts);
+      if (!storedAnswer) {
+        res.status(409).json({
+          error: `Cannot map "${canonical_answer_normalized}" to a stored option for prop ${row.id}. Options: ${JSON.stringify(opts)}. No props settled.`,
+          code: "MAPPING_FAILED", prop_id: row.id,
+        });
+        return;
+      }
+      settleSpecs.push({ propId: row.id, cardId: card?.id, roomId: card?.room_id, correctAnswer: storedAnswer });
+    }
+
+    // 11. Execute settlement via the shared helper — same logic as individual settle.
+    const opId = _genOpId();
+    const settleResults = [];
+    const affectedRoomIds = new Set<string>();
+
+    for (const spec of settleSpecs) {
+      try {
+        const r = await settlePropCore(supabase, spec);
+        settleResults.push(r);
+        affectedRoomIds.add(spec.roomId);
+      } catch (e) {
+        console.error(`[settle-group] op=${opId} settlePropCore error for prop ${spec.propId}:`, e);
+        res.status(500).json({
+          error: `Settlement failed mid-operation after ${settleResults.length}/${settleSpecs.length} props. Op: ${opId}. Check DB state.`,
+          code: "PARTIAL_SETTLE_ERROR", operation_id: opId, settled_so_far: settleResults.length,
+        });
+        return;
+      }
+    }
+
+    // 12. Log one audit event per affected room — real room IDs only, no fabricated IDs.
+    for (const roomId of affectedRoomIds) {
+      await logEvent(supabase, roomId, null, null, "global_prop_settled", {
+        operation_id: opId,
+        group_key,
+        canonical_answer_normalized,
+        settled_prop_ids: settleSpecs.filter((s) => s.roomId === roomId).map((s) => s.propId),
+        total_prop_count: settleSpecs.length,
+        total_room_count: affectedRoomIds.size,
+      });
+    }
+
+    console.log(
+      `[settle-group] op=${opId} settled=${settleResults.length} rooms=${affectedRoomIds.size}` +
+      ` group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`
+    );
+
+    // 13. Build response and cache for idempotency replay
+    const response = {
+      ok: true,
+      operation_id: opId,
+      settled_count: settleResults.length,
+      rooms_count: affectedRoomIds.size,
+      cards_auto_settled: settleResults.filter((r) => r.cardAutoSettled).length,
+      canonical_answer_normalized,
+    };
+    _storeIdem(idempotency_key, response);
+    res.json(response);
+  });
+
+  // ── (old inline grouping extracted — logic lives in buildSettlementQueue) ───
+  /* eslint-disable-next-line no-constant-condition */
+  if (false as boolean) {
     type GroupAcc = {
       group_key: string;
       phase: string;
@@ -2989,7 +3439,7 @@ export function registerGamedayRoutes(app: Express) {
       total_manual: totalManual,
       events,
     });
-  });
+  } // end dead-code block
 
   // ── Card Auto-Open / Auto-Lock Scheduler ──────────────────────────────────
   // Runs every 60 seconds. Opens cards at scheduled_open_at and locks them at
