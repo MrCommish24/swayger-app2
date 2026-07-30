@@ -8236,6 +8236,62 @@ function resolvePlaceholders(text, vars) {
 
 // server/routes-gameday.ts
 init_email();
+
+// server/gameday-normalize.ts
+function normalizeText(s) {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+function normalizeTeamName(name) {
+  return name.toLowerCase().replace(/\b(university|college|state|st\.?|the|of|at|fc|sc|united|city|cf|afc|bfc|athletic|athletics)\b/g, "").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+function normalizeTeamPair(teamA, teamB) {
+  const a = normalizeTeamName(teamA);
+  const b = normalizeTeamName(teamB);
+  return [a, b].sort().join("|");
+}
+function normalizeDate(d) {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  const s = String(d).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+  return null;
+}
+function normalizeQuestion(q) {
+  return q.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function normalizeAnswerOption(opt) {
+  return opt.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function normalizeAnswerOptions(options) {
+  return options.map(normalizeAnswerOption).sort().join("||");
+}
+function buildEventKey(sport, teamA, teamB, gameDate) {
+  const normSport = sport ? normalizeText(sport) : null;
+  const normDate = normalizeDate(gameDate);
+  if (!normSport || !teamA || !teamB || !normDate) return null;
+  const teamPair = normalizeTeamPair(teamA, teamB);
+  return `${normSport}|${teamPair}|${normDate}`;
+}
+function buildGroupKey(eventKey, phase, question, answerOptions) {
+  const normPhase = normalizeText(phase);
+  const normQuestion = normalizeQuestion(question);
+  const normOptions = normalizeAnswerOptions(answerOptions);
+  return `${eventKey}|${normPhase}|${normQuestion}|${normOptions}`;
+}
+function gameLabel(teamA, teamB, gameDate) {
+  const datePart = gameDate ? (/* @__PURE__ */ new Date(gameDate + "T12:00:00")).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric"
+  }) : "Unknown date";
+  return `${teamA} vs. ${teamB} \xB7 ${datePart}`;
+}
+function phaseLabel(phase) {
+  return phase.charAt(0).toUpperCase() + phase.slice(1).toLowerCase();
+}
+
+// server/routes-gameday.ts
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -9993,6 +10049,154 @@ ${html.slice(0, 800)}`);
     }
     console.log(`[global-settle] settled ${propIds.length} props for template "${template_prop_id}" \u2192 "${correct_answer}"`);
     res.json({ ok: true, settled: propIds.length, rooms_count: new Set(activeProps.map((p) => p.gameday_pick_cards?.room_id)).size });
+  });
+  app2.get("/api/admin/gameday/settlement-queue", async (req, res) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const supabase = getServiceSupabase();
+    const { data: rawProps, error } = await supabase.from("gameday_props").select(
+      `id, question, answer_options, status, template_prop_id,
+         gameday_pick_cards(
+           id, phase, status, room_id,
+           gameday_rooms(
+             id, room_code, room_name, status,
+             team_a_name, team_b_name, team_a_star, team_b_star,
+             game_date, sport
+           )
+         )`
+    ).neq("status", "settled");
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    const props = rawProps ?? [];
+    const eligible = props.filter((p) => {
+      const card = p.gameday_pick_cards;
+      const room = card?.gameday_rooms;
+      return card?.status === "locked" && room?.status === "active";
+    });
+    const eventMap = /* @__PURE__ */ new Map();
+    const LEGACY_KEY = "__legacy__";
+    for (const prop of eligible) {
+      const card = prop.gameday_pick_cards;
+      const room = card?.gameday_rooms;
+      const evKey = buildEventKey(room?.sport, room?.team_a_name, room?.team_b_name, room?.game_date);
+      const mapKey = evKey ?? LEGACY_KEY + "|" + (room?.id ?? "unknown");
+      if (!eventMap.has(mapKey)) {
+        eventMap.set(mapKey, {
+          event_key: evKey,
+          is_legacy: !evKey,
+          team_a: room?.team_a_name ?? "Unknown",
+          team_b: room?.team_b_name ?? "Unknown",
+          game_date: room?.game_date ?? null,
+          sport: room?.sport ?? null,
+          groups: /* @__PURE__ */ new Map()
+        });
+      }
+      const event = eventMap.get(mapKey);
+      const options = prop.answer_options ?? [];
+      const normQuestion = (prop.question ?? "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      const normOptions = options.map((o) => normalizeAnswerOption(o)).sort();
+      const grpKey = evKey ? buildGroupKey(evKey, card?.phase ?? "", prop.question ?? "", options) : `${mapKey}|${card?.phase ?? ""}|${normQuestion}|${normOptions.join("||")}`;
+      if (!event.groups.has(grpKey)) {
+        event.groups.set(grpKey, {
+          group_key: grpKey,
+          phase: card?.phase ?? "",
+          question: prop.question ?? "",
+          answer_options: options,
+          normalized_options: normOptions,
+          prop_ids: [],
+          room_ids: /* @__PURE__ */ new Set(),
+          template_prop_ids: /* @__PURE__ */ new Set(),
+          unique_questions: /* @__PURE__ */ new Set()
+        });
+      }
+      const grp = event.groups.get(grpKey);
+      grp.prop_ids.push(prop.id);
+      grp.room_ids.add(card.room_id);
+      grp.template_prop_ids.add(prop.template_prop_id ?? null);
+      grp.unique_questions.add(normQuestion);
+    }
+    const events = [];
+    for (const [, ev] of eventMap) {
+      const groupsOut = [];
+      for (const [, grp] of ev.groups) {
+        const templateIds = [...grp.template_prop_ids].filter(Boolean);
+        const uniqueTemplates = new Set(templateIds);
+        let templateConsistency;
+        if (grp.template_prop_ids.has(null) && templateIds.length === 0) {
+          templateConsistency = "none";
+        } else if (uniqueTemplates.size <= 1) {
+          templateConsistency = "consistent";
+        } else {
+          templateConsistency = "mixed";
+        }
+        const conflicts = [];
+        if (grp.unique_questions.size > 1) {
+          conflicts.push(
+            `${grp.unique_questions.size} slightly different question texts detected \u2014 review before settling`
+          );
+        }
+        if (templateConsistency === "mixed") {
+          conflicts.push(
+            `Props link to ${uniqueTemplates.size} different template IDs (${[...uniqueTemplates].join(", ")})`
+          );
+        }
+        groupsOut.push({
+          group_key: grp.group_key,
+          phase: grp.phase,
+          phase_label: phaseLabel(grp.phase),
+          question: grp.question,
+          answer_options: grp.answer_options,
+          normalized_options: grp.normalized_options,
+          prop_count: grp.prop_ids.length,
+          room_count: grp.room_ids.size,
+          prop_ids: grp.prop_ids,
+          room_ids: [...grp.room_ids],
+          template_prop_ids: [...grp.template_prop_ids],
+          template_consistency: templateConsistency,
+          conflicts
+        });
+      }
+      const PHASE_ORDER = {
+        pregame: 0,
+        halftime: 1,
+        fourth: 2,
+        final_push: 3,
+        penalties: 4
+      };
+      groupsOut.sort((a, b) => {
+        const pa = PHASE_ORDER[a.phase] ?? 9;
+        const pb = PHASE_ORDER[b.phase] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return a.question.localeCompare(b.question);
+      });
+      const totalProps2 = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+      events.push({
+        event_key: ev.event_key,
+        is_legacy: ev.is_legacy,
+        game_label: gameLabel(ev.team_a, ev.team_b, ev.game_date),
+        sport: ev.sport,
+        game_date: ev.game_date,
+        team_a: ev.team_a,
+        team_b: ev.team_b,
+        group_count: groupsOut.length,
+        prop_count: totalProps2,
+        groups: groupsOut
+      });
+    }
+    events.sort((a, b) => {
+      if (a.is_legacy !== b.is_legacy) return a.is_legacy ? 1 : -1;
+      return (a.game_date ?? "").localeCompare(b.game_date ?? "");
+    });
+    const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
+    const totalProps = events.reduce((s, e) => s + e.prop_count, 0);
+    res.json({
+      ok: true,
+      total_events: events.length,
+      total_groups: totalGroups,
+      total_props: totalProps,
+      events
+    });
   });
   const _cardSchedulerInterval = setInterval(async () => {
     const now = (/* @__PURE__ */ new Date()).toISOString();

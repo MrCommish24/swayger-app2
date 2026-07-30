@@ -11,6 +11,13 @@ import {
   buildGameDayBlastHtml,
   sendGameDayBlastEmail,
 } from "./email.js";
+import {
+  buildEventKey,
+  buildGroupKey,
+  normalizeAnswerOption,
+  gameLabel,
+  phaseLabel,
+} from "./gameday-normalize.js";
 
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -2673,6 +2680,250 @@ export function registerGamedayRoutes(app: Express) {
 
     console.log(`[global-settle] settled ${propIds.length} props for template "${template_prop_id}" → "${correct_answer}"`);
     res.json({ ok: true, settled: propIds.length, rooms_count: new Set(activeProps.map((p: any) => p.gameday_pick_cards?.room_id)).size });
+  });
+
+  // ── GET /api/admin/gameday/settlement-queue ──────────────────────────────
+  // Read-only. Returns all unsettled props from locked cards in active rooms,
+  // grouped by real-world game (event_key) and question (group_key).
+  // Includes template_prop_id consistency metadata per group.
+  // Legacy rooms (null sport or null game_date) are surfaced separately.
+  // Auth: x-admin-token. No writes performed.
+  app.get("/api/admin/gameday/settlement-queue", async (req: Request, res: Response) => {
+    if (!checkPropLibraryAdmin(req, res)) return;
+    const supabase = getServiceSupabase();
+
+    // Fetch all props that are unsettled, belonging to locked cards in active rooms.
+    // We join the full chain: prop → card → room.
+    const { data: rawProps, error } = await supabase
+      .from("gameday_props")
+      .select(
+        `id, question, answer_options, status, template_prop_id,
+         gameday_pick_cards(
+           id, phase, status, room_id,
+           gameday_rooms(
+             id, room_code, room_name, status,
+             team_a_name, team_b_name, team_a_star, team_b_star,
+             game_date, sport
+           )
+         )`
+      )
+      .neq("status", "settled");
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    const props = (rawProps ?? []) as any[];
+
+    // Filter to locked cards in active rooms only (PostgREST nested filters
+    // are not guaranteed when the FK is not a direct join, so we filter in JS).
+    const eligible = props.filter((p) => {
+      const card = p.gameday_pick_cards;
+      const room = card?.gameday_rooms;
+      return card?.status === "locked" && room?.status === "active";
+    });
+
+    // ── Group props into events and settlement groups ────────────────────────
+    // event_key  → { meta, groups: Map<group_key, GroupAccumulator> }
+    // Null event_key = legacy room (missing sport or game_date).
+
+    type GroupAcc = {
+      group_key: string;
+      phase: string;
+      // Representative question + options (first prop's values)
+      question: string;
+      answer_options: string[];
+      normalized_options: string[];
+      prop_ids: string[];
+      room_ids: Set<string>;
+      template_prop_ids: Set<string | null>;
+      // For conflict detection: every unique normalized question seen in this group
+      unique_questions: Set<string>;
+    };
+
+    type EventAcc = {
+      event_key: string | null;
+      is_legacy: boolean;
+      team_a: string;
+      team_b: string;
+      game_date: string | null;
+      sport: string | null;
+      groups: Map<string, GroupAcc>;
+    };
+
+    const eventMap = new Map<string, EventAcc>();
+    const LEGACY_KEY = "__legacy__";
+
+    for (const prop of eligible) {
+      const card = prop.gameday_pick_cards as any;
+      const room = card?.gameday_rooms as any;
+
+      const evKey = buildEventKey(room?.sport, room?.team_a_name, room?.team_b_name, room?.game_date);
+      const mapKey = evKey ?? (LEGACY_KEY + "|" + (room?.id ?? "unknown"));
+
+      // Ensure event accumulator
+      if (!eventMap.has(mapKey)) {
+        eventMap.set(mapKey, {
+          event_key: evKey,
+          is_legacy: !evKey,
+          team_a: room?.team_a_name ?? "Unknown",
+          team_b: room?.team_b_name ?? "Unknown",
+          game_date: room?.game_date ?? null,
+          sport: room?.sport ?? null,
+          groups: new Map(),
+        });
+      }
+      const event = eventMap.get(mapKey)!;
+
+      const options = (prop.answer_options ?? []) as string[];
+      const normQuestion = (prop.question ?? "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      const normOptions = options.map((o: string) => normalizeAnswerOption(o)).sort();
+
+      const grpKey = evKey
+        ? buildGroupKey(evKey, card?.phase ?? "", prop.question ?? "", options)
+        : `${mapKey}|${card?.phase ?? ""}|${normQuestion}|${normOptions.join("||")}`;
+
+      if (!event.groups.has(grpKey)) {
+        event.groups.set(grpKey, {
+          group_key: grpKey,
+          phase: card?.phase ?? "",
+          question: prop.question ?? "",
+          answer_options: options,
+          normalized_options: normOptions,
+          prop_ids: [],
+          room_ids: new Set(),
+          template_prop_ids: new Set(),
+          unique_questions: new Set(),
+        });
+      }
+      const grp = event.groups.get(grpKey)!;
+      grp.prop_ids.push(prop.id);
+      grp.room_ids.add(card.room_id);
+      grp.template_prop_ids.add(prop.template_prop_id ?? null);
+      grp.unique_questions.add(normQuestion);
+    }
+
+    // ── Build response ───────────────────────────────────────────────────────
+
+    type GroupOut = {
+      group_key: string;
+      phase: string;
+      phase_label: string;
+      question: string;
+      answer_options: string[];
+      normalized_options: string[];
+      prop_count: number;
+      room_count: number;
+      prop_ids: string[];
+      room_ids: string[];
+      template_prop_ids: (string | null)[];
+      template_consistency: "consistent" | "mixed" | "none";
+      conflicts: string[];
+    };
+
+    type EventOut = {
+      event_key: string | null;
+      is_legacy: boolean;
+      game_label: string;
+      sport: string | null;
+      game_date: string | null;
+      team_a: string;
+      team_b: string;
+      group_count: number;
+      prop_count: number;
+      groups: GroupOut[];
+    };
+
+    const events: EventOut[] = [];
+
+    for (const [, ev] of eventMap) {
+      const groupsOut: GroupOut[] = [];
+
+      for (const [, grp] of ev.groups) {
+        const templateIds = [...grp.template_prop_ids].filter(Boolean) as string[];
+        const uniqueTemplates = new Set(templateIds);
+
+        let templateConsistency: "consistent" | "mixed" | "none";
+        if (grp.template_prop_ids.has(null) && templateIds.length === 0) {
+          templateConsistency = "none";
+        } else if (uniqueTemplates.size <= 1) {
+          templateConsistency = "consistent";
+        } else {
+          templateConsistency = "mixed";
+        }
+
+        const conflicts: string[] = [];
+        if (grp.unique_questions.size > 1) {
+          conflicts.push(
+            `${grp.unique_questions.size} slightly different question texts detected — review before settling`
+          );
+        }
+        if (templateConsistency === "mixed") {
+          conflicts.push(
+            `Props link to ${uniqueTemplates.size} different template IDs (${[...uniqueTemplates].join(", ")})`
+          );
+        }
+
+        groupsOut.push({
+          group_key: grp.group_key,
+          phase: grp.phase,
+          phase_label: phaseLabel(grp.phase),
+          question: grp.question,
+          answer_options: grp.answer_options,
+          normalized_options: grp.normalized_options,
+          prop_count: grp.prop_ids.length,
+          room_count: grp.room_ids.size,
+          prop_ids: grp.prop_ids,
+          room_ids: [...grp.room_ids],
+          template_prop_ids: [...grp.template_prop_ids],
+          template_consistency: templateConsistency,
+          conflicts,
+        });
+      }
+
+      // Sort groups by phase then question
+      const PHASE_ORDER: Record<string, number> = {
+        pregame: 0, halftime: 1, fourth: 2, final_push: 3, penalties: 4,
+      };
+      groupsOut.sort((a, b) => {
+        const pa = PHASE_ORDER[a.phase] ?? 9;
+        const pb = PHASE_ORDER[b.phase] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return a.question.localeCompare(b.question);
+      });
+
+      const totalProps = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+      events.push({
+        event_key: ev.event_key,
+        is_legacy: ev.is_legacy,
+        game_label: gameLabel(ev.team_a, ev.team_b, ev.game_date),
+        sport: ev.sport,
+        game_date: ev.game_date,
+        team_a: ev.team_a,
+        team_b: ev.team_b,
+        group_count: groupsOut.length,
+        prop_count: totalProps,
+        groups: groupsOut,
+      });
+    }
+
+    // Sort: non-legacy first by date, then legacy
+    events.sort((a, b) => {
+      if (a.is_legacy !== b.is_legacy) return a.is_legacy ? 1 : -1;
+      return (a.game_date ?? "").localeCompare(b.game_date ?? "");
+    });
+
+    const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
+    const totalProps = events.reduce((s, e) => s + e.prop_count, 0);
+
+    res.json({
+      ok: true,
+      total_events: events.length,
+      total_groups: totalGroups,
+      total_props: totalProps,
+      events,
+    });
   });
 
   // ── Card Auto-Open / Auto-Lock Scheduler ──────────────────────────────────

@@ -13,6 +13,46 @@ import Colors from "@/constants/colors";
 const ADMIN_TOKEN_KEY = "swayger_admin_token";
 const NBA_GOLD = "#FFC72C";
 
+// Set to true to restore the legacy template-based global settlement UI.
+const LEGACY_GS_ENABLED = false;
+
+// ── Settlement Queue types ──────────────────────────────────────────────────
+interface SQGroup {
+  group_key: string;
+  phase: string;
+  phase_label: string;
+  question: string;
+  answer_options: string[];
+  normalized_options: string[];
+  prop_count: number;
+  room_count: number;
+  prop_ids: string[];
+  room_ids: string[];
+  template_prop_ids: (string | null)[];
+  template_consistency: "consistent" | "mixed" | "none";
+  conflicts: string[];
+}
+
+interface SQEvent {
+  event_key: string | null;
+  is_legacy: boolean;
+  game_label: string;
+  sport: string | null;
+  game_date: string | null;
+  team_a: string;
+  team_b: string;
+  group_count: number;
+  prop_count: number;
+  groups: SQGroup[];
+}
+
+interface SQQueue {
+  total_events: number;
+  total_groups: number;
+  total_props: number;
+  events: SQEvent[];
+}
+
 interface PropDef {
   id: string;
   stat: string;
@@ -103,7 +143,7 @@ export default function AdminScreen() {
   const [resolving, setResolving] = useState<string | null>(null);
   const [pendingResults, setPendingResults] = useState<Record<string, Record<string, "over" | "under" | "voided">>>({});
 
-  // Global Settlement
+  // Legacy Global Settlement (hidden unless LEGACY_GS_ENABLED)
   const [gsSport, setGsSport] = useState<"nba" | "soccer">("nba");
   const [gsTemplProps, setGsTemplProps] = useState<any[]>([]);
   const [gsTemplLoading, setGsTemplLoading] = useState(false);
@@ -113,6 +153,13 @@ export default function AdminScreen() {
   const [gsPreviewLoading, setGsPreviewLoading] = useState(false);
   const [gsSettling, setGsSettling] = useState(false);
   const [gsMsg, setGsMsg] = useState<string | null>(null);
+
+  // Settlement Queue (new grouped settlement preview)
+  const [sqQueue, setSqQueue] = useState<SQQueue | null>(null);
+  const [sqLoading, setSqLoading] = useState(false);
+  const [sqError, setSqError] = useState<string | null>(null);
+  const [sqExpandedEvent, setSqExpandedEvent] = useState<string | null>(null);
+  const [sqExpandedGroup, setSqExpandedGroup] = useState<string | null>(null);
 
   // Prop Library
   const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
@@ -132,9 +179,33 @@ export default function AdminScreen() {
     AsyncStorage.getItem(ADMIN_TOKEN_KEY).then((t) => {
       setSavedToken(t);
       setTokenLoading(false);
-      if (t) { loadNights(t); loadPropLibrary(t, libSport); loadGsTemplProps(t, gsSport); }
+      if (t) {
+        loadNights(t);
+        loadPropLibrary(t, libSport);
+        loadSettlementQueue(t);
+        if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
+      }
     });
   }, []));
+
+  async function loadSettlementQueue(t: string) {
+    setSqLoading(true);
+    setSqError(null);
+    try {
+      const url = new URL("/api/admin/gameday/settlement-queue", getApiUrl());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
+      const json = await res.json();
+      if (json.ok) {
+        setSqQueue(json as SQQueue);
+      } else {
+        setSqError(json.error ?? "Failed to load queue.");
+      }
+    } catch (e) {
+      setSqError(String(e));
+    } finally {
+      setSqLoading(false);
+    }
+  }
 
   async function loadPropLibrary(t: string, sport: "nba" | "soccer") {
     setLibLoading(true);
@@ -301,7 +372,8 @@ export default function AdminScreen() {
     setSavedToken(t);
     loadNights(t);
     loadPropLibrary(t, libSport);
-    loadGsTemplProps(t, gsSport);
+    loadSettlementQueue(t);
+    if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
   }
 
   async function clearToken() {
@@ -668,11 +740,217 @@ export default function AdminScreen() {
         )}
       </View>
 
-      {/* ── Global Settlement ── */}
+      {/* ── Settlement Queue (new grouped preview) ── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>Settlement Queue</Text>
+            <Text style={styles.sectionSub}>
+              Locked props grouped by game and question. Read-only preview.
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => savedToken && loadSettlementQueue(savedToken)}
+            style={styles.refreshBtn}
+          >
+            <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
+          </Pressable>
+        </View>
+
+        {sqLoading && <ActivityIndicator color={NBA_GOLD} style={{ marginVertical: 8 }} />}
+
+        {sqError && (
+          <Text style={[styles.createMsg, { color: "#F87171" }]}>⚠ {sqError}</Text>
+        )}
+
+        {!sqLoading && !sqError && sqQueue && sqQueue.total_props === 0 && (
+          <Text style={styles.emptyText}>
+            No locked unsettled props in active rooms right now.
+          </Text>
+        )}
+
+        {!sqLoading && !sqError && sqQueue && sqQueue.total_props > 0 && (
+          <View style={{ gap: 4 }}>
+            {/* Summary bar */}
+            <View style={styles.sqSummaryBar}>
+              <Text style={styles.sqSummaryText}>
+                {sqQueue.total_events} game{sqQueue.total_events !== 1 ? "s" : ""}
+              </Text>
+              <Text style={styles.sqSummaryDot}>·</Text>
+              <Text style={styles.sqSummaryText}>
+                {sqQueue.total_groups} question{sqQueue.total_groups !== 1 ? "s" : ""}
+              </Text>
+              <Text style={styles.sqSummaryDot}>·</Text>
+              <Text style={styles.sqSummaryText}>
+                {sqQueue.total_props} prop{sqQueue.total_props !== 1 ? "s" : ""} pending
+              </Text>
+            </View>
+
+            {/* Event cards */}
+            {sqQueue.events.map((ev) => {
+              const evKey = ev.event_key ?? ev.game_label;
+              const isOpen = sqExpandedEvent === evKey;
+              const hasConflicts = ev.groups.some((g) => g.conflicts.length > 0);
+
+              return (
+                <View key={evKey} style={styles.sqEventCard}>
+                  {/* Event header — tap to expand/collapse */}
+                  <Pressable
+                    style={styles.sqEventHeader}
+                    onPress={() => setSqExpandedEvent(isOpen ? null : evKey)}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {ev.is_legacy && (
+                          <View style={styles.sqLegacyBadge}>
+                            <Text style={styles.sqLegacyBadgeText}>LEGACY</Text>
+                          </View>
+                        )}
+                        {hasConflicts && (
+                          <Ionicons name="warning-outline" size={13} color="#FBBF24" />
+                        )}
+                        <Text style={styles.sqEventLabel} numberOfLines={1}>
+                          {ev.game_label}
+                        </Text>
+                      </View>
+                      <Text style={styles.sqEventMeta}>
+                        {ev.sport ? ev.sport.toUpperCase() + " · " : ""}
+                        {ev.group_count} question{ev.group_count !== 1 ? "s" : ""} · {ev.prop_count} prop{ev.prop_count !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={isOpen ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={Colors.dark.tabIconDefault}
+                    />
+                  </Pressable>
+
+                  {/* Expanded group list */}
+                  {isOpen && (
+                    <View style={{ gap: 8, marginTop: 4 }}>
+                      {ev.is_legacy && (
+                        <View style={styles.sqLegacyNotice}>
+                          <Ionicons name="information-circle-outline" size={14} color="#FBBF24" />
+                          <Text style={styles.sqLegacyNoticeText}>
+                            This room is missing sport or game date — it cannot be bulk-settled.
+                            Settle each prop individually from the host panel.
+                          </Text>
+                        </View>
+                      )}
+
+                      {ev.groups.map((grp) => {
+                        const grpKey = grp.group_key;
+                        const grpOpen = sqExpandedGroup === grpKey;
+
+                        return (
+                          <View key={grpKey} style={styles.sqGroupCard}>
+                            {/* Group header */}
+                            <Pressable
+                              style={styles.sqGroupHeader}
+                              onPress={() => setSqExpandedGroup(grpOpen ? null : grpKey)}
+                            >
+                              <View style={{ flex: 1, gap: 3 }}>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                                  <View style={styles.sqPhasePill}>
+                                    <Text style={styles.sqPhasePillText}>
+                                      {grp.phase_label.toUpperCase()}
+                                    </Text>
+                                  </View>
+                                  {grp.conflicts.length > 0 && (
+                                    <Ionicons name="warning-outline" size={12} color="#FBBF24" />
+                                  )}
+                                </View>
+                                <Text style={styles.sqGroupQuestion} numberOfLines={2}>
+                                  {grp.question}
+                                </Text>
+                                <Text style={styles.sqGroupMeta}>
+                                  {grp.prop_count} prop{grp.prop_count !== 1 ? "s" : ""} · {grp.room_count} room{grp.room_count !== 1 ? "s" : ""}
+                                  {grp.template_consistency === "consistent" && grp.template_prop_ids[0]
+                                    ? ` · tmpl: ${String(grp.template_prop_ids[0]).slice(0, 12)}…`
+                                    : grp.template_consistency === "mixed"
+                                    ? " · ⚠ mixed templates"
+                                    : ""}
+                                </Text>
+                              </View>
+                              <Ionicons
+                                name={grpOpen ? "chevron-up" : "chevron-down"}
+                                size={14}
+                                color={Colors.dark.tabIconDefault}
+                              />
+                            </Pressable>
+
+                            {/* Expanded group detail */}
+                            {grpOpen && (
+                              <View style={{ gap: 10, marginTop: 4 }}>
+                                {/* Conflicts */}
+                                {grp.conflicts.map((c, i) => (
+                                  <View key={i} style={styles.sqConflictRow}>
+                                    <Ionicons name="warning-outline" size={13} color="#FBBF24" />
+                                    <Text style={styles.sqConflictText}>{c}</Text>
+                                  </View>
+                                ))}
+
+                                {/* Answer options */}
+                                <View style={{ gap: 4 }}>
+                                  <Text style={styles.label}>Answer options (representative)</Text>
+                                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                                    {grp.answer_options.map((opt) => (
+                                      <View key={opt} style={styles.sqOptionPill}>
+                                        <Text style={styles.sqOptionPillText}>{opt}</Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                </View>
+
+                                {/* Normalized options */}
+                                <View style={{ gap: 2 }}>
+                                  <Text style={styles.label}>Normalized options (for grouping)</Text>
+                                  {grp.normalized_options.map((n) => (
+                                    <Text key={n} style={styles.sqNormText}>→ {n}</Text>
+                                  ))}
+                                </View>
+
+                                {/* Template info */}
+                                <View style={{ gap: 2 }}>
+                                  <Text style={styles.label}>
+                                    Template IDs ({grp.template_consistency})
+                                  </Text>
+                                  {[...new Set(grp.template_prop_ids)].map((tid, i) => (
+                                    <Text key={i} style={styles.sqNormText}>
+                                      {tid ?? "none"}
+                                    </Text>
+                                  ))}
+                                </View>
+
+                                {/* Prop IDs (collapsed list) */}
+                                <Text style={styles.sqNormText}>
+                                  Prop IDs: {grp.prop_ids.slice(0, 4).map((id) => id.slice(0, 8)).join(", ")}
+                                  {grp.prop_ids.length > 4 ? ` +${grp.prop_ids.length - 4} more` : ""}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+
+            <Text style={[styles.sqNormText, { textAlign: "center", marginTop: 4 }]}>
+              ℹ️ Settlement controls will appear here after grouping review.
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* ── Legacy Global Settlement (hidden for rollback safety) ── */}
+      {LEGACY_GS_ENABLED && (
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
           <View>
-            <Text style={styles.sectionTitle}>Global Settlement</Text>
+            <Text style={styles.sectionTitle}>Global Settlement (Legacy)</Text>
             <Text style={styles.sectionSub}>Settle one prop across all active rooms at once.</Text>
           </View>
           <Pressable onPress={() => savedToken && loadGsTemplProps(savedToken, gsSport)} style={styles.refreshBtn}>
@@ -826,6 +1104,7 @@ export default function AdminScreen() {
 
         {gsMsg && <Text style={styles.createMsg}>{gsMsg}</Text>}
       </View>
+      )}
 
       {/* ── Prop Library ── */}
       <View style={styles.section}>
@@ -1079,4 +1358,94 @@ const styles = StyleSheet.create({
   resolveBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 
   emptyText: { fontSize: 13, color: Colors.dark.tabIconDefault, textAlign: "center", paddingVertical: 12 },
+
+  // ── Settlement Queue styles ───────────────────────────────────────────────
+  sqSummaryBar: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: Colors.dark.background,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  sqSummaryText: { fontSize: 12, color: Colors.dark.textSecondary, fontWeight: "600" },
+  sqSummaryDot: { fontSize: 12, color: Colors.dark.tabIconDefault },
+
+  sqEventCard: {
+    backgroundColor: Colors.dark.background,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.border,
+    overflow: "hidden",
+  },
+  sqEventHeader: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  sqEventLabel: {
+    fontSize: 14, fontWeight: "700", color: Colors.dark.text, flex: 1,
+  },
+  sqEventMeta: {
+    fontSize: 11, color: Colors.dark.tabIconDefault,
+  },
+
+  sqLegacyBadge: {
+    backgroundColor: "#FBBF2420", borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 1,
+    borderWidth: 1, borderColor: "#FBBF2440",
+  },
+  sqLegacyBadgeText: {
+    fontSize: 9, fontWeight: "700", color: "#FBBF24", letterSpacing: 0.5,
+  },
+  sqLegacyNotice: {
+    flexDirection: "row", alignItems: "flex-start", gap: 6,
+    backgroundColor: "#FBBF2410", borderRadius: 8,
+    padding: 10, borderWidth: 1, borderColor: "#FBBF2430",
+    marginHorizontal: 14,
+  },
+  sqLegacyNoticeText: {
+    flex: 1, fontSize: 12, color: "#FBBF24", lineHeight: 17,
+  },
+
+  sqGroupCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.dark.border,
+    marginHorizontal: 8, overflow: "hidden",
+  },
+  sqGroupHeader: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  sqGroupQuestion: {
+    fontSize: 13, color: Colors.dark.text, fontWeight: "500", lineHeight: 18,
+  },
+  sqGroupMeta: {
+    fontSize: 11, color: Colors.dark.tabIconDefault,
+  },
+
+  sqPhasePill: {
+    backgroundColor: `${Colors.dark.tint}20`,
+    borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  sqPhasePillText: {
+    fontSize: 9, fontWeight: "700", color: Colors.dark.tint, letterSpacing: 0.5,
+  },
+
+  sqConflictRow: {
+    flexDirection: "row", alignItems: "flex-start", gap: 6,
+    backgroundColor: "#FBBF2410", borderRadius: 8,
+    padding: 8, borderWidth: 1, borderColor: "#FBBF2430",
+    marginHorizontal: 12,
+  },
+  sqConflictText: {
+    flex: 1, fontSize: 12, color: "#FBBF24", lineHeight: 17,
+  },
+
+  sqOptionPill: {
+    backgroundColor: Colors.dark.background,
+    borderRadius: 8, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  sqOptionPillText: {
+    fontSize: 12, color: Colors.dark.text,
+  },
+  sqNormText: {
+    fontSize: 11, color: Colors.dark.tabIconDefault, fontFamily: "monospace" as any,
+  },
 });
