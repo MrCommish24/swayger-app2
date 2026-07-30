@@ -35,6 +35,19 @@ Token stored in `AsyncStorage` under `"swayger_admin_token"`. Sent as `x-admin-t
 Token is never put in a URL. `checkPropLibraryAdmin()` in routes-gameday.ts validates against `MM_ADMIN_TOKEN` env var.
 Admin panel is a responsive web workspace — same screen serves mobile and desktop browser.
 
+## Normalization rules (conservative, as of Milestone 1 revision)
+
+Team names: strip ONLY leading articles (the/a/an) and trailing soccer org suffixes (fc/sc/cf/afc/bfc).
+Do NOT strip: state, united, city, st., national, athletic/athletics, university, college.
+Verified no collision: "Manchester United FC" → "manchester united" ≠ "Manchester City FC" → "manchester city".
+
+mapNormalizedToStored: TWO passes only — (1) exact stored string identity, (2) exact normalized match.
+Prefix and substring matching are permanently removed — they were ambiguous for options sharing a common prefix.
+null return = hard block; prop must be settled individually.
+
+Fixture tests: server/gameday-normalize.test.ts — 75/75 passing.
+Run with: npx tsx server/gameday-normalize.test.ts
+
 ## Milestone 1 (complete)
 
 - `GET /api/admin/gameday/settlement-queue` — read-only grouped queue with grouping preview, conflict flags, template consistency metadata

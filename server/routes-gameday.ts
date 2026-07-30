@@ -15,6 +15,8 @@ import {
   buildEventKey,
   buildGroupKey,
   normalizeAnswerOption,
+  mapNormalizedToStored,
+  detectAmbiguousOptions,
   gameLabel,
   phaseLabel,
 } from "./gameday-normalize.js";
@@ -2806,6 +2808,12 @@ export function registerGamedayRoutes(app: Express) {
 
     // ── Build response ───────────────────────────────────────────────────────
 
+    type AnswerMapEntry = {
+      stored: string;         // exact string stored in gameday_props.answer_options
+      normalized: string;     // what normalizeAnswerOption() produces
+      round_trips: boolean;   // mapNormalizedToStored(normalized, [stored]) === stored
+    };
+
     type GroupOut = {
       group_key: string;
       phase: string;
@@ -2813,6 +2821,9 @@ export function registerGamedayRoutes(app: Express) {
       question: string;
       answer_options: string[];
       normalized_options: string[];
+      answer_map: AnswerMapEntry[];        // normalized ↔ stored mapping for each option
+      has_ambiguous_options: boolean;      // true if any two options normalize to the same string
+      ambiguous_option_details: string[];  // human-readable collision descriptions
       prop_count: number;
       room_count: number;
       prop_ids: string[];
@@ -2820,6 +2831,11 @@ export function registerGamedayRoutes(app: Express) {
       template_prop_ids: (string | null)[];
       template_consistency: "consistent" | "mixed" | "none";
       conflicts: string[];
+      // Explicit settlement readiness status:
+      //   safe           — no conflicts, no ambiguity, not legacy
+      //   review_required — has conflicts (question drift, mixed templates) but no blocking issues
+      //   manual_only    — ambiguous options OR legacy room; bulk settlement is blocked
+      settlement_status: "safe" | "review_required" | "manual_only";
     };
 
     type EventOut = {
@@ -2832,6 +2848,9 @@ export function registerGamedayRoutes(app: Express) {
       team_b: string;
       group_count: number;
       prop_count: number;
+      safe_count: number;
+      review_count: number;
+      manual_count: number;
       groups: GroupOut[];
     };
 
@@ -2865,6 +2884,35 @@ export function registerGamedayRoutes(app: Express) {
           );
         }
 
+        // Build the answer map: for each representative stored option, show
+        // the normalized form and whether it round-trips correctly.
+        const answer_map: AnswerMapEntry[] = grp.answer_options.map((stored: string) => {
+          const normalized = normalizeAnswerOption(stored);
+          const roundTripResult = mapNormalizedToStored(stored, grp.answer_options);
+          return {
+            stored,
+            normalized,
+            round_trips: roundTripResult === stored,
+          };
+        });
+
+        // Check for ambiguous options: two stored options that normalize to the same string.
+        const ambiguousDetails = detectAmbiguousOptions(grp.answer_options);
+        const hasAmbiguous = ambiguousDetails.length > 0;
+        if (hasAmbiguous) {
+          conflicts.push(`Answer options are ambiguous after normalization — bulk settlement blocked`);
+        }
+
+        // Compute settlement_status (priority: manual_only > review_required > safe)
+        let settlement_status: "safe" | "review_required" | "manual_only";
+        if (ev.is_legacy || hasAmbiguous) {
+          settlement_status = "manual_only";
+        } else if (conflicts.length > 0) {
+          settlement_status = "review_required";
+        } else {
+          settlement_status = "safe";
+        }
+
         groupsOut.push({
           group_key: grp.group_key,
           phase: grp.phase,
@@ -2872,6 +2920,9 @@ export function registerGamedayRoutes(app: Express) {
           question: grp.question,
           answer_options: grp.answer_options,
           normalized_options: grp.normalized_options,
+          answer_map,
+          has_ambiguous_options: hasAmbiguous,
+          ambiguous_option_details: ambiguousDetails,
           prop_count: grp.prop_ids.length,
           room_count: grp.room_ids.size,
           prop_ids: grp.prop_ids,
@@ -2879,6 +2930,7 @@ export function registerGamedayRoutes(app: Express) {
           template_prop_ids: [...grp.template_prop_ids],
           template_consistency: templateConsistency,
           conflicts,
+          settlement_status,
         });
       }
 
@@ -2894,6 +2946,10 @@ export function registerGamedayRoutes(app: Express) {
       });
 
       const totalProps = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+      const safeCount    = groupsOut.filter((g) => g.settlement_status === "safe").length;
+      const reviewCount  = groupsOut.filter((g) => g.settlement_status === "review_required").length;
+      const manualCount  = groupsOut.filter((g) => g.settlement_status === "manual_only").length;
+
       events.push({
         event_key: ev.event_key,
         is_legacy: ev.is_legacy,
@@ -2904,6 +2960,9 @@ export function registerGamedayRoutes(app: Express) {
         team_b: ev.team_b,
         group_count: groupsOut.length,
         prop_count: totalProps,
+        safe_count: safeCount,
+        review_count: reviewCount,
+        manual_count: manualCount,
         groups: groupsOut,
       });
     }
@@ -2915,13 +2974,19 @@ export function registerGamedayRoutes(app: Express) {
     });
 
     const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
-    const totalProps = events.reduce((s, e) => s + e.prop_count, 0);
+    const totalProps  = events.reduce((s, e) => s + e.prop_count, 0);
+    const totalSafe   = events.reduce((s, e) => s + e.safe_count, 0);
+    const totalReview = events.reduce((s, e) => s + e.review_count, 0);
+    const totalManual = events.reduce((s, e) => s + e.manual_count, 0);
 
     res.json({
       ok: true,
       total_events: events.length,
       total_groups: totalGroups,
       total_props: totalProps,
+      total_safe: totalSafe,
+      total_review: totalReview,
+      total_manual: totalManual,
       events,
     });
   });

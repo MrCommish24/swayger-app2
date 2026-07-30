@@ -8242,7 +8242,7 @@ function normalizeText(s) {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 function normalizeTeamName(name) {
-  return name.toLowerCase().replace(/\b(university|college|state|st\.?|the|of|at|fc|sc|united|city|cf|afc|bfc|athletic|athletics)\b/g, "").replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  return name.toLowerCase().replace(/^(the|a|an)\s+/, "").replace(/\s+(f\.?c\.?|s\.?c\.?|c\.?f\.?|a\.?f\.?c\.?|b\.?f\.?c\.?)$/, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 function normalizeTeamPair(teamA, teamB) {
   const a = normalizeTeamName(teamA);
@@ -8279,6 +8279,31 @@ function buildGroupKey(eventKey, phase, question, answerOptions) {
   const normQuestion = normalizeQuestion(question);
   const normOptions = normalizeAnswerOptions(answerOptions);
   return `${eventKey}|${normPhase}|${normQuestion}|${normOptions}`;
+}
+function mapNormalizedToStored(answer, storedOptions) {
+  for (const opt of storedOptions) {
+    if (opt === answer) return opt;
+  }
+  const normAnswer = normalizeAnswerOption(answer);
+  for (const opt of storedOptions) {
+    if (normalizeAnswerOption(opt) === normAnswer) return opt;
+  }
+  return null;
+}
+function detectAmbiguousOptions(options) {
+  const seen = /* @__PURE__ */ new Map();
+  const collisions = [];
+  for (const opt of options) {
+    const norm = normalizeAnswerOption(opt);
+    if (seen.has(norm)) {
+      collisions.push(
+        `Options "${seen.get(norm)}" and "${opt}" both normalize to "${norm}" \u2014 ambiguous`
+      );
+    } else {
+      seen.set(norm, opt);
+    }
+  }
+  return collisions;
 }
 function gameLabel(teamA, teamB, gameDate) {
   const datePart = gameDate ? (/* @__PURE__ */ new Date(gameDate + "T12:00:00")).toLocaleDateString("en-US", {
@@ -10141,6 +10166,28 @@ ${html.slice(0, 800)}`);
             `Props link to ${uniqueTemplates.size} different template IDs (${[...uniqueTemplates].join(", ")})`
           );
         }
+        const answer_map = grp.answer_options.map((stored) => {
+          const normalized = normalizeAnswerOption(stored);
+          const roundTripResult = mapNormalizedToStored(stored, grp.answer_options);
+          return {
+            stored,
+            normalized,
+            round_trips: roundTripResult === stored
+          };
+        });
+        const ambiguousDetails = detectAmbiguousOptions(grp.answer_options);
+        const hasAmbiguous = ambiguousDetails.length > 0;
+        if (hasAmbiguous) {
+          conflicts.push(`Answer options are ambiguous after normalization \u2014 bulk settlement blocked`);
+        }
+        let settlement_status;
+        if (ev.is_legacy || hasAmbiguous) {
+          settlement_status = "manual_only";
+        } else if (conflicts.length > 0) {
+          settlement_status = "review_required";
+        } else {
+          settlement_status = "safe";
+        }
         groupsOut.push({
           group_key: grp.group_key,
           phase: grp.phase,
@@ -10148,13 +10195,17 @@ ${html.slice(0, 800)}`);
           question: grp.question,
           answer_options: grp.answer_options,
           normalized_options: grp.normalized_options,
+          answer_map,
+          has_ambiguous_options: hasAmbiguous,
+          ambiguous_option_details: ambiguousDetails,
           prop_count: grp.prop_ids.length,
           room_count: grp.room_ids.size,
           prop_ids: grp.prop_ids,
           room_ids: [...grp.room_ids],
           template_prop_ids: [...grp.template_prop_ids],
           template_consistency: templateConsistency,
-          conflicts
+          conflicts,
+          settlement_status
         });
       }
       const PHASE_ORDER = {
@@ -10171,6 +10222,9 @@ ${html.slice(0, 800)}`);
         return a.question.localeCompare(b.question);
       });
       const totalProps2 = groupsOut.reduce((s, g) => s + g.prop_count, 0);
+      const safeCount = groupsOut.filter((g) => g.settlement_status === "safe").length;
+      const reviewCount = groupsOut.filter((g) => g.settlement_status === "review_required").length;
+      const manualCount = groupsOut.filter((g) => g.settlement_status === "manual_only").length;
       events.push({
         event_key: ev.event_key,
         is_legacy: ev.is_legacy,
@@ -10181,6 +10235,9 @@ ${html.slice(0, 800)}`);
         team_b: ev.team_b,
         group_count: groupsOut.length,
         prop_count: totalProps2,
+        safe_count: safeCount,
+        review_count: reviewCount,
+        manual_count: manualCount,
         groups: groupsOut
       });
     }
@@ -10190,11 +10247,17 @@ ${html.slice(0, 800)}`);
     });
     const totalGroups = events.reduce((s, e) => s + e.group_count, 0);
     const totalProps = events.reduce((s, e) => s + e.prop_count, 0);
+    const totalSafe = events.reduce((s, e) => s + e.safe_count, 0);
+    const totalReview = events.reduce((s, e) => s + e.review_count, 0);
+    const totalManual = events.reduce((s, e) => s + e.manual_count, 0);
     res.json({
       ok: true,
       total_events: events.length,
       total_groups: totalGroups,
       total_props: totalProps,
+      total_safe: totalSafe,
+      total_review: totalReview,
+      total_manual: totalManual,
       events
     });
   });
