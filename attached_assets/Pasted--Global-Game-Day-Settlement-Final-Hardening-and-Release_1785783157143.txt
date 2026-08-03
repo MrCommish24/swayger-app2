@@ -1,0 +1,543 @@
+# Global Game Day Settlement — Final Hardening and Release Readiness
+
+Milestone 2 is approved as built, but do not enable the production write path yet.
+
+Complete the final hardening, end-to-end validation, and rollout preparation described below.
+
+The global settlement system must remain behind both existing feature flags until every release criterion passes.
+
+## Current confirmed state
+
+The following already exists:
+
+- `server/gameday-normalize.ts`
+- `server/gameday-settle-helper.ts`
+- `settlePropCore(...)` shared by individual and global settlement
+- Read-only settlement queue
+- `POST /api/admin/gameday/settle-group`
+- Server-side queue reconstruction and stale detection
+- Exact-only normalized answer mapping
+- Per-room audit events
+- In-memory idempotency
+- Mobile confirmation UI
+- Backend flag disabled
+- Admin UI write flag disabled
+- Existing room-level host settlement preserved
+- 29 settlement tests passing
+
+Do not redesign or replace these working pieces unless required by the hardening work below.
+
+---
+
+# Objective
+
+Prepare Global Game Day Settlement for a limited admin-only production rollout by completing four items:
+
+1. Add durable database-backed idempotency
+2. Confirm and document partial-failure behavior
+3. Run the full mobile end-to-end global settlement workflow
+4. Run the actual existing host-panel settlement workflow after the shared-helper refactor
+
+Do not enable the production feature flags as part of this task.
+
+---
+
+# 1. Database-backed idempotency
+
+Replace or supplement the current in-memory idempotency cache with a durable database-backed mechanism.
+
+In-memory idempotency alone is insufficient because it is lost during:
+
+- Server restart
+- Redeployment
+- Process crash
+- Multiple application instances
+- Delayed mobile retry
+- Browser refresh
+
+## Schema proposal
+
+Before applying any migration, inspect existing tables and migrations to determine whether an admin operations or idempotency table already exists.
+
+If no suitable table exists, propose the smallest additive table needed.
+
+A likely structure is:
+
+- `id`
+- `idempotency_key`
+- `operation_id`
+- `operation_type`
+- `operator_identifier`
+- `group_key`
+- `request_hash`
+- `status`
+- `result_json`
+- `error_json`
+- `created_at`
+- `started_at`
+- `completed_at`
+
+Required constraints:
+
+- Unique constraint on `idempotency_key`
+- Index on `operation_id`
+- Index on `created_at`
+- Optional compound validation involving operator and operation type if appropriate
+
+Do not store:
+
+- Admin token
+- Secrets
+- Full participant data
+- Unnecessary pick details
+
+## Required behavior
+
+When a global settlement request arrives:
+
+### New key
+
+- Validate the request
+- Create an `in_progress` idempotency record atomically
+- Process the operation
+- Store the final response
+- Mark the record `completed` or `failed`
+
+### Existing key with identical request hash
+
+- If completed, return the original stored result
+- If failed, return the stored failure result or a clearly documented retry behavior
+- If in progress, return a safe processing response rather than running the operation again
+
+### Existing key with different request hash
+
+Reject the request.
+
+Return an error such as:
+
+`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST`
+
+The request hash should be derived from stable request fields such as:
+
+- Group key
+- Canonical answer
+- Sorted prop IDs
+- Expected prop count
+- Authorized operator identity
+
+Do not include volatile fields.
+
+## Atomic claim requirement
+
+The idempotency claim must be atomic.
+
+Two simultaneous requests with the same key must not both begin processing.
+
+Use the database unique constraint and appropriate insert/upsert behavior rather than:
+
+1. Querying for the key
+2. Finding nothing
+3. Inserting later
+
+That sequence would preserve a race condition.
+
+## Migration approval checkpoint
+
+If a migration is required:
+
+- Show the exact SQL
+- Explain rollback
+- Confirm it is additive and non-destructive
+- Stop for approval before applying it
+
+Do not silently migrate production.
+
+---
+
+# 2. Partial-failure behavior
+
+Document exactly what happens if a multi-prop settlement begins and an unexpected failure occurs after one or more props have already settled.
+
+Example:
+
+- Prop 1 succeeds
+- Prop 2 succeeds
+- Prop 3 fails
+
+Determine whether the current architecture can use a single database transaction across the entire group.
+
+## Preferred behavior
+
+If practical with the current Supabase architecture:
+
+- Settle the entire group atomically
+- All props succeed or no props change
+
+Do not introduce a large or risky transactional redesign solely to satisfy this preference.
+
+## Acceptable fallback
+
+If cross-room atomicity is not practical:
+
+- Preserve successful prop settlements
+- Report every successful, skipped, and failed prop
+- Mark the operation as `partial_success`
+- Keep failed props visible in the queue
+- Ensure retrying is safe
+- Ensure already-settled props are not treated as new work
+- Provide room and prop identifiers for failures
+- Record one shared operation ID across all audit events
+- Never return a generic success or failure that hides partial mutation
+
+The client must clearly distinguish:
+
+- Success
+- Partial success
+- Stale group
+- Complete failure
+- Idempotent replay
+
+## Strict stale behavior
+
+If the reviewed prop set has changed before any settlement begins:
+
+- Reject the entire request
+- Settle nothing
+- Require the admin to refresh
+
+Do not interpret stale detection as a partial-failure scenario.
+
+---
+
+# 3. Audit behavior
+
+Confirm the final global audit structure.
+
+Each affected room should receive a `global_settlement` event containing:
+
+- Shared `operation_id`
+- `idempotency_key`
+- `group_key`
+- Event key
+- Phase
+- Prop ID
+- Canonical selected answer
+- Exact stored answer applied to that prop
+- Operator identifier
+- Result status
+- Timestamp
+- Source: `global_settlement`
+
+For partial failures, capture failed prop outcomes in the durable operation result.
+
+Do not create fake room IDs for a summary event.
+
+If the new idempotency or operations table stores the group-level result, use that as the authoritative global summary.
+
+Never log the admin token.
+
+---
+
+# 4. Actual host-panel settlement verification
+
+Because the existing individual settlement endpoint was refactored to call `settlePropCore`, test the real authenticated host workflow from the UI.
+
+Do not count:
+
+- A direct SQL simulation
+- A unit test alone
+- A no-auth 401 response
+- Calling the helper directly
+
+as sufficient verification.
+
+## Required test
+
+Using an authorized test host and disposable room:
+
+1. Open the existing room host panel.
+2. Select the correct answer for a pending prop.
+3. Submit through the real host UI.
+4. Confirm the actual PATCH request succeeds.
+5. Confirm the prop status becomes settled.
+6. Confirm `correct_answer` stores the selected value.
+7. Confirm all associated picks receive the correct `is_correct`.
+8. Confirm the card settles only if all props are settled.
+9. Confirm the participant leaderboard reflects the result.
+10. Confirm the room audit event exists.
+11. Confirm the prop disappears from the global pending queue.
+12. Confirm no unrelated prop or room changes.
+
+The existing host interface and endpoint behavior must remain unchanged from the host’s perspective.
+
+---
+
+# 5. Mobile global-settlement end-to-end test
+
+Temporarily enable both flags only in a controlled development or staging environment.
+
+Do not enable production writes.
+
+Use disposable non-legacy test rooms.
+
+## Required mobile workflow
+
+On a real mobile browser or accurate device viewport:
+
+1. Open the protected admin workspace.
+2. Authenticate through the existing approved admin flow.
+3. Open the Settlement Queue.
+4. Expand a non-legacy event.
+5. Expand a phase.
+6. Select a Safe group containing at least three rooms.
+7. Tap an answer option.
+8. Confirm that no write happens on the first tap.
+9. Review the confirmation sheet.
+10. Confirm game, phase, answer, room count, and prop count.
+11. Submit.
+12. Confirm the button disables immediately.
+13. Confirm a loading state is visible.
+14. Confirm repeated taps do not create another operation.
+15. Confirm the result appears without losing game and phase context.
+16. Confirm the queue refreshes appropriately.
+17. Confirm the settled group disappears or shows a completed state.
+18. Confirm the admin can continue to the next group without returning to the top.
+
+## Required data validation
+
+For every room in the test group, verify:
+
+- Prop is settled
+- Correct stored answer is applied
+- Reversed answer-option order maps correctly
+- Picks are scored correctly
+- Card auto-settlement is correct
+- Leaderboard is correct
+- Host panel displays the settled answer
+- Audit events share one operation ID
+- No prop from another event or phase changed
+
+---
+
+# 6. Failure and retry tests
+
+Run these tests against the durable idempotency implementation and actual write endpoint.
+
+## Double tap
+
+Send the same operation twice in parallel with the same idempotency key.
+
+Expected:
+
+- Only one operation claims the key
+- One logical settlement occurs
+- Both callers receive consistent results
+- No duplicate logical audit operation
+
+## Restart replay
+
+Complete an operation, restart the backend, and resend the same request.
+
+Expected:
+
+- Stored result is returned
+- No settlement is reprocessed
+- No second audit operation is created
+
+## Key reuse with changed payload
+
+Reuse the key with a different answer or prop set.
+
+Expected:
+
+- Rejected
+- Nothing changes
+
+## Stale group
+
+Load a group, then settle one included prop individually before submitting globally.
+
+Expected:
+
+- Entire operation rejected as stale
+- No remaining props settle
+- UI instructs the admin to refresh
+
+## Runtime partial failure
+
+Simulate or induce a failure after at least one prop processes, if the architecture cannot provide group-level atomicity.
+
+Expected:
+
+- Accurate partial-success response
+- Successful props remain correct
+- Failed props remain visible
+- Retry behavior is safe
+- Audit and operation records are complete
+
+## Unauthorized access
+
+Verify:
+
+- No token → rejected
+- Invalid token → rejected
+- Normal participant → rejected
+- Room host without global-admin authorization → rejected
+- Valid global admin → accepted when flags permit
+
+## Feature flags
+
+Verify:
+
+- Backend flag off → write endpoint unavailable or 503
+- UI flag off → no settlement controls
+- Backend on, UI off → endpoint remains protected and UI remains read-only
+- UI on, backend off → clear failure; no mutation
+
+---
+
+# 7. Mobile UI release criteria
+
+Confirm on a narrow phone viewport:
+
+- No horizontal scrolling
+- Questions wrap cleanly
+- Answer buttons are easy to tap
+- Confirmation sheet fits or scrolls intentionally
+- Confirm and Cancel remain visible
+- Long team/player names do not overlap
+- Loading state is obvious
+- Success, partial success, stale, and failure look different
+- Manual-only groups remain non-actionable
+- Review-required groups remain non-actionable
+- A conflict group provides a useful path to individual room settlement
+- Scroll position and expanded event/phase state are preserved after settlement where practical
+
+Do not redesign the entire admin screen. Fix only release-blocking usability issues.
+
+---
+
+# 8. Feature-flag rollout plan
+
+Do not enable the flags automatically.
+
+Provide the exact controlled rollout procedure:
+
+1. Deploy code and migration with both flags off.
+2. Verify the read-only queue in production.
+3. Verify the DB idempotency table is functioning.
+4. Enable backend flag only.
+5. Test the endpoint using disposable admin fixtures.
+6. Enable UI flag.
+7. Settle one low-risk real group.
+8. Inspect every affected room, leaderboard, operation record, and audit event.
+9. Continue with limited admin use.
+10. Keep the backend flag available as the primary kill switch.
+
+Also document:
+
+- Exact secret name
+- Exact UI flag location
+- How to disable each flag
+- Whether restart or rebuild is required
+- How to verify the flag state
+
+---
+
+# 9. Known limitations
+
+Document current limitations, including:
+
+- Event key relies on sport + normalized team pair + game date
+- Same-team same-day repeat events or doubleheaders may be ambiguous
+- Legacy rooms without sport/date remain manual-only
+- No external sports-data event ID exists
+- Review-required and manual-only groups cannot be bulk settled
+- Cross-room atomicity limitations, if any
+
+Do not broaden event matching to compensate for these limitations.
+
+Safety is more important than bulk coverage.
+
+---
+
+# Required pre-migration report
+
+If a database migration is needed, return:
+
+## 1. Proposed Schema
+
+Exact fields, indexes, and constraints.
+
+## 2. Exact SQL
+
+Migration and rollback SQL.
+
+## 3. Request Lifecycle
+
+How an idempotency key is claimed, processed, completed, and replayed.
+
+## 4. Concurrency Behavior
+
+How simultaneous requests are prevented from both processing.
+
+## 5. Data Retention
+
+How long operation records remain and whether cleanup is needed.
+
+## 6. Approval Request
+
+Stop and request approval before applying the migration.
+
+---
+
+# Required final verification report
+
+After the approved migration and testing, report:
+
+- Exact files changed
+- Exact database changes
+- Final idempotency behavior
+- Parallel double-tap result
+- Restart replay result
+- Changed-payload key-reuse result
+- Partial-failure behavior
+- Actual host-panel settlement result
+- Actual mobile global settlement result
+- Data verification for every affected room
+- Audit verification
+- Flag verification
+- Mobile usability findings
+- Known limitations
+- Recommended go/no-go decision
+
+Do not enable production settlement as part of this task.
+
+---
+
+# Non-negotiable preservation requirements
+
+Do not remove or weaken:
+
+- Individual room settlement
+- Existing host authorization
+- Global admin authorization
+- Exact-only answer mapping
+- Queue stale detection
+- Manual-only legacy handling
+- Safe/review/manual classifications
+- Audit logging
+- Backend kill switch
+- UI feature flag
+
+Do not:
+
+- Pass admin tokens in URLs
+- Use in-memory idempotency as the final production mechanism
+- Duplicate settlement scoring logic
+- Make internal HTTP calls to the individual settlement endpoint
+- Enable Review Required groups
+- Enable Manual Only groups
+- Hide partial failures
+- Automatically include newly added props after confirmation
+- Enable production flags without a separate explicit approval
