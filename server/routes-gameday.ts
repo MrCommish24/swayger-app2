@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import {
   NBA_PLAYOFF_TEMPLATE,
@@ -28,29 +29,181 @@ import { settlePropCore } from "./gameday-settle-helper.js";
 // Keep false (or unset) in production until Milestone 2 is approved and tested.
 const GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
 
-// ── Request-level idempotency cache (in-memory, 24-hour TTL) ─────────────────
-// Prevents double-settlement if the admin taps twice or the network retries.
-// Upgrade to a DB-backed table before high-volume production use.
-const _idemCache = new Map<string, { ts: number; payload: unknown }>();
-const _IDEM_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
+// ── DB-backed idempotency for global settlement ───────────────────────────────
+// Uses the gameday_settlement_operations table (migration 001).
+// Falls back with a warning if the table does not yet exist.
 
-function _checkIdem(key: string): unknown | null {
-  const entry = _idemCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > _IDEM_TTL_MS) { _idemCache.delete(key); return null; }
-  return entry.payload;
+/** First 16 hex chars of SHA-256(token) — operator identity without storing the raw token */
+function _tokenFingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 16);
 }
-function _storeIdem(key: string, payload: unknown): void {
-  // Evict expired entries on every write to prevent unbounded growth.
-  for (const [k, v] of _idemCache) {
-    if (Date.now() - v.ts > _IDEM_TTL_MS) _idemCache.delete(k);
-  }
-  _idemCache.set(key, { ts: Date.now(), payload });
+
+/** SHA-256 of the full request payload — detects key reuse with a different body */
+function _computeRequestHash(
+  group_key: string,
+  canonical_answer_normalized: string,
+  prop_ids: string[],
+  expected_count: number,
+  operatorFingerprint: string,
+): string {
+  const sorted = [...prop_ids].sort().join(",");
+  const raw = [group_key, canonical_answer_normalized, sorted, String(expected_count), operatorFingerprint].join("|");
+  return createHash("sha256").update(raw).digest("hex");
 }
 
 /** Short, human-readable operation ID for audit correlation. */
 function _genOpId(): string {
   return `gso-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ── Settlement operation row type ─────────────────────────────────────────────
+interface _SettleOpRow {
+  id: string;
+  idempotency_key: string;
+  request_hash: string;
+  operation_id: string;
+  status: "in_progress" | "completed" | "failed" | "partial_success" | "abandoned";
+  response_status_code: number | null;
+  result_json: unknown;
+  partial_results_json: unknown;
+  error_json: unknown;
+  lease_expires_at: string;
+}
+
+type _SbClient = ReturnType<typeof getServiceSupabase>;
+
+/** Read an existing settlement operation row by idempotency_key */
+async function _readSettleOp(sb: _SbClient, idem_key: string): Promise<_SettleOpRow | null> {
+  const { data } = await sb
+    .from("gameday_settlement_operations")
+    .select("id, idempotency_key, request_hash, operation_id, status, response_status_code, result_json, partial_results_json, error_json, lease_expires_at")
+    .eq("idempotency_key", idem_key)
+    .maybeSingle();
+  return (data as _SettleOpRow) ?? null;
+}
+
+/** Verify the operation is still in_progress with a valid (non-expired) lease (safeguard #5) */
+async function _isSettleOpActive(sb: _SbClient, idem_key: string, op_id: string): Promise<boolean> {
+  const { data } = await sb
+    .from("gameday_settlement_operations")
+    .select("status, lease_expires_at")
+    .eq("idempotency_key", idem_key)
+    .eq("operation_id", op_id)
+    .maybeSingle();
+  if (!data) return false;
+  const row = data as { status: string; lease_expires_at: string };
+  return row.status === "in_progress" && new Date(row.lease_expires_at).getTime() > Date.now();
+}
+
+/**
+ * Extend lease by 10 min while work is actively progressing (safeguard #2).
+ * Guarded WHERE includes operation_id + status = 'in_progress'.
+ * Returns true if the row was updated (still active), false if abandoned/terminal.
+ */
+async function _refreshSettleLease(sb: _SbClient, idem_key: string, op_id: string): Promise<boolean> {
+  const newLease = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const { data } = await sb
+    .from("gameday_settlement_operations")
+    .update({ updated_at: new Date().toISOString(), lease_expires_at: newLease })
+    .eq("idempotency_key", idem_key)
+    .eq("operation_id", op_id)
+    .eq("status", "in_progress")
+    .select("id");
+  return ((data as unknown[])?.length ?? 0) > 0;
+}
+
+/**
+ * Terminal update with guarded WHERE: idempotency_key + operation_id + status = 'in_progress' (safeguard #1).
+ * Returns { updated: true } on success, or { updated: false, row } for safeguard #3 conflict resolution.
+ */
+async function _finalizeSettleOp(
+  sb: _SbClient,
+  params: {
+    idempotency_key: string;
+    operation_id: string;
+    status: "completed" | "failed" | "partial_success";
+    response_status_code: number;
+    room_count: number;
+    result_json?: unknown;
+    error_json?: unknown;
+    partial_results_json?: unknown;
+  },
+): Promise<{ updated: true } | { updated: false; row: _SettleOpRow | null }> {
+  const now = new Date().toISOString();
+  const upd: Record<string, unknown> = {
+    status: params.status,
+    response_status_code: params.response_status_code,
+    updated_at: now,
+    completed_at: now,
+    room_count: params.room_count,
+  };
+  if (params.result_json         !== undefined) upd.result_json          = params.result_json;
+  if (params.error_json          !== undefined) upd.error_json           = params.error_json;
+  if (params.partial_results_json !== undefined) upd.partial_results_json = params.partial_results_json;
+
+  // Safeguard #1: WHERE clause must include idempotency_key + operation_id + status = 'in_progress'
+  const { data: updated } = await sb
+    .from("gameday_settlement_operations")
+    .update(upd)
+    .eq("idempotency_key", params.idempotency_key)
+    .eq("operation_id", params.operation_id)
+    .eq("status", "in_progress")
+    .select("id");
+
+  if (((updated as unknown[])?.length ?? 0) > 0) return { updated: true };
+
+  // Safeguard #3: 0 rows → read current state for conflict response
+  const row = await _readSettleOp(sb, params.idempotency_key);
+  return { updated: false, row };
+}
+
+/** Build a replay response payload from a terminal or abandoned operation row */
+function _buildSettleReplay(row: _SettleOpRow): { statusCode: number; payload: unknown } {
+  const code = row.response_status_code ?? 200;
+  if (row.status === "completed")       return { statusCode: code, payload: row.result_json };
+  if (row.status === "partial_success") return { statusCode: code, payload: row.partial_results_json };
+  if (row.status === "failed")          return { statusCode: code, payload: row.error_json };
+  // abandoned
+  return {
+    statusCode: 409,
+    payload: {
+      error: "This operation was previously abandoned. Retry with a new idempotency_key.",
+      code: "OPERATION_ABANDONED",
+      ...(typeof row.error_json === "object" && row.error_json !== null ? row.error_json : {}),
+    },
+  };
+}
+
+/**
+ * Startup recovery: atomically mark abandoned any in_progress rows whose lease has expired.
+ * Called once when routes initialize; non-blocking (fire-and-forget).
+ * Guarded WHERE: status = 'in_progress' AND lease_expires_at < NOW() (safeguard #4).
+ */
+async function _recoverStaleSettleOps(sb: _SbClient): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    const { data, error } = await sb
+      .from("gameday_settlement_operations")
+      .update({
+        status: "abandoned",
+        error_json: { code: "PROCESS_RESTART", message: "Server restarted before operation completed" },
+        updated_at: now,
+        completed_at: now,
+      })
+      .eq("status", "in_progress")
+      .lt("lease_expires_at", now)
+      .select("operation_id");
+    if (error) {
+      if ((error as any).code !== "42P01") {
+        console.warn("[settle-group] startup recovery error:", error.message);
+      }
+      return;
+    }
+    const n = (data as unknown[])?.length ?? 0;
+    if (n > 0) console.log(`[settle-group] startup recovery: abandoned ${n} stale operation(s)`);
+  } catch (e) {
+    console.warn("[settle-group] startup recovery exception:", (e as Error).message);
+  }
 }
 
 // ── Settlement queue shared types (GET queue + POST settle-group) ──────────────
@@ -520,6 +673,10 @@ async function logEvent(
 }
 
 export function registerGamedayRoutes(app: Express) {
+  // Startup recovery: non-blocking — abandon any in_progress settlement ops whose
+  // lease has expired (i.e. server restarted before they could write a terminal status).
+  setImmediate(() => _recoverStaleSettleOps(getServiceSupabase()));
+
   // Prevent browser/proxy caching for all gameday API responses.
   // Without this, Express's ETag freshness check returns 304 for unchanged
   // responses even after server-side state changes (e.g. room finalized),
@@ -2998,18 +3155,20 @@ export function registerGamedayRoutes(app: Express) {
   // Answer mapping calls mapNormalizedToStored() per-prop against that prop's
   // own stored options — missing mapping → 409 MAPPING_FAILED.
   app.post("/api/admin/gameday/settle-group", async (req: Request, res: Response) => {
-    // 1. Feature flag gate
+    // ── 1. Feature flag gate ──────────────────────────────────────────────────
     if (!GLOBAL_SETTLEMENT_WRITE_ENABLED) {
       res.status(503).json({ error: "Global settlement is not yet enabled.", code: "FLAG_DISABLED" });
       return;
     }
 
-    // 2. Admin auth
+    // ── 2. Admin auth — extract token for operator fingerprint ────────────────
     if (!checkPropLibraryAdmin(req, res)) return;
+    const adminToken = req.header("x-admin-token") ?? "";
+    const operatorFingerprint = _tokenFingerprint(adminToken);
 
     const supabase = getServiceSupabase();
 
-    // 3. Parse and validate body
+    // ── 3. Parse and validate body ────────────────────────────────────────────
     const {
       group_key,
       prop_ids,
@@ -3037,19 +3196,90 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    // 4. Idempotency — return the cached result for replayed/retried requests
-    const cached = _checkIdem(idempotency_key);
-    if (cached) { res.json(cached); return; }
+    // ── 4. Compute request hash + generate operation ID ───────────────────────
+    const requestHash = _computeRequestHash(
+      group_key, canonical_answer_normalized, prop_ids, expected_count, operatorFingerprint,
+    );
+    const opId = _genOpId();
 
-    // 5. Re-run the full queue grouping for server-side revalidation.
+    // ── 5. Check for existing idempotency row (Phase 1 of 2-phase claim) ─────
+    //    Done before expensive queue rebuild so replays are fast.
+    const existingRow = await _readSettleOp(supabase, idempotency_key);
+    if (existingRow) {
+      // Key reuse with different payload
+      if (existingRow.request_hash !== requestHash) {
+        res.status(409).json({
+          error: "Idempotency key reused with a different request payload.",
+          code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST",
+        });
+        return;
+      }
+
+      if (existingRow.status === "in_progress") {
+        const leaseExpiredMs = new Date(existingRow.lease_expires_at).getTime();
+
+        if (leaseExpiredMs < Date.now()) {
+          // Safeguard #4: atomically abandon expired lease — inspect whether row was updated
+          const { data: abandonedRows } = await supabase
+            .from("gameday_settlement_operations")
+            .update({
+              status: "abandoned",
+              error_json: {
+                code: "LEASE_EXPIRED",
+                message: "Prior operation timed out — server may have restarted or crashed",
+              },
+              updated_at: new Date().toISOString(),
+              completed_at: new Date().toISOString(),
+            })
+            .eq("idempotency_key", idempotency_key)
+            .eq("status", "in_progress")
+            .lt("lease_expires_at", new Date().toISOString())
+            .select("id");
+
+          if (((abandonedRows as unknown[])?.length ?? 0) > 0) {
+            res.status(409).json({
+              error: "The prior operation for this key timed out. Use a new idempotency_key to retry.",
+              code: "OPERATION_ABANDONED_BY_LEASE_EXPIRY",
+              operation_id: existingRow.operation_id,
+            });
+            return;
+          }
+          // Race: concurrent request already handled abandonment — re-read
+          const reread = await _readSettleOp(supabase, idempotency_key);
+          if (reread && reread.status !== "in_progress") {
+            const replay = _buildSettleReplay(reread);
+            res.status(replay.statusCode).json(replay.payload);
+            return;
+          }
+        }
+
+        // Still in_progress with valid lease
+        res.status(409).json({
+          error: "A settlement for this idempotency_key is already in progress. Wait and retry.",
+          code: "OPERATION_IN_PROGRESS",
+          operation_id: existingRow.operation_id,
+        });
+        return;
+      }
+
+      // Terminal state — replay stored response
+      const replay = _buildSettleReplay(existingRow);
+      res.status(replay.statusCode).json(replay.payload);
+      return;
+    }
+
+    // ── 6. Re-run full queue grouping for server-side stale detection ─────────
     //    Client cannot influence which props are in scope — only DB state does.
     const queue = await buildSettlementQueue(supabase);
     if ("error" in queue) { res.status(500).json({ error: queue.error }); return; }
 
-    // 6. Find the group matching the submitted group_key
+    // ── 7. Find live group matching submitted group_key ───────────────────────
     let liveGroup: GSDGroupOut | null = null;
+    let liveEventKey: string | null = null;
     for (const ev of queue.events) {
-      for (const g of ev.groups) { if (g.group_key === group_key) { liveGroup = g; break; } }
+      for (const g of ev.groups) {
+        if (g.group_key === group_key) { liveGroup = g; liveEventKey = ev.event_key ?? null; break; }
+      }
       if (liveGroup) break;
     }
     if (!liveGroup) {
@@ -3060,7 +3290,7 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    // 7. Only safe groups may be globally settled
+    // ── 8. Only safe groups may be globally settled ───────────────────────────
     if (liveGroup.settlement_status !== "safe") {
       res.status(409).json({
         error: `This group cannot be bulk-settled (status: ${liveGroup.settlement_status}).`,
@@ -3069,11 +3299,10 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    // 8. Stale detection — live prop_id set must exactly match submitted set.
-    //    Catches: props settled individually since last load, new rooms added.
-    const liveSet = new Set(liveGroup.prop_ids);
+    // ── 9. Stale detection — live prop_id set must exactly match submitted set ─
+    const liveSet      = new Set(liveGroup.prop_ids);
     const submittedSet = new Set(prop_ids);
-    const setsMatch = liveSet.size === submittedSet.size && [...liveSet].every((id) => submittedSet.has(id));
+    const setsMatch    = liveSet.size === submittedSet.size && [...liveSet].every((id) => submittedSet.has(id));
     if (!setsMatch || liveGroup.prop_ids.length !== expected_count) {
       res.status(409).json({
         error: "The prop set for this group has changed since your last queue load. Refresh before settling.",
@@ -3085,8 +3314,7 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    // 9. Fetch full prop data for each prop — needed for per-prop answer mapping.
-    //    (The queue only stores representative options; individual props may differ in order.)
+    // ── 10. Fetch full prop data — needed for per-prop answer mapping ──────────
     const { data: propRows, error: propFetchErr } = await supabase
       .from("gameday_props")
       .select("id, answer_options, gameday_pick_cards(id, room_id)")
@@ -3108,8 +3336,8 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    // 10. Map canonical answer → stored option per prop.
-    //     A missing or ambiguous mapping blocks the entire operation — no props settled.
+    // ── 11. Map canonical answer → stored option per prop ─────────────────────
+    //    A missing mapping blocks the entire operation — no props settled.
     type SettleSpec = { propId: string; cardId: string; roomId: string; correctAnswer: string };
     const settleSpecs: SettleSpec[] = [];
 
@@ -3127,27 +3355,93 @@ export function registerGamedayRoutes(app: Express) {
       settleSpecs.push({ propId: row.id, cardId: card?.id, roomId: card?.room_id, correctAnswer: storedAnswer });
     }
 
-    // 11. Execute settlement via the shared helper — same logic as individual settle.
-    const opId = _genOpId();
-    const settleResults = [];
-    const affectedRoomIds = new Set<string>();
+    // ── 12. Claim idempotency slot (Phase 2 of 2-phase claim) ─────────────────
+    //    Now we have full context (event_key, phase, room_count) for the DB row.
+    let dbIdemActive = true;
+    const { error: insertErr } = await supabase
+      .from("gameday_settlement_operations")
+      .insert({
+        idempotency_key,
+        request_hash: requestHash,
+        operation_id: opId,
+        operator_token_fingerprint: operatorFingerprint,
+        group_key,
+        event_key: liveEventKey,
+        phase: liveGroup.phase,
+        canonical_answer_normalized,
+        prop_count: expected_count,
+        room_count: liveGroup.room_count,
+        status: "in_progress",
+        lease_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      });
 
-    for (const spec of settleSpecs) {
-      try {
-        const r = await settlePropCore(supabase, spec);
-        settleResults.push(r);
-        affectedRoomIds.add(spec.roomId);
-      } catch (e) {
-        console.error(`[settle-group] op=${opId} settlePropCore error for prop ${spec.propId}:`, e);
-        res.status(500).json({
-          error: `Settlement failed mid-operation after ${settleResults.length}/${settleSpecs.length} props. Op: ${opId}. Check DB state.`,
-          code: "PARTIAL_SETTLE_ERROR", operation_id: opId, settled_so_far: settleResults.length,
+    if (insertErr) {
+      if (insertErr.code === "23505") {
+        // Concurrent request with same key claimed the slot
+        const concurrent = await _readSettleOp(supabase, idempotency_key);
+        if (concurrent?.request_hash !== requestHash) {
+          res.status(409).json({ error: "Idempotency key reused with a different request payload.", code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST" });
+          return;
+        }
+        res.status(409).json({
+          error: "A concurrent settlement for this key is already in progress.",
+          code: "OPERATION_IN_PROGRESS",
+          operation_id: concurrent?.operation_id,
         });
+        return;
+      }
+      if (insertErr.code === "42P01") {
+        // Migration not yet applied — proceed without DB idempotency but warn clearly
+        console.warn("[settle-group] ⚠  gameday_settlement_operations table missing. Apply migration 001 from server/migrations/. Proceeding without DB idempotency.");
+        dbIdemActive = false;
+      } else {
+        console.error("[settle-group] DB INSERT error:", insertErr.message, insertErr.code);
+        res.status(500).json({ error: "Failed to claim settlement operation slot.", code: "DB_ERROR", detail: insertErr.message });
         return;
       }
     }
 
-    // 12. Log one audit event per affected room — real room IDs only, no fabricated IDs.
+    // ── 13. Settlement loop with lease safeguards ─────────────────────────────
+    type SettleResult = { propId: string; cardId: string; cardAutoSettled: boolean };
+    const settleResults: SettleResult[] = [];
+    const partialErrors: { propId: string; roomId: string; error: string }[] = [];
+    const affectedRoomIds = new Set<string>();
+
+    // Safeguard #2: extend lease before starting work
+    if (dbIdemActive) await _refreshSettleLease(supabase, idempotency_key, opId);
+
+    for (let i = 0; i < settleSpecs.length; i++) {
+      const spec = settleSpecs[i];
+
+      // Safeguard #5 + #2: every 20 props, verify we're still active + extend lease
+      if (dbIdemActive && i > 0 && i % 20 === 0) {
+        const active = await _isSettleOpActive(supabase, idempotency_key, opId);
+        if (!active) {
+          // Safeguard #5: stop further settlement work if operation was abandoned
+          console.warn(`[settle-group] op=${opId} externally abandoned at prop index ${i}`);
+          res.status(409).json({
+            error: "Settlement was abandoned externally (lease expired or concurrent request).",
+            code: "OPERATION_ABANDONED_MID_FLIGHT",
+            operation_id: opId,
+            settled_so_far: settleResults.length,
+          });
+          return;
+        }
+        await _refreshSettleLease(supabase, idempotency_key, opId);
+      }
+
+      // Partial-failure: catch per-prop errors, continue with remaining props
+      try {
+        const r = await settlePropCore(supabase, spec);
+        settleResults.push(r as SettleResult);
+        affectedRoomIds.add(spec.roomId);
+      } catch (e: any) {
+        partialErrors.push({ propId: spec.propId, roomId: spec.roomId, error: e?.message ?? String(e) });
+        console.error(`[settle-group] op=${opId} prop ${spec.propId} failed:`, e?.message);
+      }
+    }
+
+    // ── 14. Audit events — one per affected room ──────────────────────────────
     for (const roomId of affectedRoomIds) {
       await logEvent(supabase, roomId, null, null, "global_prop_settled", {
         operation_id: opId,
@@ -3156,25 +3450,70 @@ export function registerGamedayRoutes(app: Express) {
         settled_prop_ids: settleSpecs.filter((s) => s.roomId === roomId).map((s) => s.propId),
         total_prop_count: settleSpecs.length,
         total_room_count: affectedRoomIds.size,
+        partial_failures: partialErrors.length,
       });
     }
 
-    console.log(
-      `[settle-group] op=${opId} settled=${settleResults.length} rooms=${affectedRoomIds.size}` +
-      ` group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`
-    );
+    // ── 15. Determine final status ────────────────────────────────────────────
+    const allFailed   = settleResults.length === 0 && partialErrors.length > 0;
+    const isPartial   = partialErrors.length > 0 && settleResults.length > 0;
+    const finalStatus = allFailed ? "failed" : isPartial ? "partial_success" : "completed";
+    const finalCode   = allFailed ? 500 : isPartial ? 207 : 200;
 
-    // 13. Build response and cache for idempotency replay
-    const response = {
-      ok: true,
+    const response: Record<string, unknown> = {
+      ok: !allFailed,
       operation_id: opId,
       settled_count: settleResults.length,
       rooms_count: affectedRoomIds.size,
       cards_auto_settled: settleResults.filter((r) => r.cardAutoSettled).length,
       canonical_answer_normalized,
     };
-    _storeIdem(idempotency_key, response);
-    res.json(response);
+    if (partialErrors.length > 0) {
+      response.partial_errors = partialErrors;
+      response.failed_count   = partialErrors.length;
+    }
+
+    console.log(
+      `[settle-group] op=${opId} status=${finalStatus} settled=${settleResults.length}` +
+      ` failed=${partialErrors.length} rooms=${affectedRoomIds.size}` +
+      ` group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`,
+    );
+
+    // ── 16. Finalize DB row — guarded WHERE (safeguards #1 + #3) ─────────────
+    if (dbIdemActive) {
+      const finalized = await _finalizeSettleOp(supabase, {
+        idempotency_key,
+        operation_id: opId,
+        status: finalStatus,
+        response_status_code: finalCode,
+        room_count: affectedRoomIds.size,
+        ...(allFailed  ? { error_json:           { ...response } } : {}),
+        ...(isPartial  ? { partial_results_json:  { ...response } } : {}),
+        ...(!allFailed && !isPartial ? { result_json: { ...response } } : {}),
+      });
+
+      if (!finalized.updated) {
+        // Safeguard #3: 0 rows affected — read current state for conflict response
+        const cur = finalized.row;
+        if (cur?.status === "abandoned") {
+          res.status(409).json({
+            error: "Settlement was abandoned (lease expired during processing).",
+            code: "OPERATION_ABANDONED_MID_FLIGHT",
+            operation_id: opId,
+            partial_settle_count: settleResults.length,
+          });
+          return;
+        }
+        if (cur) {
+          const replay = _buildSettleReplay(cur);
+          res.status(replay.statusCode).json(replay.payload);
+          return;
+        }
+        console.error(`[settle-group] op=${opId} terminal UPDATE found 0 rows and no current row — state may be inconsistent`);
+      }
+    }
+
+    res.status(finalCode).json(response);
   });
 
   // ── (old inline grouping extracted — logic lives in buildSettlementQueue) ───

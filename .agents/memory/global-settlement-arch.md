@@ -1,55 +1,68 @@
 ---
 name: Global Settlement Architecture
-description: Normalization module, grouping key schema, queue route, write path, admin UI structure, flags
+description: DB-backed idempotency, grouping key schema, settlement flow, migration status, and all 5 lease-race safeguards for the global settlement system.
 ---
 
-## Milestone 1 (Read Path) — COMPLETE
-- `GET /api/admin/gameday/settlement-queue` returns grouped queue
-- Logic lives in `buildSettlementQueue(supabase)` — module-level async function in `server/routes-gameday.ts`
-- Returns `GSDQueueResult` (also module-level type); GET handler is now 4 lines
+# Global Settlement Architecture
 
-## Milestone 2 (Write Path) — COMPLETE, flag off
-- `POST /api/admin/gameday/settle-group` in `server/routes-gameday.ts`
-- Shared settle logic: `server/gameday-settle-helper.ts` → `settlePropCore(supabase, { propId, cardId, correctAnswer })`
-- Individual settle (`PATCH /api/gameday/props/:id/settle`) now delegates to `settlePropCore`
-- Feature flag: `GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true"`
-- Admin UI flag: `const GLOBAL_SETTLEMENT_WRITE_ENABLED = false` in `app/admin.tsx` (both must be true to expose controls)
-- In-memory idempotency cache with 24h TTL — `_idemCache Map` + `_checkIdem` / `_storeIdem` / `_genOpId`
+## Key decisions
+- **Grouping key**: `event_key = sport|sorted_team_pair|game_date`; `group_key = event_key|phase|normalized_question|sorted_normalized_options`
+- **Legacy rooms** (null sport or game_date): `manual_only`, never bulk-settled
+- **Answer mapping**: exact-only, two passes; `mapNormalizedToStored` returns null on failure → blocks the group
+- **Admin auth**: `x-admin-token` header vs `MM_ADMIN_TOKEN` env var (`checkPropLibraryAdmin`)
+- **Flags**: backend `GLOBAL_SETTLE_ENABLED=true` env var; UI `GLOBAL_SETTLEMENT_WRITE_ENABLED = false` in `app/admin.tsx` — both must be true
+- **Audit**: `logEvent(supabase, roomId, null, null, "global_prop_settled", {...})` per affected room; shared `operation_id`
 
-## Settlement Flow (POST settle-group)
-1. Flag gate → 503 FLAG_DISABLED
-2. `checkPropLibraryAdmin` (x-admin-token) → 401
-3. Parse + validate body (group_key, prop_ids, expected_count, canonical_answer_normalized, idempotency_key)
-4. `_checkIdem` → return cached response if replay
-5. `buildSettlementQueue` → find matching `group_key` → 409 GROUP_NOT_FOUND if gone
-6. Validate `settlement_status === "safe"` → 409 NOT_SAFE
-7. Stale detection: live prop_id Set must exactly equal submitted Set → 409 STALE_GROUP
-8. Fetch per-prop data (answer_options, card_id, room_id) for canonical answer mapping
-9. `mapNormalizedToStored(canonical, opts)` per prop → 409 MAPPING_FAILED if null
-10. `settlePropCore` for each prop (all-or-nothing; error mid-op → 500 PARTIAL_SETTLE_ERROR)
-11. `logEvent` per affected room with shared `operation_id` (format: `gso-<ts36>-<rand5>`)
-12. `_storeIdem` + return response
+## Route files
+- `server/gameday-normalize.ts` — normalization, grouping, mapping; 75/75 fixture tests
+- `server/gameday-settle-helper.ts` — `settlePropCore(supabase, {propId, cardId, correctAnswer})`
+- `server/routes-gameday.ts` — `buildSettlementQueue()`, GET queue, POST settle-group (full DB-backed pipeline)
+- `app/admin.tsx` — mobile admin UI, `GLOBAL_SETTLEMENT_WRITE_ENABLED = false`
 
-## Key Design Rules
-- **`buildSettlementQueue` is the single source of truth** for both GET (display) and POST (stale detection)
-- **answer mapping is per-prop** not per-group (individual props may have different option orderings across rooms)
-- **Audit log uses real room IDs only** — no fabricated IDs ever passed to `logEvent`
-- **TOCTOU race with in-memory idem**: truly parallel requests can both win before cache is populated; settlePropCore writes are idempotent so no data corruption — DB-backed lock deferred to post-approval
-- **Legacy rooms** (null event_key): `settlement_status = "manual_only"`, never bulk-settable
+## DB-backed idempotency (Migration 001)
+Table: `public.gameday_settlement_operations`
+Migration SQL: `server/migrations/001_gameday_settlement_operations.sql`
+Migration runner script: `server/migrations/run-001-settlement-ops.ts`
 
-## Test Suite
-- `server/test-settle-group.ts` — 29/29 passing
-- Run with: `GLOBAL_SETTLE_ENABLED=true npx tsx server/test-settle-group.ts` (after seeding)
-- Seed: `npx tsx server/seed-test-settlement-queue.ts`
+**Migration status**: NOT YET APPLIED to Supabase. Apply via SQL editor:
+https://app.supabase.com/project/vlxvoienyxzhyaiimccp/sql/new
 
-## Files Changed (Milestone 2)
-- `server/gameday-settle-helper.ts` — NEW: `settlePropCore`
-- `server/test-settle-group.ts` — NEW: 29-test write-path suite
-- `server/routes-gameday.ts` — added `buildSettlementQueue`, POST route, module-scope types + flags + idem cache; GET handler simplified to 4 lines; individual settle refactored to use `settlePropCore`
-- `app/admin.tsx` — added `Modal` import, `GLOBAL_SETTLEMENT_WRITE_ENABLED` flag, settle state + `handleSettleConfirm`, Settle Group button (flag-gated on safe groups), confirmation bottom sheet Modal, all required styles
+**Until migration is applied**: server logs a warning and proceeds without DB idempotency (graceful degradation — `42P01` code detection).
 
-## To Enable for Production
-1. Founder reviews test results (29/29 passing, all scenarios covered)
-2. Set `GLOBAL_SETTLE_ENABLED=true` in Replit Secrets → restart backend
-3. Change `GLOBAL_SETTLEMENT_WRITE_ENABLED = true` in `app/admin.tsx` → rebuild frontend
-4. Upgrade in-memory idem cache to DB-backed table (deferred)
+## Operator identity
+- `operator_user_id` — nullable; for when admin users get Supabase JWT auth (not yet implemented)
+- `operator_token_fingerprint` — SHA-256(token).hex[0..15], always present as current fallback
+- Raw token is never stored
+
+## 5 lease-race safeguards (all implemented in routes-gameday.ts)
+1. **Guarded terminal updates**: WHERE idempotency_key + operation_id + status='in_progress'
+2. **Lease refresh during work**: extended before loop starts + every 20 props via `_refreshSettleLease()`
+3. **Zero-rows-updated handling**: reads current row state → returns appropriate conflict/replay response
+4. **Atomic lease-expiry abandonment**: WHERE status='in_progress' AND lease_expires_at < NOW(); inspects row count to detect concurrent abandonment
+5. **Mid-flight abandonment detection**: `_isSettleOpActive()` check every 20 props → stops further settlement and returns 409 OPERATION_ABANDONED_MID_FLIGHT
+
+## Partial failure behavior
+- `settlePropCore` errors are caught per-prop and accumulated into `partialErrors`
+- Loop continues to remaining props (no hard abort)
+- Status: `completed` (0 errors) | `partial_success` (207, some errors) | `failed` (500, all failed)
+- `partial_results_json` stored in DB; `response_status_code` replayed on idempotency hits
+
+## Startup recovery
+`_recoverStaleSettleOps()` called via `setImmediate()` at `registerGamedayRoutes()` start.
+Atomically marks `abandoned` any `in_progress` rows with `lease_expires_at < NOW()`.
+Handles 42P01 gracefully (table not yet created).
+
+## Test suite
+`server/test-settle-group.ts` — 16 tests (T1–T16)
+- T1–T12: original Milestone 2 tests (all passing when seeded)
+- T13: DB row written with correct fields (requires migration)
+- T14: key reuse with different payload → 409 KEY_REUSED
+- T15: replay returns original HTTP status code from DB
+- T16: UNIQUE constraint prevents duplicate DB rows on concurrent double-tap
+
+## 2-phase claim design
+Phase 1 (fast path before queue rebuild): SELECT by idempotency_key → replay if terminal, abandon if in_progress+expired
+Phase 2 (after full validation): INSERT with full context (event_key, phase, room_count, prop_count)
+If concurrent INSERT races: UNIQUE constraint → 23505 → re-read → 409 OPERATION_IN_PROGRESS
+
+**Why:**  Ensures replays return quickly without rebuilding the queue, while new operations include full context for rich audit records.
