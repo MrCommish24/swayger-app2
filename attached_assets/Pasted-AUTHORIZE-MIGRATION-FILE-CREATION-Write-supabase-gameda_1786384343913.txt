@@ -1,0 +1,82 @@
+AUTHORIZE MIGRATION FILE CREATION.
+
+Write:
+
+supabase/gameday-fantasy-foundation.sql
+
+using the exact final architecture from the approved “Swayger Fantasy — Final Pre-Authorization Schema Checkpoint.”
+
+Do not apply it to Supabase yet.
+
+Before finalizing the file:
+
+1. Confirm the actual existing CHECK constraint names in the current schema for:
+   - gameday_rooms sport
+   - gameday_pick_cards phase
+   - gameday_prop_library sport
+
+Do not rely on assumed auto-generated names if the live schema can be inspected.
+
+2. Make the migration transaction-safe.
+
+Prefer a single explicit transaction where supported:
+
+BEGIN;
+...
+COMMIT;
+
+If any statement cannot safely run inside that transaction in the current Supabase/Postgres environment, call it out clearly instead of silently omitting transaction protection.
+
+3. Preserve the approved defaults exactly:
+   - gameday_rooms.experience_type = 'game_day'
+   - gameday_props.scoring_scope = 'competition'
+   - gameday_props.point_value = 10
+   - gameday_prop_library.scoring_scope = 'competition'
+   - gameday_prop_library.point_value = 10
+
+4. Preserve the final approved Fantasy hierarchy:
+   fantasy_leagues
+   → fantasy_league_seasons
+   → fantasy_season_members
+   → fantasy_teams
+   → fantasy_team_managers
+
+   plus:
+   fantasy_league_members
+   → fantasy_member_claims
+
+5. Preserve the final approved competition links:
+   - gameday_rooms.league_season_id
+   - gameday_participants.season_member_id
+   - gameday_participants.fantasy_team_id
+   - gameday_participants.team_name snapshot
+
+6. Do not reintroduce:
+   - UNIQUE display-name constraints
+   - commissioner_user_id on fantasy_league_seasons
+   - external_member_id on fantasy_league_members
+   - fantasy_season_scores
+   - current_manager_id/co_manager_id columns
+   - league_id directly on gameday_rooms
+
+7. Preserve:
+   - answer_target_type='season_member'
+   - point_value NOT NULL DEFAULT 10
+   - draft_day as the V1 Draft Day phase
+   - football, basketball, and baseball Fantasy sport support
+   - existing nba and soccer compatibility
+
+After writing the file, return:
+
+1. The complete migration file contents
+2. A concise summary of every schema change
+3. Confirmed live constraint names used
+4. Transaction/rollback behavior
+5. Any deviation from the approved checkpoint
+6. The exact regression-test sequence you recommend after application
+
+Then STOP.
+
+Do not apply the migration.
+Do not run destructive SQL against Supabase.
+Do not begin Phase 2.
