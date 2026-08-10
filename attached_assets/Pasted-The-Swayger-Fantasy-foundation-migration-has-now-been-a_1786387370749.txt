@@ -1,0 +1,199 @@
+The Swayger Fantasy foundation migration has now been applied successfully in Supabase.
+
+I also manually verified the live schema in Supabase.
+
+Confirmed:
+
+- All seven Fantasy foundation tables exist and are empty.
+- gameday_rooms sport CHECK currently allows:
+  nba, soccer, football, basketball, baseball.
+- gameday_prop_library sport CHECK currently allows:
+  nba, soccer, football, basketball, baseball.
+- gameday_pick_cards phase CHECK currently allows:
+  pregame, halftime, fourth, final_push, penalties,
+  draft_day, pre_draft, in_draft, post_draft, weekly.
+- Existing gameday_rooms are backfilled to experience_type='game_day'.
+- Existing gameday_props are scoring_scope='competition', point_value=10.
+- Existing gameday_prop_library rows are experience_type='game_day',
+  scoring_scope='competition', point_value=10.
+- No obsolete nba/soccer-only sport constraint remains active.
+
+Do NOT modify the schema unless this assessment identifies a real defect.
+
+Do NOT begin Phase 2 implementation yet.
+
+Perform a POST-MIGRATION APPLICATION VERIFICATION and SERVER-INTEGRITY ASSESSMENT.
+
+## 1. Verify application compatibility with the applied schema
+
+Run or inspect the existing application flows and tests necessary to verify:
+
+- backend starts cleanly
+- existing Game Day room fetch
+- new NBA Game Day room creation
+- guest join
+- authenticated join if current test infrastructure covers it
+- pick submission
+- prop settlement
+- leaderboard
+- final standings
+- room finalization
+- global settlement test suite
+- no visible regression to 1v1 Swayger caused by the shared schema changes
+
+Return exact pass/fail results.
+
+Do not silently repair unrelated failures. Report them first.
+
+## 2. Verify current code assumptions against the new defaults
+
+Confirm existing Game Day code behaves correctly now that:
+
+- gameday_rooms.experience_type defaults to 'game_day'
+- gameday_props.scoring_scope defaults to 'competition'
+- gameday_props.point_value defaults to 10
+- gameday_prop_library.scoring_scope defaults to 'competition'
+- gameday_prop_library.point_value defaults to 10
+
+Specifically identify any existing route/query that assumes these columns do not exist, treats point scoring as correct-picks × 10 in a way that will conflict later, or serializes room/prop objects in a way that breaks because of the added fields.
+
+Do not change scoring behavior yet unless required to preserve existing Game Day functionality.
+
+## 3. Assess cross-season / cross-league relational integrity
+
+The current schema contains:
+
+fantasy_team_managers:
+- fantasy_team_id
+- season_member_id
+
+gameday_participants:
+- season_member_id
+- fantasy_team_id
+
+Each FK can independently point to a valid row.
+
+Assess whether the database currently guarantees that the referenced team and season member belong to the SAME fantasy_league_season.
+
+Examples we must prevent:
+
+2026 Food Pyramid season member
+→ 2027 Food Pyramid fantasy team
+
+or:
+
+Food Pyramid season member
+→ another league's fantasy team
+
+Recommend the minimum correct MVP enforcement:
+
+A. database-level same-season integrity
+
+or
+
+B. strict server-side validation with automated tests.
+
+Do not propose another migration merely for theoretical normalization.
+
+If server validation is sufficient, specify exactly where it should occur and which negative tests must exist.
+
+If database enforcement is materially safer and simple, explain the smallest migration necessary.
+
+Regardless of recommendation, future creation/update routes must reject cross-season or cross-league associations.
+
+## 4. Confirm the approved Fantasy product direction
+
+Use the current product direction when planning Phase 2 and later Draft Day work:
+
+Persistent Fantasy League
+→ League Season
+→ Persistent League Members
+→ Season Members
+→ Fantasy Teams
+→ Team Manager assignments
+→ Competitions
+
+Draft Day V1 is NOT a mandatory staged:
+pre_draft → in_draft → post_draft
+experience.
+
+The intended V1 experience is:
+
+one primary Draft Day Swayger
+using phase='draft_day'
+→ picks lock when the fantasy draft begins
+
+Within the Draft Day experience we will later visually distinguish:
+
+- Draft Day Picks — resolve during/after the draft and determine Draft Day winner
+- Season Predictions — lock on Draft Day but resolve later
+
+The additional phase values remain available for future experimentation.
+
+## 5. Define Phase 2 plan only
+
+If regression verification passes, define the next implementation checkpoint:
+
+PHASE 2 — FANTASY LEAGUE + SEASON SETUP
+
+The first commissioner capability should allow creation of:
+
+Fantasy League
+→ League Season
+→ Persistent League Members
+→ Season Members
+→ Fantasy Teams
+→ Team Manager assignments
+
+The commissioner journey we are designing toward is:
+
+Create Fantasy League
+→ league name
+→ sport
+→ season
+→ optional weekly reward
+→ add members
+→ assign fantasy teams
+→ league setup complete
+
+Do NOT build yet:
+
+- Draft Day competition
+- Draft Day props
+- QR display
+- member identity-claim UI
+- Week 1
+- Fantasy standings
+- Sleeper/Yahoo import
+- cross-sport member-copy UX
+- season-renewal UX
+
+For Phase 2 planning, identify:
+
+- server routes needed
+- validation rules
+- transaction boundaries
+- minimum commissioner screens
+- data creation sequence
+- rollback/error handling
+- regression coverage
+- acceptance criteria
+
+Do not write code yet.
+
+## Return
+
+1. Application regression results
+2. Code compatibility findings
+3. Cross-season integrity assessment
+4. Any correction required before Phase 2
+5. Phase 2 implementation plan
+6. Final status:
+
+READY FOR PHASE 2
+
+or
+
+CORRECTION REQUIRED
+
+Stop after the assessment.
