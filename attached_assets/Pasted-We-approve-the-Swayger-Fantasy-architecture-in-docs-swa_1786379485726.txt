@@ -1,0 +1,141 @@
+We approve the Swayger Fantasy architecture in `docs/swayger-fantasy-architecture-validation.md`.
+
+**AUTHORIZE BUILD — but do not build the entire Draft Day feature in one pass.**
+
+We will execute the implementation in controlled phases with review checkpoints.
+
+Do NOT begin Week 1 functionality yet.
+
+Do NOT include the separate settlement-idempotency migration in this Fantasy implementation unless I authorize that independently.
+
+## First authorized task: Phase 1 — Fantasy schema foundation
+
+Implement ONLY the database/schema foundation required by the validated architecture.
+
+Use `docs/swayger-fantasy-architecture-validation.md` as the source of truth and supersede earlier architecture recommendations where they conflict.
+
+### Implement now
+
+Create the persistent Fantasy foundation:
+
+* `fantasy_leagues`
+* `fantasy_league_members`
+* `fantasy_teams`
+* `fantasy_member_claims`
+
+Extend existing tables as approved:
+
+### `gameday_rooms`
+
+* `league_id`
+* `experience_type`
+* `competition_type`
+* reward display metadata if included in the approved schema
+* widen sports support as approved
+* make matchup-only fields nullable where required for Fantasy
+
+### `gameday_participants`
+
+* `league_member_id`
+* immutable/snapshot `team_name`
+
+### `gameday_props`
+
+* `scoring_scope`
+* `point_value`
+
+### `gameday_pick_cards`
+
+* widen supported phases for:
+
+  * `pre_draft`
+  * `in_draft`
+  * `post_draft`
+  * future weekly support only where the approved architecture requires the schema value now
+
+### `gameday_prop_library`
+
+Add the approved Fantasy taxonomy fields, including:
+
+* `experience_type`
+* `competition_type`
+* `scoring_scope`
+* `point_value`
+* `answer_target_type`
+* widened sports support
+
+### Explicitly DO NOT create
+
+* `fantasy_season_scores`
+
+Season standings are derived from authoritative pick/prop/participant/competition records.
+
+### Important implementation detail
+
+`fantasy_league_members` and `fantasy_teams` reference one another through current team / current manager relationships.
+
+Design the migration sequence carefully so there is no circular-FK creation failure.
+
+Prefer creating the tables first and adding the reciprocal FK constraint afterward if necessary.
+
+## Do not implement yet
+
+Do NOT build:
+
+* Fantasy League UI
+* Draft Day room UI
+* identity claiming UI
+* structured Fantasy answer-option behavior
+* Draft Day templates
+* Week 1
+* season standings UI
+* reward UI
+* Sleeper/Yahoo/ESPN integrations
+* participant auto-generation
+* push notifications
+* payment functionality
+
+Do NOT modify settlement behavior yet.
+
+Do NOT modify leaderboard behavior yet.
+
+Those are later controlled phases.
+
+## Backward compatibility
+
+All existing data must remain valid.
+
+Existing:
+
+* NBA Game Day
+* Soccer Game Day
+* current Game Day rooms
+* 1v1 Swayger
+* guest joining
+* prop settlement
+* global settlement
+* leaderboards
+* final standings
+
+must behave exactly as before this migration.
+
+Existing records should receive safe defaults such as `experience_type='game_day'` and `scoring_scope='competition'` where applicable.
+
+## Before applying anything
+
+First return:
+
+1. Exact migration file(s) you propose creating
+2. Complete schema changes
+3. Constraint names being changed
+4. FK creation order
+5. Defaults applied to existing records
+6. Rollback considerations
+7. Expected impact on existing Game Day data
+8. Regression tests you will run
+
+Then STOP.
+
+Do not apply the migration until I review and authorize it.
+
+This is the first implementation checkpoint.
