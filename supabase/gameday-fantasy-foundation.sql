@@ -350,6 +350,30 @@ UPDATE gameday_prop_library
       point_value     = 10
 WHERE experience_type IS NULL;
 
+-- ────────────────────────────────────────────────────────────
+-- 13. ROW LEVEL SECURITY
+--
+-- Matches the established pattern for all gameday_* tables:
+-- RLS is enabled on every table; access is controlled at the
+-- Express server layer via the service role key, not via
+-- Supabase RLS policies. All policies are open (true).
+-- ────────────────────────────────────────────────────────────
+ALTER TABLE fantasy_leagues          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_league_seasons   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_league_members   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_season_members   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_teams            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_team_managers    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_member_claims    ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "fantasy_leagues_all"        ON fantasy_leagues        FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_league_seasons_all" ON fantasy_league_seasons  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_league_members_all" ON fantasy_league_members  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_season_members_all" ON fantasy_season_members  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_teams_all"          ON fantasy_teams           FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_team_managers_all"  ON fantasy_team_managers   FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "fantasy_member_claims_all"  ON fantasy_member_claims   FOR ALL USING (true) WITH CHECK (true);
+
 COMMIT;
 
 -- ============================================================
