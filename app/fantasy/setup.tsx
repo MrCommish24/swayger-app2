@@ -62,7 +62,7 @@ type Step = 0 | 1 | 2 | 3 | 4;
 export default function FantasySetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
 
   // ── Wizard step ─────────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>(0);
@@ -159,23 +159,28 @@ export default function FantasySetupScreen() {
     setStep(3);
 
     try {
-      // 1. Create league + first season (atomic RPC)
-      const setup = await fantasyFetch<SetupLeagueResponse>(
-        "/api/fantasy/leagues/setup",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            league_name:           leagueName.trim(),
-            sport,
-            display_name:          displayName.trim(),
-            season_year:           parsedYear,
-            reward_description:    rewardDescription.trim() || undefined,
-            reward_amount_display: rewardAmount.trim() || undefined,
-          }),
-        },
-        { session }
-      );
-      setSetupResult(setup);
+      // 1. Create league + first season (atomic RPC).
+      // On retry after a participant failure, setupResult is already set —
+      // skip this call to prevent a duplicate league from being created.
+      let setup = setupResult;
+      if (!setup) {
+        setup = await fantasyFetch<SetupLeagueResponse>(
+          "/api/fantasy/leagues/setup",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              league_name:           leagueName.trim(),
+              sport,
+              display_name:          displayName.trim(),
+              season_year:           parsedYear,
+              reward_description:    rewardDescription.trim() || undefined,
+              reward_amount_display: rewardAmount.trim() || undefined,
+            }),
+          },
+          { session }
+        );
+        setSetupResult(setup);
+      }
 
       // 2. Add participants — commissioner first, then others
       const ordered = [
@@ -214,6 +219,16 @@ export default function FantasySetupScreen() {
   }
 
   // ── Auth guard ───────────────────────────────────────────────────────────────
+  // Show spinner while Supabase resolves the initial session to prevent
+  // the "Sign in" screen from flashing briefly for authenticated users.
+  if (authLoading) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={C.tint} size="large" />
+      </View>
+    );
+  }
+
   if (!session) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
