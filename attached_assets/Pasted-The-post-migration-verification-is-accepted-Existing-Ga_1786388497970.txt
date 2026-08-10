@@ -1,0 +1,144 @@
+The post-migration verification is accepted.
+
+Existing Game Day and 1v1 integrity are confirmed, and the Fantasy foundation schema is healthy.
+
+We are READY to move toward Phase 2, but make one important correction to the implementation plan before writing code.
+
+## 1. Commissioner identity must use fantasy_member_claims
+
+The approved architecture establishes:
+
+auth.users
+→ fantasy_member_claims
+→ fantasy_league_members
+→ fantasy_season_members
+→ role
+
+as the identity/authority chain.
+
+Do not use fantasy_leagues.created_by as the ongoing commissioner authorization mechanism. `created_by` is audit metadata only.
+
+When an authenticated user creates a Fantasy League, the atomic league-creation operation should create:
+
+1. fantasy_leagues row
+2. fantasy_league_members row for the creator
+3. fantasy_member_claims row linking that league_member_id to the authenticated user_id
+
+Then when the initial season is created:
+
+4. fantasy_league_seasons row
+5. fantasy_season_members row for that same persistent league member with role='commissioner'
+
+Future season-level mutating routes should authorize the user by resolving:
+
+authenticated user_id
+→ active fantasy_member_claims
+→ fantasy_league_members
+→ fantasy_season_members for the target season
+→ role IN ('commissioner','co_commissioner')
+
+Do not silently fall back to created_by as the authority except where explicitly required during initial league bootstrap.
+
+## 2. Clarify transaction implementation
+
+The plan says league creation and season creation are transactional.
+
+Confirm how atomicity will actually be implemented in the current Supabase architecture.
+
+Sequential Supabase client inserts should NOT be described as a transaction unless they are truly atomic.
+
+Inspect the existing codebase for an established transaction/RPC pattern.
+
+For league creation, all three operations should succeed or fail together:
+
+- fantasy_leagues
+- creator fantasy_league_members
+- creator fantasy_member_claims
+
+For season creation, both should succeed or fail together:
+
+- fantasy_league_seasons
+- commissioner fantasy_season_members
+
+Recommend the simplest existing-safe mechanism.
+
+Do not add unnecessary database infrastructure if the project already has an appropriate transaction pattern.
+
+## 3. Cross-season integrity
+
+Keep the server-side validation recommendation.
+
+Because team-manager assignment is included in Phase 2, implement the same-season validation during Phase 2:
+
+fantasy_team.league_season_id
+must equal
+fantasy_season_member.league_season_id
+
+and both must equal the seasonId in the route.
+
+Cross-season and cross-league assignment attempts must return 400 and have explicit negative tests.
+
+## 4. Phase 2 commissioner UX direction
+
+The backend may use separate entities/routes, but the UI should present one simple commissioner setup flow:
+
+Create Fantasy League
+→ League name + sport
+→ Season
+→ Add members and fantasy teams
+→ Optional weekly reward
+→ Review setup
+→ Complete
+
+Do not expose the internal distinction between:
+
+- persistent league member
+- season member
+- fantasy team
+- team-manager junction
+
+unless necessary.
+
+A commissioner should feel like they are simply entering:
+
+Darius — The Monstars
+Mike — Sunday Scaries
+Chris — Fourth & Long
+
+while the system creates the correct underlying records.
+
+## 5. Keep current Phase 2 boundaries
+
+Do not build yet:
+
+- Draft Day room
+- Draft Day props
+- QR display
+- normal member identity-claim UI
+- Week 1
+- season standings
+- imports
+- cross-sport member copy
+- season renewal
+
+The one exception is the authenticated COMMISSIONER claim created automatically during league creation because it is required for correct authorization.
+
+## Next response
+
+Return only:
+
+1. Revised Phase 2 implementation plan
+2. Exact commissioner authorization flow
+3. Exact transaction approach based on current codebase inspection
+4. Final API endpoints
+5. Minimum UI screens/components
+6. Test plan
+7. Final recommendation:
+
+AUTHORIZE PHASE 2 BUILD
+
+or
+
+CORRECTION REQUIRED
+
+Do not write code yet.
