@@ -1,0 +1,1146 @@
+# Swayger Fantasy — Pre-Build Product & Architecture Assessment
+
+Do not write code, apply migrations, or modify the application yet.
+
+We need a full pre-build assessment for **Swayger Fantasy**, beginning with **Draft Day** and intentionally designed to support a **season-long weekly competition experience immediately afterward**.
+
+The objective is to avoid building Draft Day as a standalone feature that we then have to restructure for Week 1.
+
+The guiding principle is:
+
+**Design the season. Build Draft Day first.**
+
+---
+
+# 1. Product objective
+
+Swayger Fantasy is not intended to replace ESPN, Yahoo, Sleeper, NFL Fantasy, or another fantasy platform.
+
+Those platforms continue to manage:
+
+* fantasy rosters
+* drafts
+* lineups
+* trades
+* waivers
+* player scoring
+* matchup results
+* league standings
+
+Swayger sits on top of the existing fantasy league as an **engagement and prediction layer**.
+
+The core value proposition is:
+
+**Who knows their fantasy league best?**
+
+Swayger Fantasy should allow league members to make predictions about:
+
+* their draft
+* their league members
+* their fantasy teams
+* weekly league results
+* fantasy players
+* season outcomes
+
+Those predictions create:
+
+* weekly competition
+* bragging rights
+* receipts
+* weekly winners
+* season-long Swayger standings
+* optional commissioner-defined rewards
+
+---
+
+# 2. Intended user journey
+
+The intended long-term journey is:
+
+Fantasy League Setup
+→ Draft Day Swayger
+→ Week 1 Swayger
+→ Week 2
+→ Week 3
+→ continuing weekly competitions
+→ Fantasy Playoffs
+→ Championship
+→ Season Swayger Champion
+
+Draft Day is the initial onboarding event.
+
+A commissioner may tell the league at Draft Day:
+
+**“This season we are also doing a weekly Swayger competition, and each week's Swayger winner receives a prize.”**
+
+Therefore, league members should enter the Swayger ecosystem at Draft Day and remain connected to that same fantasy league for the entire season.
+
+We do NOT want:
+
+* members rejoining every week
+* commissioners re-entering league members every week
+* unrelated weekly rooms
+* duplicate league identities
+* Draft Day scoring that cannot carry into season standings
+* Draft Day data models that must immediately be replaced
+
+---
+
+# 3. Start by mapping the current application
+
+Inspect the existing Swayger repository and identify all current infrastructure relevant to this feature.
+
+Include actual:
+
+* tables
+* migrations
+* routes
+* APIs
+* components
+* screens
+* types
+* utilities
+* settlement functions
+* leaderboard functions
+* prop-template infrastructure
+
+Specifically identify existing infrastructure for:
+
+* Game Day Rooms
+* room creation
+* hosts
+* room membership
+* guest participation
+* authenticated participation
+* short-link joining
+* pick cards
+* props
+* answer options
+* pick submission
+* locking
+* settlement
+* scoring
+* leaderboards
+* finalization
+* final standings
+* sharing
+* admin settlement
+* global settlement
+* prop-library management
+
+For every relevant piece, classify it as:
+
+1. Reusable unchanged
+2. Reusable with extension
+3. Too tightly coupled to current Game Day behavior
+4. New functionality required
+
+---
+
+# 4. Define the Swayger Fantasy domain model
+
+Before proposing implementation, define the major entities and relationships.
+
+At minimum, assess these concepts.
+
+## Fantasy League
+
+A persistent fantasy community.
+
+Examples:
+
+* Sunday Smoke
+* 2026 season
+* football
+* 12 managers
+
+It should persist across Draft Day, Week 1, Week 2, playoffs, etc.
+
+## Fantasy League Member
+
+A person who belongs to that fantasy league for the season.
+
+Membership must persist independently from participation in any individual weekly competition.
+
+## Fantasy Team
+
+The fantasy roster/team controlled by a league member.
+
+Examples:
+
+Member:
+Darius
+
+Fantasy Team:
+The Monstars
+
+These may need to be separate concepts.
+
+Assess whether the application should model:
+
+* person/member identity
+* fantasy team identity
+* relationship between member and team
+
+Do not assume a fantasy team name and member display name are the same thing.
+
+## Commissioner
+
+The person responsible for managing the fantasy league's Swayger experience.
+
+## League Admin / Co-Commissioner
+
+Consider whether the data model should support more than one league administrator in the future even if the initial UI only supports one commissioner.
+
+## Competition / Event
+
+An individual Swayger competition inside the Fantasy League.
+
+Examples:
+
+* Draft Day
+* Week 1
+* Week 2
+* Week 10
+* Playoffs
+* Championship
+
+## Competition Participant
+
+A league member who participates in a specific competition.
+
+League membership and competition participation are different concepts.
+
+A league member might miss Week 7 and participate again in Week 8.
+
+## Pick Card / Phase
+
+A group of props with a common open/lock cadence.
+
+## Prop
+
+A prediction question.
+
+## Pick
+
+A member's prediction.
+
+## Competition Result
+
+Winner and standings for an individual competition.
+
+## Season Swayger Standing
+
+Cumulative season performance across multiple Fantasy competitions.
+
+Recommend the minimum clean schema that supports these concepts.
+
+---
+
+# 5. Reassess whether we need persistent Fantasy League tables now
+
+The previous Draft Day assessment recommended postponing a `fantasy_leagues` table.
+
+That assumption has changed.
+
+Season-long Fantasy is a planned immediate fast follow.
+
+Compare:
+
+### Option A — Room-as-League
+
+Draft Day room itself stores league identity.
+
+### Option B — Persistent Fantasy League
+
+Create persistent structures such as:
+
+* `fantasy_leagues`
+* `fantasy_league_members`
+* possibly `fantasy_teams`
+
+Then existing Game Day rooms or another reusable event object become competitions belonging to that league.
+
+Assess both approaches.
+
+Recommend the architecture that avoids meaningful rework when Week 1 is implemented.
+
+Do not optimize only for the smallest Draft Day migration.
+
+---
+
+# 6. Can `gameday_rooms` become the reusable competition/event object?
+
+We strongly prefer reusing existing Game Day infrastructure.
+
+Assess whether a current `gameday_room` can represent an individual Fantasy competition.
+
+Conceptually:
+
+Fantasy League
+→ Draft Day competition
+→ Week 1 competition
+→ Week 2 competition
+
+Each competition may continue using:
+
+* gameday_pick_cards
+* gameday_props
+* gameday_picks
+* settlement
+* leaderboard
+* finalize
+* final standings
+
+If viable, recommend the minimum relationship needed between:
+
+Fantasy League
+
+and
+
+Game Day Room / competition.
+
+If `gameday_rooms` is too tightly tied to live sports matchups, explain why and recommend the minimum safe abstraction.
+
+Do NOT create parallel Fantasy prop, pick, settlement, leaderboard, or scoring systems unless the existing infrastructure genuinely cannot support the requirement.
+
+---
+
+# 7. Make the architecture sports agnostic
+
+This is a hard requirement.
+
+Swayger Fantasy may initially launch for football, but the underlying architecture should support:
+
+* fantasy football
+* fantasy basketball
+* fantasy baseball
+* other fantasy sports
+
+Sport-specific prop templates are acceptable.
+
+NFL-specific core data relationships are not.
+
+Reassess the prior recommendation to use:
+
+`sport = 'fantasy_draft'`
+
+Fantasy Draft is not a sport.
+
+Assess whether we should separate concepts such as:
+
+* sport
+* experience type
+* competition type
+
+For example only:
+
+* sport = football
+* experience_type = fantasy
+* competition_type = draft_day
+
+and later:
+
+* sport = football
+* experience_type = fantasy
+* competition_type = weekly
+
+Do not blindly implement these exact values.
+
+Recommend the cleanest taxonomy based on the current application.
+
+---
+
+# 8. Commissioner role versus Event Host
+
+Today Game Day Rooms have a host.
+
+Fantasy introduces a persistent commissioner.
+
+Define how those roles should work.
+
+## Commissioner responsibilities
+
+Potential responsibilities include:
+
+* create Fantasy League
+* manage league membership
+* manage fantasy team names
+* configure Draft Day
+* review/select props
+* publish competitions
+* open/lock competition cards
+* manually settle subjective or league-specific props
+* finalize results
+* define weekly prize/reward rules
+* correct league-specific information
+
+## Swayger platform responsibilities
+
+Swayger should increasingly handle:
+
+* persistent league identity
+* member persistence
+* competition structure
+* prop templates
+* pick storage
+* locking rules
+* scoring
+* leaderboard computation
+* standings
+* receipts/history
+* admin oversight
+* settlement infrastructure
+* corrections
+* repeat competition infrastructure
+
+The intended principle is:
+
+**Swayger operates the competition. The commissioner curates the league.**
+
+Assess whether the existing room host should remain an event-level role while Fantasy League stores the persistent commissioner relationship.
+
+---
+
+# 9. League member onboarding and identity claiming
+
+This needs specific assessment.
+
+At Draft Day, the commissioner may already know the league members and team names.
+
+Potential experience:
+
+Commissioner enters/imports:
+
+* Darius — The Monstars
+* Chris — Fourth & Long
+* Mike — Sunday Scaries
+* Anthony — Gridiron Kings
+
+When a member opens the invitation, rather than entering a new free-text name, the preferred experience may be:
+
+**Who are you?**
+
+Member selects their existing league identity.
+
+Swayger then associates:
+
+* authenticated account
+  or
+* guest/device/session
+
+with that persistent league-member record.
+
+Assess this approach versus allowing every user to enter a new display name.
+
+Specifically address:
+
+* duplicate names
+* spelling differences
+* Mike versus Mike T
+* guest sessions
+* authenticated users
+* someone later converting from guest to authenticated
+* member replacement
+* team ownership transfer
+* co-managers
+* inactive league members
+* commissioner resolving identity conflicts
+
+Recommend the simplest reliable approach for Draft Day that also supports Week 1 without re-onboarding.
+
+---
+
+# 10. Fantasy member versus fantasy team
+
+Some props concern the person.
+
+Example:
+
+**Who will make the biggest reach?**
+
+Answer:
+Darius
+
+Other props concern the fantasy team.
+
+Example:
+
+**Which fantasy team scores the most points this week?**
+
+Answer:
+The Monstars
+
+Assess whether we need distinct stable identifiers for:
+
+* league member
+* fantasy team
+
+even if the first UI displays both simply as text labels.
+
+Explain how this affects:
+
+* answer options
+* settlement
+* scoring
+* imports
+* future API integration
+* team ownership changes
+
+---
+
+# 11. Answer-option architecture
+
+Today Game Day answer options are text arrays.
+
+Fantasy introduces multiple possible answer target types:
+
+* league member
+* fantasy team
+* fantasy player
+* real sports team
+* yes/no
+* free/static text option
+
+Examples:
+
+Who drafts the first quarterback?
+→ league member
+
+Which fantasy team scores the most?
+→ fantasy team
+
+Who is selected first overall?
+→ fantasy player
+
+Will anyone score 150+?
+→ yes/no
+
+Assess whether plain strings remain sufficient for the MVP.
+
+If stable IDs should exist underneath the displayed text, recommend the minimum clean approach.
+
+Do not overengineer a large polymorphic answer system unless necessary.
+
+---
+
+# 12. Draft Day phases
+
+Draft Day should likely contain multiple pick-card phases because props have different lock windows.
+
+Assess using the existing `gameday_pick_cards` architecture for:
+
+### Pre-Draft
+
+Examples:
+
+* Who gets the first draft position?
+* Who gets the last draft position?
+* Which player goes #1 overall?
+* Who will win the league?
+* Who will finish with the most regular-season points?
+
+### During Draft
+
+Examples:
+
+* Who drafts the first QB?
+* Who drafts the first defense?
+* Who drafts the first rookie?
+
+### Post-Draft
+
+Examples:
+
+* Who had the best draft?
+* Who made the biggest reach?
+* Who has the strongest roster entering Week 1?
+
+Determine whether these phases can reuse existing open/lock card behavior without custom locking logic.
+
+---
+
+# 13. Season-end props created on Draft Day
+
+This is a critical requirement.
+
+We want Draft Day to include predictions that will not resolve until much later.
+
+Examples:
+
+* Who wins the fantasy championship?
+* Who finishes first in regular-season scoring?
+* Who finishes last?
+* Which team earns the #1 playoff seed?
+* Which manager misses the playoffs?
+
+These props should:
+
+* be created during Draft Day
+* be locked during Draft Day
+* remain visible as long-term receipts
+* remain unresolved for weeks or months
+* NOT prevent Draft Day itself from being finalized
+* NOT prevent a Draft Day winner from being declared
+* eventually contribute to season-long Fantasy standings when settled
+
+Assess how the current room/card/prop/finalization architecture handles unresolved props.
+
+If current finalization assumes all props must settle, identify the minimum architectural change required.
+
+We need a clean concept for a prop's **resolution horizon** or scoring scope.
+
+Examples of possible concepts:
+
+* draft_event
+* weekly
+* season_long
+
+Do not implement those exact values unless appropriate.
+
+Recommend the cleanest model.
+
+---
+
+# 14. Scoring architecture
+
+We need to separate the following concepts:
+
+## Competition score
+
+Points earned in one event.
+
+Example:
+
+Week 3 Swayger.
+
+This determines the weekly winner.
+
+## Fantasy season score
+
+Cumulative Fantasy performance across:
+
+* Draft Day
+* weekly competitions
+* season-long props
+* playoffs
+
+This determines the Season Swayger Champion.
+
+## Broader Swayger Points
+
+If the application currently uses SP as a broader user-level value, assess whether Fantasy scoring should be directly tied to that system.
+
+Do not assume the three concepts must use the same underlying balance or calculation.
+
+Assess current scoring implementation and recommend the cleanest structure.
+
+---
+
+# 15. Variable prop values
+
+We may want different props to be worth different amounts.
+
+Examples:
+
+Standard Draft Day prop:
+10 points
+
+Featured prop:
+20 points
+
+Season-end prediction made on Draft Day:
+30–50 points
+
+Examples:
+
+* picking the eventual league champion may be worth more
+* picking the highest-scoring regular-season team may be worth more
+* a routine weekly prop may be worth less
+
+Assess whether point value or scoring weight should belong to the prop itself.
+
+We want flexibility without hard-coding scoring rules into competition types.
+
+Recommend the minimum schema change if needed.
+
+Do not design a complicated wagering or confidence system.
+
+---
+
+# 16. Draft Day winner versus unresolved season props
+
+We must be able to declare:
+
+**Draft Day Swayger Champion**
+
+even while season-long Draft Day predictions remain unresolved.
+
+Explain exactly how the leaderboard should determine the Draft Day winner.
+
+For example:
+
+* only settled Draft Day-scoped props count
+* unresolved season-long props remain pending
+* those props later contribute to season standings when settled
+
+Recommend the cleanest approach.
+
+---
+
+# 17. Weekly rewards
+
+Commissioners may use weekly rewards as an important reason for league members to participate.
+
+Example:
+
+**Week 3 Swayger**
+Prize: $25
+
+Swayger will NOT initially:
+
+* hold money
+* process payments
+* distribute winnings
+* integrate with Leagueswype
+
+But the system should have a clean place to represent the reward.
+
+Assess whether we need:
+
+### League-level reward defaults
+
+Example:
+Every weekly Swayger winner gets $25.
+
+and:
+
+### Competition-level override
+
+Example:
+Championship Week winner gets $50.
+
+Potential metadata may eventually include:
+
+* reward title/description
+* reward amount
+* reward type
+* winning member
+* fulfillment status
+
+Recommend what should be modeled now versus added later.
+
+---
+
+# 18. Future Sleeper, Yahoo, and other fantasy-platform imports
+
+We are NOT requiring API integration for the first Draft Day release.
+
+However, manual setup now must not create a structure that later conflicts with imported data.
+
+The intended future onboarding may be:
+
+Create Swayger Fantasy League
+
+Choose:
+
+* Import from Sleeper
+* Import from Yahoo
+* Import from another provider
+* Enter manually
+
+An import may eventually provide:
+
+* league name
+* league ID
+* commissioner
+* members
+* fantasy team names
+* platform member IDs
+* platform team IDs
+* roster information
+
+Assess the internal canonical model needed so that:
+
+**manual creation**
+
+and
+
+**API import**
+
+both populate the exact same Swayger Fantasy entities.
+
+Recommend where external-provider metadata should eventually live.
+
+Do not build the API integrations now.
+
+---
+
+# 19. Weekly Fantasy flow — design now, do not implement yet
+
+Design the expected Week 1 journey.
+
+## Commissioner
+
+Open existing Fantasy League
+→ Week 1 Swayger
+→ Review/select generated or templated props
+→ Set/display weekly reward
+→ Publish
+
+## Member
+
+Already belongs to Fantasy League
+→ Opens Week 1
+→ Makes picks
+→ Weekly winner is determined
+→ Season Swayger standings update
+
+We do NOT want:
+
+* new league setup
+* member re-entry
+* another identity claim
+* new answer rosters
+* unrelated room identity
+
+Show exactly how data created during Draft Day carries into Week 1.
+
+---
+
+# 20. Fantasy prop-template architecture
+
+Draft Day and weekly Fantasy require different prop libraries.
+
+Examples:
+
+## Draft Day
+
+* Who gets first draft position?
+* Who drafts the first QB?
+* Who makes the biggest reach?
+* Who wins the league?
+
+## Weekly
+
+* Which manager scores the most?
+* Which fantasy team wins by the largest margin?
+* Who leaves the most points on the bench?
+* Which matchup finishes closest?
+
+Assess how `gameday_prop_library` or its successor should support filtering by:
+
+* sport
+* experience
+* competition type
+* phase
+* answer-target type
+* resolution horizon
+
+Recommend the minimum extension.
+
+Avoid building separate template systems unless necessary.
+
+---
+
+# 21. System responsibility matrix
+
+Create a responsibility matrix for:
+
+* Swayger platform
+* Swayger administrator
+* Fantasy commissioner
+* League admin/co-commissioner
+* League member
+* external fantasy platform in the future
+* reward/payment layer in the future
+
+For each, identify responsibility for:
+
+* league creation
+* league import
+* member creation
+* team creation
+* identity claiming
+* competition creation
+* prop-template creation
+* prop selection
+* publishing
+* opening
+* locking
+* settlement
+* subjective settlement
+* scoring
+* weekly standings
+* season standings
+* reward definition
+* reward fulfillment
+* corrections
+* troubleshooting
+
+---
+
+# 22. Admin requirements
+
+Assess what Swayger admins need to manage Fantasy.
+
+Potential requirements:
+
+* view Fantasy Leagues
+* view members
+* view Fantasy competitions
+* troubleshoot identity claims
+* correct membership
+* manage Fantasy prop templates
+* correct prop settlement
+* globally settle standardized Fantasy props where practical
+* inspect weekly standings
+* inspect season standings
+* see reward metadata
+* support commissioners
+
+Identify which existing admin infrastructure can be reused.
+
+---
+
+# 23. What must be built for Draft Day versus what waits
+
+Classify every recommendation into exactly these categories:
+
+## A. Build now because Draft Day directly requires it
+
+## B. Build now because season-long architecture requires the foundation
+
+This category should contain only things that would create meaningful immediate rework if postponed.
+
+## C. Design now, implement immediately after Draft Day
+
+Examples may include:
+
+* weekly competition generation
+* weekly reward UI
+* weekly prop templates
+* season standings presentation
+* recurring notifications
+
+## D. Explicitly defer
+
+Examples:
+
+* ESPN integration
+* Yahoo integration
+* Sleeper integration
+* automated roster synchronization
+* automatic fantasy scoring
+* automatic result settlement
+* payment processing
+* Leagueswype integration
+* complex prize accounting
+* league voting
+* confidence wagering
+
+---
+
+# 24. Revised Draft Day MVP
+
+After completing the architectural assessment, define the actual smallest Draft Day product we should ship.
+
+It should likely support:
+
+Commissioner:
+
+Create Fantasy League
+→ Enter/import manually for now:
+
+* league name
+* sport
+* season
+* league members
+* fantasy team names
+
+→ Configure Draft Day
+→ Select props
+→ publish invitation
+
+Member:
+
+Open invite
+→ claim league identity
+→ participate in Draft Day
+→ make predictions across appropriate phases
+→ see leaderboard
+→ see Draft Day winner
+→ remain a persistent member of that Fantasy League
+
+Draft Day should also support some season-long predictions that remain pending after Draft Day.
+
+---
+
+# 25. Data-flow diagram
+
+Show the recommended data flow in a clear hierarchy.
+
+Example conceptually:
+
+Fantasy League
+|
++-- Commissioner/Admins
+|
++-- Members
+|      |
+|      +-- Fantasy Team
+|
++-- Competitions
+|
++-- Draft Day
+|      |
+|      +-- immediate props
+|      +-- season-long props
+|
++-- Week 1
+|
++-- Week 2
+|
++-- ...
+
+and show where:
+
+* picks
+* results
+* competition standings
+* season standings
+* rewards
+
+fit.
+
+---
+
+# 26. Migration and regression assessment
+
+We strongly prefer additive changes.
+
+Identify risks to:
+
+* current NBA Game Day Rooms
+* soccer Game Day Rooms
+* existing live rooms
+* 1v1 Swayger
+* global settlement
+* current SP balances
+* prop templates
+* room creation
+* guest joining
+* leaderboard logic
+* finalization logic
+
+For every proposed schema change, explain:
+
+* why it is necessary
+* whether existing rows remain valid
+* whether existing APIs must change
+* backward-compatibility risk
+
+---
+
+# 27. Recommended implementation sequence
+
+After the architecture is approved, provide a recommended build sequence.
+
+Do not implement it yet.
+
+For each phase give:
+
+* objective
+* schema changes
+* server changes
+* UI changes
+* tests
+* acceptance criteria
+* regression tests
+
+Favor vertical slices that can be validated independently.
+
+---
+
+# 28. Final architectural challenge
+
+Answer these questions explicitly.
+
+### Question 1
+
+If we finish Draft Day and immediately start building Week 1, what Draft Day code, schema, membership records, scoring records, or relationships would we need to undo or fundamentally restructure?
+
+Our target should be:
+
+**Very little or none.**
+
+If significant rework would be necessary, revise your architecture.
+
+### Question 2
+
+Can a member who joins on Draft Day participate in Week 1 without re-entering their identity or rejoining the league?
+
+If not, revise the model.
+
+### Question 3
+
+Can a season-long prop created on Draft Day remain unresolved while Draft Day is finalized and a Draft Day winner is declared?
+
+If not, revise the model.
+
+### Question 4
+
+Can the same architecture support fantasy basketball or fantasy baseball without changing core league/member/competition relationships?
+
+If not, revise the model.
+
+### Question 5
+
+Can manual league setup later be replaced or supplemented by Sleeper/Yahoo/API import without changing the internal Fantasy League model?
+
+If not, revise the model.
+
+### Question 6
+
+Can a weekly reward be added without introducing payment custody or rebuilding the competition model?
+
+If not, revise the model.
+
+---
+
+# Output format
+
+Return the assessment in this order:
+
+1. Executive recommendation
+2. Current architecture findings
+3. Recommended domain model
+4. Table/schema recommendations
+5. Role and responsibility matrix
+6. Commissioner journey
+7. League-member journey
+8. Draft Day journey
+9. Week 1 future journey
+10. Scoring model recommendation
+11. Season-long Draft Day prop handling
+12. Reward model recommendation
+13. Manual setup versus future API import
+14. Sports-agnostic architecture assessment
+15. Existing infrastructure reused unchanged
+16. Existing infrastructure requiring extension
+17. New foundational functionality
+18. Build-now versus fast-follow versus defer
+19. Regression/migration risks
+20. Revised Draft Day MVP
+21. Recommended implementation sequence
+22. Answers to the six final architectural challenge questions
+
+Do not write code.
+
+Do not apply migrations.
+
+Do not modify any files.
+
+Do not begin implementation.
+
+We will review this architecture before authorizing the build.
