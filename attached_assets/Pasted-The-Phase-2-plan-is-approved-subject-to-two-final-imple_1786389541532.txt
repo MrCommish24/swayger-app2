@@ -1,0 +1,142 @@
+The Phase 2 plan is approved subject to two final implementation adjustments. After making them, proceed with Phase 2 build without another planning checkpoint.
+
+1. DEFER FUTURE-SEASON CREATION
+
+Do not build this in Phase 2:
+
+POST /api/fantasy/leagues/:leagueId/seasons
+
+Do not build create_fantasy_season RPC yet.
+
+Reason:
+
+The proposed rule allowing a commissioner/co-commissioner from any historical season to create a new season would allow a former commissioner to retain future-season authority indefinitely.
+
+We do not need season renewal for the current MVP.
+
+Phase 2 only needs creation of the INITIAL league + initial season through setup_fantasy_league.
+
+When season renewal is implemented later, we will define authority based on the appropriate current/most-recent season.
+
+This reduces Phase 2 scope and avoids speculative authorization behavior.
+
+2. STRENGTHEN add_fantasy_season_participant VALIDATION
+
+Before inserting anything, the RPC must validate:
+
+A. p_league_season_id belongs to p_league_id.
+
+SELECT league_id
+FROM fantasy_league_seasons
+WHERE id = p_league_season_id
+
+must equal p_league_id.
+
+Reject otherwise.
+
+B. If p_league_member_id is supplied, that member must belong to p_league_id.
+
+SELECT league_id
+FROM fantasy_league_members
+WHERE id = p_league_member_id
+
+must equal p_league_id.
+
+Reject otherwise.
+
+This validation must happen inside the PL/pgSQL function so the atomic operation cannot create cross-league relationships.
+
+The server route should also validate the route leagueId/seasonId context before invoking the RPC.
+
+3. PREVENT NORMAL DUPLICATE SUBMISSION
+
+The Members & Teams operation should not create duplicate teams/manager assignments if a commissioner accidentally double-submits a row.
+
+Do not add a large idempotency system or another migration solely for this.
+
+Use the simplest safe MVP behavior:
+
+- UI disables submission while the operation is pending
+- RPC checks whether the season member already has the corresponding active setup/team-manager relationship before blindly creating another
+- return the existing relationship or a clear conflict rather than creating a duplicate
+
+Preserve support for future co-manager behavior.
+
+4. FINAL PHASE 2 API SURFACE
+
+Phase 2 should now expose only:
+
+POST /api/fantasy/leagues/setup
+- atomic initial league + first season bootstrap
+
+POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants
+- atomic member + season member + team + manager setup row
+
+GET /api/fantasy/leagues
+- commissioner's Fantasy leagues
+
+GET /api/fantasy/leagues/:leagueId/seasons/:seasonId
+- complete setup state
+
+Do not add low-level public CRUD routes unless the implementation genuinely requires them.
+
+5. AUTHORITY
+
+Preserve the approved chain:
+
+authenticated user
+→ fantasy_member_claims
+→ fantasy_league_members
+→ fantasy_season_members
+→ commissioner/co_commissioner role
+
+fantasy_leagues.created_by remains audit metadata only.
+
+6. BUILD PHASE 2 NOW
+
+After incorporating the above, AUTHORIZE PHASE 2 BUILD.
+
+Implement:
+
+- supabase/gameday-fantasy-phase2-setup.sql
+- setup_fantasy_league RPC
+- add_fantasy_season_participant RPC
+- server/routes-fantasy.ts
+- route registration
+- commissioner setup wizard
+- validation
+- tests
+
+Commissioner-facing experience:
+
+Create Fantasy League
+→ League name + sport
+→ Season + optional weekly reward
+→ Members & Teams
+→ Review
+→ Complete
+
+Do not build:
+
+- Draft Day competition
+- Draft Day props
+- QR
+- member join/claim UI
+- Week 1
+- standings
+- imports
+- cross-sport copy
+- season renewal
+
+After implementation, return:
+
+1. files changed
+2. migrations requiring manual Supabase application
+3. server routes created
+4. UI/screens created
+5. tests and exact results
+6. regression results
+7. anything still requiring manual verification
+8. recommended manual test sequence
+
+Do not apply any new Supabase SQL automatically unless explicitly authorized.
