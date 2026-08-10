@@ -1,0 +1,793 @@
+# Swayger Fantasy — Final Phase 1 Migration Revision Before Authorization
+
+Do not write or apply the migration yet.
+
+We have reviewed the current Phase 1 migration checkpoint and the broader Swayger Fantasy architecture. The overall direction remains approved, but before we authorize the foundation migration, revise the proposed schema to account for several additional requirements that we now consider foundational.
+
+The objective is NOT to build more product now.
+
+The objective is:
+
+**Make the Phase 1 schema durable enough that Draft Day, Week 1, future seasons, multiple sports, and common fantasy-league structures do not force an immediate foundational migration.**
+
+Use the existing architecture validation as the baseline, but supersede prior recommendations where this prompt conflicts with them.
+
+---
+
+# 1. Separate persistent Fantasy League identity from League Season
+
+The current proposal places:
+
+* `season_year`
+
+directly on `fantasy_leagues`.
+
+Reassess this.
+
+Fantasy leagues commonly persist across multiple years.
+
+Example:
+
+Food Pyramid Football
+
+may exist as:
+
+* 2026 season
+* 2027 season
+* 2028 season
+
+We do NOT want to:
+
+* rename the permanent league every year
+* overwrite historical season data
+* create unrelated duplicate league communities every season
+* make members rejoin from scratch every season
+
+## Required architectural outcome
+
+The schema should distinguish:
+
+### Persistent Fantasy League
+
+Example:
+
+**Food Pyramid Football**
+
+This represents the continuing league/community.
+
+### Fantasy League Season
+
+Example:
+
+**Food Pyramid Football — 2026**
+
+This represents one season of that persistent league.
+
+Assess adding a first-class structure such as:
+
+`fantasy_league_seasons`
+
+Do not blindly use that exact schema without checking dependencies.
+
+Determine which fields belong on the persistent league versus the season.
+
+Likely examples:
+
+### Persistent league-level
+
+* league identity
+* league name
+* sport
+* creator/owner metadata
+* long-term active/archive status
+
+### Season-level
+
+* season year
+* season status
+* commissioner role if commissioner may vary by year
+* reward defaults
+* provider league ID where provider IDs are season-specific
+* season configuration
+
+Recommend the cleanest split.
+
+---
+
+# 2. Competitions should belong to the League Season
+
+Today the proposed relationship is:
+
+`gameday_rooms.league_id`
+
+Reassess whether Fantasy competitions should instead link to:
+
+`league_season_id`
+
+Conceptually:
+
+Food Pyramid Football
+→ 2026 Season
+→ Draft Day
+→ Week 1
+→ Week 2
+→ ...
+→ Championship
+
+Then:
+
+Food Pyramid Football
+→ 2027 Season
+→ Draft Day
+→ Week 1
+→ ...
+
+We need historical separation between seasons without creating unrelated permanent leagues.
+
+Determine whether `gameday_rooms` should store:
+
+* `league_id`
+* `league_season_id`
+* or both
+
+Recommend the minimum clean relationship.
+
+Avoid storing redundant relationships unless there is a clear benefit.
+
+---
+
+# 3. Reassess persistent league membership versus season participation
+
+A person may participate in:
+
+* 2026
+* skip 2027
+* return in 2028
+
+A commissioner should also be able to quickly bring back prior members when creating a new season.
+
+Assess whether we need to distinguish:
+
+### Persistent League Member
+
+Someone who has historically belonged to the league.
+
+from:
+
+### Season Participant
+
+Someone actively participating in this particular season.
+
+Compare:
+
+### Option A
+
+`fantasy_league_members` represents active membership directly and is updated each season.
+
+### Option B
+
+Persistent `fantasy_league_members` plus a season-membership relationship such as:
+
+`fantasy_season_members`
+
+Do not add another table unless it prevents meaningful year-over-year rework.
+
+Address:
+
+* member leaves for one season
+* member returns later
+* replacement owners
+* historical standings
+* invitation reuse
+* commissioner starting a new season
+
+Recommend the simplest durable model.
+
+---
+
+# 4. Cross-league and cross-sport member reuse
+
+A commissioner may manage multiple leagues.
+
+Example:
+
+* Food Pyramid Football
+* Food Pyramid Basketball
+* another baseball league
+
+Many of the same people may participate across those leagues.
+
+We want a future commissioner experience like:
+
+**Add Members**
+→ From your other leagues
+→ Food Pyramid Football
+→ Select Darius, Mike, Chris, Anthony
+→ Add to Basketball league
+
+We do NOT want a global searchable fantasy-user directory in the MVP.
+
+Assess whether the proposed identity architecture supports commissioner-scoped member reuse without additional foundational tables.
+
+Specifically explain how:
+
+* authenticated members can be reused
+* guest members can be copied/invited
+* new league-member rows should be created in the destination league
+* identity claims should or should not carry across leagues
+* the commissioner sees only people with an existing relevant relationship, not all Swayger users
+
+Determine whether Phase 1 needs any additional schema support for this.
+
+If no new schema is required, say so explicitly.
+
+---
+
+# 5. Reassess Fantasy Team persistence across seasons
+
+The current proposal creates:
+
+`fantasy_teams`
+
+but the placement of that entity relative to league versus season needs to be revisited.
+
+Fantasy formats include:
+
+* redraft
+* keeper
+* dynasty
+
+In a redraft league, teams may feel season-specific.
+
+In a dynasty league, the franchise/team may persist for years even while rosters, managers, or names change.
+
+We do NOT need to build keeper/dynasty functionality now.
+
+We DO need to avoid a model that assumes:
+
+**one fantasy team exists for exactly one season**
+
+if that assumption would require immediate restructuring later.
+
+Compare possible approaches:
+
+### Option A
+
+Fantasy teams belong directly to the persistent league.
+
+### Option B
+
+Fantasy teams belong to league seasons.
+
+### Option C
+
+Persistent team/franchise plus a season-specific team participation record.
+
+Recommend the minimum durable solution.
+
+Address:
+
+* team name changes
+* manager changes
+* dynasty franchises
+* redraft leagues
+* historical receipts
+* future provider imports
+* team-target answer options
+
+---
+
+# 6. Replace fixed manager columns if necessary
+
+The current proposal uses:
+
+* `current_manager_id`
+* `co_manager_id`
+
+on `fantasy_teams`.
+
+Reassess this.
+
+Some fantasy teams can have:
+
+* one manager
+* two co-managers
+* more than two managers
+* manager changes over time
+
+We do NOT need a full manager-management UI now.
+
+But we should avoid a schema that supports exactly one primary manager and one co-manager forever if a simple relationship table is cleaner.
+
+Assess whether something conceptually like:
+
+`fantasy_team_managers`
+
+would be more durable.
+
+Potential relationship:
+
+* fantasy_team_id
+* fantasy_league_member_id
+* role
+* is_active
+* optional effective dates if truly necessary
+
+Do not add historical effective dating unless needed now.
+
+Recommend the smallest safe model.
+
+---
+
+# 7. Do not assume one Draft Day per season
+
+A fantasy season may contain more than one draft.
+
+Examples:
+
+* startup draft
+* rookie draft
+* supplemental draft
+* replacement draft
+* midseason special draft
+
+Draft Day V1 will likely support one standard preseason draft.
+
+However, the schema must NOT enforce:
+
+**one `draft_day` competition per season**
+
+Do not add a uniqueness constraint that prevents multiple Draft Day competitions.
+
+If the current migration proposal makes such an assumption anywhere, remove it.
+
+The UI can still expose one normal "Set Up Draft Day Swayger" flow initially.
+
+---
+
+# 8. Draft format should be extensible
+
+Not all drafts are snake drafts.
+
+Common formats include:
+
+* snake / linear
+* salary cap / auction
+* autopick
+* offline/manual
+* rookie draft
+* other variants
+
+We do NOT need to build draft-format-specific behavior now.
+
+However, assess whether a simple optional field should eventually exist on the relevant season or Draft Day competition, such as:
+
+`draft_format`
+
+Do not add it merely for completeness.
+
+Add it now only if it materially affects:
+
+* prop-template selection
+* Draft Day setup
+* avoiding immediate schema work
+
+Examples:
+
+"Who gets the first pick?" only makes sense in some formats.
+
+"Who spends the most on one player?" is auction-specific.
+
+Recommend whether this field belongs in Phase 1, fast follow, or defer.
+
+---
+
+# 9. Keep Swayger cadence separate from fantasy-platform scoring format
+
+Fantasy football commonly uses weekly head-to-head competition.
+
+Fantasy basketball/baseball can use:
+
+* head-to-head
+* points
+* rotisserie
+* daily activity
+* other formats
+
+Swayger may still choose to run weekly competitions in any of these leagues.
+
+Therefore do not make the core Fantasy schema assume:
+
+* every league has weekly head-to-head matchups
+* every sport has exactly numbered football-style weeks
+* every competition maps 1:1 to an underlying fantasy matchup
+
+Assess whether the eventual competition model should rely on generic concepts such as:
+
+* competition label
+* sequence/order
+* start date/time
+* end date/time
+
+rather than structurally requiring a football-style `week_number`.
+
+We do NOT need to add all of these fields now.
+
+Just confirm the Phase 1 schema does not prevent this.
+
+---
+
+# 10. Add the generic `draft_day` phase
+
+Our current Draft Day V1 UX has been simplified.
+
+We do NOT intend to require:
+
+* pre_draft
+* in_draft
+* post_draft
+
+as mandatory user-facing stages.
+
+V1 will likely present one primary Draft Day prediction set that locks when the fantasy draft begins.
+
+Competition-scoped Draft Day props and season-scoped predictions can be visually separated without separate lock windows.
+
+Therefore the allowed `gameday_pick_cards.phase` values should include:
+
+* existing Game Day phases
+* `draft_day` — V1 default
+* `pre_draft` — optional future staged mode
+* `in_draft`
+* `post_draft`
+* `weekly`
+
+Do not build the staged UI yet.
+
+---
+
+# 11. Normalize `point_value`
+
+The current migration proposes nullable:
+
+`gameday_props.point_value`
+
+Do not leave legacy Game Day props with NULL values.
+
+Existing Game Day scoring effectively gives:
+
+**10 points per correct prediction**
+
+The new architecture should represent this directly.
+
+Preferred:
+
+`gameday_props.point_value INTEGER NOT NULL DEFAULT 10`
+
+Existing Game Day props should backfill/default to:
+
+`10`
+
+Likewise reassess:
+
+`gameday_prop_library.point_value`
+
+Preferred:
+
+`INTEGER NOT NULL DEFAULT 10`
+
+unless current code inspection identifies a concrete reason this is unsafe.
+
+The future leaderboard should be able to use:
+
+`SUM(point_value)`
+
+without maintaining:
+
+`NULL means 10 for legacy Game Day`
+
+special-case logic.
+
+---
+
+# 12. Complete sports-agnostic constraint widening
+
+The current proposal supports:
+
+`fantasy_leagues.sport IN ('football','basketball','baseball')`
+
+but only adds `football` to current Game Day/prop-library sport constraints.
+
+Update the allowed values on:
+
+* `gameday_rooms`
+* `gameday_prop_library`
+
+to support at least:
+
+* `nba`
+* `soccer`
+* `football`
+* `basketball`
+* `baseball`
+
+Preserve existing NBA and soccer values exactly.
+
+Do not migrate current NBA records from `nba` to `basketball`.
+
+The goal is backward compatibility plus support for Fantasy Basketball/Baseball without another foundational migration.
+
+---
+
+# 13. Reassess commissioner ownership
+
+The current proposal includes:
+
+`fantasy_leagues.commissioner_user_id`
+
+Reassess whether commissioner identity belongs permanently on the league.
+
+A persistent league may change commissioners across years.
+
+Possible distinction:
+
+### Persistent league
+
+* creator/created_by
+
+### Season or membership role
+
+* commissioner
+* co-commissioner
+* member
+
+We do NOT need a complex permission model now.
+
+But avoid making the permanent league row depend on one commissioner forever.
+
+Recommend whether:
+
+* `commissioner_user_id` remains appropriate
+* it should move to league season
+* commissioner status should live in season membership
+* or another minimal model is cleaner
+
+---
+
+# 14. Preserve structured Fantasy answer identities
+
+Keep the previously validated structured answer approach for Fantasy props.
+
+Fantasy answer options should ultimately be able to reference stable internal IDs such as:
+
+* league member ID
+* fantasy team ID
+* player/internal option ID
+* yes/no canonical values
+
+Display labels should not be the authoritative identity.
+
+No additional migration change is necessarily required beyond the previously approved `answer_target_type` and JSONB behavior.
+
+Confirm the revised team/member/season model does not invalidate this approach.
+
+---
+
+# 15. QR/member onboarding clarification
+
+No new QR-specific schema is requested.
+
+The intended Draft Day member flow remains:
+
+Commissioner shares Draft Day link or displays QR
+→ user opens link
+→ sign in / create account / continue as guest
+→ claim pre-created league identity
+→ immediately enter Draft Day Swayger
+
+The Draft Day competition's existing short-link mechanism can initially serve as the invitation.
+
+Do not build a permanent league-invite table unless code inspection shows one is necessary.
+
+---
+
+# 16. Commissioner discovery clarification
+
+Fantasy setup should eventually be accessible both ways:
+
+### Assisted acquisition
+
+We send commissioner a direct:
+
+**Create your Fantasy League**
+
+link.
+
+### Organic discovery
+
+A commissioner who lands on Swayger independently can discover:
+
+**Create Fantasy League**
+
+within the app.
+
+No additional Phase 1 schema is requested for this.
+
+This is future UI/navigation behavior.
+
+---
+
+# 17. Validate these eight foundational cases
+
+After revising the schema, explicitly demonstrate how it handles:
+
+### Case 1 — Year-over-year continuity
+
+Food Pyramid Football runs in 2026, 2027, and 2028 without creating unrelated league identities or overwriting history.
+
+### Case 2 — Member continuity
+
+Darius plays in 2026, skips 2027, returns in 2028.
+
+### Case 3 — Cross-sport reuse
+
+The same commissioner creates a basketball league and easily reuses 8 members from their football league without global user search.
+
+### Case 4 — Team versus person identity
+
+Darius and The Monstars remain separate stable entities.
+
+### Case 5 — Ownership changes
+
+The Monstars can change managers without changing historical receipts.
+
+### Case 6 — Multiple team managers
+
+A fantasy team can support more than one manager without adding manager-specific columns indefinitely.
+
+### Case 7 — Multiple drafts
+
+A single league season can eventually contain a preseason draft and a rookie/supplemental draft.
+
+### Case 8 — Non-football league formats
+
+A fantasy basketball/baseball league can use the same core schema even when the underlying fantasy platform is not a weekly football-style H2H league.
+
+If any case requires meaningful schema restructuring after Phase 1, revise the proposal before recommending migration authorization.
+
+---
+
+# 18. Be strict about MVP scope
+
+Do NOT use these cases as justification to build:
+
+* keeper management
+* dynasty roster management
+* roster/player storage
+* fantasy scoring engines
+* trades
+* waivers
+* lineup management
+* salary-cap logic
+* draft ingestion
+* Sleeper/Yahoo/ESPN imports
+* multi-draft UI
+* global member search
+* multi-manager UI
+* season-renewal UI
+* basketball/baseball templates
+* payment processing
+* prize custody
+* Leagueswype integration
+
+The schema should tolerate these realities.
+
+The MVP should not implement them.
+
+---
+
+# 19. Return the revised Phase 1 proposal
+
+Return the following in this order:
+
+## 1. Executive recommendation
+
+State whether the current Phase 1 migration should be:
+
+* revised
+* approved as-is
+* split into multiple migrations
+
+## 2. Revised domain hierarchy
+
+Show clearly:
+
+* persistent Fantasy League
+* League Season
+* League Member
+* Season Member if recommended
+* Fantasy Team
+* Team-manager relationship if recommended
+* Competition
+* participant
+* props/picks
+
+## 3. Revised complete table/schema proposal
+
+Include all new Fantasy foundation tables and changes to existing `gameday_*` tables.
+
+## 4. Exact changes from the previous migration checkpoint
+
+List additions/removals/changed columns.
+
+## 5. FK creation order
+
+Pay particular attention to any new circular relationships.
+
+## 6. Constraint changes
+
+Include exact proposed allowed values.
+
+## 7. Defaults and backfills
+
+Especially:
+
+* `experience_type`
+* `scoring_scope`
+* `point_value`
+
+## 8. Year-over-year simulation
+
+Show:
+
+Food Pyramid Football
+→ 2026
+→ 2027
+
+and what is reused versus newly created.
+
+## 9. Cross-sport commissioner simulation
+
+Show:
+
+Food Pyramid Football
+→ selected members
+→ new Food Pyramid Basketball league
+
+and exactly what records are reused versus created.
+
+## 10. Draft Day → Week 1 simulation
+
+Confirm no foundational migration is needed.
+
+## 11. Eight-case validation
+
+Answer each Case 1–8 with YES/NO and explanation.
+
+## 12. What is deliberately not being built
+
+Confirm MVP boundaries.
+
+## 13. Updated rollback plan
+
+## 14. Updated regression test plan
+
+## 15. Final recommendation
+
+End with exactly one of:
+
+**AUTHORIZE PHASE 1 MIGRATION**
+
+or
+
+**REVISE BEFORE MIGRATION**
+
+---
+
+Do not write files.
+
+Do not apply migrations.
+
+Do not modify the repository.
+
+Stop after returning the revised Phase 1 migration checkpoint for review.
