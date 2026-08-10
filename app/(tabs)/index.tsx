@@ -10,12 +10,13 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import AppSectionHeader from "@/components/AppSectionHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Analytics } from "@/lib/posthog";
 import { getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
+import { fantasyFetch, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -127,6 +128,150 @@ function MySwaygersCard() {
         <Text style={cardStyles.ctaText}>View My Swaygers →</Text>
       </View>
     </Pressable>
+  );
+}
+
+// ─── FantasySection ───────────────────────────────────────────────────────────
+// Self-contained: fetches its own data, handles signed-out / loading / empty / has-leagues.
+function FantasySection() {
+  const router = useRouter();
+  const { session, isLoading: authLoading } = useAuth();
+  const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
+  const [leagueLoading, setLeagueLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const loadLeagues = useCallback(async () => {
+    if (!session) return;
+    setLeagueLoading(true);
+    try {
+      const d = await fantasyFetch<{ leagues: FantasyLeague[] }>(
+        "/api/fantasy/leagues",
+        {},
+        { session }
+      );
+      setLeagues(d.leagues);
+    } catch {
+      // Silently ignore — promo card already shown in empty state
+    } finally {
+      setLeagueLoading(false);
+      setFetched(true);
+    }
+  }, [session]);
+
+  // Fire when auth resolves on initial render
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session) { setFetched(true); return; }
+    loadLeagues();
+  }, [authLoading, session?.access_token]);
+
+  // Refetch whenever this tab regains focus (e.g. user returns after creating a league)
+  useFocusEffect(
+    useCallback(() => {
+      if (!authLoading && session) loadLeagues();
+    }, [authLoading, session?.access_token, loadLeagues])
+  );
+
+  // Still resolving auth — show nothing to avoid flash
+  if (authLoading && !fetched) return null;
+
+  // ── Signed out ─────────────────────────────────────────────────────────────
+  if (!session) {
+    return (
+      <View style={fantasyStyles.section}>
+        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
+        <Pressable
+          style={({ pressed }) => [fantasyStyles.card, pressed && { opacity: 0.82 }]}
+          onPress={() => router.push("/auth" as never)}
+        >
+          <Text style={fantasyStyles.cardTitle}>Run Your Own Fantasy League</Text>
+          <Text style={fantasyStyles.cardBody}>
+            Bring your fantasy league to Swayger for Draft Day and weekly prediction competitions.
+          </Text>
+          <View style={fantasyStyles.cta}>
+            <Text style={fantasyStyles.ctaText}>Sign In to Get Started →</Text>
+          </View>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // ── Signed in — loading first fetch ───────────────────────────────────────
+  if (leagueLoading && !fetched) {
+    return (
+      <View style={fantasyStyles.section}>
+        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
+        <ActivityIndicator color={C.tint} size="small" style={{ alignSelf: "flex-start", marginTop: 4 }} />
+      </View>
+    );
+  }
+
+  // ── Signed in — no leagues ─────────────────────────────────────────────────
+  if (leagues.length === 0) {
+    return (
+      <View style={fantasyStyles.section}>
+        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
+        <Pressable
+          style={({ pressed }) => [fantasyStyles.card, pressed && { opacity: 0.82 }]}
+          onPress={() => router.push("/fantasy/setup" as never)}
+        >
+          <Text style={fantasyStyles.cardTitle}>Create Fantasy League</Text>
+          <Text style={fantasyStyles.cardBody}>
+            Bring your fantasy league to Swayger for Draft Day and weekly prediction competitions.
+          </Text>
+          <View style={fantasyStyles.cta}>
+            <Text style={fantasyStyles.ctaText}>Create Fantasy League →</Text>
+          </View>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // ── Signed in — has leagues ────────────────────────────────────────────────
+  return (
+    <View style={fantasyStyles.section}>
+      <Text style={fantasyStyles.sectionLabel}>MY FANTASY LEAGUES</Text>
+
+      {leagues.map((league) => {
+        const latestSeason = [...(league.fantasy_league_seasons ?? [])]
+          .sort((a, b) => b.season_year - a.season_year)[0];
+        const sportEmoji =
+          FANTASY_SPORTS.find((s) => s.value === league.sport)?.emoji ?? "🏆";
+        return (
+          <Pressable
+            key={league.id}
+            style={({ pressed }) => [fantasyStyles.leagueCard, pressed && { opacity: 0.82 }]}
+            onPress={() => {
+              if (latestSeason) {
+                router.push(`/fantasy/${league.id}/${latestSeason.id}` as never);
+              }
+            }}
+          >
+            <View style={fantasyStyles.leagueTop}>
+              <Text style={fantasyStyles.leagueName}>
+                {sportEmoji}{"  "}{league.league_name}
+              </Text>
+              {latestSeason && (
+                <Text style={fantasyStyles.leagueMeta}>
+                  {latestSeason.season_year} •{" "}
+                  {league.sport.charAt(0).toUpperCase() + league.sport.slice(1)}
+                </Text>
+              )}
+            </View>
+            <View style={fantasyStyles.cta}>
+              <Text style={fantasyStyles.ctaText}>Open League →</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+
+      <Pressable
+        style={({ pressed }) => [fantasyStyles.createMoreLink, pressed && { opacity: 0.6 }]}
+        onPress={() => router.push("/fantasy/setup" as never)}
+      >
+        <Text style={fantasyStyles.createMoreText}>+ Create Fantasy League</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -296,6 +441,9 @@ export default function GameDayHomeScreen() {
           <MySwaygersCard />
         </>
       )}
+
+      {/* ── Fantasy Swayger — always visible after Game Day content ─────── */}
+      <FantasySection />
     </ScrollView>
   );
 }
@@ -480,6 +628,85 @@ const featuredStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700" as const,
     color: "#FFFFFF",
+  },
+});
+
+const fantasyStyles = StyleSheet.create({
+  section: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1.0,
+    color: C.textMuted,
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  // Promo / create card (signed-out & no-leagues state)
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    gap: 12,
+    marginBottom: 4,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: C.text,
+  },
+  cardBody: {
+    fontSize: 14,
+    color: C.textSecondary,
+    lineHeight: 21,
+  },
+  cta: {
+    backgroundColor: C.tint,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center" as const,
+  },
+  ctaText: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#FFFFFF",
+  },
+  // League card (has-leagues state)
+  leagueCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    gap: 12,
+    marginBottom: 10,
+  },
+  leagueTop: { gap: 4 },
+  leagueName: {
+    fontSize: 17,
+    fontWeight: "700" as const,
+    color: C.text,
+  },
+  leagueMeta: {
+    fontSize: 13,
+    color: C.textSecondary,
+  },
+  // "+ Create Fantasy League" link below existing league cards
+  createMoreLink: {
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: "center" as const,
+  },
+  createMoreText: {
+    fontSize: 14,
+    color: C.textMuted,
+    textDecorationLine: "underline" as const,
   },
 });
 

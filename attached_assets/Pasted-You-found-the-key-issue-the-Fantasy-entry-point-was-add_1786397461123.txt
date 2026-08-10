@@ -1,0 +1,76 @@
+You found the key issue: the Fantasy entry point was added to app/gameday/index.tsx, but that screen is only reachable through Profile → Game Day Hub.
+
+That is NOT the discoverability location we intended.
+
+The primary Fantasy entry point should live on the ACTUAL main Swayger home/Game Day tab:
+
+app/(tabs)/index.tsx
+
+Please correct this now.
+
+Requirements:
+
+1. Add a clearly visible Fantasy Swayger section/card to app/(tabs)/index.tsx.
+
+2. For a signed-in user with no Fantasy leagues, show something like:
+
+FANTASY SWAYGER
+
+Bring your fantasy league to Swayger for Draft Day and weekly prediction competitions.
+
+[ Create Fantasy League ]
+
+Tap → /fantasy/setup
+
+3. For a signed-in user with existing Fantasy leagues, show:
+
+MY FANTASY LEAGUES
+
+Food Pyramid Football
+2026 • Football
+[ Open League ]
+
+and:
+
+[ + Create Fantasy League ]
+
+Each league card should route to:
+
+/fantasy/:leagueId/:seasonId
+
+using the current/latest season returned by GET /api/fantasy/leagues.
+
+4. Do not require users to go through Profile to discover Fantasy.
+
+5. Do not add a fifth bottom tab yet.
+
+6. You may keep the Fantasy section on /gameday if useful, but the main tab must be the PRIMARY discoverability surface.
+
+7. Signed-out behavior:
+Do not show a broken authenticated league list.
+It is acceptable to show a general Fantasy Swayger promotional card with a CTA that routes through the existing sign-in flow, or hide the personalized My Fantasy Leagues state until authenticated.
+Use the existing auth patterns in app/(tabs)/index.tsx.
+
+8. After implementation, verify in the real main tab:
+- signed-in user with no leagues sees Create Fantasy League
+- signed-in user with a league sees My Fantasy Leagues
+- Create routes to /fantasy/setup
+- Open League routes to the Fantasy League Hub
+- existing Game Day home content is not broken
+- no Profile navigation is required
+
+9. Also investigate why I currently do not see the Fantasy section in Profile → Game Day Hub even after refresh.
+Report whether this is:
+- stale bundle,
+- auth condition,
+- renderer placement,
+- or a logic bug.
+
+Do not begin member claiming or Draft Day work yet.
+
+Return:
+1. files changed
+2. exact main-tab placement
+3. signed-in/signed-out behavior
+4. verification results
+5. explanation for why the prior /gameday placement was not visible
