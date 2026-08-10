@@ -1,0 +1,149 @@
+The revised Phase 1 architecture is approved in principle.
+
+Before writing the migration file, make the following final targeted corrections. Do not reopen the broader architecture and do not apply any migration.
+
+1. REMOVE DISPLAY-NAME UNIQUENESS
+
+Do not use:
+
+UNIQUE (league_id, display_name)
+
+on fantasy_league_members.
+
+Two members of the same fantasy league may have the same human/display name. UUID identity and identity claims are authoritative; display_name is presentation data.
+
+Reassess whether UNIQUE (league_season_id, team_name) is also necessary. Prefer not to make user-editable display labels database identity constraints unless there is a concrete requirement.
+
+2. USE ONE COMMISSIONER SOURCE OF TRUTH
+
+The current proposal has both:
+
+fantasy_league_seasons.commissioner_user_id
+
+and:
+
+fantasy_season_members.role = 'commissioner'
+
+This creates duplicated authority that can drift.
+
+Recommend and implement one authoritative commissioner model.
+
+Preferred:
+
+- fantasy_leagues.created_by = original creator/audit metadata
+- fantasy_season_members.role controls season-level commissioner/co-commissioner/member authority
+
+If you agree, remove commissioner_user_id from fantasy_league_seasons.
+
+Explain how the initial commissioner season-member row is created during season setup.
+
+3. REASSESS external_member_id
+
+Do not attach a provider-specific manager ID permanently to fantasy_league_members unless that ID is truly provider-independent across seasons.
+
+A persistent Food Pyramid member may play:
+
+2026 on Sleeper
+2027 on Yahoo
+
+Those provider identities can differ.
+
+Preferred MVP approach:
+
+Remove external_member_id from fantasy_league_members and defer provider-member mappings until the provider-import layer is built.
+
+If a placeholder is necessary now, place it on an entity that contains season/provider context and explain why.
+
+Do not build a provider mapping system now.
+
+4. ADD STABLE TEAM ID TO COMPETITION PARTICIPATION
+
+gameday_participants should preserve both:
+
+- season_member_id
+- fantasy_team_id (nullable FK → fantasy_teams)
+- display_name snapshot
+- team_name snapshot
+
+For Fantasy competition participants, fantasy_team_id identifies which season team the member represented in that competition.
+
+team_name remains an immutable historical display snapshot.
+
+For Game Day participants, season_member_id and fantasy_team_id remain NULL.
+
+Confirm this supports co-managers and ownership changes without rewriting historical competition participation.
+
+5. ALIGN ANSWER TARGET TYPE WITH SEASON IDENTITY
+
+The revised design states member-target Fantasy answer options reference fantasy_season_members.id.
+
+Therefore reassess:
+
+answer_target_type = 'league_member'
+
+Preferred:
+
+answer_target_type = 'season_member'
+
+so the stored type accurately describes the ID being referenced.
+
+Final proposed values:
+
+- season_member
+- fantasy_team
+- player
+- yes_no
+- static
+
+Existing Game Day rows remain NULL.
+
+6. DOCUMENT season_year SEMANTICS
+
+Keep season_year INTEGER if you recommend it, but explicitly define it as:
+
+"the calendar year in which the fantasy season begins."
+
+Examples:
+
+2026 NFL season → 2026
+2026–27 fantasy basketball season → 2026
+
+A future display label such as "2026–27" may be derived or added later and does not need to be part of Phase 1 unless required.
+
+7. CROSS-SPORT MEMBER COPY SHOULD NOT AUTO-CLAIM A USER
+
+The future commissioner convenience feature can copy a known member from Football into a new Basketball league, but do not assume the destination membership should automatically become claimed solely because the source membership has a user_id claim.
+
+Preferred future behavior:
+
+- commissioner copies member into destination league
+- Swayger can recognize that there is a likely matching authenticated user
+- when that member opens the destination league invitation, they confirm/claim the membership
+- then fantasy_member_claims is created for the destination league-member row
+
+This is primarily behavioral guidance; no additional Phase 1 schema is requested unless needed.
+
+After these corrections, return only:
+
+1. final revised domain hierarchy
+2. exact schema changes from the latest checkpoint
+3. final complete proposed DDL
+4. updated FK order
+5. updated defaults/backfills
+6. confirmation of season-year semantics
+7. confirmation that Draft Day → Week 1 requires no migration
+8. confirmation that 2026 → 2027 renewal requires no foundational migration
+9. updated regression tests
+10. final recommendation
+
+End with either:
+
+AUTHORIZE MIGRATION FILE CREATION
+
+or
+
+REVISE AGAIN
+
+Do not write the migration file yet.
+Do not modify repository files.
+Do not apply anything to Supabase.
