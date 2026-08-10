@@ -550,10 +550,14 @@ export default function FantasySetupScreen() {
 
             <TouchableOpacity
               style={[styles.btn, { marginTop: 24 }]}
-              onPress={() => router.replace("/")}
+              onPress={() =>
+                router.replace(
+                  `/fantasy/${setupResult!.league_id}/${setupResult!.season_id}` as never
+                )
+              }
               activeOpacity={0.85}
             >
-              <Text style={styles.btnText}>Done</Text>
+              <Text style={styles.btnText}>Open My League →</Text>
             </TouchableOpacity>
           </View>
         )}

@@ -12,6 +12,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch } from "@/lib/gameday-api";
+import { fantasyFetch, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 import { Analytics } from "@/lib/posthog";
 
@@ -63,11 +64,32 @@ export default function GameDayHub() {
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
+  // ── Fantasy leagues (any signed-in user, independent of host status) ──────
+  const [fantasyLeagues, setFantasyLeagues] = useState<FantasyLeague[]>([]);
+  const [fantasyLoading, setFantasyLoading] = useState(false);
+
   /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
   function cleanError(raw: string): string {
     if (raw.trim().startsWith("<")) return "Server is starting up — retrying…";
     return raw;
   }
+
+  const fetchFantasyLeagues = useCallback(async () => {
+    if (!session) return;
+    setFantasyLoading(true);
+    try {
+      const data = await fantasyFetch<{ leagues: FantasyLeague[] }>(
+        "/api/fantasy/leagues",
+        {},
+        { session }
+      );
+      setFantasyLeagues(data.leagues);
+    } catch {
+      // Silently ignore — Fantasy section shows the "Create" card as fallback
+    } finally {
+      setFantasyLoading(false);
+    }
+  }, [session]);
 
   const fetchRooms = useCallback(async (quiet = false, attempt = 0) => {
     if (!session) return;
@@ -122,10 +144,100 @@ export default function GameDayHub() {
     }
   }, [isHost]);
 
+  // Fetch fantasy leagues for any signed-in user, independently of host status
+  useEffect(() => {
+    if (authLoading || !session) return;
+    fetchFantasyLeagues();
+  }, [authLoading, session?.access_token]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchRooms(true);
+    fetchFantasyLeagues();
   };
+
+  // ── Fantasy section — rendered in both host and non-host signed-in views ──
+  function renderFantasySection() {
+    return (
+      <View style={styles.fantasySection}>
+        <Text style={styles.fantasySectionLabel}>FANTASY LEAGUES</Text>
+
+        {fantasyLoading ? (
+          <ActivityIndicator
+            color={C.tint}
+            size="small"
+            style={{ alignSelf: "flex-start", marginTop: 4, marginBottom: 16 }}
+          />
+        ) : fantasyLeagues.length === 0 ? (
+          /* Empty state — invite to create */
+          <TouchableOpacity
+            style={styles.fantasyCreateCard}
+            onPress={() => router.push("/fantasy/setup" as never)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.fantasyCreateIcon}>🏆</Text>
+            <View style={styles.fantasyCreateBody}>
+              <Text style={styles.fantasyCreateTitle}>Create Fantasy League</Text>
+              <Text style={styles.fantasyCreateSubtitle}>
+                Run your own fantasy competition with your Game Day crew.
+              </Text>
+            </View>
+            <Text style={styles.fantasyChevron}>→</Text>
+          </TouchableOpacity>
+        ) : (
+          /* Has leagues */
+          <View>
+            {fantasyLeagues.map((league) => {
+              const latestSeason = [...(league.fantasy_league_seasons ?? [])]
+                .sort((a, b) => b.season_year - a.season_year)[0];
+              const sportEmoji =
+                FANTASY_SPORTS.find((s) => s.value === league.sport)?.emoji ?? "🏆";
+              return (
+                <TouchableOpacity
+                  key={league.id}
+                  style={styles.fantasyLeagueCard}
+                  onPress={() => {
+                    if (latestSeason) {
+                      router.push(
+                        `/fantasy/${league.id}/${latestSeason.id}` as never
+                      );
+                    }
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.fantasyLeagueCardTop}>
+                    <Text style={styles.fantasyLeagueName}>
+                      {sportEmoji}  {league.league_name}
+                    </Text>
+                    {latestSeason && (
+                      <View style={styles.fantasySeasonBadge}>
+                        <Text style={styles.fantasySeasonBadgeText}>
+                          {latestSeason.season_year}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.fantasyLeagueMeta}>
+                    {league.sport.charAt(0).toUpperCase() + league.sport.slice(1)}
+                    {latestSeason
+                      ? ` · ${latestSeason.status === "upcoming" ? "Setup" : latestSeason.status === "active" ? "In Season" : "Completed"}`
+                      : ""}
+                  </Text>
+                  <Text style={styles.fantasyLeagueHint}>Tap to open →</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.fantasyNewLink}
+              onPress={() => router.push("/fantasy/setup" as never)}
+            >
+              <Text style={styles.fantasyNewLinkText}>+ Create another league</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  }
 
   // ── Not signed in ──────────────────────────────────────────────────────
   if (!session && isHost !== null) {
@@ -141,16 +253,25 @@ export default function GameDayHub() {
     );
   }
 
-  // ── Non-host: just show a "enter room code" message ───────────────────
+  // ── Non-host: Game Day message + Fantasy section ──────────────────────
   if (isHost === false) {
     return (
-      <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.emptyIcon}>🏀</Text>
-        <Text style={styles.emptyTitle}>Game Day Swayger</Text>
-        <Text style={styles.emptySubtitle}>
-          Get the room link from your host to join tonight's picks.
-        </Text>
-      </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 },
+        ]}
+      >
+        <View style={styles.nonHostHero}>
+          <Text style={styles.emptyIcon}>🏀</Text>
+          <Text style={styles.emptyTitle}>Game Day Swayger</Text>
+          <Text style={styles.emptySubtitle}>
+            Get the room link from your host to join tonight's picks.
+          </Text>
+        </View>
+        {renderFantasySection()}
+      </ScrollView>
     );
   }
 
@@ -289,6 +410,8 @@ export default function GameDayHub() {
           </Text>
         </TouchableOpacity>
       )}
+
+      {renderFantasySection()}
     </ScrollView>
   );
 }
@@ -415,4 +538,71 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   createBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
+  // Non-host hero block
+  nonHostHero: { alignItems: "center", paddingTop: 40, paddingBottom: 32, gap: 12 },
+
+  // Fantasy section
+  fantasySection: { marginTop: 8, paddingTop: 24, borderTopWidth: 1, borderTopColor: C.border },
+  fantasySectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+
+  // Fantasy — empty / create card
+  fantasyCreateCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    gap: 14,
+    marginBottom: 4,
+  },
+  fantasyCreateIcon: { fontSize: 28 },
+  fantasyCreateBody: { flex: 1 },
+  fantasyCreateTitle: { fontSize: 16, fontWeight: "700", color: C.text },
+  fantasyCreateSubtitle: { fontSize: 13, color: C.textSecondary, marginTop: 2, lineHeight: 18 },
+  fantasyChevron: { fontSize: 18, color: C.tint, fontWeight: "700" },
+
+  // Fantasy — league cards
+  fantasyLeagueCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    marginBottom: 10,
+  },
+  fantasyLeagueCardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  fantasyLeagueName: { fontSize: 16, fontWeight: "700", color: C.text, flex: 1, marginRight: 8 },
+  fantasySeasonBadge: {
+    backgroundColor: C.tint + "22",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  fantasySeasonBadgeText: { fontSize: 12, fontWeight: "700", color: C.tint },
+  fantasyLeagueMeta: { fontSize: 13, color: C.textSecondary, marginBottom: 8 },
+  fantasyLeagueHint: { fontSize: 12, color: C.tint, fontWeight: "600" },
+
+  // Fantasy — "Create another" link
+  fantasyNewLink: {
+    alignSelf: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  fantasyNewLinkText: { fontSize: 14, color: C.textMuted, textDecorationLine: "underline" },
 });

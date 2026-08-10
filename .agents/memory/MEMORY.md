@@ -1,2 +1,3 @@
 - [Gameday Phase 1 Navigation](gameday-phase1-nav.md) — tab structure, binding decisions, dgrand2 regression baseline (SP 1671, 104 swaygers, rank 1/11)
 - [Global Settlement Architecture](global-settlement-arch.md) — normalization module, grouping key schema, queue route, admin UI structure, legacy flag
+- [Gameday Fantasy Phase 2 Nav](gameday-fantasy-phase2-nav.md) — route structure, discovery entry on Game Day hub, post-setup redirect, retry safety, auth loading pattern
