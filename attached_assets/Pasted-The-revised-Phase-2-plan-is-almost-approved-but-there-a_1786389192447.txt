@@ -1,0 +1,146 @@
+The revised Phase 2 plan is almost approved, but there are three implementation issues to correct before authorization.
+
+Do not write code yet.
+
+### 1. Fix first-season versus future-season authorization
+
+The current proposed POST /api/fantasy/leagues/:leagueId/seasons route allows any authenticated user with an active claim in the league to create a season.
+
+That is too permissive once a league has multiple members.
+
+A normal league member must not be able to create the next season merely because they have claimed membership.
+
+Preferred approach:
+
+Reassess the bootstrap flow so that the INITIAL league + initial season authority can be created atomically without introducing a weak "any claimed member can create a season" exception.
+
+Strongly consider one initial setup RPC that atomically creates:
+
+- fantasy_leagues
+- creator fantasy_league_members
+- creator fantasy_member_claims
+- initial fantasy_league_seasons
+- creator fantasy_season_members with role='commissioner'
+
+The UI may still collect League and Season information across separate wizard screens before submitting.
+
+If you recommend keeping league creation and first-season creation separate, define a secure bootstrap authorization rule that cannot later allow arbitrary league members to create future seasons.
+
+For subsequent seasons, require commissioner/co_commissioner authority from an existing season of that persistent league.
+
+Do not use fantasy_leagues.created_by as ongoing authority.
+
+### 2. Fix the upcoming-season commissioner authorization bug
+
+Your league-scoped commissioner helper currently requires commissioner/co_commissioner status in at least one ACTIVE season.
+
+But a newly created season defaults to:
+
+status='upcoming'
+
+That would cause the commissioner to receive 403 when attempting to add league members during setup.
+
+Correct this.
+
+Do not make `status='active'` a prerequisite for commissioner setup authority.
+
+At minimum, upcoming + active must work.
+
+Prefer authorization based primarily on:
+
+- active fantasy_member_claim
+- matching fantasy_league_member
+- active fantasy_season_member
+- role IN ('commissioner','co_commissioner')
+
+with season status used only where product behavior genuinely requires it.
+
+Explain the final rule.
+
+### 3. Reassess Members & Teams atomicity
+
+The current UI correctly presents one conceptual row:
+
+Mike — Sunday Scaries
+
+But the proposed backend requires four independent network calls:
+
+1. create league member
+2. create season member
+3. create fantasy team
+4. assign team manager
+
+This can leave partial setup state if call 2, 3, or 4 fails.
+
+Reassess whether Phase 2 should expose an atomic commissioner-oriented operation such as:
+
+add_fantasy_season_participant
+
+that can create the required records for one setup row in a single PL/pgSQL transaction.
+
+Conceptually for a new participant:
+
+- fantasy_league_members
+- fantasy_season_members
+- fantasy_teams
+- fantasy_team_managers
+
+For the commissioner, whose league-member and season-member rows already exist, the operation would create only the missing team + manager assignment or use an equivalent safe path.
+
+Do not denormalize the schema.
+
+The goal is to make the API reflect the actual commissioner action while preventing orphan/partial setup records.
+
+Also consider whether this allows the public server API to be smaller than the current collection of low-level entity-creation endpoints.
+
+### UX requirement
+
+Keep the commissioner-facing flow simple:
+
+Create Fantasy League
+→ League name + sport
+→ Season + optional weekly reward
+→ Members & Teams
+
+Name                 Team
+Darius               The Monstars
+Mike                 Sunday Scaries
+Chris                Fourth & Long
+
+→ Review
+→ Complete
+
+The commissioner should never need to understand persistent league members, season members, teams, or manager junctions.
+
+### Keep all previously approved decisions
+
+- identity authority flows through fantasy_member_claims
+- created_by is audit only
+- true atomic operations use PL/pgSQL RPC
+- cross-season team/member validation required
+- no Draft Day build yet
+- no QR
+- no Week 1
+- no member claim UI
+- no imports
+- no standings
+
+Return only:
+
+1. revised bootstrap transaction design
+2. first-season authorization rule
+3. future-season authorization rule
+4. final commissioner authorization helper behavior
+5. revised Members & Teams atomic operation
+6. final Phase 2 API surface
+7. transaction boundaries
+8. updated tests
+9. final recommendation:
+
+AUTHORIZE PHASE 2 BUILD
+
+or
+
+CORRECTION REQUIRED
+
+Do not write code yet.
