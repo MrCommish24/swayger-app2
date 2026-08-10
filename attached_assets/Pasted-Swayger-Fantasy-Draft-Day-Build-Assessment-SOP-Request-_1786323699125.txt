@@ -1,0 +1,444 @@
+Swayger Fantasy Draft Day — Build Assessment & SOP Request
+
+You are working inside the existing Swayger application.
+
+Before making any code changes, I want you to inspect the current application and produce a detailed implementation assessment and recommended SOP for adding a new Swayger Fantasy Draft Day experience.
+
+Product context
+
+Swayger is currently centered around sports prediction experiences, particularly Game Day Rooms.
+
+The existing Game Day Room flow includes concepts such as:
+
+- Room creation
+- Join-by-link / invite flow
+- Multiple participants
+- Prediction / prop questions
+- Answer options
+- Pick locking
+- Host/admin settlement
+- Scoring
+- Leaderboards
+- Final standings / results
+- Shareable results
+- Existing Game Day room infrastructure and data models
+
+We want to determine how much of this existing architecture can be reused for a new fantasy-football-specific experience.
+
+Do not assume we need a completely separate application or architecture.
+
+The preferred approach is to extend or adapt what already exists wherever practical.
+
+---
+
+Objective of this assessment
+
+We want to launch an MVP called:
+
+Swayger Fantasy Draft Day
+
+The purpose of the MVP is to validate one question:
+
+Does Swayger make a fantasy football draft more fun and engaging for the members of an existing fantasy league?
+
+This is specifically a Draft Day validation product, not yet a complete season-long fantasy product.
+
+Do not begin implementation.
+
+First inspect the codebase and tell me exactly what would be required.
+
+---
+
+MVP scope
+
+The first version should include:
+
+1. Fantasy league setup
+
+A host/commissioner should be able to create a fantasy league experience.
+
+At minimum, determine what would be necessary to support:
+
+- Fantasy league name
+- Commissioner / host
+- List of league members
+- Approximately 8–14 league members
+- Persistent league identity so the Draft Day Room belongs to that fantasy league
+
+We need your recommendation on whether this should:
+
+A. introduce a new "fantasy_leagues" concept/table,
+
+B. reuse or extend the existing Game Day room model,
+
+C. use another existing entity already in the application,
+
+or
+
+D. use some hybrid approach.
+
+Do not automatically create a new model if the existing structure can handle this cleanly.
+
+---
+
+2. Draft Day room
+
+The commissioner should be able to create or launch a Draft Day Swayger for that fantasy league.
+
+League members should be able to join through the simplest version of the existing Game Day join experience.
+
+Reuse existing link-sharing, guest/user joining, room membership, or similar infrastructure wherever appropriate.
+
+The Draft Day Room should support props such as:
+
+- Who will get the first draft position?
+- Who will get the last draft position?
+- Which player will be selected first overall?
+- Which league member will draft the first quarterback?
+- Which league member will draft the first defense?
+- Who will draft the first rookie?
+- Who will make the biggest reach?
+- Who will have the best draft?
+
+These examples are illustrative. We do not need all of them hard-coded.
+
+---
+
+3. Fantasy-specific answer options
+
+One important difference from normal Game Day Rooms is that some answers should be league members.
+
+For example:
+
+Who will draft the first QB?
+
+Answers:
+
+- Darius
+- Chris
+- Mike
+- Anthony
+- etc.
+
+Other props may have standard text or player-name answers.
+
+Assess how the existing "answer_options" architecture works today and whether league-member answer choices can already be represented without structural changes.
+
+Identify any limitations.
+
+---
+
+4. Prop templates
+
+We should not require the commissioner to manually type every Draft Day question.
+
+Assess the cleanest way to support a small library of reusable:
+
+Fantasy Draft Day Prop Templates
+
+For example:
+
+- Draft position props
+- Player drafted first props
+- Position drafted first props
+- League-member behavior props
+- Post-draft opinion props
+
+Determine whether the existing Game Day "template_prop_id" or related template infrastructure can support this.
+
+Reuse the existing template system wherever possible.
+
+Do not build a sophisticated automated prop-generation engine in this MVP.
+
+---
+
+5. Picks and locking
+
+League members should make predictions before the applicable prop locks.
+
+Assess whether the existing Game Day pick lifecycle can be reused unchanged.
+
+Identify:
+
+- Current pick model
+- Existing lock mechanism
+- Whether room-level or prop-level locking exists
+- Any changes needed for Draft Day
+
+Prefer minimal changes.
+
+---
+
+6. Settlement
+
+For the MVP, the commissioner/host can manually settle props.
+
+Example:
+
+Who drafted the first QB?
+
+Commissioner selects:
+
+Mike
+
+Existing scoring should then update.
+
+Assess whether the current Game Day settlement system can support this directly.
+
+We recently worked on settlement architecture, including per-room settlement and broader global settlement capabilities. Do not redesign settlement unnecessarily.
+
+Determine what can be reused.
+
+---
+
+7. Draft Day leaderboard
+
+Participants should receive points based on correct predictions.
+
+For the MVP, keep scoring simple.
+
+We do not need:
+
+- advanced wagering
+- complex multipliers
+- confidence points
+- monetary payouts
+- wallet functionality
+- prize accounting
+
+Assess whether existing Swayger Points or Game Day scoring can simply be reused.
+
+Recommend the minimum viable scoring method.
+
+At the end of Draft Day, participants should see a final leaderboard / Draft Day winner.
+
+---
+
+8. Draft Day completion
+
+The final experience should clearly indicate:
+
+- Draft Day Swayger is complete
+- Final standings
+- Draft Day winner
+- Individual correct picks / results where already supported
+- Existing share functionality if it can be reused easily
+
+Do not create a broader season-long experience yet.
+
+---
+
+Explicitly OUT OF SCOPE
+
+Do not include these in the MVP implementation plan unless a foundational data decision now would prevent us from adding them later.
+
+Out of scope:
+
+- Season-long weekly Swayger competitions
+- Week 1–17 fantasy rooms
+- Season-long fantasy leaderboard
+- Fantasy playoff competitions
+- Prize pool accounting
+- Prize distribution
+- Payout tracking
+- Leagueswype integration
+- ESPN integration
+- Yahoo Fantasy integration
+- Sleeper integration
+- NFL Fantasy integration
+- Automatic roster syncing
+- Automatic fantasy scoring imports
+- Automated result settlement through fantasy APIs
+- Payment processing
+- Betting functionality
+- Commissioner financial tools
+
+We may build some of these later.
+
+The MVP should not become dependent on them.
+
+---
+
+Important product principle
+
+Do not build a fantasy football platform.
+
+The user's existing fantasy league still lives on ESPN, Yahoo, Sleeper, NFL Fantasy, etc.
+
+Swayger is an engagement and prediction layer around the league, beginning with Draft Day.
+
+---
+
+Your assignment
+
+Inspect the current repository and give me a build assessment.
+
+I want the response structured as follows.
+
+1. Current architecture relevant to this feature
+
+Identify the existing files, routes, components, APIs, database tables, services, types, and utilities relevant to:
+
+- Game Day Rooms
+- Room creation
+- Room membership
+- Props
+- Prop templates
+- Picks
+- Locking
+- Settlement
+- Scoring
+- Leaderboards
+- Sharing
+- Admin / host tools
+
+Include actual file paths.
+
+---
+
+2. What can be reused unchanged
+
+Identify functionality we already have that should require little or no modification.
+
+Be specific.
+
+---
+
+3. What needs to be extended
+
+Identify current functionality that can support Fantasy Draft Day with relatively small changes.
+
+For every extension, explain:
+
+- Current behavior
+- Required behavior
+- Recommended modification
+- Files likely affected
+
+---
+
+4. What must be newly built
+
+Only list functionality that truly does not exist today.
+
+Explain why existing architecture cannot reasonably support it.
+
+---
+
+5. Data model recommendation
+
+Give me your recommended architecture for:
+
+- Fantasy league
+- League members
+- Draft Day event / room
+- Relationship between the fantasy league and existing Game Day rooms
+- Fantasy Draft Day prop templates
+
+Show proposed schema changes if necessary.
+
+Prefer additive migrations.
+
+Do not write or apply migrations yet.
+
+---
+
+6. User flow
+
+Describe the simplest MVP experience from beginning to end:
+
+Commissioner creates league → adds members → creates Draft Day Swayger → shares link → participants join → make picks → props lock → commissioner settles → leaderboard updates → Draft Day winner
+
+Show the actual screens/routes you recommend using or modifying.
+
+---
+
+7. Implementation SOP
+
+Create a step-by-step build SOP.
+
+Break the work into logical stages such as:
+
+Phase 1 — Data/model
+
+Phase 2 — League setup
+
+Phase 3 — Draft Day room
+
+Phase 4 — Fantasy props
+
+Phase 5 — Participation
+
+Phase 6 — Settlement/scoring
+
+Phase 7 — Final standings
+
+Phase 8 — Testing
+
+For each step include:
+
+- Objective
+- Files likely modified
+- Database changes
+- API changes
+- UI changes
+- Tests required
+- Acceptance criteria
+
+---
+
+8. Risk assessment
+
+Call out anything that could create regressions in the existing Game Day or 1v1 functionality.
+
+We should strongly prefer additive changes that do not disrupt existing Swayger flows.
+
+Specifically assess:
+
+- Whether Game Day Rooms and Fantasy Draft Day should share components
+- Whether fantasy-specific logic risks contaminating general Game Day logic
+- Whether a "room_type", "experience_type", or similar discriminator is warranted
+- Backward compatibility
+- Existing live rooms
+- Existing settlement logic
+- Existing prop templates
+
+---
+
+9. MVP versus future-proofing
+
+Identify any architectural decision we should make now because changing it after fantasy leagues begin using the product would be expensive.
+
+However, do not use "future-proofing" as justification to build season-long features now.
+
+---
+
+10. Recommended smallest build
+
+Finally, answer:
+
+What is the smallest, safest set of changes that would allow us to run a real 10–12 person Swayger Fantasy Draft Day?
+
+Give me:
+
+- Minimum files affected
+- Minimum schema changes
+- Minimum new screens/components
+- What can remain manual
+- What should explicitly wait until after the first live test
+
+---
+
+Constraints
+
+- Do not write code yet.
+- Do not apply migrations.
+- Do not deploy anything.
+- Do not remove existing functionality.
+- Do not redesign Swayger broadly.
+- Do not expand the scope into season-long fantasy.
+- Favor reuse of Game Day infrastructure.
+- Favor additive changes.
+- Keep the first live Draft Day test as the primary objective.
+
+The result of this exercise should be an implementation plan that we can review before authorizing the build.
