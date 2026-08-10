@@ -1,0 +1,740 @@
+# Swayger Fantasy — Final Architecture Validation Before Build Authorization
+
+Do not write code, apply migrations, or modify any files yet.
+
+We have reviewed your full Swayger Fantasy pre-build architecture assessment and agree with the overall direction:
+
+* persistent `fantasy_leagues`
+* persistent league membership
+* Draft Day as the first competition inside the league
+* reuse of `gameday_rooms` as the competition/event layer
+* reuse of existing cards, props, picks, settlement, leaderboard, and finalization
+* separation of `sport`, `experience_type`, and `competition_type`
+* support for Draft Day competition-scoped props and season-long props
+* sports-agnostic architecture
+* future manual/API import compatibility
+* no payment custody or fantasy-platform API integration in the first release
+
+Before implementation is authorized, perform one final architecture review focused ONLY on the unresolved structural questions below.
+
+The objective is to ensure we are not creating technical debt that immediately appears when Week 1 is built after Draft Day.
+
+---
+
+# 1. Reassess `fantasy_season_scores`
+
+Your current recommendation creates:
+
+`fantasy_season_scores`
+
+with persisted cumulative point totals.
+
+We need to determine whether this should actually be the source of truth.
+
+The concern is synchronization and double-counting.
+
+Examples:
+
+* a commissioner settles a prop incorrectly
+* Swayger admin corrects the result
+* a settled prop is re-settled
+* an event result is recalculated
+* a competition is reopened
+* a season-long prop settles months after Draft Day
+* a member's result is corrected after finalization
+
+If season totals are incrementally written, we need confidence they cannot drift away from underlying picks/results.
+
+Compare at least these approaches:
+
+### Option A — Persisted cumulative standings
+
+`fantasy_season_scores` is updated whenever qualifying points are earned or reversed.
+
+### Option B — Derived standings
+
+Season standings are calculated from underlying settled props/picks across all competitions belonging to the league.
+
+### Option C — Hybrid
+
+Underlying competition/pick results remain the authoritative source, while a cached/materialized season score is maintained for performance.
+
+Recommend one.
+
+For your recommendation explain:
+
+* authoritative source of truth
+* how corrections work
+* how re-settlement works
+* how double-counting is prevented
+* whether finalization is required before points count
+* how season-long Draft Day props eventually count
+* whether historical standings can be reconstructed from source records
+* expected query/performance impact for a normal 8–14 member fantasy league over a season
+
+We strongly prefer correctness and auditability over premature optimization.
+
+---
+
+# 2. Reassess whether `fantasy_teams` should be first-class NOW
+
+Your current recommendation stores:
+
+`team_name`
+
+directly on `fantasy_league_members` for MVP, with a possible separate `fantasy_teams` table later.
+
+Week 1 is an immediate fast follow.
+
+Weekly Swayger props will frequently concern the fantasy team itself.
+
+Examples:
+
+* Which fantasy team scores the most points this week?
+* Which team wins by the largest margin?
+* Which team leaves the most points on the bench?
+* Which fantasy team finishes first in regular-season scoring?
+
+We need to know whether storing `team_name` on the member row creates immediate rework.
+
+Compare:
+
+### Option A
+
+Keep `team_name` on `fantasy_league_members`.
+
+### Option B
+
+Create a first-class `fantasy_teams` table now.
+
+If recommending Option B, consider a structure conceptually like:
+
+Fantasy League
+→ Fantasy Team
+→ current manager/member
+
+but do not implement this exact model automatically.
+
+Address:
+
+* team identity versus manager identity
+* team name changes
+* team ownership changes
+* co-managers
+* future platform imports
+* weekly team-target props
+* historical results
+* whether a fantasy team should survive a manager replacement
+
+Recommend the smallest architecture that does NOT need immediate restructuring for Week 1.
+
+---
+
+# 3. Stable answer-option identity
+
+Current Game Day props use `answer_options` as plain text arrays.
+
+Your proposal adds:
+
+`answer_target_type`
+
+Examples:
+
+* league_member
+* fantasy_team
+* player
+* text
+* yes_no
+
+However, `answer_target_type` alone does not establish which persistent object an answer represents.
+
+Example:
+
+Question:
+Who drafts the first QB?
+
+Display answer:
+Darius
+
+But ideally the underlying target may be:
+
+`fantasy_league_member_id = abc123`
+
+Similarly:
+
+Question:
+Which fantasy team scores the most?
+
+Display answer:
+The Monstars
+
+Underlying target may be:
+
+`fantasy_team_id = xyz789`
+
+Assess whether Fantasy should continue storing only strings or whether answer options need stable IDs underneath their labels.
+
+Compare:
+
+### Option A — Strings only
+
+`["Darius","Chris","Mike"]`
+
+### Option B — Structured answer options
+
+Conceptually:
+
+```json
+[
+  {
+    "id": "member-uuid",
+    "label": "Darius",
+    "type": "league_member"
+  }
+]
+```
+
+### Option C — Existing display strings plus separate option-target metadata
+
+Recommend the minimum clean solution.
+
+Address:
+
+* renaming a league member
+* renaming a fantasy team
+* commissioner correcting a typo
+* historical receipts
+* settlement
+* existing Game Day compatibility
+* global settlement compatibility
+* future fantasy-platform imports
+* manually entered NFL/fantasy players
+* yes/no and static text options
+
+Do not overengineer this, but we do not want Fantasy results tied forever to fragile display strings if stable entity references are required.
+
+---
+
+# 4. Identity claiming across leagues and devices
+
+Your current proposal stores:
+
+`guest_session_id`
+
+on `fantasy_league_members`, with a uniqueness constraint.
+
+Reassess this carefully.
+
+Potential scenarios:
+
+* the same person participates in two different Swayger Fantasy leagues
+* the same guest device belongs to someone participating in multiple leagues
+* a user joins Draft Day on their phone and Week 1 on their laptop
+* a guest later creates an authenticated Swayger account
+* a member replaces their phone
+* a family shares a device
+* a commissioner needs to reset an incorrect claim
+
+We need identity claiming to be persistent enough to eliminate weekly re-onboarding without making a single browser session the permanent identity system.
+
+Recommend the correct relationship between:
+
+* Swayger user
+* guest/device session
+* fantasy league member
+* competition participant
+
+Consider whether identity claims need their own table rather than storing one session value directly on the member.
+
+For example conceptually:
+
+`fantasy_member_claims`
+
+Do not assume that is necessary; assess it.
+
+Explain:
+
+* what uniquely identifies the member
+* what identifies the device/session
+* whether multiple claims/devices can point to the same league member
+* how authenticated accounts supersede or coexist with guest claims
+* how a commissioner/admin resets a bad claim
+* how duplicate claims are prevented
+* how Week 1 recognizes an existing member
+
+Keep Draft Day onboarding simple.
+
+---
+
+# 5. Preserve historical identity and ownership
+
+Your assessment currently suggests a commissioner can update:
+
+* display name
+* team name
+
+on `fantasy_league_members`
+
+for replacement or ownership changes.
+
+We need to make sure historical Swayger receipts do not change retroactively.
+
+Example:
+
+Weeks 1–6:
+
+Mike manages **The Monstars**
+
+Week 7:
+
+Chris takes over **The Monstars**
+
+Historical Week 2 results should still correctly communicate who made those picks and who managed the team at the time.
+
+Assess:
+
+* which fields can safely be edited
+* which historical values should be snapshotted on competition participation/results
+* whether team ownership needs effective dates
+* whether a manager replacement should create a new league-member record
+* whether a fantasy team should remain the same team while ownership changes
+
+We do not need a sophisticated franchise-history feature.
+
+We DO need to avoid mutating historical receipts accidentally.
+
+Recommend the smallest safe model.
+
+---
+
+# 6. Define immutable versus correctable data
+
+Define the lifecycle of a Fantasy competition.
+
+Potential states might include:
+
+* draft
+* published
+* open
+* locked
+* partially settled
+* finalized
+* corrected
+
+Do not add states unless necessary.
+
+Identify exactly which records should become effectively immutable after finalization and which can still be corrected by:
+
+### Commissioner
+
+### Swayger admin
+
+Examples:
+
+* league member identity
+* fantasy team
+* selected answer
+* prop question
+* answer options
+* correct answer
+* point value
+* competition reward
+* competition winner
+* season standings
+
+For corrections after finalization:
+
+* how should the original result be preserved?
+* should an audit record be written?
+* should standings automatically recalculate?
+* should a finalized competition ever be reopened?
+
+We already have settlement/audit-related infrastructure in Swayger. Reuse existing patterns where appropriate.
+
+Do not create a large new audit system if current infrastructure can support this.
+
+---
+
+# 7. Reverify Draft Day → Week 1 with the proposed member/team model
+
+Simulate the actual sequence using the architecture you recommend.
+
+## Draft Day
+
+Commissioner creates:
+
+Sunday Smoke
+2026 Fantasy Football
+
+Members/teams:
+
+Darius — The Monstars
+Mike — Team Mike
+Chris — Sunday Scaries
+etc.
+
+Members claim identities.
+
+Draft Day props are completed.
+
+Some season-long props remain pending.
+
+Draft Day champion is declared.
+
+## Next day: build Week 1
+
+Show exactly what data already exists and what Week 1 creation reads.
+
+The commissioner should NOT have to:
+
+* recreate the league
+* re-enter member names
+* re-enter team names
+* ask everyone to identify themselves again
+* recreate stable answer targets
+
+Members should NOT have to:
+
+* create another league identity
+* rejoin the league
+* rebuild their Swayger history
+
+Explicitly identify any schema or code created for Draft Day that would need migration or replacement to support this Week 1 flow.
+
+If there is meaningful rework, revise the architecture.
+
+---
+
+# 8. Season-long Draft Day prop lifecycle
+
+Reconfirm the complete lifecycle of a season-long prediction created on Draft Day.
+
+Example:
+
+**Who will win the fantasy championship?**
+
+The prop is:
+
+* created before Draft Day
+* answered during Draft Day
+* locked during Draft Day
+* visible as a pending receipt throughout the season
+* not counted toward the Draft Day winner
+* eventually settled during the championship
+* then contributes to season standings
+
+Explain:
+
+* where the prop remains stored
+* what happens when its parent Draft Day competition is already finalized
+* whether settlement of the old prop requires reopening Draft Day
+* how season standings update
+* how the user's historical Draft Day receipt is displayed
+* how corrections to that season prop work
+
+We do NOT want to reopen Draft Day simply to settle a season prediction.
+
+---
+
+# 9. Reassess point-value ownership
+
+Your current recommendation puts:
+
+`point_value`
+
+on `gameday_props`.
+
+Confirm whether the value should be snapshotted onto the room prop when the competition is created.
+
+Example:
+
+Prop template initially says:
+
+Who wins the league? — 30 points
+
+Later Swayger changes the template to 50 points.
+
+A Draft Day prediction made in August must still be worth the original 30 points.
+
+Confirm:
+
+* template point value is copied into the competition prop
+* later template edits do not affect historical competitions
+* commissioner changes after picks lock are prohibited or audited
+* scoring always reads the competition prop's point value, not the template's current value
+
+---
+
+# 10. Commissioner-controlled scoring
+
+Your assessment says commissioners may set point values when choosing props.
+
+Reassess whether we actually want this in V1.
+
+There is a product risk if every league commissioner creates arbitrary scoring.
+
+Potential alternative:
+
+Swayger owns standard point values by prop type:
+
+* standard
+* featured
+* season prediction
+
+Commissioner chooses props but not scoring.
+
+Assess:
+
+### Option A
+
+Commissioner freely edits point values.
+
+### Option B
+
+Swayger defines point values and commissioner cannot change them.
+
+### Option C
+
+Swayger defaults point values but commissioner may override within limits.
+
+Recommend one for the first version.
+
+Consider:
+
+* fairness
+* simplicity
+* commissioner setup burden
+* consistent product experience
+* future automated weekly props
+* season standings
+
+---
+
+# 11. Rewards and standings are separate
+
+Reconfirm that reward value is display metadata only.
+
+Example:
+
+Week 3 winner receives $25.
+
+The competition winner should be determined entirely from Swayger scoring, not from reward metadata.
+
+A commissioner changing:
+
+"$25"
+
+to:
+
+"$50"
+
+must not affect:
+
+* scoring
+* standings
+* winner
+* season leaderboard
+
+Confirm this separation explicitly.
+
+---
+
+# 12. Canonical provider/import model
+
+Reconfirm how future fantasy-platform integrations map onto the recommended member/team architecture.
+
+We expect possible providers such as:
+
+* Sleeper
+* Yahoo
+* ESPN
+* manual
+
+Do not research or build these integrations now.
+
+Show conceptually how an imported league maps:
+
+Provider League
+→ Swayger Fantasy League
+
+Provider Roster/Team
+→ Swayger Fantasy Team
+
+Provider User/Owner
+→ Swayger League Member
+
+Also address:
+
+* providers where team and owner IDs differ
+* missing team names
+* commissioner-created manual members before API linking
+* later linking an existing manually created Swayger league to a provider league
+
+No downstream Fantasy competition code should depend directly on a provider schema.
+
+---
+
+# 13. Reconfirm sports-agnostic assumptions
+
+Verify that none of the final recommended tables require:
+
+* NFL teams
+* football rosters
+* football positions
+* football-specific draft logic
+
+Sport-specific differences should live in:
+
+* templates
+* metadata
+* future provider adapters
+
+The core architecture must still work for:
+
+* fantasy basketball
+* fantasy baseball
+* other season-based fantasy sports
+
+Call out any remaining football-specific assumptions.
+
+---
+
+# 14. Update the final domain diagram
+
+Return an updated diagram incorporating your final recommendations for:
+
+* Fantasy League
+* League Members
+* Fantasy Teams, if recommended
+* identity claims, if recommended
+* Competition
+* Competition Participant
+* Pick Cards
+* Props
+* Answer targets
+* Picks
+* Results
+* Season standings
+* Rewards
+
+Show what is:
+
+### Source of truth
+
+versus:
+
+### Derived/cached
+
+---
+
+# 15. Update the build classification
+
+Return an updated table with four categories:
+
+## A. Build now — Draft Day requires it
+
+## B. Build now — Week 1 would otherwise force immediate rework
+
+## C. Design now — implement immediately after Draft Day
+
+## D. Defer
+
+Be strict.
+
+We do not want architecture-driven feature creep.
+
+If something can safely wait without creating migration/rework, put it in C or D.
+
+---
+
+# 16. Final go/no-go questions
+
+Answer each with:
+
+**YES / NO**
+
+followed by a brief explanation.
+
+### 1.
+
+Can Draft Day ship using this model and Week 1 be added immediately afterward without a foundational migration?
+
+### 2.
+
+Can a league member participate all season without repeatedly claiming their identity?
+
+### 3.
+
+Can one league member use multiple devices without corrupting identity?
+
+### 4.
+
+Can a member participate in multiple Swayger Fantasy leagues?
+
+### 5.
+
+Can fantasy teams remain historically accurate if managers change?
+
+### 6.
+
+Can answer labels change without changing the historical meaning of picks?
+
+### 7.
+
+Can a finalized Draft Day competition retain unresolved season-long props that settle months later?
+
+### 8.
+
+Can an incorrect settlement be corrected without double-counting season standings?
+
+### 9.
+
+Can all season standings be reconstructed from authoritative underlying records?
+
+### 10.
+
+Can a weekly reward be changed without changing scoring?
+
+### 11.
+
+Can Sleeper/Yahoo/another provider later populate this model without creating parallel Fantasy tables?
+
+### 12.
+
+Can the architecture support fantasy basketball/baseball without changing the core league/member/competition schema?
+
+If any answer is NO, explain what must change before implementation authorization.
+
+---
+
+# Output format
+
+Return the assessment in this exact order:
+
+1. Executive conclusion
+2. Season standings source-of-truth recommendation
+3. Fantasy team modeling recommendation
+4. Answer-option identity recommendation
+5. Identity-claim architecture
+6. Historical member/team ownership handling
+7. Immutable versus correctable data
+8. Draft Day → Week 1 simulation
+9. Season-long Draft Day prop lifecycle
+10. Point-value architecture
+11. Commissioner scoring-control recommendation
+12. Reward separation confirmation
+13. Future provider mapping
+14. Sports-agnostic validation
+15. Updated domain/data-flow diagram
+16. Updated build-now / fast-follow / defer matrix
+17. Migration and regression changes from the prior proposal
+18. Answers to the 12 final go/no questions
+19. Final recommendation: **AUTHORIZE BUILD** or **REVISE ARCHITECTURE**
+
+Do not write code.
+
+Do not create or apply migrations.
+
+Do not modify the repository.
+
+This is the final architecture review before we decide whether to authorize implementation.
