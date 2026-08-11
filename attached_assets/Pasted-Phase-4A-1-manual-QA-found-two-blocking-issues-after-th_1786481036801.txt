@@ -1,0 +1,152 @@
+Phase 4A.1 manual QA found two blocking issues after the latest RPC/lifecycle changes.
+
+Do NOT begin Phase 4B.
+Do NOT make speculative fixes first.
+
+Investigate both issues against the current live app + live Supabase state and return the root causes before changing behavior.
+
+ISSUE 1 — CANNOT REOPEN EXISTING DRAFT DAY TO CHANGE PROPS
+
+Manual behavior:
+- I already published a Draft Day for an existing Fantasy League.
+- I return to that league.
+- I cannot get back into the existing Draft Day setup/manage experience to change the selected props/questions.
+
+Expected product behavior:
+
+Before any member picks exist:
+- commissioner should be able to open/manage the existing Draft Day
+- see the currently selected questions
+- edit the selected question set
+- save/update the SAME existing Draft Day competition
+- no second room should be created
+- no “republish another Draft Day” behavior
+
+Once member picks exist:
+- question editing should be blocked or heavily restricted to protect fairness
+
+Investigate:
+
+1. What CTA currently renders on the Fantasy League Hub for:
+   - published/open Draft Day
+   - locked Draft Day
+
+2. Where does that CTA route?
+
+3. Does app/fantasy/draft-day/[leagueId]/[seasonId].tsx currently have a guard that says:
+   “Draft Day already exists → show Draft Day is live / Back to Hub”
+   and therefore prevents any management/edit mode?
+
+4. Is there currently ANY API/RPC to update the selected templates/props on an existing Draft Day?
+   - If yes, identify it and why UI cannot reach it.
+   - If no, state clearly that Phase 4A.1 only prevented duplicate setup but never actually implemented edit-before-picks.
+
+5. Inspect whether any gameday_picks currently exist for this Draft Day.
+   - If zero picks exist, editing should be safe.
+   - If picks exist, explain what should be blocked.
+
+Recommend the minimum correct implementation for:
+Published/open + zero picks
+→ Manage Draft Day
+→ edit existing question set
+→ save changes atomically to same room/card
+
+Do NOT implement yet until you report the current gap and proposed safe approach.
+
+ISSUE 2 — CANNOT LOCK PICKS
+
+Manual behavior:
+- Draft Day is published
+- I see the Draft Day state in the league
+- I attempt to lock picks
+- locking does not work / nothing useful happens
+
+Trace the exact failure end to end.
+
+Inspect:
+
+1. Current room_id and card_id for my existing Draft Day.
+2. Current values:
+   - gameday_rooms.status
+   - gameday_pick_cards.status
+3. Confirm card status is currently 'open'.
+4. Exact frontend handler triggered by Lock Picks.
+5. Exact API request:
+   - URL
+   - method
+   - request body
+6. Backend response:
+   - HTTP status
+   - response body
+7. Backend logs for the request.
+8. Commissioner authorization resolution:
+   auth user
+   → fantasy_member_claim
+   → league_member
+   → season_member
+   → commissioner role
+9. Whether the endpoint is being passed the correct leagueId / seasonId / roomId / cardId.
+10. Whether the lock endpoint is still checking an older expected source state such as:
+   'closed'
+   instead of the new Phase 4A.1 state:
+   'open'
+11. Whether the UI is stale because draftDay state is not being re-fetched after publish or focus.
+
+Expected lifecycle:
+
+Published:
+room.status = 'active'
+card.status = 'open'
+
+Lock:
+card.status 'open' → 'locked'
+
+Unlock:
+card.status 'locked' → 'open'
+
+Lock should be commissioner-only and idempotent.
+
+Do not change this lifecycle unless you find a concrete incompatibility.
+
+IMPORTANT — USE MY EXISTING LEAGUE
+
+Do not only test with synthetic automated test data.
+
+Use the current manually-created Fantasy League / Draft Day state in Supabase where possible to understand why the real app behaves differently from the automated suite.
+
+We need to know whether this is:
+- routing bug
+- stale client state
+- wrong CTA
+- missing manage functionality
+- authorization bug
+- incorrect IDs
+- status mismatch after the RPC change
+- endpoint bug
+- or another issue
+
+RETURN FIRST — DO NOT FIX YET
+
+Return:
+
+1. Root cause of inability to reopen/edit Draft Day
+2. Whether edit-existing-Draft-Day functionality actually exists today
+3. Exact current hub CTA/state behavior
+4. Recommended safe edit-before-picks behavior
+5. Root cause of Lock Picks failure
+6. Exact failing request/status/log
+7. Current live room/card statuses
+8. Whether latest RPC migration is confirmed live
+9. Whether any member picks currently exist in this Draft Day
+10. Minimum fixes required
+11. Whether either fix requires SQL
+
+End with:
+
+READY TO FIX
+
+or
+
+NEEDS MORE INFORMATION
+
+Do not begin Phase 4B.
