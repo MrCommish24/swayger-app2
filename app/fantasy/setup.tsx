@@ -305,7 +305,7 @@ export default function FantasySetupScreen() {
               maxLength={100}
             />
 
-            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>YOUR NAME IN THIS LEAGUE</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 20 }]}>YOUR DISPLAY NAME</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Darius"
@@ -315,7 +315,7 @@ export default function FantasySetupScreen() {
               maxLength={100}
             />
             <Text style={styles.fieldHint}>
-              How you appear to other league members.
+              The name other league members know you by.
             </Text>
 
             <Text style={[styles.fieldLabel, { marginTop: 20 }]}>SPORT</Text>

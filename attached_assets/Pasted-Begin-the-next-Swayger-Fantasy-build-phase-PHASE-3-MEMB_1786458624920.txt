@@ -1,0 +1,426 @@
+Begin the next Swayger Fantasy build phase:
+
+PHASE 3 — MEMBER CLAIM + MEMBER FANTASY LEAGUE VIEW
+
+The commissioner creation flow is complete and tested. Do not reopen the Phase 1/2 architecture.
+
+The objective of this phase is simple:
+
+A commissioner has already created a Fantasy League and entered the league members + team names.
+
+Now another member should be able to open an invitation, identify which preloaded league seat belongs to them, claim that seat, and thereafter return to Swayger and see that Fantasy League as their own.
+
+CORE MEMBER JOURNEY
+
+Commissioner shares league invitation
+→ member opens link
+→ sees league identity immediately
+→ signs in / creates account OR continues as guest where supported
+→ sees preloaded league members + teams
+→ chooses “That’s me”
+→ confirms claim
+→ lands in Fantasy League Hub as that member
+→ future visits recognize them automatically
+
+Example:
+
+Food Pyramid — 2026 Fantasy Football
+
+Who are you?
+
+Darius — The Monstars
+Mike — Sunday Scaries
+Chris — Fourth & Long
+
+Mike taps:
+
+Mike — Sunday Scaries
+
+Then confirm:
+
+“This is me”
+
+After successful claim:
+
+Welcome to Food Pyramid
+Mike — Sunday Scaries
+
+The user should NOT have to re-enter their name or team name.
+
+IMPORTANT IDENTITY RULE
+
+A person and a fantasy team are separate concepts.
+
+The user claims:
+
+fantasy_league_members.id
+
+NOT the fantasy_team record.
+
+The UI should DISPLAY both person + team together for clarity:
+
+Mike — Sunday Scaries
+
+but the persistent identity claim attaches to the league-member record.
+
+Do not change this architecture.
+
+COPY CHANGE FROM COMMISSIONER SETUP
+
+Clarify the existing commissioner field currently described as “Your name in this league.”
+
+Preferred copy:
+
+YOUR DISPLAY NAME
+
+“The name other league members know you by.”
+
+Example: Darius
+
+Keep fantasy team name as a separate field:
+
+FANTASY TEAM NAME
+
+Example: The Monstars
+
+Do not collapse display_name and team_name into one field.
+
+MEMBER CLAIM ARCHITECTURE
+
+Existing foundation:
+
+fantasy_league_members
+→ persistent person/seat in the league
+
+fantasy_member_claims
+→ maps authenticated user OR durable guest token to that persistent league member
+
+fantasy_season_members
+→ activates that persistent member for a season
+
+fantasy_teams
+→ season-specific fantasy team
+
+fantasy_team_managers
+→ links season member to fantasy team
+
+Use these existing entities.
+
+Do not create a duplicate member identity system.
+
+INVITATION / ROUTING
+
+Create a member-facing invitation path that can be shared by the commissioner.
+
+Preferred shape can follow existing Swayger routing conventions, but conceptually it must resolve:
+
+league
++ current season
+
+and direct the user into the member claim flow.
+
+Example conceptual URL:
+
+/fantasy/join/:leagueId/:seasonId
+
+If the project already has a better short-link/invite convention, use it and explain why.
+
+The member must NOT need to know or enter a league ID/code manually if they arrived through the shared invitation.
+
+CLAIM SCREEN
+
+Before claim, show:
+
+- League name
+- sport
+- season
+- optional weekly reward if configured
+- preloaded available member/team rows
+
+Example:
+
+FOOD PYRAMID
+2026 Fantasy Football
+
+Weekly Swayger Reward: $25
+
+Who are you?
+
+○ Darius — The Monstars
+○ Mike — Sunday Scaries
+○ Chris — Fourth & Long
+
+Only seats eligible for claim should be selectable.
+
+Think carefully about already-claimed seats.
+
+Preferred MVP behavior:
+
+- clearly show already-claimed seats as unavailable
+- do not allow a second unrelated authenticated user/device to casually overwrite an existing claim
+- preserve an admin/recovery path for future support work rather than solving every reassignment case in this phase
+
+If an authenticated user already has the valid claim for one of these seats, auto-recognize them and bypass the seat-selection screen where safe.
+
+AUTH + GUEST BEHAVIOR
+
+Maintain low-friction entry.
+
+If the current Swayger architecture supports durable guest identity cleanly:
+
+- Signed-in user → create user_id claim
+- Guest → create guest_token claim using the existing durable-device-token pattern
+
+Do not invent a second guest-token mechanism if an existing Game Day mechanism can be safely reused.
+
+If existing guest infrastructure is not suitable for persistent Fantasy claims, stop and report the gap before building a brittle workaround.
+
+Account creation should NOT be mandatory merely to make Draft Day predictions unless there is a hard technical/security reason.
+
+However:
+
+- authenticated claims should work across devices after login
+- guest claims may reasonably be device-specific
+- explain that distinction in the implementation report
+
+CLAIM SAFETY / AUTHORIZATION
+
+A member must not be able to claim someone from an unrelated league by manipulating IDs.
+
+The claim operation must validate:
+
+1. league_member belongs to leagueId
+2. seasonId belongs to leagueId
+3. league_member is active in the target season through fantasy_season_members
+4. if selecting/displaying a team, the team relationship belongs to the same season
+5. caller is not overwriting an active claim belonging to another identity without an explicit supported recovery process
+
+Use an atomic database operation if claim creation requires multiple coordinated writes.
+
+If only fantasy_member_claims is written, a single safe insert/upsert may be sufficient — inspect first.
+
+Do not use fantasy_leagues.created_by for member identity.
+
+MEMBER FANTASY LEAGUE VIEW
+
+After a successful claim, route to the existing Fantasy League Hub.
+
+The hub should become role-aware.
+
+For a normal member, show:
+
+- League name
+- sport / season
+- their display name + team prominently
+- weekly reward if configured
+- league member/team list
+- Draft Day “Coming Soon” / future competition area
+
+Do NOT expose commissioner setup/admin actions to a normal member.
+
+For the commissioner, preserve existing commissioner information and controls.
+
+The page should feel like:
+
+“My fantasy league on Swayger”
+
+not:
+
+“commissioner database setup.”
+
+HOME DISCOVERABILITY
+
+Once a member has successfully claimed a Fantasy League, GET /api/fantasy/leagues or the appropriate member-facing query must allow that league to appear in the existing:
+
+MY FANTASY LEAGUES
+
+section on the main Swayger home tab.
+
+Important:
+
+The current league list was originally built around commissioner-created leagues.
+
+Update the logic so My Fantasy Leagues means:
+
+“Fantasy leagues I belong to”
+
+not merely:
+
+“Fantasy leagues I created.”
+
+A member such as Mike should see Food Pyramid on his home screen after claiming his seat.
+
+Do not break the commissioner experience.
+
+COMMISSIONER SHARE CONTROL
+
+Add a simple share/invite action to the Fantasy League Hub for commissioners.
+
+V1 needs:
+
+Share League / Invite Members
+
+It should produce/share the member invitation URL.
+
+Use the existing native share pattern if one already exists in Swayger.
+
+QR is NOT required in this phase.
+
+We will add Draft Day QR/presentation distribution later.
+
+DO NOT BUILD IN THIS PHASE
+
+- Draft Day competition
+- Draft Day props
+- weekly competitions
+- season standings
+- automated rewards
+- reward scheduling by week
+- Sleeper/Yahoo/ESPN integration
+- global copy/paste member import
+- delete/archive league UI
+- cross-sport member copying
+- season renewal
+
+PRODUCT NOTES TO PRESERVE FOR LATER
+
+1. WEEKLY REWARD
+
+Current reward should be treated as the DEFAULT weekly reward.
+
+Copy may clarify:
+
+“Default weekly reward — optional”
+“You can change this for individual weeks later.”
+
+Do NOT build reward scheduling now.
+
+2. ROSTER IMPORT
+
+We intend to add a lightweight copy/paste roster option later, similar to Leagueswype:
+
+Darius, The Monstars
+Mike, Sunday Scaries
+Chris, Fourth & Long
+
+Do NOT build it in this phase.
+
+Do not start provider API integrations.
+
+3. DELETE / ARCHIVE
+
+Do not add hard-delete behavior now.
+
+Future product direction:
+
+- normal action = Archive League
+- hard delete, if supported, should be limited to leagues with no meaningful competition/history and require strong confirmation
+- established Fantasy League history should not be casually cascade-deleted from the UI
+
+IMPLEMENTATION PROCESS
+
+Before coding:
+
+1. Inspect the existing fantasy claim schema and APIs.
+2. Inspect existing authenticated-user and guest identity infrastructure.
+3. Inspect current Fantasy League Hub and Home Fantasy section.
+4. Identify the minimum API/RPC changes needed.
+
+Then build.
+
+Do not create unnecessary new tables unless a real blocker exists.
+
+TESTING REQUIREMENTS
+
+At minimum verify these flows:
+
+AUTHENTICATED MEMBER
+
+1. Commissioner creates league with Mike preloaded.
+2. Commissioner opens Share League and obtains invite.
+3. Mike opens invite while authenticated.
+4. Mike sees “Mike — Sunday Scaries.”
+5. Mike claims seat.
+6. fantasy_member_claims has correct user_id → Mike league_member.
+7. Mike lands on league hub.
+8. Mike sees his own name/team prominently.
+9. Mike does not see commissioner-only controls.
+10. Mike returns to main Home tab.
+11. Food Pyramid appears under My Fantasy Leagues.
+12. Reopening it recognizes Mike without claiming again.
+
+GUEST MEMBER
+
+If supported by existing infrastructure:
+
+1. Guest opens invite.
+2. Guest selects seat.
+3. durable guest claim created.
+4. reload/reopen on same device recognizes member.
+5. no duplicate member/claim rows created.
+
+CLAIM SAFETY
+
+- claim member from wrong league → rejected
+- claim member not active in season → rejected
+- claim already claimed by another authenticated user → rejected/conflict
+- repeat same authenticated claim → idempotent success
+- fake league/season/member IDs → rejected
+- normal commissioner claim remains intact
+- no claim can downgrade/change commissioner role
+- no cross-season team identity confusion
+
+REGRESSION
+
+- Phase 2 Fantasy tests remain green
+- commissioner creation still works
+- commissioner team atomic setup remains green
+- existing Game Day regression tests remain green
+- 1v1 schema/functionality unaffected
+
+MANUAL UX TEST
+
+After build I should be able to test with two identities:
+
+Commissioner:
+Create/open Food Pyramid
+→ tap Invite Members
+→ copy/share URL
+
+Member:
+Open URL
+→ choose “Mike — Sunday Scaries”
+→ confirm “This is me”
+→ enter Food Pyramid hub
+→ return Home
+→ see Food Pyramid under My Fantasy Leagues
+
+RETURN AFTER BUILD
+
+Return:
+
+1. architecture/code inspection findings
+2. files changed
+3. migrations or SQL requiring manual Supabase application
+4. API/RPC changes
+5. invite URL format
+6. authenticated claim behavior
+7. guest claim behavior
+8. role-aware hub changes
+9. Home/My Fantasy Leagues changes
+10. tests with exact pass/fail counts
+11. any bugs found/fixed during QA
+12. exact manual test I should perform
+13. remaining limitations
+
+Then STOP.
+
+Do not begin Draft Day.
+
+Final status should be:
+
+MEMBER CLAIM PHASE READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

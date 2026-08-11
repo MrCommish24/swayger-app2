@@ -7,7 +7,7 @@ import { getApiUrl } from "@/lib/query-client";
 export async function fantasyFetch<T = unknown>(
   path: string,
   init: RequestInit = {},
-  auth: { session?: Session | null } = {}
+  auth: { session?: Session | null; guestToken?: string | null } = {}
 ): Promise<T> {
   const url = new URL(path, getApiUrl()).toString();
   const headers: Record<string, string> = {
@@ -16,6 +16,8 @@ export async function fantasyFetch<T = unknown>(
   };
   if (auth.session?.access_token) {
     headers["Authorization"] = `Bearer ${auth.session.access_token}`;
+  } else if (auth.guestToken) {
+    headers["X-Fantasy-Guest-Token"] = auth.guestToken;
   }
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
@@ -104,6 +106,15 @@ export interface FantasyParticipant {
   manager_role: string | null;
 }
 
+/** The authenticated/guest caller's identity within this league. Null if no claim. */
+export interface FantasyViewer {
+  league_member_id: string;
+  season_member_id: string;
+  display_name: string | null;
+  team_name: string | null;
+  role: "commissioner" | "co_commissioner" | "member";
+}
+
 export interface FantasySeasonDetail {
   league: {
     id: string;
@@ -119,4 +130,53 @@ export interface FantasySeasonDetail {
     default_reward_amount_display: string | null;
   };
   participants: FantasyParticipant[];
+  /** Caller's role and team in this league. Null if they have no active claim. */
+  viewer: FantasyViewer | null;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info
+export interface JoinInfoSeat {
+  season_member_id: string;
+  league_member_id: string | null;
+  display_name: string | null;
+  team_name: string | null;
+  role: "commissioner" | "co_commissioner" | "member";
+  /** True if any identity holds an active claim on this seat. */
+  is_claimed: boolean;
+  /** True if the current caller holds the claim on this seat. */
+  is_mine: boolean;
+}
+
+export interface JoinInfo {
+  league: {
+    id: string;
+    league_name: string;
+    sport: FantasySport;
+    is_active: boolean;
+  };
+  season: {
+    id: string;
+    season_year: number;
+    status: string;
+    default_reward_description: string | null;
+    default_reward_amount_display: string | null;
+  };
+  seats: JoinInfoSeat[];
+  /** Pre-identified caller seat. Non-null → skip seat selection in UI. */
+  my_seat: FantasyViewer | null;
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/claim
+export interface ClaimSeatPayload {
+  league_member_id: string;
+}
+
+export interface ClaimSeatResponse {
+  claim_id: string;
+  league_member_id: string;
+  season_member_id: string;
+  display_name: string | null;
+  team_name: string | null;
+  role: "commissioner" | "co_commissioner" | "member";
+  already_existed: boolean;
 }

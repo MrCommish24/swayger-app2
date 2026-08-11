@@ -1,15 +1,23 @@
 /**
  * app/fantasy/[leagueId]/[seasonId].tsx
  * ──────────────────────────────────────────────────────────────────────────────
- * Fantasy League Hub — read-only season overview for Phase 2.
+ * Fantasy League Hub — role-aware season overview (Phase 3).
  *
  * Shows:
  *   • League name, sport, season year, status
- *   • Full participants table (name, team, commissioner badge)
+ *   • MY TEAM card — viewer's own seat (if they have an active claim)
+ *   • Invite Members share button — commissioner only
+ *   • Full participants table (display_name, team, role badges)
  *   • Weekly reward card (if set)
- *   • Phase placeholder for Draft Day
+ *   • Draft Day placeholder
+ *
+ * Identity:
+ *   • Authenticated user → Bearer token
+ *   • Guest (device-only claim) → X-Fantasy-Guest-Token header
+ *   • Neither → prompt to sign in
  *
  * Data source: GET /api/fantasy/leagues/:leagueId/seasons/:seasonId
+ * (includes viewer field identifying the caller's role/team)
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -21,15 +29,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Share,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
+import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   fantasyFetch,
   FANTASY_SPORTS,
   FantasySeasonDetail,
   FantasyParticipant,
+  FantasyViewer,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
@@ -53,10 +65,22 @@ const STATUS_COLOR: Record<string, string> = {
   archived:  C.textMuted,
 };
 
+/** Build a shareable invite URL for the given league/season. */
+function buildInviteUrl(leagueId: string, seasonId: string): string {
+  const path = `/fantasy/join/${leagueId}/${seasonId}`;
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}${path}`;
+  }
+  const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
 export default function LeagueHubScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
+  const { guestToken, guestTokenLoading } = useFantasyGuestToken();
   const { leagueId, seasonId } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
@@ -69,14 +93,18 @@ export default function LeagueHubScreen() {
 
   const fetchDetail = useCallback(
     async (quiet = false) => {
-      if (!session || !leagueId || !seasonId) return;
+      if (!leagueId || !seasonId) return;
+      // Need at least one identity to fetch hub
+      if (!session && !guestToken) return;
+
       if (!quiet) setLoading(true);
       setError(null);
       try {
+        const auth = session ? { session } : { guestToken: guestToken! };
         const data = await fantasyFetch<FantasySeasonDetail>(
           `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`,
           {},
-          { session }
+          auth
         );
         setDetail(data);
       } catch (e: any) {
@@ -86,22 +114,33 @@ export default function LeagueHubScreen() {
         setRefreshing(false);
       }
     },
-    [session, leagueId, seasonId]
+    [session, guestToken, leagueId, seasonId]
   );
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!session) { setLoading(false); return; }
+    if (authLoading || guestTokenLoading) return;
+    if (!session && !guestToken) { setLoading(false); return; }
     fetchDetail();
-  }, [authLoading, session?.access_token, leagueId, seasonId]);
+  }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchDetail(true);
   };
 
-  // ── Auth guard ─────────────────────────────────────────────────────────────
-  if (authLoading || (loading && !detail)) {
+  const handleShare = async () => {
+    if (!leagueId || !seasonId) return;
+    try {
+      const url = buildInviteUrl(leagueId, seasonId);
+      await Share.share({
+        message: `Join my fantasy league on Swayger! ${url}`,
+        url,
+      });
+    } catch { /* user cancelled */ }
+  };
+
+  // ── Auth guard ──────────────────────────────────────────────────────────────
+  if (authLoading || guestTokenLoading || (loading && !detail)) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator color={C.tint} size="large" />
@@ -109,7 +148,7 @@ export default function LeagueHubScreen() {
     );
   }
 
-  if (!session) {
+  if (!session && !guestToken) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>Sign in to view this league.</Text>
@@ -136,7 +175,7 @@ export default function LeagueHubScreen() {
 
   if (!detail) return null;
 
-  const { league, season, participants } = detail;
+  const { league, season, participants, viewer } = detail;
 
   const commissioner = participants.find((p) => p.role === "commissioner");
   const members = participants.filter((p) => p.role !== "commissioner");
@@ -148,6 +187,8 @@ export default function LeagueHubScreen() {
   const sportLabel = league.sport.charAt(0).toUpperCase() + league.sport.slice(1);
   const statusLabel = STATUS_LABEL[season.status] ?? season.status;
   const statusColor = STATUS_COLOR[season.status] ?? C.textMuted;
+
+  const isCommissioner = viewer?.role === "commissioner" || viewer?.role === "co_commissioner";
 
   return (
     <ScrollView
@@ -181,6 +222,41 @@ export default function LeagueHubScreen() {
         </View>
       </View>
 
+      {/* ── Commissioner: Invite Members button ─────────────────────────────── */}
+      {isCommissioner && (
+        <TouchableOpacity style={styles.inviteBtn} onPress={handleShare} activeOpacity={0.8}>
+          <Text style={styles.inviteBtnIcon}>🔗</Text>
+          <View style={styles.inviteBtnText}>
+            <Text style={styles.inviteBtnTitle}>Invite Members</Text>
+            <Text style={styles.inviteBtnSub}>Share the league join link</Text>
+          </View>
+          <Text style={styles.inviteBtnArrow}>›</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── My Team card ────────────────────────────────────────────────────── */}
+      {viewer && (
+        <View style={[
+          styles.myTeamCard,
+          isCommissioner ? styles.myTeamCardCommissioner : styles.myTeamCardMember,
+        ]}>
+          <Text style={styles.myTeamLabel}>MY TEAM</Text>
+          <Text style={styles.myTeamName}>
+            {viewer.display_name ?? "—"}
+          </Text>
+          {viewer.team_name && (
+            <Text style={styles.myTeamTeam}>{viewer.team_name}</Text>
+          )}
+          {isCommissioner && (
+            <View style={styles.myTeamRoleBadge}>
+              <Text style={styles.myTeamRoleText}>
+                {viewer.role === "co_commissioner" ? "Co-Commissioner" : "Commissioner"}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Weekly reward */}
       {season.default_reward_description && (
         <View style={styles.rewardCard}>
@@ -200,25 +276,35 @@ export default function LeagueHubScreen() {
       </Text>
 
       <View style={styles.participantsCard}>
-        {orderedParticipants.map((p, i) => (
-          <View
-            key={p.season_member_id}
-            style={[styles.participantRow, i > 0 && styles.participantRowBorder]}
-          >
-            <View style={styles.participantLeft}>
-              <Text style={styles.participantName}>{p.display_name ?? "—"}</Text>
-              {p.role === "commissioner" && (
-                <Text style={styles.commissionerBadge}>Commissioner</Text>
-              )}
-              {p.role === "co_commissioner" && (
-                <Text style={styles.commissionerBadge}>Co-Commissioner</Text>
-              )}
+        {orderedParticipants.map((p, i) => {
+          const isMe = viewer?.league_member_id === p.league_member_id;
+          return (
+            <View
+              key={p.season_member_id}
+              style={[
+                styles.participantRow,
+                i > 0 && styles.participantRowBorder,
+                isMe && styles.participantRowMe,
+              ]}
+            >
+              <View style={styles.participantLeft}>
+                <Text style={[styles.participantName, isMe && styles.participantNameMe]}>
+                  {p.display_name ?? "—"}
+                  {isMe && <Text style={styles.meBadge}> · You</Text>}
+                </Text>
+                {p.role === "commissioner" && (
+                  <Text style={styles.commissionerBadge}>Commissioner</Text>
+                )}
+                {p.role === "co_commissioner" && (
+                  <Text style={styles.commissionerBadge}>Co-Commissioner</Text>
+                )}
+              </View>
+              <Text style={styles.teamName} numberOfLines={1}>
+                {p.team_name ?? <Text style={{ color: C.textMuted }}>No team</Text>}
+              </Text>
             </View>
-            <Text style={styles.teamName} numberOfLines={1}>
-              {p.team_name ?? <Text style={{ color: C.textMuted }}>No team</Text>}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       {/* Phase placeholder */}
@@ -268,6 +354,57 @@ const styles = StyleSheet.create({
   },
   statusText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
 
+  // Invite button (commissioner only)
+  inviteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.tint,
+    padding: 14,
+    gap: 12,
+    marginBottom: 16,
+  },
+  inviteBtnIcon: { fontSize: 22 },
+  inviteBtnText: { flex: 1 },
+  inviteBtnTitle: { fontSize: 15, fontWeight: "700", color: C.tint },
+  inviteBtnSub: { fontSize: 12, color: C.textMuted, marginTop: 1 },
+  inviteBtnArrow: { fontSize: 22, color: C.tint, fontWeight: "300" },
+
+  // My Team card
+  myTeamCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+    gap: 4,
+  },
+  myTeamCardCommissioner: {
+    backgroundColor: "#0D1235",
+    borderColor: C.tint,
+  },
+  myTeamCardMember: {
+    backgroundColor: "#0A1F0A",
+    borderColor: "#22c55e",
+  },
+  myTeamLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  myTeamName: { fontSize: 20, fontWeight: "700", color: C.text },
+  myTeamTeam: { fontSize: 14, color: C.textSecondary },
+  myTeamRoleBadge: { marginTop: 6, alignSelf: "flex-start" },
+  myTeamRoleText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.tint,
+    letterSpacing: 0.4,
+  },
+
   // Reward
   rewardCard: {
     backgroundColor: "#1A1800",
@@ -312,8 +449,11 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   participantRowBorder: { borderTopWidth: 1, borderTopColor: C.border },
+  participantRowMe: { backgroundColor: "#12121F" },
   participantLeft: { flex: 1, marginRight: 12 },
   participantName: { fontSize: 15, fontWeight: "600", color: C.text },
+  participantNameMe: { color: C.tint },
+  meBadge: { fontSize: 13, fontWeight: "400", color: C.textMuted },
   commissionerBadge: {
     fontSize: 10,
     fontWeight: "700",
