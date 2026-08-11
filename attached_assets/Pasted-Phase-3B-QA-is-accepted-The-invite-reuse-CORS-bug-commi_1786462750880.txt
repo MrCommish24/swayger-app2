@@ -1,0 +1,97 @@
+Phase 3B QA is accepted. The invite reuse/CORS bug, commissioner claim status, and guest post-claim UX are approved.
+
+Before Draft Day, make one targeted identity-safety correction to the guest → authenticated upgrade.
+
+Do not begin Draft Day yet.
+
+CURRENT CONCERN
+
+The current hub auto-upgrade behavior fires whenever:
+
+- an authenticated session exists
+- a Fantasy guest token exists
+
+That is too broad.
+
+On a shared browser/device, Guest A may have claimed a Fantasy seat, then User B could later sign in. We must not silently transfer Guest A's league seat merely because an authenticated session appeared on a device containing the old guest token.
+
+DESIRED BEHAVIOR
+
+Guest → authenticated conversion should be tied to explicit upgrade intent.
+
+Preferred journey:
+
+Guest claims:
+Mike — Sunday Scaries
+
+→ success screen
+
+“You’re in!”
+
+→ guest taps:
+
+Create Account / Sign In
+“Keep your league across devices”
+
+→ system records a pending Fantasy claim-upgrade context
+
+→ user authenticates
+
+→ after successful authentication, ONLY that intended guest claim is upgraded to the authenticated user
+
+→ user returns to Food Pyramid as Mike
+
+Do not require account creation. “Open My League” and continued guest use remain available.
+
+IMPLEMENTATION PRINCIPLES
+
+1. Do not trigger claim ownership transfer solely because session != null and a guest token exists.
+
+2. Tie upgrade to an explicit pending-upgrade state created when the user chooses Create Account / Sign In from the guest claim experience.
+
+3. Prefer upgrading a specific claim/league_member rather than every row sharing a guest token, unless you can demonstrate that guest_token is intentionally one-person identity across all Fantasy leagues and that upgrading all claims is the desired product behavior.
+
+4. Server must validate that:
+   - the target active claim is currently a guest claim
+   - the provided guest token matches that claim
+   - the requested claim/league_member is the one being upgraded
+   - it is not already owned by a different authenticated user
+   - the UPDATE changes the existing row rather than creating a second active claim
+
+5. Same-account/retry behavior should remain idempotent.
+
+6. A normal unrelated sign-in on a device with an old Fantasy guest token must NOT transfer a seat automatically.
+
+TEST THESE SCENARIOS
+
+A. Guest Mike → explicitly taps Create Account → signs in → Mike claim upgrades successfully.
+
+B. Guest Mike → taps Open My League and remains guest → no upgrade.
+
+C. Guest Mike exists on device → unrelated authenticated user signs in without initiating upgrade → Mike remains a guest claim.
+
+D. Explicit upgrade retry by same authenticated user → idempotent success.
+
+E. Different authenticated user cannot take an already authenticated claim.
+
+F. If one guest token has claims in two Fantasy leagues, report whether explicit upgrade affects one or both and why. Prefer claim-specific upgrade for Phase 3 unless there is a strong product reason otherwise.
+
+G. Phase 2 regression remains 67/67.
+
+H. Phase 3 remains 60/60.
+
+I. Phase 3B remains fully green or update the suite and report the new exact total.
+
+RETURN
+
+1. whether the concern was valid in the existing implementation
+2. exact revised upgrade behavior
+3. files changed
+4. server-side validation
+5. explicit-auth-return flow
+6. test results
+7. one short manual QA sequence
+
+Then stop.
+
+Do not begin Draft Day.

@@ -168,14 +168,28 @@ export interface JoinInfo {
   my_seat: FantasyViewer | null;
 }
 
+// AsyncStorage key for explicit upgrade intent.
+// Written when the guest taps "Create Account / Sign In" from the welcome banner;
+// read once when session appears on the hub; cleared immediately after firing.
+// Only the specific claim the user consented to upgrade is transferred.
+export const FANTASY_PENDING_UPGRADE_KEY = "fantasy_pending_claim_upgrade";
+export interface FantasyPendingUpgrade {
+  guest_token: string;
+  league_member_id: string;
+}
+
 // POST /api/fantasy/claim/upgrade
 export async function upgradeGuestClaim(
   guestToken: string,
+  leagueMemberId: string,
   auth: { session: NonNullable<Parameters<typeof fantasyFetch>[2]["session"]> }
 ): Promise<{ claim_id: string; league_member_id: string; upgraded: boolean; already_upgraded?: boolean }> {
   return fantasyFetch(
     "/api/fantasy/claim/upgrade",
-    { method: "POST", body: JSON.stringify({ guest_token: guestToken }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ guest_token: guestToken, league_member_id: leagueMemberId }),
+    },
     auth
   );
 }

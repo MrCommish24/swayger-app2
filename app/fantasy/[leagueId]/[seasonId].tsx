@@ -8,7 +8,7 @@
  *   • Commissioner-only claim-status column: "Joined" / "Waiting" per seat
  *   • Invite Members share button — commissioner only
  *   • Guest post-claim welcome banner (shows when ?joined=1 in URL)
- *   • Silent guest → auth claim upgrade when session appears
+ *   • Intent-based guest → auth claim upgrade (explicit opt-in only)
  *   • "Back to Swayger" + "Create Account" CTAs for guest viewers
  */
 
@@ -24,13 +24,17 @@ import {
   Share,
   Platform,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
+import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   fantasyFetch,
   upgradeGuestClaim,
+  FANTASY_PENDING_UPGRADE_KEY,
+  FantasyPendingUpgrade,
   FANTASY_SPORTS,
   FantasySeasonDetail,
   FantasyParticipant,
@@ -115,13 +119,31 @@ export default function LeagueHubScreen() {
     fetchDetail();
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
 
-  // Silent guest → auth upgrade when session appears while a guest token exists
+  // Intent-based guest → auth upgrade.
+  // Only fires when:
+  //   1. A session just appeared (user signed in), AND
+  //   2. A pending upgrade context was explicitly stored in AsyncStorage by the
+  //      user tapping "Create Account / Sign In" from the welcome banner.
+  //
+  // A normal sign-in on a device with an old guest token does NOT trigger this
+  // (no pending context → no upgrade). This prevents shared-device seat transfer.
   useEffect(() => {
-    if (!session || !guestToken) return;
-    upgradeGuestClaim(guestToken, { session }).catch(() => {
-      // Fire-and-forget; failure is non-critical
-    });
-  }, [session?.access_token, guestToken]);
+    if (!session) return;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(FANTASY_PENDING_UPGRADE_KEY);
+        if (!raw) return;
+        const pending = JSON.parse(raw) as FantasyPendingUpgrade;
+        // Clear immediately — even if the upgrade fails, don't retry silently
+        await AsyncStorage.removeItem(FANTASY_PENDING_UPGRADE_KEY);
+        await upgradeGuestClaim(pending.guest_token, pending.league_member_id, { session });
+        // Refresh detail so viewer reflects the now-authenticated claim
+        fetchDetail(true);
+      } catch {
+        // Non-critical — guest claim remains if upgrade fails; user can retry
+      }
+    })();
+  }, [session?.access_token]); // intentionally excludes guestToken — must not fire on guestToken changes
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -215,7 +237,7 @@ export default function LeagueHubScreen() {
             <Text style={styles.btnText}>Open My League</Text>
           </TouchableOpacity>
 
-          {isGuest && (
+          {isGuest && viewer && (
             <>
               <View style={styles.welcomeDivider} />
               <Text style={styles.welcomeUpgradeHint}>
@@ -223,7 +245,25 @@ export default function LeagueHubScreen() {
               </Text>
               <TouchableOpacity
                 style={[styles.btn, styles.btnSecondary, { marginTop: 10 }]}
-                onPress={() => router.push("/auth")}
+                onPress={async () => {
+                  // Record explicit upgrade intent BEFORE navigating to auth.
+                  // The hub's useEffect reads this key when a session appears;
+                  // an unrelated sign-in that never sets this key will NOT
+                  // transfer the guest seat (shared-device safety).
+                  await AsyncStorage.setItem(
+                    FANTASY_PENDING_UPGRADE_KEY,
+                    JSON.stringify({
+                      guest_token:      guestToken,
+                      league_member_id: viewer.league_member_id,
+                    } satisfies FantasyPendingUpgrade)
+                  ).catch(() => {});
+                  // Return here after sign-in
+                  await AsyncStorage.setItem(
+                    PENDING_AUTH_REDIRECT_KEY,
+                    `/fantasy/${leagueId}/${seasonId}?joined=1`
+                  ).catch(() => {});
+                  router.push("/auth");
+                }}
               >
                 <Text style={[styles.btnText, { color: C.tint }]}>
                   Create Account / Sign In

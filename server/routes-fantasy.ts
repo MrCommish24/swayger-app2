@@ -752,20 +752,29 @@ export function registerFantasyRoutes(app: Express) {
 
   // ── POST /api/fantasy/claim/upgrade ────────────────────────────────────────
   //
-  // Upgrades a guest claim to an authenticated claim.
-  // Called after a guest signs in / creates an account.
+  // Upgrades a specific guest claim to an authenticated claim.
+  //
+  // SECURITY: Requires explicit intent — both guest_token AND league_member_id
+  // must be provided. The server validates that the claim matches BOTH fields
+  // before upgrading. This prevents a sign-in on a shared device from silently
+  // transferring a different person's seat.
   //
   // Auth: Bearer JWT required.
-  // Body: { guest_token: string }
+  // Body: { guest_token: string, league_member_id: string }
   //
-  // Finds the active claim held by guest_token, sets user_id = auth user,
-  // clears guest_token. No new row is created — the partial unique index
-  // (one active claim per seat) is never violated.
+  // UPDATE sets user_id = auth user, guest_token = NULL on the matching row.
+  // No new row is created — partial unique index never violated.
+  //
+  // Idempotency: if the token is already cleared (prior upgrade), checks whether
+  // the caller already holds an authenticated claim on that seat and returns
+  // already_upgraded: true so retries succeed safely.
   //
   // Response:
-  //   200 — upgraded: true (or already_upgraded: true if user already holds it)
-  //   400 — guest_token missing
-  //   404 — no active guest claim found for this token
+  //   200 — upgraded: true
+  //   200 — already_upgraded: true (same user already holds this seat)
+  //   400 — guest_token or league_member_id missing
+  //   404 — no active guest claim found matching guest_token + league_member_id
+  //   409 — seat already claimed by a different authenticated user
   //   500 — DB error
   app.post(
     "/api/fantasy/claim/upgrade",
@@ -773,64 +782,92 @@ export function registerFantasyRoutes(app: Express) {
       const userId = requireFantasyAuth(req, res);
       if (!userId) return;
 
-      const { guest_token } = req.body as { guest_token?: string };
+      const { guest_token, league_member_id } = req.body as {
+        guest_token?: string;
+        league_member_id?: string;
+      };
+
       if (!guest_token?.trim()) {
         res.status(400).json({ error: "guest_token is required" });
         return;
       }
+      if (!league_member_id?.trim()) {
+        res.status(400).json({ error: "league_member_id is required" });
+        return;
+      }
 
+      const gt  = guest_token.trim();
+      const lmId = league_member_id.trim();
       const supabase = getServiceSupabase();
 
-      // Find the active guest claim
-      const { data: claim } = await supabase
+      // 1. Look up the active guest claim matching BOTH token AND specific seat
+      const { data: guestClaim } = await supabase
         .from("fantasy_member_claims")
-        .select("id, league_member_id")
-        .eq("guest_token", guest_token.trim())
+        .select("id, league_member_id, user_id")
+        .eq("guest_token", gt)
+        .eq("league_member_id", lmId)
         .eq("is_active", true)
         .maybeSingle();
 
-      if (!claim) {
-        res.status(404).json({ error: "No active guest claim found for this token" });
+      if (guestClaim) {
+        const claimUserId = (guestClaim as any).user_id;
+
+        // If the claim is somehow already authenticated (shouldn't happen if
+        // guest_token is cleared on upgrade, but handle defensively)
+        if (claimUserId !== null) {
+          if (claimUserId === userId) {
+            res.json({ already_upgraded: true, claim_id: (guestClaim as any).id });
+            return;
+          }
+          res.status(409).json({ error: "This seat is already claimed by a different user." });
+          return;
+        }
+
+        // 2. Upgrade: bind user_id, clear guest_token (same row, no new record)
+        const { data: updated, error } = await supabase
+          .from("fantasy_member_claims")
+          .update({ user_id: userId, guest_token: null })
+          .eq("id", (guestClaim as any).id)
+          .select("id, league_member_id")
+          .maybeSingle();
+
+        if (error) {
+          console.error("[fantasy] claim upgrade error:", error.message);
+          res.status(500).json({ error: "Failed to upgrade claim" });
+          return;
+        }
+
+        console.log(
+          `[fantasy] Claim upgraded: member=${lmId.slice(0, 8)}… user=${userId.slice(0, 8)}…`
+        );
+
+        res.json({
+          claim_id:         (updated as any).id,
+          league_member_id: (updated as any).league_member_id,
+          upgraded:         true,
+        });
         return;
       }
 
-      // Check if this user already has an active claim on the same seat
-      const { data: existing } = await supabase
+      // 3. Guest claim not found by token+seat — check idempotency:
+      //    did this user already upgrade (token cleared)?
+      const { data: existingAuth } = await supabase
         .from("fantasy_member_claims")
-        .select("id")
+        .select("id, user_id")
+        .eq("league_member_id", lmId)
         .eq("user_id", userId)
-        .eq("league_member_id", (claim as any).league_member_id)
         .eq("is_active", true)
         .maybeSingle();
 
-      if (existing) {
-        // Idempotent: user already holds an authenticated claim on this seat
-        res.json({ already_upgraded: true, claim_id: (existing as any).id });
+      if (existingAuth) {
+        // Same user already holds an authenticated claim on this seat
+        res.json({ already_upgraded: true, claim_id: (existingAuth as any).id });
         return;
       }
 
-      // Upgrade: bind user_id, clear guest_token (same row, no new record)
-      const { data: updated, error } = await supabase
-        .from("fantasy_member_claims")
-        .update({ user_id: userId, guest_token: null })
-        .eq("id", (claim as any).id)
-        .select("id, league_member_id")
-        .maybeSingle();
-
-      if (error) {
-        console.error("[fantasy] claim upgrade error:", error.message);
-        res.status(500).json({ error: "Failed to upgrade claim" });
-        return;
-      }
-
-      console.log(
-        `[fantasy] Claim upgraded: member=${(claim as any).league_member_id?.slice(0, 8)}… user=${userId.slice(0, 8)}…`
-      );
-
-      res.json({
-        claim_id:         (updated as any).id,
-        league_member_id: (updated as any).league_member_id,
-        upgraded:         true,
+      // 4. No guest claim found and caller has no authenticated claim — cannot upgrade
+      res.status(404).json({
+        error: "No active guest claim found for the provided token and seat.",
       });
     }
   );

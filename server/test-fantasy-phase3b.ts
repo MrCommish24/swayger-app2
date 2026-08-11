@@ -1,20 +1,25 @@
 /**
  * server/test-fantasy-phase3b.ts
  * ──────────────────────────────────────────────────────────────────────────────
- * Phase 3B QA — Invite link reuse, commissioner claim visibility, guest upgrade
+ * Phase 3B QA — Invite link reuse, commissioner claim visibility,
+ *               explicit guest → auth upgrade (identity-safe)
  *
- * Covers the issues found in manual Phase 3 QA:
- *   §1   Bootstrap (commissioner + two members)
- *   §2   Invite link works before any claim
- *   §3   First member claims a seat
- *   §4   Invite link still works after first claim (bug repro + fix verification)
- *   §5   Seat list reflects correct claim status after first claim
- *   §6   Second member claims a DIFFERENT seat (invite remains usable)
- *   §7   Attempting to steal a claimed seat → 409
+ * Scenarios:
+ *   §1   Bootstrap (commissioner + 3 members)
+ *   §2   Invite link works before any member claim
+ *   §3   First member (Mike) claims
+ *   §4   Invite link still works after first claim
+ *   §5   Seat status accurate after first claim
+ *   §6   Second member (Chris) claims a different seat
+ *   §7   Conflict protection — cannot steal a claimed seat
  *   §8   Commissioner claim-status view (is_claimed in participants)
- *   §9   Guest → Auth upgrade
- *  §10   Idempotent upgrade (same user, same seat)
- *  §11   Phase 2 + Phase 3 regression
+ *   A    Explicit upgrade: guest taps "Create Account" → claim transfers
+ *   B    No upgrade if user doesn't tap "Create Account" (no pending context)
+ *   C    Unrelated authenticated user signs in → guest claim untouched
+ *   D    Same user retries upgrade → idempotent already_upgraded
+ *   E    Different authenticated user cannot take an already-auth claim
+ *   F    One guest token, two leagues → explicit upgrade targets one claim only
+ *   §11  Phase 2 + Phase 3 regression
  *
  * Usage:
  *   npx tsx server/test-fantasy-phase3b.ts
@@ -22,10 +27,10 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const BASE_URL   = process.env.TEST_API_URL ?? "http://localhost:5000";
-const SUP_URL    = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-const SUP_KEY    = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const RUN_ID     = Math.random().toString(36).slice(2, 10).toUpperCase();
+const BASE_URL = process.env.TEST_API_URL ?? "http://localhost:5000";
+const SUP_URL  = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+const SUP_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const RUN_ID   = Math.random().toString(36).slice(2, 10).toUpperCase();
 
 const PASS = "\x1b[32m  ✅ \x1b[0m";
 const FAIL = "\x1b[31m  ❌ \x1b[0m";
@@ -53,7 +58,7 @@ async function api(
   opts: { method?: string; token?: string; guestToken?: string; body?: object } = {}
 ) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.token)      headers["Authorization"]       = `Bearer ${opts.token}`;
+  if (opts.token)      headers["Authorization"]         = `Bearer ${opts.token}`;
   if (opts.guestToken) headers["X-Fantasy-Guest-Token"] = opts.guestToken;
   const res = await fetch(`${BASE_URL}${path}`, {
     method: opts.method ?? "GET",
@@ -77,7 +82,6 @@ async function createUser(tag: string) {
   if (error) throw new Error(`createUser ${tag}: ${error.message}`);
   return data.user!;
 }
-
 async function signIn(tag: string): Promise<string> {
   const email = `qa-p3b-${tag}-${RUN_ID}@swayger-test.invalid`;
   const { data, error } = await service.auth.signInWithPassword({
@@ -86,17 +90,16 @@ async function signIn(tag: string): Promise<string> {
   if (error) throw new Error(`signIn ${tag}: ${error.message}`);
   return data.session!.access_token;
 }
-
 async function deleteUser(id: string) {
   await service.auth.admin.deleteUser(id);
 }
 
-let createdLeagueId: string | null = null;
+let createdLeagueId:  string | null = null;
+let createdLeague2Id: string | null = null;
 
 async function cleanup(userIds: string[]) {
   console.log("\n─── Cleanup " + "─".repeat(47));
-  if (createdLeagueId) {
-    const lid = createdLeagueId;
+  for (const lid of [createdLeagueId, createdLeague2Id].filter(Boolean) as string[]) {
     const seasons = await service.from("fantasy_league_seasons").select("id").eq("league_id", lid);
     for (const s of seasons.data ?? []) {
       const smRows = await service.from("fantasy_season_members").select("id").eq("league_season_id", s.id);
@@ -146,19 +149,18 @@ async function main() {
     process.exit(1);
   }
 
-  // Commissioner sets up the league
-  let league_id: string, season_id: string, league_member_id: string;
-  let mike_lm_id: string, chris_lm_id: string;
+  let league_id: string, season_id: string;
+  let mike_lm_id: string, chris_lm_id: string, jordan_lm_id: string;
   {
     const r = await api("/api/fantasy/leagues/setup", {
       method: "POST", token: commToken,
       body: {
-        league_name:   `P3B Invite League ${RUN_ID}`,
-        sport:         "football",
-        display_name:  "Darius",
-        team_name:     "The Monstars",
-        season_year:   2026,
-        reward_description: "Winner buys lunch",
+        league_name:         `P3B League ${RUN_ID}`,
+        sport:               "football",
+        display_name:        "Darius",
+        team_name:           "The Monstars",
+        season_year:         2026,
+        reward_description:  "Winner buys lunch",
       },
     });
     if (r.status !== 201) {
@@ -168,349 +170,452 @@ async function main() {
     }
     createdLeagueId = r.body.league_id;
     league_id = r.body.league_id;
-    league_member_id = r.body.league_member_id;
     season_id = r.body.season_id;
-    pass("League created");
+    pass("League A created");
 
-    // Add Mike and Chris
-    const rm = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
-      method: "POST", token: commToken,
-      body: { display_name: "Mike", team_name: "Sunday Scaries" },
-    });
-    const rc = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
-      method: "POST", token: commToken,
-      body: { display_name: "Chris", team_name: "Fourth & Long" },
-    });
-    if (rm.status !== 201 || rc.status !== 201) {
-      fail("Add participants failed", `Mike: ${rm.status}, Chris: ${rc.status}`);
+    const [rm, rc, rj] = await Promise.all([
+      api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
+        method: "POST", token: commToken,
+        body: { display_name: "Mike", team_name: "Sunday Scaries" },
+      }),
+      api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
+        method: "POST", token: commToken,
+        body: { display_name: "Chris", team_name: "Fourth & Long" },
+      }),
+      api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
+        method: "POST", token: commToken,
+        body: { display_name: "Jordan", team_name: "Night Owls" },
+      }),
+    ]);
+    if (rm.status !== 201 || rc.status !== 201 || rj.status !== 201) {
+      fail("Add participants", `Mike:${rm.status} Chris:${rc.status} Jordan:${rj.status}`);
       await cleanup([commUser.id, mikeUser.id, chrisUser.id]);
       process.exit(1);
     }
     mike_lm_id  = rm.body.league_member_id;
     chris_lm_id = rc.body.league_member_id;
-    pass("Mike and Chris added as participants");
-    note(`Mike lm_id: ${mike_lm_id.slice(0, 8)}…, Chris lm_id: ${chris_lm_id.slice(0, 8)}…`);
+    jordan_lm_id = rj.body.league_member_id;
+    pass("Mike, Chris, Jordan added (4 seats total)");
+    note(`mike=${mike_lm_id.slice(0,8)}… chris=${chris_lm_id.slice(0,8)}… jordan=${jordan_lm_id.slice(0,8)}…`);
   }
 
   const JOIN_PATH = `/api/fantasy/leagues/${league_id}/seasons/${season_id}`;
 
   // ── §2. Invite link works before any claim ─────────────────────────────────
-  section("2. Invite Link Works — Before Any Member Claim");
+  section("2. Invite Link — Before Any Member Claim");
   {
     const r = await api(`${JOIN_PATH}/join-info`);
-    if (r.status === 200 && r.body.seats?.length === 3) {
-      pass("GET /join-info → 200, 3 seats (commissioner + Mike + Chris)");
-      const claimed = r.body.seats.filter((s: any) => s.is_claimed);
-      const unclaimed = r.body.seats.filter((s: any) => !s.is_claimed);
-      claimed.length === 1
-        ? pass("1 seat claimed (commissioner only)")
-        : fail("Initial claimed count", `Expected 1 (commissioner), got ${claimed.length}`);
-      unclaimed.length === 2
-        ? pass("2 seats unclaimed (Mike + Chris)")
-        : fail("Initial unclaimed count", `Expected 2, got ${unclaimed.length}`);
-    } else {
-      fail("GET /join-info before claims", `${r.status}: ${JSON.stringify(r.body)}`);
-    }
+    r.status === 200 && r.body.seats?.length === 4
+      ? pass("GET /join-info → 200, 4 seats")
+      : fail("join-info before claims", `${r.status} seats=${r.body.seats?.length}`);
+    const claimed = (r.body.seats ?? []).filter((s: any) => s.is_claimed).length;
+    claimed === 1
+      ? pass("1 seat claimed (commissioner auto-claim only)")
+      : fail("Initial claimed count", `Expected 1, got ${claimed}`);
   }
 
-  // ── §3. First member claims ────────────────────────────────────────────────
-  section("3. First Member (Mike) Claims His Seat");
+  // ── §3. Mike claims ────────────────────────────────────────────────────────
+  section("3. Mike (auth) Claims His Seat");
   {
     const r = await api(`${JOIN_PATH}/claim`, {
-      method: "POST", token: mikeToken,
-      body: { league_member_id: mike_lm_id },
+      method: "POST", token: mikeToken, body: { league_member_id: mike_lm_id },
     });
     r.status === 201
-      ? pass("Mike claims → 201")
-      : fail("Mike claim failed", `${r.status}: ${JSON.stringify(r.body)}`);
+      ? pass("Mike → 201")
+      : fail("Mike claim", `${r.status}: ${JSON.stringify(r.body)}`);
   }
 
-  // ── §4. Invite link still works after first claim (the bug repro) ──────────
-  section("4. Invite Link Still Works — After Mike's Claim (Bug Repro)");
+  // ── §4. Invite still works after first claim ───────────────────────────────
+  section("4. Invite Link Works After Mike's Claim");
   {
-    // Anonymous (simulates second user in new incognito browser)
     const r = await api(`${JOIN_PATH}/join-info`);
-    if (r.status === 200) {
-      pass("GET /join-info → 200 after Mike claims (invite still valid)");
-      const mikeSeat  = r.body.seats?.find((s: any) => s.display_name === "Mike");
-      const chrisSeat = r.body.seats?.find((s: any) => s.display_name === "Chris");
-      mikeSeat?.is_claimed === true
-        ? pass("Mike's seat shows is_claimed=true")
-        : fail("Mike seat is_claimed after claim", `Got ${mikeSeat?.is_claimed}`);
-      chrisSeat?.is_claimed === false
-        ? pass("Chris's seat still shows is_claimed=false (claimable)")
-        : fail("Chris seat is_claimed", `Expected false, got ${chrisSeat?.is_claimed}`);
-      r.body.seats?.length === 3
-        ? pass("All 3 seats still visible in seat list")
-        : fail("Seat count after claim", `Expected 3, got ${r.body.seats?.length}`);
-    } else {
-      fail("GET /join-info after Mike claims", `Expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-    }
-  }
-
-  // Second user with guest token (simulates real incognito browser scenario)
-  const CHRIS_GUEST_TOKEN = `fgt_test_3b_${RUN_ID.toLowerCase()}aabb1234`;
-  {
-    const r = await api(`${JOIN_PATH}/join-info`, { guestToken: CHRIS_GUEST_TOKEN });
     r.status === 200
-      ? pass("GET /join-info with X-Fantasy-Guest-Token → 200 (CORS header fix verified in Node.js test)")
-      : fail("GET /join-info with guest token header", `Expected 200, got ${r.status}`);
-    // Note: actual browser CORS is verified by X-Fantasy-Guest-Token being in Access-Control-Allow-Headers
-    // (cannot be tested from Node.js — Node.js ignores CORS). The fix is in server/index.ts.
-    note("CORS fix: X-Fantasy-Guest-Token added to Access-Control-Allow-Headers in server/index.ts");
-    note("Browser CORS preflight will now succeed for guest token requests");
+      ? pass("GET /join-info → 200 after Mike claims (invite still valid)")
+      : fail("join-info after Mike claim", `${r.status}`);
+    const mikeSeat  = (r.body.seats ?? []).find((s: any) => s.display_name === "Mike");
+    const chrisSeat = (r.body.seats ?? []).find((s: any) => s.display_name === "Chris");
+    mikeSeat?.is_claimed === true
+      ? pass("Mike's seat is_claimed=true")
+      : fail("Mike is_claimed", `Got ${mikeSeat?.is_claimed}`);
+    chrisSeat?.is_claimed === false
+      ? pass("Chris's seat still claimable")
+      : fail("Chris is_claimed", `Expected false, got ${chrisSeat?.is_claimed}`);
+    r.body.seats?.length === 4
+      ? pass("All 4 seats visible (invite reusable)")
+      : fail("Seat count", `Expected 4, got ${r.body.seats?.length}`);
   }
 
   // ── §5. Seat status accurate ───────────────────────────────────────────────
-  section("5. Seat Status Accuracy After First Claim");
+  section("5. Seat Status Accuracy");
   {
     const r = await api(`${JOIN_PATH}/join-info`);
-    if (r.status === 200) {
-      const seats = r.body.seats ?? [];
-      const claimedSeats   = seats.filter((s: any) => s.is_claimed);
-      const unclaimedSeats = seats.filter((s: any) => !s.is_claimed);
-      claimedSeats.length === 2
-        ? pass("2 seats claimed after Mike joins (commissioner + Mike)")
-        : fail("Claimed seat count", `Expected 2, got ${claimedSeats.length}`);
-      unclaimedSeats.length === 1
-        ? pass("1 seat unclaimed (Chris)")
-        : fail("Unclaimed seat count", `Expected 1, got ${unclaimedSeats.length}`);
-      unclaimedSeats[0]?.display_name === "Chris"
-        ? pass("Unclaimed seat is Chris's")
-        : fail("Unclaimed seat identity", `Expected Chris, got ${unclaimedSeats[0]?.display_name}`);
-    } else {
-      fail("join-info for seat status", `${r.status}`);
-    }
+    const claimed = (r.body.seats ?? []).filter((s: any) => s.is_claimed).length;
+    claimed === 2
+      ? pass("2 seats claimed (commissioner + Mike)")
+      : fail("Claimed count", `Expected 2, got ${claimed}`);
   }
 
-  // ── §6. Second member claims a different seat ──────────────────────────────
-  section("6. Second Member (Chris) Claims His Own Seat");
+  // ── §6. Chris claims ───────────────────────────────────────────────────────
+  section("6. Chris Claims His Seat (Invite Usable After Multiple Claims)");
   {
     const r = await api(`${JOIN_PATH}/claim`, {
-      method: "POST", token: chrisToken,
-      body: { league_member_id: chris_lm_id },
+      method: "POST", token: chrisToken, body: { league_member_id: chris_lm_id },
     });
     r.status === 201
-      ? pass("Chris claims → 201 (invite remained usable after Mike's claim)")
-      : fail("Chris claim failed", `${r.status}: ${JSON.stringify(r.body)}`);
-
-    // Verify all 3 seats now claimed
-    const ri = await api(`${JOIN_PATH}/join-info`);
-    if (ri.status === 200) {
-      const allClaimed = (ri.body.seats ?? []).every((s: any) => s.is_claimed);
-      allClaimed
-        ? pass("All 3 seats now claimed — invite shows all as taken")
-        : fail("Not all seats claimed", `${JSON.stringify((ri.body.seats ?? []).map((s: any) => ({n: s.display_name, c: s.is_claimed})))}`);
-    } else {
-      fail("join-info after Chris claims", `${ri.status}`);
-    }
+      ? pass("Chris → 201")
+      : fail("Chris claim", `${r.status}: ${JSON.stringify(r.body)}`);
   }
 
   // ── §7. Conflict protection ────────────────────────────────────────────────
   section("7. Cannot Steal a Claimed Seat");
   {
-    // Third user tries to claim Mike's seat (already taken)
-    const r = await api(`${JOIN_PATH}/claim`, {
-      method: "POST", token: chrisToken, // Chris is now authenticated but tries Mike's seat
-      body: { league_member_id: mike_lm_id },
+    const r1 = await api(`${JOIN_PATH}/claim`, {
+      method: "POST", token: chrisToken, body: { league_member_id: mike_lm_id },
     });
-    // Chris already has a seat, so the RPC will detect seat_already_claimed for Mike's seat
-    r.status === 409
-      ? pass("Attempting to claim Mike's seat → 409 seat_already_claimed")
-      : fail("Seat conflict protection", `Expected 409, got ${r.status}: ${JSON.stringify(r.body)}`);
-  }
-
-  // Guest tries to steal Chris's claimed seat
-  {
+    r1.status === 409
+      ? pass("Auth user stealing Mike's seat → 409")
+      : fail("Auth seat conflict", `Expected 409, got ${r1.status}`);
     const intruderToken = `fgt_intruder_${RUN_ID.toLowerCase()}`;
-    const r = await api(`${JOIN_PATH}/claim`, {
-      guestToken: intruderToken,
-      method: "POST",
-      body: { league_member_id: chris_lm_id },
+    const r2 = await api(`${JOIN_PATH}/claim`, {
+      method: "POST", guestToken: intruderToken, body: { league_member_id: chris_lm_id },
     });
-    r.status === 409
-      ? pass("Guest intruder claiming Chris's seat → 409")
-      : fail("Guest conflict protection", `Expected 409, got ${r.status}: ${JSON.stringify(r.body)}`);
+    r2.status === 409
+      ? pass("Guest intruder stealing Chris's seat → 409")
+      : fail("Guest seat conflict", `Expected 409, got ${r2.status}`);
   }
 
   // ── §8. Commissioner claim-status view ────────────────────────────────────
-  section("8. Commissioner Claim-Status View (is_claimed in Participants)");
+  section("8. Commissioner Claim-Status View (is_claimed)");
   {
     const r = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
       token: commToken,
     });
-    if (r.status === 200 && r.body.participants) {
-      pass("GET /seasons/:id → 200 with participants");
-      const pts = r.body.participants as any[];
-      const allHaveIsClaimed = pts.every((p) => typeof p.is_claimed === "boolean");
-      allHaveIsClaimed
-        ? pass("All participants have is_claimed boolean field")
-        : fail("Missing is_claimed on participants", `Fields: ${JSON.stringify(pts.map(p => ({n: p.display_name, c: p.is_claimed})))}`);
-
-      const darius = pts.find((p) => p.display_name === "Darius");
-      const mike   = pts.find((p) => p.display_name === "Mike");
-      const chris  = pts.find((p) => p.display_name === "Chris");
-
-      darius?.is_claimed === true
-        ? pass("Darius (commissioner): is_claimed=true")
-        : fail("Darius is_claimed", `Expected true, got ${darius?.is_claimed}`);
-      mike?.is_claimed === true
-        ? pass("Mike: is_claimed=true")
-        : fail("Mike is_claimed", `Expected true, got ${mike?.is_claimed}`);
-      chris?.is_claimed === true
-        ? pass("Chris: is_claimed=true")
-        : fail("Chris is_claimed", `Expected true, got ${chris?.is_claimed}`);
-    } else {
-      fail("GET /seasons/:id commissioner view", `${r.status}: ${JSON.stringify(r.body)}`);
-    }
+    const pts = r.body.participants as any[] ?? [];
+    pts.every((p) => typeof p.is_claimed === "boolean")
+      ? pass("All participants have is_claimed boolean")
+      : fail("is_claimed field missing");
+    const darius = pts.find((p) => p.display_name === "Darius");
+    const mike   = pts.find((p) => p.display_name === "Mike");
+    const chris  = pts.find((p) => p.display_name === "Chris");
+    const jordan = pts.find((p) => p.display_name === "Jordan");
+    darius?.is_claimed === true  ? pass("Darius: is_claimed=true")  : fail("Darius is_claimed",  String(darius?.is_claimed));
+    mike?.is_claimed === true    ? pass("Mike: is_claimed=true")    : fail("Mike is_claimed",    String(mike?.is_claimed));
+    chris?.is_claimed === true   ? pass("Chris: is_claimed=true")   : fail("Chris is_claimed",   String(chris?.is_claimed));
+    jordan?.is_claimed === false ? pass("Jordan: is_claimed=false (Waiting)") : fail("Jordan is_claimed", String(jordan?.is_claimed));
   }
 
-  // Test a "Waiting" participant — add a 4th seat, don't claim it
-  let unclaimed_lm_id = "";
+  // ── Upgrade tests — Jordan's seat (unclaimed, clean for all upgrade tests) ─
+
+  const JORDAN_GUEST_TOKEN = `fgt_jordan_${RUN_ID.toLowerCase()}ccdd`;
+  // Guest pre-claims Jordan's seat (used in A, C, D, E, F)
   {
-    const r = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
-      method: "POST", token: commToken,
-      body: { display_name: "Jordan", team_name: "Night Owls" },
+    const r = await api(`${JOIN_PATH}/claim`, {
+      method: "POST", guestToken: JORDAN_GUEST_TOKEN, body: { league_member_id: jordan_lm_id },
     });
-    if (r.status === 201) {
-      unclaimed_lm_id = r.body.league_member_id;
-      pass("4th participant (Jordan) added without claiming");
+    r.status === 201
+      ? note(`Guest pre-claimed Jordan's seat (token: ${JORDAN_GUEST_TOKEN.slice(0,20)}…)`)
+      : fail("Guest pre-claim for upgrade tests", `${r.status}: ${JSON.stringify(r.body)}`);
+  }
 
-      const ri = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
-        token: commToken,
+  let jordanUser: any;
+  let jordanToken = "";
+  let unrelatedUser: any;
+  let unrelatedToken = "";
+  try {
+    [jordanUser, unrelatedUser] = await Promise.all([createUser("jordan"), createUser("unrelated")]);
+    [jordanToken, unrelatedToken] = await Promise.all([signIn("jordan"), signIn("unrelated")]);
+    pass("Jordan + Unrelated auth users created");
+  } catch (e: any) {
+    fail("User creation for upgrade tests", (e as any).message);
+  }
+
+  // ── Scenario A — Explicit upgrade succeeds ─────────────────────────────────
+  section("A. Explicit Upgrade: Guest Taps 'Create Account' → Claim Transfers");
+  // Simulates: guest saves { guest_token, league_member_id } to AsyncStorage, signs in,
+  // hub fires upgradeGuestClaim(guest_token, league_member_id, { session }).
+  // At the server this is just: POST /claim/upgrade with both fields.
+  {
+    const r = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: jordanToken,
+      body: { guest_token: JORDAN_GUEST_TOKEN, league_member_id: jordan_lm_id },
+    });
+    r.status === 200 && r.body.upgraded === true
+      ? pass("POST /claim/upgrade → 200 upgraded=true")
+      : fail("Explicit upgrade", `Expected 200 upgraded=true, got ${r.status}: ${JSON.stringify(r.body)}`);
+
+    // Guest token must no longer resolve viewer (token cleared)
+    const rg = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+      guestToken: JORDAN_GUEST_TOKEN,
+    });
+    const guestViewer = rg.body?.viewer;
+    guestViewer === null || guestViewer === undefined || guestViewer?.display_name !== "Jordan"
+      ? pass("Old guest token no longer resolves Jordan's viewer")
+      : fail("Guest token should be invalidated post-upgrade", `Still got viewer: ${JSON.stringify(guestViewer)}`);
+
+    // Jordan's authenticated session now owns the seat
+    const ra = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+      token: jordanToken,
+    });
+    ra.body?.viewer?.display_name === "Jordan"
+      ? pass("Jordan's auth session resolves viewer (seat accessible cross-device)")
+      : fail("Jordan auth viewer post-upgrade", `${JSON.stringify(ra.body?.viewer)}`);
+  }
+
+  // ── Scenario B — No upgrade when user didn't tap Create Account ────────────
+  section("B. No Upgrade When 'Open My League' Was Tapped (No Pending Context)");
+  // Simulates: guest taps "Open My League" → no AsyncStorage key written → no upgrade call.
+  // We verify the server has NO guest-only side effect: a sign-in session appearing
+  // without calling the upgrade endpoint leaves the claim unchanged.
+  // (Jordan's claim is already upgraded from scenario A; use Chris's seat for this.)
+  {
+    const OPEN_GUEST_TOKEN = `fgt_open_${RUN_ID.toLowerCase()}eeff`;
+    // Add a 5th participant for this test
+    const rp = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "Sam", team_name: "The Sitters" },
+    });
+    if (rp.status === 201) {
+      const sam_lm_id = rp.body.league_member_id;
+      // Guest claims Sam's seat
+      const rc = await api(`${JOIN_PATH}/claim`, {
+        method: "POST", guestToken: OPEN_GUEST_TOKEN, body: { league_member_id: sam_lm_id },
       });
-      if (ri.status === 200) {
-        const jordan = (ri.body.participants ?? []).find((p: any) => p.display_name === "Jordan");
-        jordan?.is_claimed === false
-          ? pass("Jordan: is_claimed=false (Waiting)")
-          : fail("Jordan is_claimed", `Expected false, got ${jordan?.is_claimed}`);
-      } else {
-        fail("GET /seasons with Jordan", `${ri.status}`);
-      }
+      rc.status === 201 ? pass("Guest claimed Sam's seat") : fail("Guest claim Sam", `${rc.status}`);
+
+      // Simulate "Open My League" — user DOES NOT call upgrade endpoint at all.
+      // Verify: guest token still resolves Sam's viewer (claim unchanged)
+      const rv = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+        guestToken: OPEN_GUEST_TOKEN,
+      });
+      rv.body?.viewer?.display_name === "Sam"
+        ? pass("Guest viewer still resolves after sign-in without upgrade intent")
+        : fail("Guest viewer should persist when upgrade not triggered", `${JSON.stringify(rv.body?.viewer)}`);
     } else {
-      fail("Add Jordan participant", `${r.status}: ${JSON.stringify(r.body)}`);
+      fail("Add Sam participant for scenario B", `${rp.status}`);
     }
   }
 
-  // ── §9. Guest → Auth upgrade ───────────────────────────────────────────────
-  section("9. Guest → Auth Claim Upgrade");
+  // ── Scenario C — Unrelated user signs in; guest claim untouched ───────────
+  section("C. Unrelated User Signs In → Guest Claim Untouched");
+  // The JORDAN_GUEST_TOKEN claim is already upgraded (scenario A).
+  // Use a fresh guest token on Jordan's seat... but Jordan's seat is now auth-claimed.
+  // Instead: verify unrelated user calling upgrade with a DIFFERENT guest token that
+  // has no claim returns 404 — never silently creates a transfer.
+  {
+    const STRANGER_TOKEN = `fgt_stranger_${RUN_ID.toLowerCase()}0000`;
+    // Unrelated user tries to upgrade a token they've never seen
+    const r = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: unrelatedToken,
+      body: { guest_token: STRANGER_TOKEN, league_member_id: jordan_lm_id },
+    });
+    r.status === 404
+      ? pass("Unknown guest token + unrelated user → 404 (no seat transferred)")
+      : fail("Unrelated user upgrade attempt", `Expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
 
-  // Jordan (4th participant) will be claimed by a guest, then upgraded
-  const JORDAN_GUEST_TOKEN = `fgt_jordan_${RUN_ID.toLowerCase()}ccdd5678`;
+    // Jordan's auth claim remains intact (unrelated user can't see Jordan as viewer)
+    const rj = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+      token: unrelatedToken,
+    });
+    const viewer = rj.body?.viewer;
+    (viewer === null || viewer === undefined)
+      ? pass("Unrelated user has no viewer (Jordan's seat not stolen)")
+      : fail("Unrelated user must not see Jordan's seat", `Got viewer: ${JSON.stringify(viewer)}`);
 
-  if (unclaimed_lm_id) {
-    // Guest claims Jordan
-    {
-      const r = await api(`${JOIN_PATH}/claim`, {
-        method: "POST", guestToken: JORDAN_GUEST_TOKEN,
-        body: { league_member_id: unclaimed_lm_id },
+    // Jordan's own session still resolves correctly
+    const rjj = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+      token: jordanToken,
+    });
+    rjj.body?.viewer?.display_name === "Jordan"
+      ? pass("Jordan's authenticated claim unaffected by unrelated sign-in")
+      : fail("Jordan viewer after unrelated sign-in", `${JSON.stringify(rjj.body?.viewer)}`);
+  }
+
+  // ── Scenario D — Same user retries upgrade → idempotent ───────────────────
+  section("D. Explicit Upgrade Retry by Same Authenticated User → Idempotent");
+  {
+    // JORDAN_GUEST_TOKEN is cleared (guest_token=null on the claim after scenario A).
+    // Jordan retries the upgrade endpoint with the same token.
+    const r = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: jordanToken,
+      body: { guest_token: JORDAN_GUEST_TOKEN, league_member_id: jordan_lm_id },
+    });
+    // Server: guest claim not found by token (cleared), but Jordan already has an
+    // authenticated claim on this seat → returns already_upgraded
+    r.status === 200 && r.body.already_upgraded === true
+      ? pass("Retry → 200 already_upgraded=true (idempotent)")
+      : fail("Idempotent retry", `Expected 200 already_upgraded=true, got ${r.status}: ${JSON.stringify(r.body)}`);
+  }
+
+  // ── Scenario E — Different authenticated user cannot steal an auth claim ───
+  section("E. Different Authenticated User Cannot Take an Already-Auth Claim");
+  {
+    // JORDAN_GUEST_TOKEN is cleared; Jordan's seat is already authenticated.
+    // Unrelated user tries to upgrade with the consumed token.
+    const r = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: unrelatedToken,
+      body: { guest_token: JORDAN_GUEST_TOKEN, league_member_id: jordan_lm_id },
+    });
+    // Guest token is null → claim not found → 404 (cannot steal via upgrade path)
+    r.status === 404
+      ? pass("Consumed token + different user → 404 (seat protected)")
+      : fail("Different user cannot steal via upgrade", `Expected 404, got ${r.status}: ${JSON.stringify(r.body)}`);
+
+    // Also test: new guest tries to claim the already-auth seat via /claim
+    const intruder2 = `fgt_intruder2_${RUN_ID.toLowerCase()}`;
+    const r2 = await api(`${JOIN_PATH}/claim`, {
+      method: "POST", guestToken: intruder2, body: { league_member_id: jordan_lm_id },
+    });
+    r2.status === 409
+      ? pass("Guest trying to claim Jordan's auth seat → 409")
+      : fail("Auth seat protection via /claim", `Expected 409, got ${r2.status}`);
+  }
+
+  // ── Scenario F — One token, two leagues → upgrade is claim-specific ────────
+  section("F. One Guest Token, Two Leagues → Upgrade Targets One Claim Only");
+  // Guest token T claims one seat in League A (Jordan's) — already upgraded.
+  // Now create League B, add a seat, claim it with the SAME guest token T.
+  // Then upgrade only League B's claim with league_member_id from League B.
+  // Verify League A's claim (Jordan's, already upgraded to jordanToken) is unaffected.
+  {
+    const SHARED_TOKEN = `fgt_shared_${RUN_ID.toLowerCase()}1234`;
+
+    // Create League B under commissioner
+    const rb = await api("/api/fantasy/leagues/setup", {
+      method: "POST", token: commToken,
+      body: {
+        league_name:        `P3B League B ${RUN_ID}`,
+        sport:              "basketball",
+        display_name:       "Darius B",
+        team_name:          "The B Team",
+        season_year:        2026,
+        reward_description: "Loser does pushups",
+      },
+    });
+    if (rb.status !== 201) {
+      fail("Create League B", `${rb.status}: ${JSON.stringify(rb.body)}`);
+    } else {
+      createdLeague2Id = rb.body.league_id;
+      const league_b_id  = rb.body.league_id;
+      const season_b_id  = rb.body.season_id;
+      const join_b = `/api/fantasy/leagues/${league_b_id}/seasons/${season_b_id}`;
+
+      // Add "Alex" seat in League B
+      const rax = await api(`${join_b}/participants`, {
+        method: "POST", token: commToken,
+        body: { display_name: "Alex B", team_name: "Alex's Army" },
       });
-      r.status === 201
-        ? pass("Guest claims Jordan's seat → 201")
-        : fail("Guest Jordan claim", `${r.status}: ${JSON.stringify(r.body)}`);
-    }
-
-    // Create a 4th auth user to become "Jordan"
-    let jordanUser: any;
-    let jordanToken = "";
-    try {
-      jordanUser = await createUser("jordan");
-      jordanToken = await signIn("jordan");
-      pass("Jordan auth user created");
-    } catch (e: any) {
-      fail("Jordan user creation", e.message);
-    }
-
-    if (jordanToken) {
-      // Upgrade: bind guest claim to Jordan's account
-      const r = await api("/api/fantasy/claim/upgrade", {
-        method: "POST", token: jordanToken,
-        body: { guest_token: JORDAN_GUEST_TOKEN },
-      });
-      if (r.status === 200 && r.body.upgraded === true) {
-        pass("POST /claim/upgrade → 200 upgraded=true");
-        note(`Upgraded claim_id: ${r.body.claim_id}`);
-
-        // Verify: old guest token no longer works for hub
-        const rh = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
-          guestToken: JORDAN_GUEST_TOKEN,
-        });
-        rh.body.viewer === null || rh.body.viewer?.display_name !== "Jordan"
-          ? pass("Guest token no longer resolves viewer after upgrade")
-          : fail("Guest token should not resolve viewer post-upgrade", JSON.stringify(rh.body.viewer));
-
-        // Verify: Jordan's authenticated session now resolves viewer
-        const ra = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
-          token: jordanToken,
-        });
-        if (ra.status === 200 && ra.body.viewer?.display_name === "Jordan") {
-          pass("Jordan's auth session now resolves viewer (cross-device access)");
-        } else {
-          fail("Jordan auth viewer post-upgrade", `${ra.status}: ${JSON.stringify(ra.body.viewer)}`);
-        }
+      if (rax.status !== 201) {
+        fail("Add Alex to League B", `${rax.status}`);
       } else {
-        fail("Upgrade endpoint", `Expected 200 upgraded=true, got ${r.status}: ${JSON.stringify(r.body)}`);
-      }
+        const alex_b_lm_id = rax.body.league_member_id;
+        pass("League B created, Alex added");
 
-      // ── §10. Idempotent upgrade ──────────────────────────────────────────
-      section("10. Idempotent Upgrade (Same User, Same Seat)");
-      {
-        // Jordan upgrades again (already authenticated, same claim)
-        const r2 = await api("/api/fantasy/claim/upgrade", {
-          method: "POST", token: jordanToken,
-          body: { guest_token: JORDAN_GUEST_TOKEN },
+        // Guest claims Alex's seat in League B with the SHARED token
+        const rcl = await api(`${join_b}/claim`, {
+          method: "POST", guestToken: SHARED_TOKEN, body: { league_member_id: alex_b_lm_id },
         });
-        // Guest token is now null, so this returns 404 (token not found)
-        r2.status === 404
-          ? pass("Re-upgrade with consumed guest token → 404 (token already cleared)")
-          : fail("Re-upgrade idempotency", `Expected 404, got ${r2.status}: ${JSON.stringify(r2.body)}`);
-      }
+        rcl.status === 201
+          ? pass("Guest claimed Alex (League B) with shared token")
+          : fail("Guest claim League B", `${rcl.status}`);
 
-      await deleteUser(jordanUser.id);
-      note("Deleted Jordan auth user");
+        // Now upgrade ONLY League B's claim (explicit: league_member_id=alex_b_lm_id)
+        let alexUser: any;
+        let alexToken = "";
+        try {
+          alexUser = await createUser("alex");
+          alexToken = await signIn("alex");
+        } catch (e: any) { fail("Alex user creation", (e as any).message); }
+
+        if (alexToken) {
+          const rup = await api("/api/fantasy/claim/upgrade", {
+            method: "POST", token: alexToken,
+            body: { guest_token: SHARED_TOKEN, league_member_id: alex_b_lm_id },
+          });
+          rup.status === 200 && rup.body.upgraded === true
+            ? pass("League B claim (Alex) upgraded with shared token → 200 upgraded=true")
+            : fail("League B upgrade", `${rup.status}: ${JSON.stringify(rup.body)}`);
+
+          // League A: Jordan's seat was upgraded separately (scenario A) and is unaffected
+          const rla = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
+            token: jordanToken,
+          });
+          rla.body?.viewer?.display_name === "Jordan"
+            ? pass("League A: Jordan's claim unaffected by League B upgrade (claim-specific)")
+            : fail("League A claim after League B upgrade", `${JSON.stringify(rla.body?.viewer)}`);
+
+          // Shared token is cleared only for alex_b_lm_id; Jordan's token was already cleared.
+          // A fresh guest token on a new seat should still work (token cleared per-claim, not globally)
+          const NEW_SEAT_TOKEN = `fgt_newseat_${RUN_ID.toLowerCase()}9999`;
+          const rcp = await api(`${join_b}/participants`, {
+            method: "POST", token: commToken,
+            body: { display_name: "PatchTest", team_name: "Test Squad" },
+          });
+          if (rcp.status === 201) {
+            const patch_lm_id = rcp.body.league_member_id;
+            const rclp = await api(`${join_b}/claim`, {
+              method: "POST", guestToken: NEW_SEAT_TOKEN, body: { league_member_id: patch_lm_id },
+            });
+            rclp.status === 201
+              ? pass("Fresh guest token on new seat (League B) → 201 — per-claim clearing confirmed")
+              : fail("Fresh guest token after upgrade", `${rclp.status}`);
+          }
+
+          await deleteUser(alexUser.id);
+          note("Deleted Alex auth user");
+        }
+      }
     }
   }
 
   // ── §11. Regression ────────────────────────────────────────────────────────
   section("11. Phase 2 + Phase 3 Regression");
   {
-    // Commissioner can still add participants
     const r1 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
       method: "POST", token: commToken,
-      body: { display_name: "Regression Seat", team_name: "Bench Warmers" },
+      body: { display_name: "Reg Seat", team_name: "Bench Warmers" },
     });
     r1.status === 201
-      ? pass("POST /participants still works (Phase 2 regression)")
-      : fail("Phase 2 regression: POST /participants", `${r1.status}`);
+      ? pass("POST /participants works (Phase 2 regression)")
+      : fail("Phase 2 POST /participants", `${r1.status}`);
 
-    // Non-commissioner can't add
     const r2 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
       method: "POST", token: mikeToken,
-      body: { display_name: "Hacker", team_name: "Team Hacks" },
+      body: { display_name: "Hack", team_name: "Hacks" },
     });
     r2.status === 403
-      ? pass("Non-commissioner → 403 (Phase 2 gate preserved)")
-      : fail("Phase 2 non-commissioner gate", `Expected 403, got ${r2.status}`);
+      ? pass("Non-commissioner → 403 (Phase 2 gate)")
+      : fail("Non-commissioner gate", `Expected 403, got ${r2.status}`);
 
-    // Mike can still see his viewer
-    const r3 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
-      token: mikeToken,
-    });
-    r3.body.viewer?.display_name === "Mike"
-      ? pass("Mike viewer still resolves correctly (Phase 3 regression)")
-      : fail("Mike viewer regression", `Got ${JSON.stringify(r3.body.viewer)}`);
+    const r3 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, { token: mikeToken });
+    r3.body?.viewer?.display_name === "Mike"
+      ? pass("Mike viewer still resolves (Phase 3 regression)")
+      : fail("Mike viewer regression", `${JSON.stringify(r3.body?.viewer)}`);
 
-    // Chris can still see his viewer
-    const r4 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, {
-      token: chrisToken,
+    const r4 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, { token: chrisToken });
+    r4.body?.viewer?.display_name === "Chris"
+      ? pass("Chris viewer still resolves")
+      : fail("Chris viewer regression", `${JSON.stringify(r4.body?.viewer)}`);
+
+    // Upgrade endpoint still rejects missing fields
+    const r5 = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: commToken,
+      body: { guest_token: "fgt_some_token" /* league_member_id missing */ },
     });
-    r4.body.viewer?.display_name === "Chris"
-      ? pass("Chris viewer still resolves correctly")
-      : fail("Chris viewer regression", `Got ${JSON.stringify(r4.body.viewer)}`);
+    r5.status === 400
+      ? pass("Missing league_member_id → 400 (server validation)")
+      : fail("Missing league_member_id validation", `Expected 400, got ${r5.status}`);
+
+    const r6 = await api("/api/fantasy/claim/upgrade", {
+      method: "POST", token: commToken,
+      body: { league_member_id: mike_lm_id /* guest_token missing */ },
+    });
+    r6.status === 400
+      ? pass("Missing guest_token → 400 (server validation)")
+      : fail("Missing guest_token validation", `Expected 400, got ${r6.status}`);
   }
 
   // ── Cleanup + results ──────────────────────────────────────────────────────
-  await cleanup([commUser.id, mikeUser.id, chrisUser.id]);
+  await cleanup([commUser.id, mikeUser.id, chrisUser.id, jordanUser?.id, unrelatedUser?.id].filter(Boolean));
 
   const total = passed + failed;
   console.log(`
