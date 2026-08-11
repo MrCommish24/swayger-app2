@@ -81,6 +81,9 @@ function useProtectedRoute() {
     // Game Day rooms are accessible to guests — join flow handles auth inline.
     const inGameday = segments[0] === "gameday";
     if (inGameday && !session) return;
+    // Fantasy league invite links are public — guest/account choice happens on the join screen.
+    const inFantasyJoin = segments[0] === "fantasy" && segments[1] === "join";
+    if (inFantasyJoin && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       // Save the intended destination so we can return there after sign-in.

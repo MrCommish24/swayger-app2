@@ -1,22 +1,23 @@
 /**
  * app/fantasy/join/[leagueId]/[seasonId].tsx
  * ──────────────────────────────────────────────────────────────────────────────
- * Fantasy League Member Invite / Seat Claim Screen
+ * Fantasy League Invite / Seat Claim Screen
  *
- * Public: league info loads without auth so the link is previewable.
- * Claiming: requires an authenticated session OR a durable guest token.
+ * Public — no auth required to view this screen (whitelisted in useProtectedRoute).
  *
  * Flow:
- *   1. Load join-info from GET /join-info (no auth)
- *   2. If my_seat ≠ null → caller already has a claim → skip to hub
- *   3. Show seat list — tap a seat to select it
- *   4. Confirm "This is me" → POST /claim
- *   5. On success → navigate to hub
+ *   1. League info + seat list loads immediately (GET /join-info, no auth)
+ *   2. If caller already has an active claim → redirect to hub silently
+ *   3. Unauthenticated visitor sees an identity choice card at the top:
+ *        [Sign In / Create Account]   [Continue as Guest]
+ *   4. They pick their seat from the list
+ *   5. Confirm → POST /claim → navigate to hub
  *
- * Guest vs auth:
- *   • Authenticated: claim is tied to user_id — recognized across all devices.
- *   • Guest: claim is tied to device guest_token — device-specific only.
- *     Guest sees an optional "Sign in for cross-device access" nudge.
+ * Identity modes:
+ *   "account"  — tap "Sign In / Create Account" → navigate to /auth (join URL
+ *                is saved as a pending redirect so they land back here after sign-in)
+ *   "guest"    — uses durable device guest token (device-specific, no cross-device)
+ *   "session"  — already signed in, skip the picker entirely
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -27,9 +28,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
@@ -40,6 +41,7 @@ import {
   JoinInfoSeat,
   ClaimSeatResponse,
 } from "@/lib/fantasy-api";
+import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -47,6 +49,8 @@ const C = Colors.dark;
 const SPORT_EMOJI: Record<string, string> = Object.fromEntries(
   FANTASY_SPORTS.map((s) => [s.value, s.emoji])
 );
+
+type IdentityMode = "undecided" | "guest" | "account";
 
 export default function JoinLeagueScreen() {
   const router = useRouter();
@@ -62,9 +66,14 @@ export default function JoinLeagueScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [identityMode, setIdentityMode] = useState<IdentityMode>("undecided");
   const [selectedSeat, setSelectedSeat] = useState<JoinInfoSeat | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+
+  // Signed-in users skip the identity picker
+  const effectiveMode: IdentityMode = session ? "account" : identityMode;
+  const readyToClaim = effectiveMode !== "undecided";
 
   // ── Load join info ──────────────────────────────────────────────────────────
   const loadJoinInfo = useCallback(async () => {
@@ -72,7 +81,6 @@ export default function JoinLeagueScreen() {
     setLoading(true);
     setLoadError(null);
     try {
-      // Pass identity if available so server can detect existing claim
       const auth = session
         ? { session }
         : guestToken
@@ -85,7 +93,7 @@ export default function JoinLeagueScreen() {
       );
       setJoinInfo(data);
 
-      // Auto-redirect if caller already has an active claim
+      // If caller already has an active claim, skip straight to hub
       if (data.my_seat) {
         router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
       }
@@ -97,26 +105,44 @@ export default function JoinLeagueScreen() {
   }, [leagueId, seasonId, session, guestToken]);
 
   useEffect(() => {
-    // Wait until both auth and guest token have resolved
     if (authLoading || guestTokenLoading) return;
     loadJoinInfo();
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
 
-  // ── Claim ───────────────────────────────────────────────────────────────────
-  const handleClaim = async () => {
-    if (!selectedSeat || !joinInfo) return;
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
-    // Must have some identity to claim
-    if (!session && !guestToken) {
-      router.push("/auth");
+  const handleChooseAccount = async () => {
+    // Save the join URL so auth redirects back here after sign-in
+    const path = `/fantasy/join/${leagueId}/${seasonId}`;
+    try { await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, path); } catch {}
+    router.push("/auth");
+  };
+
+  const handleChooseGuest = () => {
+    setIdentityMode("guest");
+    setClaimError(null);
+  };
+
+  const handleClaim = async () => {
+    if (!selectedSeat || !readyToClaim) return;
+
+    // "account" mode but no session yet → send to auth
+    if (effectiveMode === "account" && !session) {
+      await handleChooseAccount();
       return;
     }
+
+    if (effectiveMode === "guest" && !guestToken) return; // guest token still loading
 
     setClaiming(true);
     setClaimError(null);
     try {
-      const auth = session ? { session } : { guestToken: guestToken! };
-      const result = await fantasyFetch<ClaimSeatResponse>(
+      const auth =
+        session
+          ? { session }
+          : { guestToken: guestToken! };
+
+      await fantasyFetch<ClaimSeatResponse>(
         `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/claim`,
         {
           method: "POST",
@@ -124,14 +150,11 @@ export default function JoinLeagueScreen() {
         },
         auth
       );
-
-      // Success — navigate to hub
       router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
     } catch (e: any) {
-      if (e.message?.includes("already been claimed")) {
+      if (e.message?.includes("already been claimed") || e.message?.includes("seat_already_claimed")) {
         setClaimError("This seat has already been claimed by someone else.");
         setSelectedSeat(null);
-        // Refresh to show updated claim status
         loadJoinInfo();
       } else {
         setClaimError(e.message ?? "Failed to claim seat. Please try again.");
@@ -141,7 +164,8 @@ export default function JoinLeagueScreen() {
     }
   };
 
-  // ── Loading state ───────────────────────────────────────────────────────────
+  // ── States ──────────────────────────────────────────────────────────────────
+
   if (authLoading || guestTokenLoading || (loading && !joinInfo)) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -167,33 +191,34 @@ export default function JoinLeagueScreen() {
   const sportEmoji = SPORT_EMOJI[league.sport] ?? "🏆";
   const sportLabel = league.sport.charAt(0).toUpperCase() + league.sport.slice(1);
   const availableSeats = seats.filter((s) => !s.is_claimed);
-  const hasIdentity = !!(session || guestToken);
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 40 },
+        { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 48 },
       ]}
+      keyboardShouldPersistTaps="handled"
     >
-      {/* League header */}
+      {/* ── League header ──────────────────────────────────────────────────── */}
       <View style={styles.leagueHeader}>
         <Text style={styles.sportEmoji}>{sportEmoji}</Text>
         <View style={styles.leagueHeaderText}>
+          <Text style={styles.inviteEyebrow}>YOU'VE BEEN INVITED TO JOIN</Text>
           <Text style={styles.leagueName} numberOfLines={2}>
             {league.league_name}
           </Text>
           <Text style={styles.leagueMeta}>
-            {season.season_year} {sportLabel}
+            {sportLabel} · {season.season_year} Season
           </Text>
         </View>
       </View>
 
-      {/* Reward */}
+      {/* ── Reward ─────────────────────────────────────────────────────────── */}
       {season.default_reward_description && (
         <View style={styles.rewardCard}>
-          <Text style={styles.rewardLabel}>WEEKLY SWAYGER REWARD</Text>
+          <Text style={styles.rewardLabel}>WEEKLY REWARD</Text>
           <Text style={styles.rewardText}>
             {season.default_reward_amount_display
               ? `${season.default_reward_amount_display} — `
@@ -203,13 +228,70 @@ export default function JoinLeagueScreen() {
         </View>
       )}
 
-      {/* Seat selection */}
-      <Text style={styles.sectionLabel}>WHO ARE YOU?</Text>
+      {/* ── Identity choice (unauthenticated only) ─────────────────────────── */}
+      {!session && (
+        <View style={styles.identityCard}>
+          <Text style={styles.identityTitle}>How do you want to join?</Text>
+          <Text style={styles.identitySubtitle}>
+            Create a free account to access your league from any device, or jump in as a guest right now.
+          </Text>
+
+          <View style={styles.identityBtns}>
+            {/* Account */}
+            <TouchableOpacity
+              style={[
+                styles.identityBtn,
+                effectiveMode === "account" && styles.identityBtnSelected,
+              ]}
+              onPress={handleChooseAccount}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.identityBtnIcon}>👤</Text>
+              <Text style={[
+                styles.identityBtnLabel,
+                effectiveMode === "account" && styles.identityBtnLabelSelected,
+              ]}>
+                Sign In{"\n"}/ Sign Up
+              </Text>
+              <Text style={styles.identityBtnNote}>Cross-device</Text>
+            </TouchableOpacity>
+
+            {/* Guest */}
+            <TouchableOpacity
+              style={[
+                styles.identityBtn,
+                identityMode === "guest" && styles.identityBtnSelected,
+              ]}
+              onPress={handleChooseGuest}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.identityBtnIcon}>⚡</Text>
+              <Text style={[
+                styles.identityBtnLabel,
+                identityMode === "guest" && styles.identityBtnLabelSelected,
+              ]}>
+                Continue{"\n"}as Guest
+              </Text>
+              <Text style={styles.identityBtnNote}>This device only</Text>
+            </TouchableOpacity>
+          </View>
+
+          {identityMode === "guest" && (
+            <Text style={styles.guestWarning}>
+              Guest access is tied to this device. Sign in later to link your account and unlock cross-device access.
+            </Text>
+          )}
+        </View>
+      )}
+
+      {/* ── Seat list ──────────────────────────────────────────────────────── */}
+      <Text style={styles.sectionLabel}>WHO ARE YOU IN THIS LEAGUE?</Text>
       <Text style={styles.sectionHint}>
-        Choose the league member that represents you.
+        {readyToClaim
+          ? "Tap your name to select your seat."
+          : "Choose how you want to join above, then select your seat."}
       </Text>
 
-      {/* Error */}
       {claimError && (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{claimError}</Text>
@@ -218,9 +300,9 @@ export default function JoinLeagueScreen() {
 
       <View style={styles.seatsCard}>
         {seats.map((seat, i) => {
-          const isSelected = selectedSeat?.league_member_id === seat.league_member_id;
+          const isSelected =
+            selectedSeat?.league_member_id === seat.league_member_id;
           const isClaimed = seat.is_claimed;
-          const canSelect = !isClaimed;
 
           return (
             <TouchableOpacity
@@ -229,34 +311,43 @@ export default function JoinLeagueScreen() {
                 styles.seatRow,
                 i > 0 && styles.seatRowBorder,
                 isSelected && styles.seatRowSelected,
-                isClaimed && styles.seatRowClaimed,
+                (isClaimed || !readyToClaim) && styles.seatRowDimmed,
               ]}
               onPress={() => {
-                if (!canSelect) return;
+                if (isClaimed || !readyToClaim) return;
                 setSelectedSeat(isSelected ? null : seat);
                 setClaimError(null);
               }}
               disabled={isClaimed}
-              activeOpacity={isClaimed ? 1 : 0.7}
+              activeOpacity={isClaimed || !readyToClaim ? 1 : 0.7}
             >
               <View style={styles.seatLeft}>
-                {/* Selection indicator */}
-                <View style={[styles.radio, isSelected && styles.radioSelected]}>
+                <View
+                  style={[
+                    styles.radio,
+                    isSelected && styles.radioSelected,
+                    (isClaimed || !readyToClaim) && styles.radioDimmed,
+                  ]}
+                >
                   {isSelected && <View style={styles.radioDot} />}
                 </View>
 
                 <View style={styles.seatInfo}>
-                  <Text style={[
-                    styles.seatName,
-                    isClaimed && styles.seatNameClaimed,
-                  ]}>
+                  <Text
+                    style={[
+                      styles.seatName,
+                      (isClaimed || !readyToClaim) && styles.seatNameDimmed,
+                    ]}
+                  >
                     {seat.display_name ?? "—"}
                   </Text>
                   {seat.team_name && (
-                    <Text style={[
-                      styles.seatTeam,
-                      isClaimed && styles.seatTeamClaimed,
-                    ]}>
+                    <Text
+                      style={[
+                        styles.seatTeam,
+                        (isClaimed || !readyToClaim) && styles.seatTeamDimmed,
+                      ]}
+                    >
                       {seat.team_name}
                     </Text>
                   )}
@@ -279,61 +370,47 @@ export default function JoinLeagueScreen() {
         </Text>
       )}
 
-      {/* Confirm section */}
-      {selectedSeat && (
+      {/* ── Confirm ────────────────────────────────────────────────────────── */}
+      {selectedSeat && readyToClaim && (
         <View style={styles.confirmCard}>
-          <Text style={styles.confirmTitle}>
-            {selectedSeat.display_name} — {selectedSeat.team_name ?? "No team"}
-          </Text>
-          <Text style={styles.confirmSub}>This is me</Text>
-
-          {!hasIdentity && (
-            <Text style={styles.authNudge}>
-              Sign in to claim this seat across all your devices, or continue as a guest (this device only).
-            </Text>
+          <Text style={styles.confirmName}>{selectedSeat.display_name}</Text>
+          {selectedSeat.team_name && (
+            <Text style={styles.confirmTeam}>{selectedSeat.team_name}</Text>
           )}
-
-          <View style={styles.confirmBtns}>
-            {!session && (
-              <TouchableOpacity
-                style={[styles.btn, styles.btnSecondary]}
-                onPress={() => router.push("/auth")}
-              >
-                <Text style={[styles.btnText, { color: C.tint }]}>Sign In First</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[styles.btn, claiming && styles.btnDisabled]}
-              onPress={handleClaim}
-              disabled={claiming}
-            >
-              {claiming ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.btnText}>
-                  {session ? "Confirm — This Is Me" : "Continue as Guest"}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Guest device notice */}
-      {!session && guestToken && !selectedSeat && (
-        <View style={styles.guestNotice}>
-          <Text style={styles.guestNoticeText}>
-            You're not signed in. Claiming a seat as a guest ties it to this device only.{" "}
-            <Text style={{ color: C.tint }} onPress={() => router.push("/auth")}>
-              Sign in
-            </Text>{" "}
-            for cross-device access.
+          <Text style={styles.confirmLabel}>
+            {identityMode === "guest"
+              ? "Joining as guest (this device only)"
+              : session
+              ? `Joining as ${session.user.email}`
+              : "Joining with account"}
           </Text>
+
+          <TouchableOpacity
+            style={[styles.claimBtn, claiming && styles.claimBtnDisabled]}
+            onPress={handleClaim}
+            disabled={claiming}
+            activeOpacity={0.85}
+          >
+            {claiming ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.claimBtnText}>This Is Me — Join League</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setSelectedSeat(null)}
+            style={styles.cancelLink}
+          >
+            <Text style={styles.cancelLinkText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       )}
     </ScrollView>
   );
 }
+
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
@@ -347,24 +424,33 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+  // Header
   leagueHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 14,
     marginBottom: 20,
   },
-  sportEmoji: { fontSize: 44 },
+  sportEmoji: { fontSize: 44, marginTop: 2 },
   leagueHeaderText: { flex: 1 },
+  inviteEyebrow: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.tint,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
   leagueName: { fontSize: 24, fontWeight: "800", color: C.text, lineHeight: 30 },
-  leagueMeta: { fontSize: 14, color: C.textMuted, marginTop: 3 },
+  leagueMeta: { fontSize: 13, color: C.textMuted, marginTop: 3 },
 
+  // Reward
   rewardCard: {
     backgroundColor: "#1A1800",
     borderColor: C.accentGold,
     borderWidth: 1,
     borderRadius: 10,
     padding: 14,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   rewardLabel: {
     fontSize: 10,
@@ -375,14 +461,77 @@ const styles = StyleSheet.create({
   },
   rewardText: { color: C.text, fontSize: 14, lineHeight: 20 },
 
-  sectionLabel: {
+  // Identity card
+  identityCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 18,
+    marginBottom: 24,
+    gap: 12,
+  },
+  identityTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: C.text,
+  },
+  identitySubtitle: {
+    fontSize: 13,
+    color: C.textSecondary,
+    lineHeight: 18,
+    marginTop: -4,
+  },
+  identityBtns: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  identityBtn: {
+    flex: 1,
+    backgroundColor: C.surfaceLight,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    gap: 6,
+  },
+  identityBtnSelected: {
+    borderColor: C.tint,
+    backgroundColor: "#0D1235",
+  },
+  identityBtnIcon: { fontSize: 24 },
+  identityBtnLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  identityBtnLabelSelected: { color: C.tint },
+  identityBtnNote: {
+    fontSize: 10,
+    color: C.textMuted,
+    textAlign: "center",
+  },
+  guestWarning: {
     fontSize: 12,
+    color: C.textMuted,
+    lineHeight: 17,
+    textAlign: "center",
+    paddingHorizontal: 4,
+  },
+
+  // Seat list
+  sectionLabel: {
+    fontSize: 11,
     fontWeight: "800",
     color: C.textMuted,
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     marginBottom: 4,
   },
-  sectionHint: { fontSize: 13, color: C.textSecondary, marginBottom: 16 },
+  sectionHint: { fontSize: 13, color: C.textSecondary, marginBottom: 14 },
 
   errorCard: {
     backgroundColor: "#2D0A0A",
@@ -390,7 +539,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   errorText: { color: C.danger, fontSize: 13, textAlign: "center" },
 
@@ -411,8 +560,9 @@ const styles = StyleSheet.create({
   },
   seatRowBorder: { borderTopWidth: 1, borderTopColor: C.border },
   seatRowSelected: { backgroundColor: "#0F1535" },
-  seatRowClaimed: { opacity: 0.45 },
+  seatRowDimmed: { opacity: 0.45 },
   seatLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+
   radio: {
     width: 20,
     height: 20,
@@ -423,12 +573,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   radioSelected: { borderColor: C.tint },
+  radioDimmed: { borderColor: C.textMuted },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.tint },
+
   seatInfo: { flex: 1 },
   seatName: { fontSize: 16, fontWeight: "600", color: C.text },
-  seatNameClaimed: { color: C.textMuted },
+  seatNameDimmed: { color: C.textMuted },
   seatTeam: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
-  seatTeamClaimed: { color: C.textMuted },
+  seatTeamDimmed: { color: C.textMuted },
+
   claimedBadge: {
     backgroundColor: C.surfaceLight,
     borderRadius: 6,
@@ -441,40 +594,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.textMuted,
     textAlign: "center",
-    marginTop: 8,
+    marginVertical: 8,
   },
 
+  // Confirm
   confirmCard: {
     backgroundColor: C.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.tint,
     padding: 20,
-    gap: 8,
-    marginBottom: 16,
+    gap: 6,
   },
-  confirmTitle: { fontSize: 18, fontWeight: "700", color: C.text },
-  confirmSub: { fontSize: 13, color: C.textMuted, marginBottom: 4 },
-  authNudge: { fontSize: 12, color: C.textSecondary, lineHeight: 17, marginBottom: 4 },
-  confirmBtns: { gap: 10, marginTop: 4 },
+  confirmName: { fontSize: 20, fontWeight: "800", color: C.text },
+  confirmTeam: { fontSize: 14, color: C.textSecondary },
+  confirmLabel: {
+    fontSize: 12,
+    color: C.textMuted,
+    marginTop: 2,
+    marginBottom: 10,
+  },
+
+  claimBtn: {
+    backgroundColor: C.tint,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  claimBtnDisabled: { opacity: 0.6 },
+  claimBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+
+  cancelLink: { alignItems: "center", paddingVertical: 6 },
+  cancelLinkText: { color: C.textMuted, fontSize: 14 },
 
   btn: {
     backgroundColor: C.tint,
     borderRadius: 10,
-    paddingVertical: 13,
-    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    marginTop: 8,
   },
-  btnSecondary: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: C.tint,
-  },
-  btnDisabled: { opacity: 0.6 },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-
-  guestNotice: {
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-  },
-  guestNoticeText: { fontSize: 12, color: C.textMuted, lineHeight: 18, textAlign: "center" },
 });
