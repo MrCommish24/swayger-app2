@@ -194,6 +194,94 @@ export async function upgradeGuestClaim(
   );
 }
 
+// ── Draft Day ─────────────────────────────────────────────────────────────────
+
+export interface DraftDayTemplate {
+  id: string;
+  question: string;
+  scoring_scope: "competition" | "season";
+  point_value: number;
+  answer_target_type: "season_member" | "fantasy_team" | "yes_no" | "static" | null;
+  settlement_window: string;
+  is_default: boolean;
+  display_order: number;
+}
+
+export interface DraftDayTemplates {
+  competition: DraftDayTemplate[];
+  season: DraftDayTemplate[];
+}
+
+export interface DraftDayStatus {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  room_status: "draft" | "active" | "finalized";
+  card_status: "closed" | "open" | "locked" | "settled";
+  prop_counts: { competition: number; season: number };
+  created_at: string;
+}
+
+export interface DraftDayPublishResult {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  already_existed: boolean;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/templates
+export async function getDraftDayTemplates(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDayTemplates> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/templates`,
+    {},
+    auth
+  );
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day
+export async function getDraftDay(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDayStatus | null> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day`,
+    {},
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/publish
+export async function publishDraftDay(
+  leagueId: string,
+  seasonId: string,
+  selectedPropIds: string[],
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDayPublishResult> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/publish`,
+    { method: "POST", body: JSON.stringify({ selected_prop_ids: selectedPropIds }) },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/lock
+export async function lockDraftDay(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ card_status: string }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/lock`,
+    { method: "POST" },
+    auth
+  );
+}
+
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/claim
 export interface ClaimSeatPayload {
   league_member_id: string;

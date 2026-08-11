@@ -1,12 +1,13 @@
 /**
  * app/fantasy/[leagueId]/[seasonId].tsx
  * ──────────────────────────────────────────────────────────────────────────────
- * Fantasy League Hub — role-aware season overview (Phase 3).
+ * Fantasy League Hub — role-aware season overview (Phase 3 + 4A).
  *
  * Features:
  *   • MY TEAM card — viewer's seat (if they have an active claim)
  *   • Commissioner-only claim-status column: "Joined" / "Waiting" per seat
  *   • Invite Members share button — commissioner only
+ *   • Draft Day Swayger card — Set Up / Published / Locked states
  *   • Guest post-claim welcome banner (shows when ?joined=1 in URL)
  *   • Intent-based guest → auth claim upgrade (explicit opt-in only)
  *   • "Back to Swayger" + "Create Account" CTAs for guest viewers
@@ -33,15 +34,155 @@ import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   fantasyFetch,
   upgradeGuestClaim,
+  getDraftDay,
+  lockDraftDay,
   FANTASY_PENDING_UPGRADE_KEY,
   FantasyPendingUpgrade,
   FANTASY_SPORTS,
   FantasySeasonDetail,
   FantasyParticipant,
+  DraftDayStatus,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
+
+// ── DraftDayCard ─────────────────────────────────────────────────────────────
+// Renders the Draft Day section of the hub in one of three states:
+//   • "unset"    — no Draft Day published yet
+//   • "published" — room active, card closed (commissioner can lock / share)
+//   • "locked"   — picks locked
+//
+// Separated into its own function component for readability; lives in the same
+// file because it's hub-only and shares the same styles/constants.
+interface DraftDayCardProps {
+  draftDay: import("@/lib/fantasy-api").DraftDayStatus | null | undefined;
+  isCommissioner: boolean;
+  leagueId: string;
+  seasonId: string;
+  lockingDraftDay: boolean;
+  onSetup:   () => void;
+  onOpenRoom: () => void;
+  onShare:   () => void;
+  onLock:    () => void;
+}
+
+function DraftDayCard({
+  draftDay,
+  isCommissioner,
+  lockingDraftDay,
+  onSetup,
+  onOpenRoom,
+  onShare,
+  onLock,
+}: DraftDayCardProps) {
+  // Not yet fetched — show nothing to avoid flicker
+  if (draftDay === undefined) return null;
+
+  const isLocked   = draftDay?.card_status === "locked" || draftDay?.card_status === "settled";
+  const isPublished = !!draftDay;
+
+  // ── State: Not yet set up ─────────────────────────────────────────────────
+  if (!isPublished) {
+    return (
+      <View style={styles.draftDayCard}>
+        <View style={styles.draftDayHeader}>
+          <Text style={styles.draftDayIcon}>📋</Text>
+          <View style={styles.draftDayHeaderText}>
+            <Text style={styles.draftDayLabel}>UPCOMING</Text>
+            <Text style={styles.draftDayTitle}>Draft Day Swayger</Text>
+          </View>
+        </View>
+        {isCommissioner ? (
+          <TouchableOpacity style={styles.btn} onPress={onSetup} activeOpacity={0.8}>
+            <Text style={styles.btnText}>Set Up Draft Day</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.draftDayComingSoon}>
+            Your commissioner is setting up Draft Day questions. Check back soon!
+          </Text>
+        )}
+      </View>
+    );
+  }
+
+  // ── State: Published ───────────────────────────────────────────────────────
+  const statusColor = isLocked ? C.accentGold : C.tint;
+  const statusLabel = isLocked ? "LOCKED" : "OPEN";
+  const statusDotBg = statusColor;
+
+  return (
+    <View style={[
+      styles.draftDayCard,
+      isLocked ? styles.draftDayCardLocked : styles.draftDayCardActive,
+    ]}>
+      {/* Header */}
+      <View style={styles.draftDayHeader}>
+        <Text style={styles.draftDayIcon}>{isLocked ? "🔒" : "📋"}</Text>
+        <View style={styles.draftDayHeaderText}>
+          <Text style={styles.draftDayLabel}>DRAFT DAY SWAYGER</Text>
+          <Text style={styles.draftDayTitle}>
+            {isLocked ? "Picks Locked" : "Predictions Open"}
+          </Text>
+        </View>
+        <View style={[styles.draftDayStatusBadge, { borderColor: statusColor }]}>
+          <View style={[styles.draftDayStatusDot, { backgroundColor: statusDotBg }]} />
+          <Text style={[styles.draftDayStatusText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      {/* Prop counts */}
+      <View style={styles.draftDayCounts}>
+        <View style={styles.draftDayCount}>
+          <Text style={styles.draftDayCountNum}>{draftDay.prop_counts.competition}</Text>
+          <Text style={styles.draftDayCountLabel}>Draft Day{"\n"}Picks</Text>
+        </View>
+        <View style={styles.draftDayCount}>
+          <Text style={styles.draftDayCountNum}>{draftDay.prop_counts.season}</Text>
+          <Text style={styles.draftDayCountLabel}>Season{"\n"}Receipts</Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.draftDayActions}>
+        <TouchableOpacity style={styles.btn} onPress={onOpenRoom} activeOpacity={0.8}>
+          <Text style={styles.btnText}>Open Draft Day</Text>
+        </TouchableOpacity>
+
+        {isCommissioner && (
+          <View style={styles.draftDayActionRow}>
+            {/* Share */}
+            <TouchableOpacity
+              style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+              onPress={onShare}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.btnText, { color: C.tint }]}>📤  Share</Text>
+            </TouchableOpacity>
+
+            {/* Lock Picks (only while not yet locked) */}
+            {!isLocked && (
+              <TouchableOpacity
+                style={[
+                  styles.btn,
+                  { flex: 1, backgroundColor: "#5B21B6" },
+                  lockingDraftDay && { opacity: 0.5 },
+                ]}
+                onPress={onLock}
+                disabled={lockingDraftDay}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.btnText}>
+                  {lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
 
 const SPORT_EMOJI: Record<string, string> = Object.fromEntries(
   FANTASY_SPORTS.map((s) => [s.value, s.emoji])
@@ -81,10 +222,12 @@ export default function LeagueHubScreen() {
     joined?: string;
   }>();
 
-  const [detail, setDetail]       = useState<FantasySeasonDetail | null>(null);
-  const [loading, setLoading]     = useState(true);
+  const [detail, setDetail]         = useState<FantasySeasonDetail | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [error, setError]           = useState<string | null>(null);
+  const [draftDay, setDraftDay]     = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
+  const [lockingDraftDay, setLockingDraftDay] = useState(false);
 
   // Welcome banner: shown immediately after a successful claim (?joined=1)
   const [showWelcome, setShowWelcome] = useState(joined === "1");
@@ -97,12 +240,16 @@ export default function LeagueHubScreen() {
       setError(null);
       try {
         const auth = session ? { session } : { guestToken: guestToken! };
-        const data = await fantasyFetch<FantasySeasonDetail>(
-          `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`,
-          {},
-          auth
-        );
+        const [data, dd] = await Promise.all([
+          fantasyFetch<FantasySeasonDetail>(
+            `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`,
+            {},
+            auth
+          ),
+          getDraftDay(leagueId, seasonId, auth).catch(() => null),
+        ]);
         setDetail(data);
+        setDraftDay(dd);
       } catch (e: any) {
         setError(e.message ?? "Failed to load league");
       } finally {
@@ -414,14 +561,40 @@ export default function LeagueHubScreen() {
             })}
           </View>
 
-          {/* Phase placeholder */}
-          <View style={styles.phaseCard}>
-            <Text style={styles.phaseIcon}>📋</Text>
-            <Text style={styles.phaseTitle}>Draft Day</Text>
-            <Text style={styles.phaseSubtitle}>
-              Prop assignment and draft management coming in the next phase.
-            </Text>
-          </View>
+          {/* ── Draft Day Swayger Card ──────────────────────────────────── */}
+          <DraftDayCard
+            draftDay={draftDay}
+            isCommissioner={isCommissioner}
+            leagueId={leagueId}
+            seasonId={seasonId}
+            lockingDraftDay={lockingDraftDay}
+            onSetup={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}`)}
+            onOpenRoom={() => {
+              // Phase 4B: navigate into the pick-submission room
+              // For now, show a brief note — route added in Phase 4B
+              console.log("[hub] open draft day room — Phase 4B not yet built");
+            }}
+            onShare={async () => {
+              try {
+                const url = `${process.env.EXPO_PUBLIC_SUPABASE_URL?.replace("supabase.co", "swayger.com") ?? "https://swayger.com"}/fantasy/join/${leagueId}/${seasonId}`;
+                await Share.share({ message: `Join my Swayger Fantasy league: ${url}`, url });
+              } catch {}
+            }}
+            onLock={async () => {
+              if (!session || lockingDraftDay) return;
+              setLockingDraftDay(true);
+              try {
+                await lockDraftDay(leagueId, seasonId, { session });
+                setDraftDay((prev) =>
+                  prev ? { ...prev, card_status: "locked" as const } : prev
+                );
+              } catch (e: any) {
+                console.error("[hub] lock draft day:", e.message);
+              } finally {
+                setLockingDraftDay(false);
+              }
+            }}
+          />
 
           {/* Guest: back to Swayger home */}
           {isGuest && (
@@ -620,20 +793,48 @@ const styles = StyleSheet.create({
   claimBadgeTextJoined:  { color: "#22c55e" },
   claimBadgeTextWaiting: { color: C.textMuted },
 
-  // Phase placeholder
-  phaseCard: {
+    // Draft Day card
+  draftDayCard: {
     backgroundColor: C.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 20,
-    alignItems: "center",
-    gap: 8,
+    padding: 18,
     marginBottom: 16,
+    gap: 12,
   },
-  phaseIcon:     { fontSize: 32 },
-  phaseTitle:    { fontSize: 16, fontWeight: "700", color: C.text },
-  phaseSubtitle: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 19 },
+  draftDayCardActive: { borderColor: C.tint, backgroundColor: "#06091A" },
+  draftDayCardLocked: { borderColor: C.accentGold, backgroundColor: "#1A1500" },
+  draftDayHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  draftDayIcon:   { fontSize: 28 },
+  draftDayHeaderText: { flex: 1 },
+  draftDayLabel:  { fontSize: 10, fontWeight: "700", color: C.textMuted, letterSpacing: 0.8 },
+  draftDayTitle:  { fontSize: 17, fontWeight: "700", color: C.text },
+  draftDayStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignSelf: "flex-start",
+  },
+  draftDayStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  draftDayStatusText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  draftDayCounts: { flexDirection: "row", gap: 12 },
+  draftDayCount: {
+    flex: 1,
+    backgroundColor: C.background,
+    borderRadius: 8,
+    padding: 10,
+    alignItems: "center",
+  },
+  draftDayCountNum:   { fontSize: 22, fontWeight: "700", color: C.text },
+  draftDayCountLabel: { fontSize: 11, color: C.textMuted, textAlign: "center", lineHeight: 14 },
+  draftDayActions: { gap: 8 },
+  draftDayActionRow: { flexDirection: "row", gap: 8 },
+  draftDayComingSoon: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 19, paddingVertical: 4 },
 
   // Shared
   btn: {

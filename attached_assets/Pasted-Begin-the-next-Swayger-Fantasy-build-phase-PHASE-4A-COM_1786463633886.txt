@@ -1,0 +1,627 @@
+Begin the next Swayger Fantasy build phase:
+
+PHASE 4A — COMMISSIONER DRAFT DAY SETUP + PUBLISH
+
+Phases 1–3 are complete and tested.
+
+Current state:
+- Fantasy foundation schema is live
+- Commissioner league setup is live
+- Member seat claiming is live
+- Guest + authenticated identity flows are live
+- Commissioner can see Joined / Waiting
+- Same invite supports multiple league members
+- Guest → authenticated upgrade is explicit and safe
+- Phase 2 + Phase 3 regression suites are green
+
+Do NOT reopen the architecture from prior phases.
+
+OBJECTIVE
+
+Allow a Fantasy League commissioner to create, configure, preview, and publish the league’s first Draft Day Swayger from the persistent Fantasy League Hub.
+
+At the end of Phase 4A:
+
+Food Pyramid commissioner
+→ opens Food Pyramid league hub
+→ taps Set Up Draft Day
+→ chooses from curated Draft Day prediction questions
+→ sees which questions are Draft Day-scored vs Season Receipts
+→ previews the competition
+→ publishes Draft Day Swayger
+→ sees it as the league’s upcoming Draft Day competition
+→ can copy/share the member entry link
+
+Do NOT build the member pick experience yet.
+
+CORE PRODUCT PRINCIPLE
+
+“Design the season. Build Draft Day first.”
+
+Draft Day is effectively Week 0 of a persistent Fantasy Swayger season.
+
+The commissioner should feel like they are curating a fun prediction game for their league, NOT configuring database records.
+
+V1 DRAFT DAY STRUCTURE
+
+Use ONE primary Draft Day phase:
+
+phase = 'draft_day'
+
+Do NOT require:
+- pre_draft
+- in_draft
+- post_draft
+
+Those values remain available in schema for future experimentation only.
+
+Within the single Draft Day experience, visually distinguish two types of questions:
+
+1. DRAFT DAY PICKS
+- scoring_scope = 'competition'
+- resolve during or at the end of the fantasy draft
+- count toward the Draft Day winner
+
+2. SEASON RECEIPTS
+- scoring_scope = 'season'
+- lock on Draft Day
+- remain pending for weeks/months
+- do NOT count toward the Draft Day winner
+- resolve later during the fantasy season
+
+Example:
+
+DRAFT DAY PICKS
+- Who drafts a QB first?
+- Who makes the first reach?
+- Who drafts the first rookie?
+- Who takes the longest on the clock?
+
+SEASON RECEIPTS
+- Who finishes first in the league?
+- Who scores the most points this season?
+- Who has the best draft?
+- Who finishes last?
+
+Do not treat “Who has the best draft?” as mandatory if its settlement definition is unclear. Use only questions that can be meaningfully settled.
+
+REUSE EXISTING GAME DAY INFRASTRUCTURE
+
+Inspect and reuse the existing Game Day architecture wherever appropriate:
+
+gameday_rooms
+gameday_pick_cards
+gameday_props
+gameday_prop_library
+gameday_participants
+gameday_picks
+existing room short links
+existing settlement infrastructure
+existing room fetch patterns
+
+Fantasy Draft Day should be a Fantasy experience using the shared competition engine, not a duplicate game engine.
+
+Expected room fields conceptually:
+
+experience_type = 'fantasy'
+competition_type = 'draft_day'
+league_season_id = current Fantasy league season
+sport = fantasy league sport
+matchup fields = NULL
+status = appropriate unpublished/published state using existing room-state conventions if possible
+
+Do not create a second “fantasy competitions” table unless inspection proves the shared room model cannot support the requirement.
+
+COMMISSIONER ENTRY POINT
+
+On the existing Fantasy League Hub, replace or evolve the current:
+
+“Draft Day coming soon”
+
+placeholder.
+
+If no Draft Day competition exists:
+
+DRAFT DAY SWAYGER
+
+Make predictions before the draft and see who knows the league best.
+
+[ Set Up Draft Day ]
+
+If a Draft Day competition is configured but not published:
+
+DRAFT DAY SWAYGER
+Draft
+[ Continue Setup ]
+
+If published:
+
+DRAFT DAY SWAYGER
+Ready / Published
+[ Open Draft Day ]
+[ Share ]
+
+Use the existing Fantasy League Hub as the persistent parent context.
+
+DRAFT DAY SETUP FLOW
+
+Keep this short.
+
+Preferred commissioner journey:
+
+Fantasy League Hub
+→ Set Up Draft Day
+→ Choose Questions
+→ Preview
+→ Publish
+
+Avoid a long administrative wizard.
+
+STEP 1 — CHOOSE QUESTIONS
+
+Provide a curated set of recommended Draft Day templates.
+
+Group them visually:
+
+DRAFT DAY PICKS
+“These determine today’s winner.”
+
+SEASON RECEIPTS
+“Lock these in now. We’ll bring the receipts back later.”
+
+Each template card should show:
+- question
+- answer target type
+- point value
+- scoring scope
+- selected/not selected
+
+Commissioner can toggle recommended questions on/off.
+
+Do not allow free commissioner point weighting in V1.
+
+Point values come from Swayger-controlled templates.
+
+Use the existing approved scoring model:
+- standard questions may be 10
+- featured questions may be higher if the template specifies it
+- point_value is snapshotted into gameday_props at competition creation
+
+Do not add a commissioner field for arbitrary point values.
+
+CURATED PROP LIBRARY
+
+Inspect the current gameday_prop_library behavior.
+
+Extend/use it for Fantasy templates.
+
+Fantasy templates should support:
+
+experience_type = 'fantasy'
+competition_type = 'draft_day'
+sport = football / basketball / baseball as appropriate
+phase = 'draft_day'
+scoring_scope = competition | season
+point_value
+answer_target_type
+
+Supported answer_target_type values already approved:
+
+- season_member
+- fantasy_team
+- player
+- yes_no
+- static
+
+For Phase 4A, prioritize templates that can be generated from:
+
+season_member
+fantasy_team
+yes_no
+static
+
+Avoid building player/provider data infrastructure unless absolutely necessary.
+
+ANSWER OPTIONS MUST USE STABLE IDS
+
+This is important.
+
+For Fantasy-generated questions, do not use fragile display labels as canonical answers.
+
+Member-target question answer_options should reference:
+
+fantasy_season_members.id
+
+Team-target question answer_options should reference:
+
+fantasy_teams.id
+
+Conceptual answer-options snapshot:
+
+[
+  {
+    "id": "<season-member-uuid>",
+    "label": "Darius",
+    "type": "season_member"
+  },
+  {
+    "id": "<season-member-uuid>",
+    "label": "Mike",
+    "type": "season_member"
+  }
+]
+
+or team target:
+
+[
+  {
+    "id": "<fantasy-team-uuid>",
+    "label": "The Monstars",
+    "type": "fantasy_team"
+  }
+]
+
+The historical display label must be snapshotted into the prop so later name/team edits do not rewrite old competition history.
+
+Do NOT globally change existing Game Day answer_options behavior if that would risk regressions.
+
+Implement Fantasy-specific structured-option support in a backward-compatible way.
+
+Inspect existing TypeScript/types/renderers carefully before changing the answer_options shape.
+
+If the existing column is JSON/JSONB and can support both string[] and structured objects, preserve legacy handling.
+
+If not, STOP and report the compatibility issue before destructive changes.
+
+COMPETITION CREATION / PUBLISH MODEL
+
+Think carefully about whether configuration should create the gameday_room immediately in a draft state or only on Publish.
+
+Preferred if compatible with existing status model:
+
+When commissioner starts setup:
+- create Draft Day room in unpublished/draft state
+OR maintain setup locally until publish if that is much cleaner
+
+On Publish:
+- ensure one Draft Day room exists for this league season
+- create one gameday_pick_cards row with phase='draft_day'
+- snapshot selected templates into gameday_props
+- populate structured answer_options from current season members/teams
+- snapshot point_value and scoring_scope
+- connect room to league_season_id
+- mark experience_type='fantasy'
+- competition_type='draft_day'
+- make it accessible to league participants
+
+Atomicity matters.
+
+Publishing should not leave:
+
+room created
+but only 4 of 10 props created
+
+Use the project’s established PL/pgSQL RPC pattern if publish requires multiple coordinated inserts.
+
+Inspect first.
+
+DUPLICATE DRAFT DAY SAFETY
+
+A league season should not accidentally get two competing V1 Draft Day competitions from double taps/retries.
+
+Do not necessarily add a schema migration unless needed.
+
+At minimum:
+- UI disables Publish while request pending
+- server/RPC checks for existing Draft Day competition for league_season_id
+- retry is idempotent or returns the existing competition
+- no duplicate room + props from double submit
+
+Remember: multiple drafts may eventually exist in dynasty/startup formats.
+
+Therefore do NOT add a permanent schema rule that fantasy seasons can only ever have one Draft Day room.
+
+V1 behavior can treat one “primary Draft Day Swayger” as the setup default without making that a foundational DB restriction.
+
+DRAFT LOCK BEHAVIOR
+
+Phase 4A should establish the commissioner-side lock concept.
+
+Draft Day predictions should lock when the fantasy draft begins.
+
+For V1, allow commissioner to configure or manually trigger this using the simplest existing compatible Game Day mechanism.
+
+Preferred MVP:
+
+Published
+→ commissioner sees [ Lock Picks ] when the actual fantasy draft begins
+
+Do not require automated ESPN/Sleeper draft-time detection.
+
+If existing Game Day room/card locking can be reused safely, reuse it.
+
+Do not build member pick submission yet, but make sure the published room/card state is compatible with Phase 4B.
+
+PUBLISH PREVIEW
+
+Before publish, show a clear read-only preview:
+
+FOOD PYRAMID
+2026 DRAFT DAY SWAYGER
+
+Draft Day Picks
+4 questions
+These determine today’s winner.
+
+Season Receipts
+3 questions
+Locked today. Settled later.
+
+Total selected: 7
+
+[ Back ]
+[ Publish Draft Day ]
+
+The commissioner should understand exactly what members will be asked.
+
+AFTER PUBLISH
+
+Return to or route to the Fantasy League Hub.
+
+The Draft Day card should now show:
+
+DRAFT DAY SWAYGER
+Published / Ready
+
+7 Questions
+4 Draft Day Picks
+3 Season Receipts
+
+[ Open Draft Day ]
+[ Share ]
+
+The same Fantasy league invitation architecture may ultimately be reused for entry, but inspect whether Draft Day should use:
+- existing league join URL
+OR
+- an event-specific room URL
+
+Preferred product behavior:
+
+League members who have already claimed their seat should be able to enter Draft Day from the Fantasy League Hub without reclaiming identity.
+
+New/unclaimed members receiving a shared Draft Day/league invite should still be able to claim their seat and then enter.
+
+Do not build the full member-entry-to-picks UI in 4A, but design the publish/share target so Phase 4B does not require replacing it.
+
+COMMISSIONER SHARE
+
+Provide a simple Share Draft Day action after publish.
+
+Use existing native share utility/pattern if available.
+
+No QR required in Phase 4A.
+
+QR/display mode comes later.
+
+PROP TEMPLATE SEED CONTENT
+
+Phase 4A needs enough curated Fantasy Draft Day questions to make the setup screen real.
+
+Create a small high-quality starter set, not dozens.
+
+For football, aim for approximately:
+
+6–8 Draft Day competition questions
+3–5 Season Receipt questions
+
+Examples to evaluate:
+
+Draft Day Picks:
+- Who drafts a quarterback first?
+- Who drafts the first rookie?
+- Who takes a defense first?
+- Who takes a kicker first?
+- Who makes the biggest reach?
+- Who waits the longest to draft a quarterback?
+- Will anyone draft two QBs before Round X? (only if the question can be reasonably settled)
+- Which team makes the first surprising pick? (avoid if too subjective)
+
+Season Receipts:
+- Who finishes first in the league?
+- Who finishes last?
+- Who scores the most total fantasy points?
+- Who has the best regular-season record?
+
+Favor objectively settleable questions.
+
+Do not over-index on NFL-specific mechanics in the data model; football templates can be sport-specific while the architecture stays multi-sport.
+
+For basketball/baseball, it is acceptable for Phase 4A to have fewer templates or a clearly limited starter set if necessary.
+
+Do not fake provider/player data.
+
+SETTLEMENT COMPATIBILITY
+
+Phase 4A does NOT need full Draft Day settlement UI yet, but inspect the existing settlement code now.
+
+Confirm the following future behavior is supported or identify what Phase 4B must change:
+
+- competition-scope props can settle during/after Draft Day
+- season-scope props can remain pending after Draft Day room finalization
+- Draft Day winner calculations must eventually include only scoring_scope='competition'
+- season-scope props can settle later even if Draft Day room is finalized
+- settling season props later must not retroactively alter the Draft Day champion
+
+We previously identified likely changes needed in existing leaderboard/final-standings/settlement code.
+
+Do NOT quietly change all scoring behavior in Phase 4A unless required for safe publishing.
+
+Return an explicit compatibility assessment.
+
+SCORING CODE WARNING
+
+Existing Game Day code currently calculates correct picks × 10 in multiple places.
+
+Fantasy point_value can vary.
+
+Do not build Draft Day scoring yet, but identify the exact locations that Phase 4B must update to:
+
+SUM(prop.point_value for correct picks)
+
+while preserving legacy Game Day behavior.
+
+Do not allow this technical debt to be forgotten.
+
+HOME / LEAGUE HUB
+
+Do not add a new bottom tab.
+
+Fantasy remains accessible through:
+
+Main home tab
+→ My Fantasy Leagues
+→ League Hub
+→ Draft Day Swayger
+
+Keep that hierarchy.
+
+DO NOT BUILD IN PHASE 4A
+
+- member Draft Day pick submission UI
+- Draft Day leaderboard
+- Draft Day winner/final standings
+- settlement UI changes unless essential for setup
+- Week 1
+- season leaderboard
+- scheduled weekly competitions
+- QR presentation mode
+- provider imports
+- player API integrations
+- reward payment processing
+- league archive/delete
+- commissioner paste roster import
+- future season renewal
+- notifications
+
+TESTING REQUIREMENTS
+
+At minimum:
+
+COMMISSIONER AUTH
+
+- non-commissioner cannot create/edit/publish Draft Day
+- commissioner can
+- co-commissioner support follows existing authority model if present
+
+CREATION
+
+- Draft Day setup uses correct league_season_id
+- experience_type='fantasy'
+- competition_type='draft_day'
+- sport matches Fantasy league sport
+- matchup fields remain NULL
+- phase='draft_day'
+
+TEMPLATES
+
+- Fantasy templates filtered correctly
+- competition vs season scopes preserved
+- point_value preserved
+- answer_target_type preserved
+- member options resolve to stable season_member IDs
+- team options resolve to stable fantasy_team IDs
+- display labels snapshotted
+
+PUBLISH
+
+- selected templates create correct gameday_props
+- publish is atomic
+- retry/double-submit does not duplicate room/props
+- existing room returned or conflict handled clearly
+
+LEAGUE HUB
+
+- unpublished state shows Continue Setup if draft persisted
+- published state shows Draft Day card
+- correct counts for competition vs season props
+- Share action produces usable link
+
+REGRESSION
+
+- Phase 2 remains 67/67
+- Phase 3 remains 60/60
+- Phase 3B remains 42/42
+- existing Game Day normalization tests remain green
+- existing Game Day room creation/fetch unaffected
+- 1v1 unaffected
+
+MANUAL QA I SHOULD BE ABLE TO DO
+
+1. Sign in as commissioner.
+2. Open Food Pyramid from My Fantasy Leagues.
+3. See Set Up Draft Day.
+4. Open it.
+5. See curated recommended questions.
+6. Toggle questions.
+7. Understand which are Draft Day Picks vs Season Receipts.
+8. Preview.
+9. Publish.
+10. Return to league hub.
+11. See Published Draft Day Swayger with question counts.
+12. Tap Share and confirm a valid invite/share link is produced.
+13. Reopen setup/publish action and confirm duplicate Draft Day is not created.
+
+IMPLEMENTATION PROCESS
+
+Before coding:
+1. Inspect existing gameday_rooms room status/locking conventions.
+2. Inspect gameday_prop_library schema and current template routes.
+3. Inspect gameday_props.answer_options current DB type and all frontend/server assumptions.
+4. Inspect current Game Day room creation flow and determine what can be reused.
+5. Inspect current Fantasy League Hub.
+6. Inspect settlement/leaderboard code and document Phase 4B compatibility requirements.
+7. Determine whether a migration is actually required.
+
+Then build.
+
+Do not create unnecessary schema changes if the Phase 1 foundation already supports this.
+
+If SQL/RPC is required:
+- write migration file
+- do NOT apply to Supabase automatically
+- return exact SQL/manual application instructions
+- tests may remain blocked until I apply it
+
+RETURN AFTER BUILD
+
+Return:
+
+1. architecture/code inspection findings
+2. exact Phase 4A design implemented
+3. files changed
+4. any SQL/migration requiring manual Supabase application
+5. RPC/API endpoints added
+6. Fantasy Draft Day templates seeded
+7. answer-option representation and backward-compatibility approach
+8. publish atomicity/idempotency behavior
+9. commissioner setup UX
+10. league-hub changes
+11. share behavior
+12. lock behavior prepared for Phase 4B
+13. settlement/scoring compatibility assessment for Phase 4B
+14. tests with exact counts/results
+15. bugs found/fixed
+16. exact manual QA sequence
+17. remaining limitations
+
+Then STOP.
+
+Do not begin Phase 4B member picks.
+
+Final status:
+
+PHASE 4A READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

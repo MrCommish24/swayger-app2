@@ -5,6 +5,7 @@ export default function FantasyLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="setup" />
       <Stack.Screen name="join" />
+      <Stack.Screen name="draft-day" />
     </Stack>
   );
 }

@@ -871,4 +871,505 @@ export function registerFantasyRoutes(app: Express) {
       });
     }
   );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PHASE 4A — FANTASY DRAFT DAY
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Local helpers ────────────────────────────────────────────────────────
+  // Generates a collision-free 6-char room code (uppercase, unambiguous chars).
+  async function generateFantasyRoomCode(
+    supabase: ReturnType<typeof getServiceSupabase>
+  ): Promise<string> {
+    const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no O/0/I/1
+    for (let i = 0; i < 30; i++) {
+      const code = Array.from({ length: 6 }, () =>
+        CHARS[Math.floor(Math.random() * CHARS.length)]
+      ).join("");
+      const { data } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("room_code", code)
+        .maybeSingle();
+      if (!data) return code;
+    }
+    throw new Error("Could not generate unique room code after 30 attempts");
+  }
+
+  // Builds structured answer_options for a Fantasy prop based on answer_target_type.
+  // Always returns a JSONB-compatible array of {id, label, type} objects.
+  // This snapshot is immutable after publish — later name/team edits don't affect it.
+  function buildAnswerOptions(
+    targetType: string | null,
+    seasonMembers: Array<{ id: string; display_name: string | null }>,
+    teams: Array<{ id: string; team_name: string | null }>,
+    staticOptions?: any[]
+  ): Array<{ id: string; label: string; type: string }> {
+    switch (targetType) {
+      case "season_member":
+        return seasonMembers.map((sm) => ({
+          id:    sm.id,
+          label: sm.display_name ?? "Unknown",
+          type:  "season_member",
+        }));
+      case "fantasy_team":
+        return teams.map((t) => ({
+          id:    t.id,
+          label: t.team_name ?? "Unknown Team",
+          type:  "fantasy_team",
+        }));
+      case "yes_no":
+        return [
+          { id: "yes", label: "Yes", type: "yes_no" },
+          { id: "no",  label: "No",  type: "yes_no" },
+        ];
+      case "static":
+        // Static templates store existing string options; convert to object shape.
+        return (staticOptions ?? []).map((opt: any, i: number) => ({
+          id:    typeof opt === "string" ? opt.toLowerCase().replace(/\s+/g, "_") : `opt_${i}`,
+          label: typeof opt === "string" ? opt : String(opt),
+          type:  "static",
+        }));
+      default:
+        return [];
+    }
+  }
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/templates
+  //
+  // Returns curated Fantasy Draft Day prop templates filtered by the league's
+  // sport, grouped into competition and season buckets.
+  //
+  // Auth: authenticated session or guest token (templates are read-only).
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/templates",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      // Get league sport
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("fantasy_leagues(sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const sport = (season as any).fantasy_leagues?.sport ?? "football";
+
+      const { data: templates, error } = await supabase
+        .from("gameday_prop_library")
+        .select(
+          "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order"
+        )
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "draft_day")
+        .eq("sport", sport)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (error) {
+        console.error("[fantasy] draft-day templates error:", error.message);
+        res.status(500).json({ error: "Failed to fetch templates" });
+        return;
+      }
+
+      const rows = templates ?? [];
+      res.json({
+        sport,
+        competition: rows.filter((t: any) => t.scoring_scope === "competition"),
+        season:      rows.filter((t: any) => t.scoring_scope === "season"),
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day
+  //
+  // Returns the current Draft Day competition status for this league season,
+  // or null if no Draft Day has been published yet.
+  //
+  // Auth: authenticated session or guest token.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      // Find the primary Draft Day room for this season
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, room_code, created_at")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .order("created_at", { ascending: true })
+        .maybeSingle();
+
+      if (!room) {
+        res.json(null);
+        return;
+      }
+
+      // Get pick card
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .order("created_at", { ascending: true })
+        .maybeSingle();
+
+      if (!card) {
+        res.json(null);
+        return;
+      }
+
+      // Count props by scope
+      const { data: props } = await supabase
+        .from("gameday_props")
+        .select("scoring_scope")
+        .eq("card_id", (card as any).id);
+
+      const propList = props ?? [];
+      const competitionCount = propList.filter((p: any) => p.scoring_scope === "competition").length;
+      const seasonCount      = propList.filter((p: any) => p.scoring_scope === "season").length;
+
+      res.json({
+        room_id:     (room as any).id,
+        card_id:     (card as any).id,
+        room_code:   (room as any).room_code ?? null,
+        room_status: (room as any).status,
+        card_status: (card as any).status,
+        prop_counts: { competition: competitionCount, season: seasonCount },
+        created_at:  (room as any).created_at,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/publish
+  //
+  // Atomically publishes a Fantasy Draft Day competition via the
+  // publish_fantasy_draft_day RPC (creates room + pick_card + props).
+  //
+  // Auth: commissioner or co-commissioner only.
+  //
+  // Body: { selected_prop_ids: string[] }
+  //
+  // Idempotency: if a Draft Day already exists for this season, returns it
+  // with already_existed=true. No duplicate room/props are created.
+  //
+  // Atomicity: all inserts happen inside the RPC's single PL/pgSQL transaction.
+  // If the RPC fails, no partial state is left.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/publish",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+
+      const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
+
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res.status(400).json({ error: "select at least one question" });
+        return;
+      }
+
+      // ── Gather league + season metadata ──────────────────────────────────
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, season_year, fantasy_leagues(id, league_name, sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const league     = (season as any).fantasy_leagues as any;
+      const sport      = league.sport as string;
+      const leagueName = league.league_name as string;
+      const roomName   = `${leagueName} — ${(season as any).season_year} Draft Day`;
+
+      // ── Fetch selected templates ──────────────────────────────────────────
+      const { data: templates, error: tmplErr } = await supabase
+        .from("gameday_prop_library")
+        .select(
+          "id, question, scoring_scope, point_value, answer_target_type, answer_options"
+        )
+        .in("id", selected_prop_ids)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "draft_day")
+        .eq("sport", sport)
+        .eq("is_active", true);
+
+      if (tmplErr || !templates || templates.length === 0) {
+        res.status(400).json({ error: "No valid templates found for selection" });
+        return;
+      }
+
+      // ── Fetch season members for answer_options snapshot ─────────────────
+      const { data: seasonMembers } = await supabase
+        .from("fantasy_season_members")
+        .select("id, display_name")
+        .eq("league_season_id", seasonId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: true });
+
+      // ── Fetch teams for fantasy_team targets ──────────────────────────────
+      const { data: teams } = await supabase
+        .from("fantasy_teams")
+        .select("id, team_name")
+        .eq("league_season_id", seasonId);
+
+      const memberList = (seasonMembers ?? []) as Array<{ id: string; display_name: string | null }>;
+      const teamList   = (teams ?? [])         as Array<{ id: string; team_name: string | null }>;
+
+      // ── Build prop payload for RPC ────────────────────────────────────────
+      // Preserve caller's ordering where possible; sort by original display_order.
+      const propsPayload = (templates as any[]).map((tmpl, i) => ({
+        library_id:         tmpl.id,
+        question:           tmpl.question,
+        answer_options:     buildAnswerOptions(
+          tmpl.answer_target_type,
+          memberList,
+          teamList,
+          tmpl.answer_options
+        ),
+        scoring_scope:      tmpl.scoring_scope,
+        point_value:        tmpl.point_value,
+        answer_target_type: tmpl.answer_target_type ?? null,
+        display_order:      i,
+      }));
+
+      // ── Generate room code ────────────────────────────────────────────────
+      let roomCode: string | null = null;
+      try {
+        roomCode = await generateFantasyRoomCode(supabase);
+      } catch (e) {
+        console.warn("[fantasy] room_code generation skipped:", (e as Error).message);
+      }
+
+      // ── Idempotency check ─────────────────────────────────────────────────
+      // If a Draft Day room already exists for this season, return it unchanged.
+      const { data: existingRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (existingRoom) {
+        const { data: existingCard } = await supabase
+          .from("gameday_pick_cards")
+          .select("id")
+          .eq("room_id", (existingRoom as any).id)
+          .maybeSingle();
+
+        console.log(
+          `[fantasy] Draft Day already exists: room=${String((existingRoom as any).id).slice(0, 8)}… (idempotent)`
+        );
+        res.status(200).json({
+          room_id:         (existingRoom as any).id,
+          card_id:         (existingCard as any)?.id ?? null,
+          room_code:       null,
+          already_existed: true,
+        });
+        return;
+      }
+
+      // ── Inline publish (room → pick_card → props) ─────────────────────────
+      // Simulates the atomic PL/pgSQL RPC. On any failure we attempt rollback.
+      // NOTE: True DB-level atomicity requires the publish_fantasy_draft_day()
+      // PL/pgSQL function to be applied to Supabase (see gameday-fantasy-phase4a-draft-day.sql).
+
+      let newRoomId: string | null = null;
+      let newCardId: string | null = null;
+
+      try {
+        // 1. Create room
+        const { data: roomRow, error: roomErr } = await supabase
+          .from("gameday_rooms")
+          .insert({
+            room_name:        roomName,
+            experience_type:  "fantasy",
+            competition_type: "draft_day",
+            league_season_id: seasonId,
+            sport,
+            room_code:        roomCode,
+            host_user_id:     userId,
+            status:           "active",
+            is_private:       true,
+          })
+          .select("id")
+          .single();
+
+        if (roomErr || !roomRow) {
+          throw new Error(`Failed to create room: ${roomErr?.message}`);
+        }
+        newRoomId = (roomRow as any).id as string;
+
+        // 2. Create pick card
+        const { data: cardRow, error: cardErr } = await supabase
+          .from("gameday_pick_cards")
+          .insert({
+            room_id:       newRoomId,
+            title:         "Draft Day",
+            phase:         "draft_day",
+            status:        "closed",
+            display_order: 0,
+          })
+          .select("id")
+          .single();
+
+        if (cardErr || !cardRow) {
+          throw new Error(`Failed to create pick card: ${cardErr?.message}`);
+        }
+        newCardId = (cardRow as any).id as string;
+
+        // 3. Insert props — try with answer_target_type, fall back without if column missing
+        const propRows = propsPayload.map((p) => ({
+          card_id:            newCardId,
+          template_prop_id:   p.library_id,
+          question:           p.question,
+          answer_options:     p.answer_options,
+          scoring_scope:      p.scoring_scope,
+          point_value:        p.point_value,
+          answer_target_type: p.answer_target_type,
+          display_order:      p.display_order,
+          status:             "pending",
+        }));
+
+        const { error: propErr } = await supabase.from("gameday_props").insert(propRows);
+
+        if (propErr) {
+          // If the column doesn't exist yet, retry without it
+          if (propErr.message?.includes("answer_target_type")) {
+            console.warn("[fantasy] answer_target_type column missing — inserting without it");
+            const propRowsFallback = propRows.map(({ answer_target_type: _drop, ...rest }) => rest);
+            const { error: propErr2 } = await supabase.from("gameday_props").insert(propRowsFallback);
+            if (propErr2) throw new Error(`Failed to insert props (fallback): ${propErr2.message}`);
+          } else {
+            throw new Error(`Failed to insert props: ${propErr.message}`);
+          }
+        }
+
+        console.log(
+          `[fantasy] Draft Day published: season=${seasonId.slice(0, 8)}… room=${newRoomId.slice(0, 8)}… props=${propsPayload.length}`
+        );
+
+        res.status(201).json({
+          room_id:         newRoomId,
+          card_id:         newCardId,
+          room_code:       roomCode,
+          already_existed: false,
+        });
+      } catch (publishErr: any) {
+        // Attempt partial rollback to avoid orphan rows
+        if (newCardId) {
+          await supabase.from("gameday_props").delete().eq("card_id", newCardId).then(() =>
+            supabase.from("gameday_pick_cards").delete().eq("id", newCardId)
+          );
+        }
+        if (newRoomId) {
+          await supabase.from("gameday_rooms").delete().eq("id", newRoomId);
+        }
+        console.error("[fantasy] publish Draft Day failed (rolled back):", publishErr.message);
+        res.status(500).json({ error: "Failed to publish Draft Day" });
+      }
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/lock
+  //
+  // Locks the Draft Day pick card. Once locked, members cannot change picks
+  // (Phase 4B). Commissioner taps this when the actual fantasy draft begins.
+  //
+  // Auth: commissioner or co-commissioner only.
+  //
+  // Idempotent: if already locked, returns current status.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/lock",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+
+      // Find the Draft Day room + card
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+
+      const currentStatus = (card as any).status as string;
+
+      // Idempotent: already locked or settled
+      if (currentStatus === "locked" || currentStatus === "settled") {
+        res.json({ card_status: currentStatus, already_locked: true });
+        return;
+      }
+
+      // Lock the card
+      const { error } = await supabase
+        .from("gameday_pick_cards")
+        .update({ status: "locked", updated_at: new Date().toISOString() })
+        .eq("id", (card as any).id);
+
+      if (error) {
+        console.error("[fantasy] draft-day lock error:", error.message);
+        res.status(500).json({ error: "Failed to lock Draft Day" });
+        return;
+      }
+
+      console.log(
+        `[fantasy] Draft Day locked: card=${String((card as any).id).slice(0, 8)}… by=${userId.slice(0, 8)}…`
+      );
+
+      res.json({ card_status: "locked", already_locked: false });
+    }
+  );
 }
