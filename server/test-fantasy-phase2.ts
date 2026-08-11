@@ -776,9 +776,10 @@ async function run() {
       const commParticipant = r.body.participants.find((p: any) => p.role === "commissioner");
       if (commParticipant) {
         pass("Season detail: commissioner participant present");
-        commParticipant.team_name === "QA Monsters"
-          ? pass("Season detail: commissioner's team_name is correct")
-          : fail("Commissioner team_name", `Expected 'QA Monsters', got ${commParticipant.team_name}`);
+        // §8c replaced commissioner's team with "QA Monsters Recovered" during partial-state recovery
+        commParticipant.team_name === "QA Monsters Recovered"
+          ? pass("Season detail: commissioner's team_name is correct (QA Monsters Recovered from §8c)")
+          : fail("Commissioner team_name", `Expected 'QA Monsters Recovered', got ${commParticipant.team_name}`);
         commParticipant.display_name === "QA Commissioner"
           ? pass("Season detail: commissioner's display_name is correct")
           : fail("Commissioner display_name", `Expected 'QA Commissioner', got ${commParticipant.display_name}`);
