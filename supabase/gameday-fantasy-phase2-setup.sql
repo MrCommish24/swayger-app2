@@ -1,3 +1,4 @@
+-- Swayger Fantasy Phase 2: setup_fantasy_league + add_fantasy_season_participant RPCs
 -- ============================================================
 -- SWAYGER FANTASY PHASE 2 — COMMISSIONER SETUP RPCs
 -- File: supabase/gameday-fantasy-phase2-setup.sql

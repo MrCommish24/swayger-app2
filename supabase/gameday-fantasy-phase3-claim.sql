@@ -1,3 +1,4 @@
+-- Swayger Fantasy Phase 3: claim_fantasy_seat RPC + unique active-claim index
 -- ============================================================
 -- SWAYGER FANTASY PHASE 3 — MEMBER CLAIM
 -- File: supabase/gameday-fantasy-phase3-claim.sql

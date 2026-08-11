@@ -1,3 +1,4 @@
+-- Swayger Fantasy Foundation: new tables, extended columns, RLS (Phase 1)
 -- ============================================================
 -- SWAYGER FANTASY FOUNDATION
 -- File: supabase/gameday-fantasy-foundation.sql

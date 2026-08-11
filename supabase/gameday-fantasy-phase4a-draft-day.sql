@@ -1,3 +1,4 @@
+-- Swayger Fantasy Phase 4A: answer_target_type column, prop library seed, publish_fantasy_draft_day RPC
 -- ══════════════════════════════════════════════════════════════════════════════
 -- PHASE 4A: FANTASY DRAFT DAY — Commissioner Setup + Publish
 -- ══════════════════════════════════════════════════════════════════════════════
