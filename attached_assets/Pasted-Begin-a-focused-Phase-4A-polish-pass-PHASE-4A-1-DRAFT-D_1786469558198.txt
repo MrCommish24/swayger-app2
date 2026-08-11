@@ -1,0 +1,566 @@
+Begin a focused Phase 4A polish pass:
+
+PHASE 4A.1 — DRAFT DAY UX + LIFECYCLE POLISH
+
+Do NOT begin Phase 4B member pick submission yet.
+
+Phase 4A infrastructure is working. This pass is about correcting usability, competition lifecycle clarity, and starter prop quality based on manual commissioner QA.
+
+CURRENT MANUAL QA FINDINGS
+
+1. Draft Day question selection needs a hard cap.
+2. Subjective props like “Who makes the biggest reach?” are too hard to settle objectively.
+3. Some props need a valid “No one” answer.
+4. The Preview screen is useful as a commissioner sanity check, but not as something to share.
+5. “Invite Members” vs Draft Day “Share” is confusing.
+6. Lock Picks is too easy to trigger accidentally and currently appears irreversible.
+7. “Open Draft Day” is active even though the member Draft Day experience is not built yet.
+8. After publishing, the league hub can still show “Set Up Draft Day,” making it appear that the commissioner can repeatedly republish/create Draft Day.
+
+The goal of this pass is to make the lifecycle understandable before member picks are built.
+
+--------------------------------------------------
+1. QUESTION SELECTION CAP
+--------------------------------------------------
+
+Set an absolute maximum of:
+
+15 selected Draft Day questions total
+
+across both:
+- Draft Day Picks
+- Season Receipts
+
+Do not require commissioners to choose 15.
+
+Preferred UI guidance:
+
+“7 of 15 selected”
+
+and a secondary hint such as:
+
+“We recommend 6–10 questions for a fast Draft Day experience.”
+
+Once 15 are selected:
+- unselected cards cannot be selected unless another is deselected
+- show a clear but lightweight limit message
+- do not silently replace selected questions
+
+Test the limit server-side as well where selected template IDs are accepted for publish. Do not rely only on the client.
+
+--------------------------------------------------
+2. REMOVE SUBJECTIVE STARTER PROPS
+--------------------------------------------------
+
+Review the currently seeded Phase 4A football templates.
+
+Remove/deactivate subjective templates from the recommended starter set, especially:
+
+“Who makes the biggest reach of the draft?”
+
+The guiding rule:
+
+A commissioner should be able to settle the prop based on observable draft/roster facts without having to judge taste, quality, or opinion.
+
+Do NOT necessarily delete historical template rows if that creates migration risk.
+
+Prefer:
+- deactivate
+- remove from default/recommended selection
+- or replace safely
+
+depending on the existing prop library model.
+
+Keep the starter library compact and high quality.
+
+--------------------------------------------------
+3. ADD BETTER OBJECTIVE DRAFT DAY PROPS
+--------------------------------------------------
+
+Add/evaluate objective, socially fun roster-behavior props such as:
+
+- Who drafts a quarterback first?
+- Who waits the longest to draft a quarterback?
+- Who drafts the first rookie?
+- Who takes a defense first?
+- Who takes a kicker first?
+- Who drafts the most running backs?
+- Who drafts the most wide receivers?
+- Who drafts the most rookies?
+- Who finishes the draft with the most players from one NFL team?
+- Who drafts three quarterbacks?
+- Will anyone draft three quarterbacks?
+- Who is the last manager to draft a running back?
+- Who is the first manager to fill their starting lineup?
+
+Do not blindly seed all of these.
+
+Evaluate each against:
+- objective settlement
+- ability to understand quickly
+- fun / trash-talk value
+- no provider data dependency for V1
+- compatibility with commissioner manual settlement
+
+Favor questions that produce good “receipts.”
+
+Keep the total football starter set manageable.
+
+For any new templates, preserve:
+- experience_type='fantasy'
+- competition_type='draft_day'
+- phase='draft_day'
+- scoring_scope
+- point_value
+- answer_target_type
+
+--------------------------------------------------
+4. “NO ONE” / NONE OPTION
+--------------------------------------------------
+
+Some person-target questions can legitimately resolve to nobody.
+
+Examples:
+- Who drafts three quarterbacks?
+- Who takes a defense before an unusually early threshold?
+- Who drafts two kickers?
+
+Support a synthetic stable answer option such as:
+
+{
+  "id": "no_one",
+  "label": "No one",
+  "type": "static"
+}
+
+or another backward-compatible stable representation.
+
+Do NOT append “No one” to every member-target question automatically.
+
+It should only appear for templates where no participant is a legitimate outcome.
+
+Inspect the current template/answer-generation model and implement the minimum safe mechanism.
+
+Do not use label matching (“No one”) as canonical identity.
+
+--------------------------------------------------
+5. PREVIEW → REVIEW DRAFT DAY
+--------------------------------------------------
+
+Keep the pre-publish confirmation screen.
+
+Its purpose is:
+
+final commissioner sanity check
+
+NOT:
+- share artifact
+- league invite
+- another confirmation ceremony
+
+Rename/reframe:
+
+PREVIEW
+→
+REVIEW DRAFT DAY
+
+Suggested copy:
+
+“Make sure these are the questions you want your league to answer.”
+
+Continue showing:
+- Draft Day Picks
+- Season Receipts
+- question counts
+- selected questions
+- total selected
+
+Primary CTA remains:
+
+Publish Draft Day
+
+Do not add an additional confirmation after the review screen unless needed for destructive state changes.
+
+--------------------------------------------------
+6. CLARIFY INVITE MEMBERS VS DRAFT DAY SHARE
+--------------------------------------------------
+
+The current hub has:
+
+Invite Members
+
+and after publish:
+
+Share
+
+This is confusing because they appear to be two versions of the same action.
+
+Establish the product distinction:
+
+INVITE MEMBERS
+= league onboarding / seat claiming
+
+The commissioner uses this to get Mike, Chris, etc. into the persistent Fantasy League.
+
+Future:
+
+SEND DRAFT DAY
+= get league members directly into the playable Draft Day competition
+
+But Phase 4B member play is not built yet.
+
+Therefore in this Phase 4A.1 pass:
+
+- keep Invite Members as the current league-level action
+- remove or disable the generic Draft Day “Share” button if it does not yet have a distinct useful destination
+- do not expose an action that implies playable Draft Day exists when it does not
+
+If there is already a meaningful Draft Day deep link that will be reused in Phase 4B, it may remain internally, but the UI should not create confusion now.
+
+Document the intended future behavior:
+
+Already claimed member:
+Draft Day link → Draft Day
+
+Unclaimed member:
+Draft Day link → claim seat → Draft Day
+
+Do not build that member flow now.
+
+--------------------------------------------------
+7. FIX LOCK / UNLOCK UX
+--------------------------------------------------
+
+Manual QA found Lock Picks can be tapped accidentally and there is no obvious recovery.
+
+Define the V1 commissioner lifecycle:
+
+PUBLISHED / OPEN
+→ members will eventually be able to submit/change picks
+
+LOCKED
+→ members can no longer submit/change picks
+
+Add a confirmation before locking:
+
+“Lock Draft Day picks?”
+
+“Members won’t be able to submit or change picks until you unlock them.”
+
+[Cancel]
+[Lock Picks]
+
+Add commissioner Unlock Picks capability for the safe pre-settlement state.
+
+Preferred MVP rule:
+
+Commissioner may unlock if:
+- Draft Day is not finalized
+- no Draft Day prop has been settled
+
+If settlement/finalization has started:
+- do not casually unlock
+- return clear explanation
+
+If Phase 4A currently has no picks or settlement yet, build the state/API in a way that Phase 4B can enforce this safely.
+
+Lock and unlock must be:
+- commissioner-only
+- idempotent
+- server validated
+
+Do not rely on button hiding alone.
+
+--------------------------------------------------
+8. DEFINE CARD STATUS SEMANTICS
+--------------------------------------------------
+
+Current Phase 4A report showed:
+
+room.status = 'active'
+pick_card.status = 'closed'
+
+then Lock changes the card to:
+
+'locked'
+
+Before Phase 4B, explicitly inspect and document what current card states mean.
+
+We need a state that means:
+
+PUBLISHED AND OPEN FOR PICKS
+
+If 'closed' currently means members cannot submit picks, then a newly published Draft Day MUST NOT remain 'closed' once Phase 4B is built.
+
+Determine the correct existing status or minimal compatible state change.
+
+Do not invent a new enum/state unless necessary.
+
+Return a concise lifecycle mapping such as:
+
+draft/unpublished
+→ published/open
+→ locked
+→ finalized
+
+and explain which existing DB values implement each state.
+
+Phase 4B must have one unambiguous server-authoritative “can member submit a pick?” rule.
+
+--------------------------------------------------
+9. “OPEN DRAFT DAY” BUTTON
+--------------------------------------------------
+
+Current Open Draft Day button does not lead to a working member competition because Phase 4B is not built.
+
+Do not show an active CTA that implies functionality exists.
+
+Until Phase 4B:
+
+either:
+- remove Open Draft Day
+- disable it with “Member play coming next”
+- or replace it with a commissioner-relevant Manage Draft Day action
+
+Choose the cleanest implementation based on the existing hub UI.
+
+Do not build fake placeholder navigation.
+
+--------------------------------------------------
+10. FIX DRAFT DAY LIFECYCLE ON LEAGUE HUB
+--------------------------------------------------
+
+This is a real Phase 4A bug.
+
+Once a Draft Day competition exists, the hub must not revert to:
+
+Set Up Draft Day
+
+as though nothing exists.
+
+Use clear lifecycle-specific states.
+
+Recommended:
+
+NO DRAFT DAY EXISTS
+→ Set Up Draft Day
+
+SETUP EXISTS BUT NOT PUBLISHED
+→ Continue Setup
+
+PUBLISHED / OPEN
+→ Draft Day Ready
+→ Manage Draft Day
+
+LOCKED
+→ Picks Locked
+→ Manage Draft Day
+→ Unlock Picks if permitted
+
+Eventually, Phase 4B/4C:
+
+FINALIZED
+→ Draft Day Complete
+→ View Results
+
+Do not create “republish” semantics.
+
+There should be one V1 primary Draft Day competition for the season being managed through its lifecycle.
+
+Preserve the architectural ability for multiple draft competitions in the future. Do not add a permanent DB uniqueness rule that prevents startup/rookie/supplemental drafts later.
+
+--------------------------------------------------
+11. EDITING AFTER PUBLISH
+--------------------------------------------------
+
+Define minimum V1 edit behavior.
+
+Preferred:
+
+Before any member picks exist:
+commissioner may return to Manage Draft Day and edit selected questions.
+
+After the first member pick exists:
+do NOT allow questions/options/point values to be casually changed.
+
+This protects fairness and historical receipts.
+
+If Phase 4B has not yet created any picks, it is acceptable for Phase 4A.1 to:
+- implement safe edit-before-picks now
+OR
+- leave editing disabled and clearly report it as Phase 4B work
+
+Do not create a complex versioning system.
+
+The important requirement is that the hub says:
+
+Manage Draft Day
+
+rather than:
+
+Set Up Draft Day / Publish another one
+
+once it already exists.
+
+--------------------------------------------------
+12. SERVER IDEMPOTENCY / EXISTING DRAFT DAY
+--------------------------------------------------
+
+Preserve existing publish idempotency.
+
+If the commissioner revisits setup after publish:
+- do not create another room
+- do not create duplicate props
+- return/load the existing Draft Day state
+
+If editing is implemented:
+- mutate only the existing competition in a safe pre-pick state
+
+If editing is not implemented:
+- route commissioner to current Draft Day management state rather than republishing
+
+--------------------------------------------------
+13. PROP ANSWER OPTIONS
+--------------------------------------------------
+
+Preserve the approved stable-ID approach.
+
+Member targets:
+fantasy_season_members.id
+
+Team targets:
+fantasy_teams.id
+
+Synthetic options such as No one:
+stable static ID
+
+Labels remain snapshotted for historical display.
+
+Do not regress to using names as canonical answers.
+
+--------------------------------------------------
+14. DO NOT BUILD PHASE 4B
+--------------------------------------------------
+
+Do not build:
+
+- member pick submission
+- member Draft Day play screen
+- Draft Day leaderboard
+- settlement UI
+- Draft Day winner
+- season standings
+- Week 1
+- QR
+- notifications
+- provider imports
+- paste roster import
+- reward scheduling
+
+This is a polish/lifecycle pass only.
+
+--------------------------------------------------
+15. TESTING
+--------------------------------------------------
+
+Add/update tests for:
+
+QUESTION SELECTION
+- 15 selections succeeds
+- 16th selection rejected server-side
+- client prevents >15
+- deselect allows another question
+
+PROP QUALITY
+- removed subjective default no longer returned as recommended
+- replacement templates return expected scope/target/value
+- templates requiring No one include stable synthetic option
+- templates not requiring it do not
+
+PUBLISH / STATE
+- initial publish creates one Draft Day
+- repeat publish returns existing competition
+- league hub does not show Set Up Draft Day after publish
+- published state renders correct management CTA
+
+LOCK
+- commissioner lock succeeds
+- non-commissioner lock rejected
+- duplicate lock idempotent
+- commissioner unlock succeeds before settlement
+- duplicate unlock idempotent
+- non-commissioner unlock rejected
+- unlock after prohibited lifecycle point rejected if that state can currently be simulated
+
+STATUS
+- document/test which state permits member picks for Phase 4B
+- newly published Draft Day reaches intended open state
+
+REGRESSION
+- Phase 2 = 67/67
+- Phase 3 = 60/60
+- Phase 3B = 42/42
+- Phase 4A remains fully green
+- Game Day regression remains green
+- 1v1 unaffected
+
+--------------------------------------------------
+16. MANUAL QA EXPERIENCE
+--------------------------------------------------
+
+After implementation I should be able to:
+
+1. Open my Fantasy League Hub.
+2. Tap Set Up Draft Day only if no Draft Day exists.
+3. Choose questions.
+4. Be prevented from choosing more than 15.
+5. See objective, easy-to-settle templates.
+6. See No one only where appropriate.
+7. Tap Review Draft Day.
+8. Understand it is my final sanity check.
+9. Publish.
+10. Return to League Hub.
+11. See Draft Day Ready / Manage Draft Day — NOT Set Up Draft Day.
+12. Not see a confusing duplicate Share action.
+13. Lock picks.
+14. Receive confirmation first.
+15. See Picks Locked.
+16. Unlock safely.
+17. Reopen/manage Draft Day without creating another competition.
+18. Not see an active Open Draft Day button leading to unfinished Phase 4B functionality.
+
+--------------------------------------------------
+RETURN AFTER BUILD
+--------------------------------------------------
+
+Return:
+
+1. root cause of the repeated Set Up Draft Day state
+2. final Draft Day lifecycle/state model
+3. files changed
+4. prop templates removed/added/changed
+5. how No one is represented
+6. 15-question cap implementation
+7. Review Draft Day changes
+8. Invite vs Share decision
+9. lock/unlock behavior
+10. published/manage/edit behavior
+11. Open Draft Day treatment before Phase 4B
+12. APIs/RPCs changed
+13. any SQL/migration requiring manual application
+14. exact test counts/results
+15. regressions
+16. manual QA sequence
+17. remaining Phase 4B dependencies
+
+Then STOP.
+
+Do not begin member Draft Day picks.
+
+Final status:
+
+PHASE 4A.1 READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

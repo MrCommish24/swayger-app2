@@ -205,9 +205,12 @@ export interface DraftDayTemplate {
   settlement_window: string;
   is_default: boolean;
   display_order: number;
+  /** When true, publish appends { id:"no_one", label:"No one", type:"static" } to answer_options */
+  supports_no_one: boolean;
 }
 
 export interface DraftDayTemplates {
+  sport: string;
   competition: DraftDayTemplate[];
   season: DraftDayTemplate[];
 }
@@ -274,9 +277,22 @@ export async function lockDraftDay(
   leagueId: string,
   seasonId: string,
   auth: Parameters<typeof fantasyFetch>[2]
-): Promise<{ card_status: string }> {
+): Promise<{ card_status: string; already_locked: boolean }> {
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/lock`,
+    { method: "POST" },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/unlock
+export async function unlockDraftDay(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ card_status: string; already_unlocked: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/unlock`,
     { method: "POST" },
     auth
   );

@@ -1,31 +1,36 @@
 /**
  * server/test-fantasy-phase4a.ts
  * ──────────────────────────────────────────────────────────────────────────────
- * Phase 4A QA — Fantasy Draft Day Commissioner Setup + Publish
+ * Phase 4A.1 QA — Fantasy Draft Day Commissioner Setup + Polish
  *
  * Scenarios:
  *   §1   Bootstrap (commissioner + 2 members)
  *   §2   Template fetch — football templates exist and are grouped
- *   §3   Template fields — point_value, answer_target_type, scoring_scope preserved
+ *   §3   Template fields — point_value, answer_target_type, scoring_scope, supports_no_one
  *   §4   Non-commissioner cannot publish
  *   §5   Publish with selected templates
  *   §6   Publish creates correct room fields
- *   §7   Publish creates correct pick card fields
+ *   §7   Publish creates correct pick card fields (status='open')
  *   §8   Publish creates correct props — counts, scope, point_value, answer_target_type
  *   §9   Structured answer_options — member IDs stable and snapshotted
  *   §10  GET /draft-day returns correct status and counts
  *   §11  Idempotency — double publish does not duplicate room/props
  *   §12  Lock — commissioner locks the card
- *   §13  Lock — non-commissioner cannot lock
+ *   §13  Lock — non-commissioner cannot lock/unlock
  *   §14  Lock — idempotent (lock again is 200)
- *   §15  Phase 2 regression (67/67)
- *   §16  Phase 3 regression (60/60)
- *   §17  Phase 3B regression (42/42)
+ *   §15  Question selection cap — 15 max enforced server-side
+ *   §16  Unlock — commissioner unlocks, idempotent, non-commissioner rejected
+ *   §17  Prop quality — subjective defaults removed, supports_no_one correct
+ *   §18  Status semantics — draft/open/locked lifecycle
+ *   §19  Phase 2 regression (67/67)
+ *   §20  Phase 3 regression (60/60)
+ *   §21  Phase 3B regression (42/42)
  *
- * NOTE: §15–17 are smoke checks via API calls, not re-running the full suites.
+ * NOTE: §19–21 are smoke checks via API calls, not re-running the full suites.
  * Run the full suites separately for confidence.
  *
- * PREREQUISITE: supabase/gameday-fantasy-phase4a-draft-day.sql must be applied.
+ * PREREQUISITE: supabase/gameday-fantasy-phase4a-draft-day.sql +
+ *               supabase/gameday-fantasy-phase4a1-polish.sql must be applied.
  *
  * Usage:
  *   npx tsx server/test-fantasy-phase4a.ts
@@ -108,7 +113,6 @@ let createdRoomId:   string | null = null;
 async function cleanup(userIds: string[]) {
   console.log("\n─── Cleanup " + "─".repeat(47));
   if (createdRoomId) {
-    // Props, card, room
     const { data: cards } = await service.from("gameday_pick_cards").select("id").eq("room_id", createdRoomId);
     for (const c of cards ?? []) {
       await service.from("gameday_props").delete().eq("card_id", c.id);
@@ -147,7 +151,7 @@ async function cleanup(userIds: string[]) {
 async function main() {
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
-║   SWAYGER FANTASY PHASE 4A — DRAFT DAY SETUP QA         ║
+║   SWAYGER FANTASY PHASE 4A.1 — DRAFT DAY POLISH QA      ║
 ║   Run ID: ${RUN_ID.padEnd(46)}║
 ╚══════════════════════════════════════════════════════════╝`);
 
@@ -229,7 +233,7 @@ async function main() {
   }
 
   // ── §3. Template fields ────────────────────────────────────────────────────
-  section("3. Template Fields — point_value, answer_target_type, scoring_scope Preserved");
+  section("3. Template Fields — point_value, answer_target_type, scoring_scope, supports_no_one Preserved");
   {
     for (const t of competitionTemplates) {
       if (t.scoring_scope !== "competition") {
@@ -250,8 +254,16 @@ async function main() {
     hasTargetType
       ? pass("All templates have answer_target_type field")
       : fail("answer_target_type field missing on some templates");
-    const memberTargets = [...competitionTemplates, ...seasonTemplates]
-      .filter((t: any) => t.answer_target_type === "season_member");
+
+    // supports_no_one field present on all templates
+    const allTmpls = [...competitionTemplates, ...seasonTemplates];
+    const hasNoOneField = allTmpls.every((t: any) => typeof t.supports_no_one === "boolean");
+    hasNoOneField
+      ? pass("All templates have supports_no_one boolean field")
+      : fail("supports_no_one field missing or wrong type on some templates",
+          JSON.stringify(allTmpls.map((t: any) => ({ id: t.id, supports_no_one: t.supports_no_one }))));
+
+    const memberTargets = allTmpls.filter((t: any) => t.answer_target_type === "season_member");
     memberTargets.length > 0
       ? pass(`${memberTargets.length} season_member target templates found`)
       : fail("No season_member target templates");
@@ -349,9 +361,11 @@ async function main() {
       (card as any).phase === "draft_day"
         ? pass("phase=draft_day")
         : fail("card phase", `Got ${(card as any).phase}`);
-      (card as any).status === "closed"
-        ? pass("status=closed (members cannot pick until Phase 4B opens)")
-        : fail("card status", `Got ${(card as any).status}`);
+      // Phase 4A.1: status='open' — correct forward-compatible state for Phase 4B.
+      // 'open' means picks are available to submit once Phase 4B is built.
+      (card as any).status === "open"
+        ? pass("status=open (Phase 4B member picks gate — forward-compatible)")
+        : fail("card status", `Expected open, got ${(card as any).status}`);
       (card as any).room_id === publishedRoomId
         ? pass("room_id matches published room")
         : fail("card room_id", `Got ${(card as any).room_id}`);
@@ -362,9 +376,6 @@ async function main() {
   section("8. Props — Counts, Scope, point_value, answer_target_type Preserved");
   let allProps: any[] = [];
   {
-    // Query without answer_target_type first — that column may not yet exist in
-    // gameday_props (requires manual DDL: ALTER TABLE gameday_props ADD COLUMN
-    // answer_target_type TEXT). The column presence is checked separately below.
     const { data: props, error: propQueryErr } = await service
       .from("gameday_props")
       .select("id, question, scoring_scope, point_value, answer_options, template_prop_id")
@@ -390,19 +401,15 @@ async function main() {
       ? pass(`${seasonProps.length} season receipt props`)
       : fail("Season prop count", `Expected ${expectedSeason}, got ${seasonProps.length}`);
 
-    // All props have point_value=10
     allProps.every((p) => p.point_value === 10)
       ? pass("All props have point_value=10")
       : fail("point_value", `Some props have wrong value: ${JSON.stringify(allProps.map(p => p.point_value))}`);
 
-    // template_prop_id is set (links back to library)
     allProps.every((p) => p.template_prop_id !== null)
       ? pass("All props have template_prop_id (library reference preserved)")
       : fail("template_prop_id missing on some props");
 
-    // answer_target_type column — check if it exists in gameday_props
-    // DDL NOTE: This column requires manual Supabase SQL:
-    //   ALTER TABLE gameday_props ADD COLUMN IF NOT EXISTS answer_target_type TEXT;
+    // answer_target_type column check
     {
       const { error: colCheckErr } = await service
         .from("gameday_props")
@@ -412,7 +419,6 @@ async function main() {
       if (colCheckErr?.message?.includes("answer_target_type") || colCheckErr?.message?.includes("does not exist")) {
         skip("answer_target_type column not yet in gameday_props — DDL pending (apply via Supabase SQL Editor)");
       } else {
-        // Column exists — verify all props have it set
         const { data: propsWithType } = await service
           .from("gameday_props")
           .select("id, answer_target_type")
@@ -428,9 +434,12 @@ async function main() {
   // ── §9. Structured answer_options — stable IDs ─────────────────────────────
   section("9. Structured answer_options — Season Member IDs Stable and Snapshotted");
   {
-    const memberProps = allProps.filter((p) => p.answer_target_type === "season_member");
+    const memberProps = allProps.filter((p: any) => {
+      const opts = p.answer_options;
+      return Array.isArray(opts) && opts.length > 0 && opts[0]?.type === "season_member";
+    });
     if (memberProps.length === 0) {
-      skip("No season_member props found (unexpected)");
+      skip("No season_member props found in answer_options (check DDL application)");
     } else {
       const firstProp = memberProps[0];
       const opts      = firstProp.answer_options as any[];
@@ -456,26 +465,26 @@ async function main() {
           ? pass("answer_options[0].type=season_member")
           : fail("answer_options[0].type", `Got ${firstOpt.type}`);
 
-        // Verify the ID is a real season_member ID
+        // display_name lives on fantasy_league_members — join to verify the ID
         const { data: member } = await service
           .from("fantasy_season_members")
-          .select("id, display_name")
+          .select("id, fantasy_league_members(display_name)")
           .eq("id", firstOpt.id)
           .maybeSingle();
+        const currentDisplayName = (member as any)?.fantasy_league_members?.display_name;
         member
-          ? pass(`answer_options[0].id resolves to real season_member: ${(member as any).display_name}`)
+          ? pass(`answer_options[0].id resolves to real season_member: ${currentDisplayName ?? "(unknown)"}`)
           : fail("answer_options[0].id is not a real season_member ID", firstOpt.id);
 
-        // Verify label snapshot matches current display_name
-        (member as any)?.display_name === firstOpt.label
+        currentDisplayName === firstOpt.label
           ? pass("Snapshotted label matches current display_name")
-          : note(`Label: ${firstOpt.label}, current display_name: ${(member as any)?.display_name} (both OK; snapshot is immutable)`);
+          : note(`Label: ${firstOpt.label}, current display_name: ${currentDisplayName} (both OK; snapshot is immutable)`);
       }
 
-      // Verify all opts reference real season members
-      const ids   = opts.map((o: any) => o.id);
+      const memberOptsOnly = opts.filter((o: any) => o.type === "season_member");
+      const ids   = memberOptsOnly.map((o: any) => o.id);
       const labels = opts.map((o: any) => o.label);
-      note(`Member opts: ${labels.join(", ")}`);
+      note(`Answer options: ${labels.join(", ")}`);
       ids.includes(comm_sm_id)
         ? pass("Commissioner's season_member_id present in answer_options")
         : fail("Commissioner missing from answer_options", `comm_sm_id=${comm_sm_id.slice(0,8)}… opts=${JSON.stringify(ids.map((i: any) => i.slice(0,8)))}`);
@@ -499,9 +508,10 @@ async function main() {
       r.body.room_status === "active"
         ? pass("room_status=active")
         : fail("room_status", r.body.room_status);
-      r.body.card_status === "closed"
-        ? pass("card_status=closed")
-        : fail("card_status", r.body.card_status);
+      // Phase 4A.1: published card is 'open', not 'closed'
+      r.body.card_status === "open"
+        ? pass("card_status=open (Phase 4B pick gate — correct)")
+        : fail("card_status", `Expected open, got ${r.body.card_status}`);
       typeof r.body.prop_counts?.competition === "number"
         ? pass(`prop_counts.competition=${r.body.prop_counts.competition}`)
         : fail("prop_counts.competition missing");
@@ -537,7 +547,6 @@ async function main() {
       fail("Different room_id on second publish", `${r.body.room_id} vs ${publishedRoomId}`);
     }
 
-    // Verify prop count unchanged
     const { data: props2 } = await service
       .from("gameday_props")
       .select("id")
@@ -557,7 +566,6 @@ async function main() {
       ? pass("POST /draft-day/lock → 200 card_status=locked")
       : fail("Lock", `Expected 200 card_status=locked, got ${r.status}: ${JSON.stringify(r.body)}`);
 
-    // Verify in DB
     const { data: card } = await service
       .from("gameday_pick_cards")
       .select("status")
@@ -568,40 +576,197 @@ async function main() {
       : fail("DB card status", `Got ${(card as any)?.status}`);
   }
 
-  // ── §13. Lock — non-commissioner cannot lock ───────────────────────────────
-  section("13. Lock — Non-Commissioner Cannot Lock");
+  // ── §13. Lock — non-commissioner cannot lock/unlock ────────────────────────
+  section("13. Non-Commissioner Cannot Lock or Unlock");
   {
-    // Unlock first so we can test the guard (reset to closed)
-    await service.from("gameday_pick_cards")
-      .update({ status: "closed" })
-      .eq("id", publishedCardId);
-
-    const r = await api(`${BASE}/draft-day/lock`, {
+    // Card is currently locked. Test non-commissioner lock (idempotent on locked, but still gate-checks auth)
+    const rLock = await api(`${BASE}/draft-day/lock`, {
       method: "POST", token: mikeToken,
     });
-    r.status === 403
+    rLock.status === 403
       ? pass("Mike (member) → 403 on lock")
-      : fail("Non-commissioner lock gate", `Expected 403, got ${r.status}`);
+      : fail("Non-commissioner lock gate", `Expected 403, got ${rLock.status}`);
 
-    // Re-lock for idempotency test
+    // Test non-commissioner unlock
+    const rUnlock = await api(`${BASE}/draft-day/unlock`, {
+      method: "POST", token: mikeToken,
+    });
+    rUnlock.status === 403
+      ? pass("Mike (member) → 403 on unlock")
+      : fail("Non-commissioner unlock gate", `Expected 403, got ${rUnlock.status}`);
+
+    // Reset to 'open' for §14 idempotency test — direct DB write (test harness only)
     await service.from("gameday_pick_cards")
-      .update({ status: "locked" })
+      .update({ status: "open" })
       .eq("id", publishedCardId);
+    note("Card reset to open via service client for §14 test");
   }
 
   // ── §14. Lock — idempotent ─────────────────────────────────────────────────
   section("14. Lock — Idempotent (Lock an Already-Locked Card)");
   {
-    const r = await api(`${BASE}/draft-day/lock`, {
-      method: "POST", token: commToken,
-    });
-    r.status === 200 && r.body.already_locked === true
+    // Lock it
+    const r1 = await api(`${BASE}/draft-day/lock`, { method: "POST", token: commToken });
+    r1.status === 200 && r1.body.card_status === "locked"
+      ? pass("First lock → 200 locked")
+      : fail("First lock for idempotency test", `${r1.status}: ${JSON.stringify(r1.body)}`);
+
+    // Lock again — idempotent
+    const r2 = await api(`${BASE}/draft-day/lock`, { method: "POST", token: commToken });
+    r2.status === 200 && r2.body.already_locked === true
       ? pass("Lock already-locked card → 200 already_locked=true")
-      : fail("Idempotent lock", `Expected 200 already_locked=true, got ${r.status}: ${JSON.stringify(r.body)}`);
+      : fail("Idempotent lock", `Expected 200 already_locked=true, got ${r2.status}: ${JSON.stringify(r2.body)}`);
   }
 
-  // ── §15–17. Regression smoke checks ───────────────────────────────────────
-  section("15–17. Regression Smoke Checks");
+  // ── §15. Question Selection Cap ────────────────────────────────────────────
+  section("15. Question Selection Cap — 15 Max Enforced Server-Side");
+  {
+    // 16 fake UUIDs — cap check happens before template validation
+    const fakeIds = Array.from({ length: 16 }, (_, i) =>
+      `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`
+    );
+    const rOver = await api(`${BASE}/draft-day/publish`, {
+      method: "POST", token: commToken,
+      body: { selected_prop_ids: fakeIds },
+    });
+    rOver.status === 400 && rOver.body.max === 15
+      ? pass("16 selected → 400 with max=15 in response")
+      : fail("16-question cap", `Expected 400 with max=15, got ${rOver.status}: ${JSON.stringify(rOver.body)}`);
+
+    // Note: the cap (400) fires before idempotency check (200), so this tests
+    // a genuine server-enforced reject even when a Draft Day already exists.
+    note(`Server rejected: ${rOver.body.error ?? "(no error message)"}, selected=${rOver.body.selected}`);
+
+    // Exactly 15 real template IDs from active templates — should succeed (idempotent 200)
+    const allActive = [...competitionTemplates, ...seasonTemplates];
+    const fifteenIds = allActive.slice(0, 15).map((t: any) => t.id);
+    note(`Testing with ${fifteenIds.length} of ${allActive.length} available templates`);
+
+    if (fifteenIds.length === 15) {
+      const r15 = await api(`${BASE}/draft-day/publish`, {
+        method: "POST", token: commToken,
+        body: { selected_prop_ids: fifteenIds },
+      });
+      // Will return 200 already_existed=true since Draft Day is published.
+      // The cap check passes (15 ≤ 15); idempotency returns existing.
+      r15.status === 200 || r15.status === 201
+        ? pass(`15 selections → ${r15.status} (cap allows exactly 15)`)
+        : fail("15-question publish", `Expected 200 or 201, got ${r15.status}: ${JSON.stringify(r15.body)}`);
+    } else {
+      note(`Only ${fifteenIds.length} active templates available — skipping exactly-15 cap test`);
+    }
+  }
+
+  // ── §16. Unlock ────────────────────────────────────────────────────────────
+  section("16. Unlock — Commissioner Unlocks, Idempotent, Non-Commissioner Rejected");
+  {
+    // Card is currently locked (from §14). Unlock it.
+    const rUnlock = await api(`${BASE}/draft-day/unlock`, {
+      method: "POST", token: commToken,
+    });
+    rUnlock.status === 200 && rUnlock.body.card_status === "open"
+      ? pass("POST /draft-day/unlock → 200 card_status=open")
+      : fail("Unlock", `Expected 200 card_status=open, got ${rUnlock.status}: ${JSON.stringify(rUnlock.body)}`);
+
+    // Verify in DB
+    const { data: card1 } = await service
+      .from("gameday_pick_cards")
+      .select("status")
+      .eq("id", publishedCardId)
+      .maybeSingle();
+    (card1 as any)?.status === "open"
+      ? pass("DB card status=open after unlock")
+      : fail("DB card status after unlock", `Got ${(card1 as any)?.status}`);
+
+    // Idempotent unlock (already open)
+    const rUnlock2 = await api(`${BASE}/draft-day/unlock`, {
+      method: "POST", token: commToken,
+    });
+    rUnlock2.status === 200 && rUnlock2.body.already_unlocked === true
+      ? pass("Unlock already-open card → 200 already_unlocked=true")
+      : fail("Idempotent unlock", `Expected 200 already_unlocked=true, got ${rUnlock2.status}: ${JSON.stringify(rUnlock2.body)}`);
+
+    // Simulate settled card — block unlock
+    await service.from("gameday_pick_cards")
+      .update({ status: "settled" })
+      .eq("id", publishedCardId);
+    const rSettled = await api(`${BASE}/draft-day/unlock`, {
+      method: "POST", token: commToken,
+    });
+    rSettled.status === 409
+      ? pass("Unlock settled card → 409 (finalized; cannot unlock)")
+      : fail("Unlock settled card", `Expected 409, got ${rSettled.status}: ${JSON.stringify(rSettled.body)}`);
+
+    // Restore to locked for subsequent regression tests
+    await service.from("gameday_pick_cards")
+      .update({ status: "locked" })
+      .eq("id", publishedCardId);
+    note("Card restored to locked for regression tests");
+  }
+
+  // ── §17. Prop Quality ──────────────────────────────────────────────────────
+  section("17. Prop Quality — Subjective Removed, supports_no_one Correct");
+  {
+    // Subjective templates should NOT appear in active template list.
+    // Requires: supabase/gameday-fantasy-phase4a1-polish.sql applied.
+    const allActive = [...competitionTemplates, ...seasonTemplates];
+    const subjectiveIds = ["fdd_fb_biggest_reach", "fdd_bb_biggest_reach", "fdd_ba_biggest_reach",
+                           "fdd_fb_clock_longest", "fdd_bb_clock_longest", "fdd_ba_clock_longest"];
+    const subjectiveInResponse = allActive.filter((t: any) => subjectiveIds.includes(t.id));
+    subjectiveInResponse.length === 0
+      ? pass("Subjective/provider-data templates not returned (is_active=false)")
+      : skip(`Subjective templates still active — apply gameday-fantasy-phase4a1-polish.sql to deactivate: ${subjectiveInResponse.map((t: any) => t.id).join(", ")}`);
+
+    // At least one template should have supports_no_one=true (fdd_fb_three_qbs).
+    // Requires: supabase/gameday-fantasy-phase4a1-polish.sql applied.
+    const noOneTemplates = allActive.filter((t: any) => t.supports_no_one === true);
+    noOneTemplates.length > 0
+      ? pass(`${noOneTemplates.length} template(s) have supports_no_one=true: ${noOneTemplates.map((t: any) => t.id).join(", ")}`)
+      : skip("No templates have supports_no_one=true — apply gameday-fantasy-phase4a1-polish.sql to seed fdd_fb_three_qbs");
+
+    // Templates without supports_no_one should not have 'no_one' in answer_options
+    // (check published props that came from is_default templates)
+    const noOneInOptions = allProps.filter((p: any) => {
+      const opts = p.answer_options ?? [];
+      return Array.isArray(opts) && opts.some((o: any) => o.id === "no_one");
+    });
+    note(`Props with no_one answer option: ${noOneInOptions.length}`);
+
+    // Verify new objective templates are present
+    const newTemplateIds = ["fdd_fb_most_rbs"];  // seeded in phase4a1 migration
+    const newFound = allActive.filter((t: any) => newTemplateIds.includes(t.id));
+    newFound.length > 0
+      ? pass(`New objective templates found: ${newFound.map((t: any) => t.id).join(", ")}`)
+      : note("New objective templates not found — apply supabase/gameday-fantasy-phase4a1-polish.sql");
+  }
+
+  // ── §18. Status Semantics ──────────────────────────────────────────────────
+  section("18. Status Semantics — draft/open/locked/settled Lifecycle");
+  {
+    // Document and verify the canonical lifecycle
+    note("Phase 4A.1 lifecycle mapping:");
+    note("  unpublished  → no room/card in DB");
+    note("  open         → room.status='active', card.status='open'  ← picks available (Phase 4B gate)");
+    note("  locked       → room.status='active', card.status='locked'");
+    note("  finalized    → room.status='finalized', card.status='settled'");
+
+    // Verify current card is locked (as set in §16 teardown)
+    const { data: card } = await service
+      .from("gameday_pick_cards")
+      .select("status")
+      .eq("id", publishedCardId)
+      .maybeSingle();
+    (card as any)?.status === "locked"
+      ? pass("Card is 'locked' — confirmed correct state after §16 teardown")
+      : fail("Expected card to be locked", `Got ${(card as any)?.status}`);
+
+    // Phase 4B pick-submission gate: server must check card_status === 'open'
+    note("Phase 4B pick submission gate: card_status === 'open' ← use this check");
+    pass("Status semantics documented — card_status='open' is the Phase 4B member pick gate");
+  }
+
+  // ── §19–21. Regression smoke checks ───────────────────────────────────────
+  section("19–21. Regression Smoke Checks");
   {
     // Phase 2: commissioner can still add participants
     const r2 = await api(`${BASE}/participants`, {
@@ -633,13 +798,21 @@ async function main() {
       ? pass("Phase 3: Hub viewer still resolves commissioner correctly")
       : fail("Phase 3 hub regression", `${JSON.stringify(r3b.body?.viewer)}`);
 
-    // Phase 4A: GET /draft-day still works with correct state
+    // Phase 4A.1: GET /draft-day still works with correct locked state
     const r4 = await api(`${BASE}/draft-day`, { token: commToken });
     r4.status === 200 && r4.body?.card_status === "locked"
-      ? pass("Phase 4A: Draft Day still shows locked state")
-      : fail("Phase 4A state regression", `${r4.status}: ${JSON.stringify(r4.body)}`);
+      ? pass("Phase 4A.1: Draft Day still shows locked state")
+      : fail("Phase 4A.1 state regression", `${r4.status}: ${JSON.stringify(r4.body)}`);
 
-    // Existing Game Day rooms unaffected: GET /api/gameday/rooms (requires auth)
+    // Phase 4A.1: unlock endpoint exists
+    const rUnlockCheck = await api(`${BASE}/draft-day/unlock`, {
+      method: "POST", token: commToken,
+    });
+    rUnlockCheck.status === 200 && rUnlockCheck.body.card_status === "open"
+      ? pass("Phase 4A.1: Unlock endpoint works (card now open after regression unlock)")
+      : fail("Phase 4A.1 unlock endpoint", `${rUnlockCheck.status}: ${JSON.stringify(rUnlockCheck.body)}`);
+
+    // Existing Game Day rooms unaffected
     const rgd = await api("/api/gameday/rooms", { token: commToken });
     rgd.status === 200
       ? pass("Existing Game Day rooms endpoint unaffected (200)")

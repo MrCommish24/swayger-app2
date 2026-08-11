@@ -13,8 +13,9 @@
  *   • "Back to Swayger" + "Create Account" CTAs for guest viewers
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -26,7 +27,7 @@ import {
   Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
@@ -36,6 +37,7 @@ import {
   upgradeGuestClaim,
   getDraftDay,
   lockDraftDay,
+  unlockDraftDay,
   FANTASY_PENDING_UPGRADE_KEY,
   FantasyPendingUpgrade,
   FANTASY_SPORTS,
@@ -48,39 +50,49 @@ import Colors from "@/constants/colors";
 const C = Colors.dark;
 
 // ── DraftDayCard ─────────────────────────────────────────────────────────────
-// Renders the Draft Day section of the hub in one of three states:
-//   • "unset"    — no Draft Day published yet
-//   • "published" — room active, card closed (commissioner can lock / share)
-//   • "locked"   — picks locked
+// Renders the Draft Day section of the hub.
+//
+// Lifecycle states:
+//   unset      — no Draft Day published yet
+//   open       — published; card_status = 'open' (Phase 4B: picks available)
+//   locked     — card_status = 'locked' (commissioner locked picks)
+//   finalized  — card_status = 'settled' (read-only)
+//
+// Commissioner actions:
+//   unset   → Set Up Draft Day  (navigates to setup wizard)
+//   open    → Lock Picks        (with confirmation)
+//   locked  → Unlock Picks      (if no settlement started)
+//
+// "Open Draft Day" is disabled until Phase 4B member pick submission is built.
+// The generic "Share" button is removed to avoid confusion with "Invite Members."
 //
 // Separated into its own function component for readability; lives in the same
 // file because it's hub-only and shares the same styles/constants.
 interface DraftDayCardProps {
   draftDay: import("@/lib/fantasy-api").DraftDayStatus | null | undefined;
   isCommissioner: boolean;
-  leagueId: string;
-  seasonId: string;
   lockingDraftDay: boolean;
+  unlockingDraftDay: boolean;
   onSetup:   () => void;
-  onOpenRoom: () => void;
-  onShare:   () => void;
   onLock:    () => void;
+  onUnlock:  () => void;
 }
 
 function DraftDayCard({
   draftDay,
   isCommissioner,
   lockingDraftDay,
+  unlockingDraftDay,
   onSetup,
-  onOpenRoom,
-  onShare,
   onLock,
+  onUnlock,
 }: DraftDayCardProps) {
   // Not yet fetched — show nothing to avoid flicker
   if (draftDay === undefined) return null;
 
-  const isLocked   = draftDay?.card_status === "locked" || draftDay?.card_status === "settled";
-  const isPublished = !!draftDay;
+  const isLocked     = draftDay?.card_status === "locked";
+  const isFinalized  = draftDay?.card_status === "settled";
+  const isPublished  = !!draftDay;
 
   // ── State: Not yet set up ─────────────────────────────────────────────────
   if (!isPublished) {
@@ -106,27 +118,27 @@ function DraftDayCard({
     );
   }
 
-  // ── State: Published ───────────────────────────────────────────────────────
-  const statusColor = isLocked ? C.accentGold : C.tint;
-  const statusLabel = isLocked ? "LOCKED" : "OPEN";
-  const statusDotBg = statusColor;
+  // ── State: Published (open / locked / finalized) ──────────────────────────
+  const statusColor = isLocked || isFinalized ? C.accentGold : "#22c55e";
+  const statusLabel = isFinalized ? "FINAL" : isLocked ? "LOCKED" : "READY";
+  const cardTitle   = isFinalized ? "Draft Day Complete" : isLocked ? "Picks Locked" : "Draft Day Ready";
 
   return (
     <View style={[
       styles.draftDayCard,
-      isLocked ? styles.draftDayCardLocked : styles.draftDayCardActive,
+      isLocked || isFinalized ? styles.draftDayCardLocked : styles.draftDayCardActive,
     ]}>
       {/* Header */}
       <View style={styles.draftDayHeader}>
-        <Text style={styles.draftDayIcon}>{isLocked ? "🔒" : "📋"}</Text>
+        <Text style={styles.draftDayIcon}>
+          {isFinalized ? "🏆" : isLocked ? "🔒" : "📋"}
+        </Text>
         <View style={styles.draftDayHeaderText}>
           <Text style={styles.draftDayLabel}>DRAFT DAY SWAYGER</Text>
-          <Text style={styles.draftDayTitle}>
-            {isLocked ? "Picks Locked" : "Predictions Open"}
-          </Text>
+          <Text style={styles.draftDayTitle}>{cardTitle}</Text>
         </View>
         <View style={[styles.draftDayStatusBadge, { borderColor: statusColor }]}>
-          <View style={[styles.draftDayStatusDot, { backgroundColor: statusDotBg }]} />
+          <View style={[styles.draftDayStatusDot, { backgroundColor: statusColor }]} />
           <Text style={[styles.draftDayStatusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
@@ -145,22 +157,23 @@ function DraftDayCard({
 
       {/* Actions */}
       <View style={styles.draftDayActions}>
-        <TouchableOpacity style={styles.btn} onPress={onOpenRoom} activeOpacity={0.8}>
-          <Text style={styles.btnText}>Open Draft Day</Text>
+
+        {/* "Open Draft Day" — disabled until Phase 4B member picks are built */}
+        <TouchableOpacity
+          style={[styles.btn, styles.btnDisabledSolid]}
+          disabled={true}
+          activeOpacity={1}
+        >
+          <Text style={[styles.btnText, { color: C.textMuted }]}>
+            Member play coming next
+          </Text>
         </TouchableOpacity>
 
-        {isCommissioner && (
+        {/* Commissioner controls */}
+        {isCommissioner && !isFinalized && (
           <View style={styles.draftDayActionRow}>
-            {/* Share */}
-            <TouchableOpacity
-              style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
-              onPress={onShare}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.btnText, { color: C.tint }]}>📤  Share</Text>
-            </TouchableOpacity>
 
-            {/* Lock Picks (only while not yet locked) */}
+            {/* Lock Picks (only while open) */}
             {!isLocked && (
               <TouchableOpacity
                 style={[
@@ -174,6 +187,25 @@ function DraftDayCard({
               >
                 <Text style={styles.btnText}>
                   {lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Unlock Picks (only while locked) */}
+            {isLocked && (
+              <TouchableOpacity
+                style={[
+                  styles.btn,
+                  styles.btnSecondary,
+                  { flex: 1 },
+                  unlockingDraftDay && { opacity: 0.5 },
+                ]}
+                onPress={onUnlock}
+                disabled={unlockingDraftDay}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.btnText, { color: C.tint }]}>
+                  {unlockingDraftDay ? "Unlocking…" : "🔓  Unlock Picks"}
                 </Text>
               </TouchableOpacity>
             )}
@@ -226,8 +258,11 @@ export default function LeagueHubScreen() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
-  const [draftDay, setDraftDay]     = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
-  const [lockingDraftDay, setLockingDraftDay] = useState(false);
+  const [draftDay, setDraftDay]           = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
+  const [lockingDraftDay, setLockingDraftDay]   = useState(false);
+  const [unlockingDraftDay, setUnlockingDraftDay] = useState(false);
+  // Track initial mount so useFocusEffect doesn't double-fetch on first render
+  const initialFocusRef = useRef(true);
 
   // Welcome banner: shown immediately after a successful claim (?joined=1)
   const [showWelcome, setShowWelcome] = useState(joined === "1");
@@ -265,6 +300,23 @@ export default function LeagueHubScreen() {
     if (!session && !guestToken) { setLoading(false); return; }
     fetchDetail();
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
+
+  // Re-fetch quietly when the screen regains focus (e.g. navigating back from
+  // the setup wizard after publishing). This is the root-cause fix for the
+  // "Set Up Draft Day reappears after publish" bug — the hub was showing stale
+  // state because Expo Router doesn't always remount a screen when
+  // router.replace() navigates back to it.
+  useFocusEffect(
+    useCallback(() => {
+      if (initialFocusRef.current) {
+        initialFocusRef.current = false;
+        return; // skip first focus — useEffect above handles initial load
+      }
+      if (authLoading || guestTokenLoading) return;
+      if (!session && !guestToken) return;
+      fetchDetail(true); // quiet refresh, no full-screen spinner
+    }, [authLoading, guestTokenLoading, session?.access_token, guestToken, fetchDetail])
+  );
 
   // Intent-based guest → auth upgrade.
   // Only fires when:
@@ -565,33 +617,54 @@ export default function LeagueHubScreen() {
           <DraftDayCard
             draftDay={draftDay}
             isCommissioner={isCommissioner}
-            leagueId={leagueId}
-            seasonId={seasonId}
             lockingDraftDay={lockingDraftDay}
+            unlockingDraftDay={unlockingDraftDay}
             onSetup={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}`)}
-            onOpenRoom={() => {
-              // Phase 4B: navigate into the pick-submission room
-              // For now, show a brief note — route added in Phase 4B
-              console.log("[hub] open draft day room — Phase 4B not yet built");
-            }}
-            onShare={async () => {
-              try {
-                const url = `${process.env.EXPO_PUBLIC_SUPABASE_URL?.replace("supabase.co", "swayger.com") ?? "https://swayger.com"}/fantasy/join/${leagueId}/${seasonId}`;
-                await Share.share({ message: `Join my Swayger Fantasy league: ${url}`, url });
-              } catch {}
-            }}
-            onLock={async () => {
+            onLock={() => {
               if (!session || lockingDraftDay) return;
-              setLockingDraftDay(true);
+              // Confirmation required — accidental lock is hard to recover from
+              Alert.alert(
+                "Lock Draft Day picks?",
+                "Members won't be able to submit or change picks until you unlock them.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Lock Picks",
+                    style: "destructive",
+                    onPress: async () => {
+                      setLockingDraftDay(true);
+                      try {
+                        await lockDraftDay(leagueId, seasonId, { session });
+                        setDraftDay((prev) =>
+                          prev ? { ...prev, card_status: "locked" as const } : prev
+                        );
+                      } catch (e: any) {
+                        console.error("[hub] lock draft day:", e.message);
+                      } finally {
+                        setLockingDraftDay(false);
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+            onUnlock={async () => {
+              if (!session || unlockingDraftDay) return;
+              setUnlockingDraftDay(true);
               try {
-                await lockDraftDay(leagueId, seasonId, { session });
+                await unlockDraftDay(leagueId, seasonId, { session });
                 setDraftDay((prev) =>
-                  prev ? { ...prev, card_status: "locked" as const } : prev
+                  prev ? { ...prev, card_status: "open" as const } : prev
                 );
               } catch (e: any) {
-                console.error("[hub] lock draft day:", e.message);
+                // Surface the reason if settlement has started
+                const msg = e.message?.includes("settlement")
+                  ? "Picks cannot be unlocked after settlement has started."
+                  : "Failed to unlock Draft Day. Please try again.";
+                Alert.alert("Cannot Unlock", msg);
+                console.error("[hub] unlock draft day:", e.message);
               } finally {
-                setLockingDraftDay(false);
+                setUnlockingDraftDay(false);
               }
             }}
           />
@@ -849,6 +922,11 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: C.tint,
+  },
+  btnDisabledSolid: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   btnText:   { color: "#fff", fontWeight: "700", fontSize: 15 },
   linkText:  { color: C.tint, fontSize: 14, fontWeight: "600" },

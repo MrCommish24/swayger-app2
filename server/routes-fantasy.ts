@@ -899,25 +899,39 @@ export function registerFantasyRoutes(app: Express) {
   // Builds structured answer_options for a Fantasy prop based on answer_target_type.
   // Always returns a JSONB-compatible array of {id, label, type} objects.
   // This snapshot is immutable after publish — later name/team edits don't affect it.
+  //
+  // supportsNoOne: when true and targetType is season_member or fantasy_team,
+  // appends the stable synthetic option { id:"no_one", label:"No one", type:"static" }.
+  // This is only set on templates where no participant completing the action is valid.
+  // The "no_one" id is stable — never use the label string as canonical identity.
   function buildAnswerOptions(
     targetType: string | null,
     seasonMembers: Array<{ id: string; display_name: string | null }>,
     teams: Array<{ id: string; team_name: string | null }>,
-    staticOptions?: any[]
+    staticOptions?: any[],
+    supportsNoOne = false
   ): Array<{ id: string; label: string; type: string }> {
+    const NO_ONE = { id: "no_one", label: "No one", type: "static" };
+
     switch (targetType) {
-      case "season_member":
-        return seasonMembers.map((sm) => ({
+      case "season_member": {
+        const opts = seasonMembers.map((sm) => ({
           id:    sm.id,
           label: sm.display_name ?? "Unknown",
           type:  "season_member",
         }));
-      case "fantasy_team":
-        return teams.map((t) => ({
+        if (supportsNoOne) opts.push(NO_ONE);
+        return opts;
+      }
+      case "fantasy_team": {
+        const opts = teams.map((t) => ({
           id:    t.id,
           label: t.team_name ?? "Unknown Team",
           type:  "fantasy_team",
         }));
+        if (supportsNoOne) opts.push(NO_ONE);
+        return opts;
+      }
       case "yes_no":
         return [
           { id: "yes", label: "Yes", type: "yes_no" },
@@ -968,10 +982,15 @@ export function registerFantasyRoutes(app: Express) {
 
       const sport = (season as any).fantasy_leagues?.sport ?? "football";
 
-      const { data: templates, error } = await supabase
+      // Try with supports_no_one; fall back without it if the column doesn't
+      // exist yet (migration not yet applied to Supabase).
+      let templates: any[] | null = null;
+      let templateError: any = null;
+
+      const tmplResult = await supabase
         .from("gameday_prop_library")
         .select(
-          "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order"
+          "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order, supports_no_one"
         )
         .eq("experience_type", "fantasy")
         .eq("competition_type", "draft_day")
@@ -979,8 +998,27 @@ export function registerFantasyRoutes(app: Express) {
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
-      if (error) {
-        console.error("[fantasy] draft-day templates error:", error.message);
+      if (tmplResult.error?.message?.includes("supports_no_one")) {
+        console.warn("[fantasy] supports_no_one column missing — fetching templates without it");
+        const fallback = await supabase
+          .from("gameday_prop_library")
+          .select(
+            "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order"
+          )
+          .eq("experience_type", "fantasy")
+          .eq("competition_type", "draft_day")
+          .eq("sport", sport)
+          .eq("is_active", true)
+          .order("display_order", { ascending: true });
+        templates = (fallback.data ?? []).map((t: any) => ({ ...t, supports_no_one: false }));
+        templateError = fallback.error;
+      } else {
+        templates = tmplResult.data ?? [];
+        templateError = tmplResult.error;
+      }
+
+      if (templateError) {
+        console.error("[fantasy] draft-day templates error:", templateError.message);
         res.status(500).json({ error: "Failed to fetch templates" });
         return;
       }
@@ -1093,6 +1131,17 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
+      // Hard cap: 15 questions maximum (enforced server-side; client also enforces)
+      const MAX_DRAFT_DAY_QUESTIONS = 15;
+      if (selected_prop_ids.length > MAX_DRAFT_DAY_QUESTIONS) {
+        res.status(400).json({
+          error: `Too many questions selected. Maximum is ${MAX_DRAFT_DAY_QUESTIONS}.`,
+          max: MAX_DRAFT_DAY_QUESTIONS,
+          selected: selected_prop_ids.length,
+        });
+        return;
+      }
+
       // ── Gather league + season metadata ──────────────────────────────────
       const { data: season } = await supabase
         .from("fantasy_league_seasons")
@@ -1112,10 +1161,12 @@ export function registerFantasyRoutes(app: Express) {
       const roomName   = `${leagueName} — ${(season as any).season_year} Draft Day`;
 
       // ── Fetch selected templates ──────────────────────────────────────────
-      const { data: templates, error: tmplErr } = await supabase
+      // Try with supports_no_one; fall back if the column doesn't exist yet.
+      let templates: any[] | null = null;
+      const tmplFull = await supabase
         .from("gameday_prop_library")
         .select(
-          "id, question, scoring_scope, point_value, answer_target_type, answer_options"
+          "id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one"
         )
         .in("id", selected_prop_ids)
         .eq("experience_type", "fantasy")
@@ -1123,15 +1174,42 @@ export function registerFantasyRoutes(app: Express) {
         .eq("sport", sport)
         .eq("is_active", true);
 
-      if (tmplErr || !templates || templates.length === 0) {
+      if (tmplFull.error?.message?.includes("supports_no_one")) {
+        console.warn("[fantasy] publish: supports_no_one column missing — inserting without it");
+        const tmplFallback = await supabase
+          .from("gameday_prop_library")
+          .select(
+            "id, question, scoring_scope, point_value, answer_target_type, answer_options"
+          )
+          .in("id", selected_prop_ids)
+          .eq("experience_type", "fantasy")
+          .eq("competition_type", "draft_day")
+          .eq("sport", sport)
+          .eq("is_active", true);
+        templates = (tmplFallback.data ?? []).map((t: any) => ({ ...t, supports_no_one: false }));
+        if (tmplFallback.error) {
+          res.status(400).json({ error: "No valid templates found for selection" });
+          return;
+        }
+      } else {
+        templates = tmplFull.data ?? [];
+        if (tmplFull.error) {
+          res.status(400).json({ error: "No valid templates found for selection" });
+          return;
+        }
+      }
+
+      if (!templates || templates.length === 0) {
         res.status(400).json({ error: "No valid templates found for selection" });
         return;
       }
 
       // ── Fetch season members for answer_options snapshot ─────────────────
+      // display_name lives on fantasy_league_members (not fantasy_season_members).
+      // Join via Supabase embedded select to get it in one round-trip.
       const { data: seasonMembers } = await supabase
         .from("fantasy_season_members")
-        .select("id, display_name")
+        .select("id, fantasy_league_members(display_name)")
         .eq("league_season_id", seasonId)
         .eq("is_active", true)
         .order("created_at", { ascending: true });
@@ -1142,8 +1220,12 @@ export function registerFantasyRoutes(app: Express) {
         .select("id, team_name")
         .eq("league_season_id", seasonId);
 
-      const memberList = (seasonMembers ?? []) as Array<{ id: string; display_name: string | null }>;
-      const teamList   = (teams ?? [])         as Array<{ id: string; team_name: string | null }>;
+      // Flatten the embedded join result into { id, display_name }
+      const memberList = (seasonMembers ?? []).map((sm: any) => ({
+        id:           sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+      })) as Array<{ id: string; display_name: string | null }>;
+      const teamList = (teams ?? []) as Array<{ id: string; team_name: string | null }>;
 
       // ── Build prop payload for RPC ────────────────────────────────────────
       // Preserve caller's ordering where possible; sort by original display_order.
@@ -1154,7 +1236,8 @@ export function registerFantasyRoutes(app: Express) {
           tmpl.answer_target_type,
           memberList,
           teamList,
-          tmpl.answer_options
+          tmpl.answer_options,
+          tmpl.supports_no_one ?? false
         ),
         scoring_scope:      tmpl.scoring_scope,
         point_value:        tmpl.point_value,
@@ -1232,13 +1315,16 @@ export function registerFantasyRoutes(app: Express) {
         newRoomId = (roomRow as any).id as string;
 
         // 2. Create pick card
+        // status='open': Phase 4B member pick submission uses 'open' as the
+        // "picks available" gate. Using 'open' from publish forward makes the
+        // lifecycle unambiguous: open → locked → settled.
         const { data: cardRow, error: cardErr } = await supabase
           .from("gameday_pick_cards")
           .insert({
             room_id:       newRoomId,
             title:         "Draft Day",
             phase:         "draft_day",
-            status:        "closed",
+            status:        "open",
             display_order: 0,
           })
           .select("id")
@@ -1370,6 +1456,105 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       res.json({ card_status: "locked", already_locked: false });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/unlock
+  //
+  // Unlocks the Draft Day pick card, returning it to 'open' status.
+  // Permitted only before settlement begins (no props in 'settled' state).
+  //
+  // Auth: commissioner or co-commissioner only.
+  //
+  // Lifecycle guard:
+  //   • card.status = 'settled'    → 409 (finalized; cannot unlock)
+  //   • any prop.status = 'settled' → 409 (settlement started; cannot unlock)
+  //   • card.status = 'open'       → 200 already_unlocked=true (idempotent)
+  //   • card.status = 'locked'     → 200 card_status='open' (unlocked)
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/unlock",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+
+      // Find the Draft Day room + card
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+
+      const currentStatus = (card as any).status as string;
+
+      // Hard block: finalized — cannot unlock a settled competition
+      if (currentStatus === "settled") {
+        res.status(409).json({
+          error:       "Cannot unlock a finalized Draft Day competition",
+          card_status: currentStatus,
+        });
+        return;
+      }
+
+      // Settlement-started guard: if any prop is settled, settlement has begun
+      const { count: settledCount } = await supabase
+        .from("gameday_props")
+        .select("id", { count: "exact", head: true })
+        .eq("card_id", (card as any).id)
+        .eq("status", "settled");
+
+      if ((settledCount ?? 0) > 0) {
+        res.status(409).json({
+          error:          "Cannot unlock after settlement has started",
+          settled_props:  settledCount,
+        });
+        return;
+      }
+
+      // Idempotent: already open (or closed — both mean picks not locked)
+      if (currentStatus === "open" || currentStatus === "closed") {
+        res.json({ card_status: currentStatus, already_unlocked: true });
+        return;
+      }
+
+      // Unlock: set to 'open'
+      const { error } = await supabase
+        .from("gameday_pick_cards")
+        .update({ status: "open", updated_at: new Date().toISOString() })
+        .eq("id", (card as any).id);
+
+      if (error) {
+        console.error("[fantasy] draft-day unlock error:", error.message);
+        res.status(500).json({ error: "Failed to unlock Draft Day" });
+        return;
+      }
+
+      console.log(
+        `[fantasy] Draft Day unlocked: card=${String((card as any).id).slice(0, 8)}… by=${userId.slice(0, 8)}…`
+      );
+
+      res.json({ card_status: "open", already_unlocked: false });
     }
   );
 }
