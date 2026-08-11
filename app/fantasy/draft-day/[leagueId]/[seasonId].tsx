@@ -1,20 +1,23 @@
 /**
  * app/fantasy/draft-day/[leagueId]/[seasonId].tsx
  * ──────────────────────────────────────────────────────────────────────────────
- * Fantasy Draft Day Setup — Commissioner only.
+ * Fantasy Draft Day Setup + Manage — Commissioner only.
  *
- * Flow:
- *   Step 1 "choose"   — Browse curated templates, toggle on/off (max 15).
- *   Step 2 "review"   — Read-only sanity check; confirm before publish.
- *   Step 3 "done"     — After publish, navigate back to hub.
+ * Modes:
+ *   Setup   (?manage absent) — Normal wizard: Choose → Review → Publish.
+ *   Manage  (?manage=1)      — Edit existing: pre-selects current questions,
+ *                              allows changes, saves via PATCH (not re-publish).
  *
- * Design principles (per product spec):
- *   • Commissioner curates a fun prediction game, NOT configures database records.
- *   • Short wizard: Choose → Review Draft Day → Publish (3 taps).
- *   • Hard cap: 15 questions total (enforced client + server).
- *   • No free point-weight editing; values come from Swayger templates.
- *   • Draft Day Picks vs Season Receipts visually distinct throughout.
- *   • If a Draft Day is already published, redirect to hub — no republish.
+ * Manage mode guards (edit-before-picks):
+ *   card.status = 'open' AND pick_count = 0 → editable
+ *   card.status = 'locked'                  → read-only, message
+ *   pick_count > 0                          → read-only, message
+ *   card.status = 'settled'                 → read-only, message
+ *
+ * Inactive (legacy) templates: previously published templates that have since
+ * been deactivated are shown at the top of their scope section with an
+ * "⚠ No longer recommended" badge. They remain in the selection until
+ * explicitly removed; once removed they cannot be re-added (not in active list).
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -34,19 +37,28 @@ import {
   getDraftDayTemplates,
   getDraftDay,
   publishDraftDay,
+  updateDraftDayProps,
   DraftDayTemplate,
   DraftDayTemplates,
+  DraftDayCurrentProp,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
 
-// Hard cap enforced on both client and server
-const MAX_QUESTIONS = 15;
-const RECOMMENDED_MIN = 6;
-const RECOMMENDED_MAX = 10;
+const MAX_QUESTIONS    = 15;
+const RECOMMENDED_MIN  = 6;
+const RECOMMENDED_MAX  = 10;
 
-type Step = "loading" | "already_published" | "choose" | "review" | "publishing" | "error";
+// step values — unified for setup + manage modes
+type Step =
+  | "loading"
+  | "already_published" // setup mode only: Draft Day exists, no manage param
+  | "choose"
+  | "review"
+  | "publishing"        // also used for saving in manage mode
+  | "error"
+  | "manage_readonly";  // manage mode: editing blocked (locked / picks exist)
 
 const SCOPE_LABEL: Record<string, string> = {
   competition: "DRAFT DAY PICKS",
@@ -65,10 +77,14 @@ export default function DraftDaySetupScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
-  const { leagueId, seasonId } = useLocalSearchParams<{
+  const { leagueId, seasonId, manage } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
+    manage?: string;
   }>();
+
+  // manage=1 → manage mode (edit existing Draft Day)
+  const isManageMode = manage === "1";
 
   const [step, setStep]           = useState<Step>("loading");
   const [templates, setTemplates] = useState<DraftDayTemplates | null>(null);
@@ -77,27 +93,94 @@ export default function DraftDaySetupScreen() {
   const [errorMsg, setErrorMsg]   = useState<string | null>(null);
   const [sport, setSport]         = useState<string>("football");
 
+  // Manage mode: inactive legacy templates (published but now deactivated)
+  // These come from existing.current_props where is_active=false.
+  const [legacyTemplates, setLegacyTemplates] = useState<DraftDayTemplate[]>([]);
+  // Manage mode: reason editing is blocked (null = editable)
+  const [readOnlyReason, setReadOnlyReason]   = useState<string | null>(null);
+  // Manage mode: current_props for read-only display
+  const [currentProps, setCurrentProps]       = useState<DraftDayCurrentProp[]>([]);
+
   const fetchTemplates = useCallback(async () => {
     if (!session || !leagueId || !seasonId) return;
     setStep("loading");
     setAtCap(false);
+    setLegacyTemplates([]);
+    setReadOnlyReason(null);
     try {
-      // Check in parallel: templates + existing draft day
+      // Fetch active templates + existing Draft Day in parallel
       const [result, existing] = await Promise.all([
         getDraftDayTemplates(leagueId, seasonId, { session }),
         getDraftDay(leagueId, seasonId, { session }).catch(() => null),
       ]);
 
-      // If a Draft Day already exists, don't show the wizard again.
-      // Redirect to the hub which shows the current state and management actions.
+      setTemplates(result);
+      setSport(result.sport ?? "football");
+
       if (existing) {
+        if (isManageMode) {
+          // ── Manage mode: determine edit eligibility ──────────────────────
+          setCurrentProps(existing.current_props ?? []);
+
+          const canEdit =
+            existing.card_status === "open" &&
+            (existing.pick_count ?? 0) === 0;
+
+          if (!canEdit) {
+            // Build a human-readable reason
+            const reason =
+              existing.card_status === "locked"
+                ? "Draft Day picks are locked. Unlock picks from the League Hub before making changes."
+                : existing.card_status === "settled"
+                ? "Draft Day has been finalized and questions can no longer be changed."
+                : (existing.pick_count ?? 0) > 0
+                ? "Members have already submitted picks, so Draft Day questions can no longer be changed."
+                : "Draft Day cannot be edited right now.";
+            setReadOnlyReason(reason);
+            setStep("manage_readonly");
+            return;
+          }
+
+          // Editable: pre-select from current published props
+          const allActiveIds = new Set([
+            ...result.competition.map((t) => t.id),
+            ...result.season.map((t) => t.id),
+          ]);
+
+          // Build legacy template objects from current_props that are now inactive
+          const legacy: DraftDayTemplate[] = (existing.current_props ?? [])
+            .filter((p) => !p.is_active)
+            .map((p) => ({
+              id:                p.template_prop_id,
+              question:          p.question,
+              scoring_scope:     p.scoring_scope,
+              point_value:       p.point_value,
+              answer_target_type: null,
+              supports_no_one:   p.supports_no_one,
+              is_default:        false,
+            }));
+          setLegacyTemplates(legacy);
+
+          // Pre-select ALL current props (active + legacy)
+          const preSelected = new Set(
+            (existing.current_props ?? []).map((p) => p.template_prop_id)
+          );
+          setSelected(preSelected);
+          setAtCap(preSelected.size >= MAX_QUESTIONS);
+          setStep("choose");
+          return;
+        }
+
+        // Setup mode: Draft Day already exists — dead-end (use hub to manage)
         setStep("already_published");
         return;
       }
 
-      setTemplates(result);
-      setSport(result.sport ?? "football");
-      // Pre-select defaults (capped at MAX_QUESTIONS)
+      // No existing Draft Day — normal setup flow (pre-select defaults)
+      if (isManageMode) {
+        // Navigated to manage but no Draft Day exists — fall through to setup
+        // (shouldn't happen in normal flow; hub only shows Manage when published)
+      }
       const defaultIds: string[] = [];
       for (const t of [...result.competition, ...result.season]) {
         if (t.is_default && defaultIds.length < MAX_QUESTIONS) {
@@ -110,7 +193,7 @@ export default function DraftDaySetupScreen() {
       setErrorMsg(e.message ?? "Failed to load templates");
       setStep("error");
     }
-  }, [session, leagueId, seasonId]);
+  }, [session, leagueId, seasonId, isManageMode]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -127,7 +210,7 @@ export default function DraftDaySetupScreen() {
       } else {
         if (next.size >= MAX_QUESTIONS) {
           setAtCap(true);
-          return prev; // no change
+          return prev;
         }
         next.add(id);
         if (next.size === MAX_QUESTIONS) setAtCap(true);
@@ -136,6 +219,7 @@ export default function DraftDaySetupScreen() {
     });
   };
 
+  // ── Publish (setup mode) ──────────────────────────────────────────────────
   const handlePublish = async () => {
     if (!session || !leagueId || !seasonId) return;
     setStep("publishing");
@@ -144,6 +228,19 @@ export default function DraftDaySetupScreen() {
       router.replace(`/fantasy/${leagueId}/${seasonId}`);
     } catch (e: any) {
       setErrorMsg(e.message ?? "Publish failed");
+      setStep("error");
+    }
+  };
+
+  // ── Save Changes (manage mode) ────────────────────────────────────────────
+  const handleSaveChanges = async () => {
+    if (!session || !leagueId || !seasonId) return;
+    setStep("publishing");
+    try {
+      await updateDraftDayProps(leagueId, seasonId, [...selected], { session });
+      router.replace(`/fantasy/${leagueId}/${seasonId}`);
+    } catch (e: any) {
+      setErrorMsg(e.message ?? "Save failed");
       setStep("error");
     }
   };
@@ -157,7 +254,7 @@ export default function DraftDaySetupScreen() {
     );
   }
 
-  // ── Already published ────────────────────────────────────────────────────────
+  // ── Already published (setup mode, no ?manage) ────────────────────────────
   if (step === "already_published") {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -176,6 +273,74 @@ export default function DraftDaySetupScreen() {
     );
   }
 
+  // ── Manage mode: read-only (locked / picks exist / settled) ──────────────
+  if (step === "manage_readonly") {
+    const compProps = currentProps.filter((p) => p.scoring_scope === "competition");
+    const seasProps = currentProps.filter((p) => p.scoring_scope === "season");
+    return (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 40 },
+        ]}
+      >
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.replace(`/fantasy/${leagueId}/${seasonId}`)}>
+          <Text style={styles.linkText}>← League Hub</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.screenTitle}>Draft Day Questions</Text>
+
+        {/* Reason banner */}
+        <View style={styles.readOnlyBanner}>
+          <Text style={styles.readOnlyBannerText}>🔒 {readOnlyReason}</Text>
+        </View>
+
+        {/* Current questions — read-only */}
+        {compProps.length > 0 && (
+          <View style={styles.sectionBlock}>
+            <View style={[styles.sectionHeader, { borderLeftColor: C.tint }]}>
+              <Text style={[styles.sectionLabel, { color: C.tint }]}>{SCOPE_LABEL.competition}</Text>
+              <Text style={styles.sectionTagline}>{SCOPE_TAGLINE.competition}</Text>
+            </View>
+            {compProps.map((p) => (
+              <View key={p.template_prop_id} style={styles.readOnlyCard}>
+                <Text style={styles.readOnlyQuestion}>{p.question}</Text>
+                {!p.is_active && (
+                  <Text style={styles.legacyBadge}>⚠ No longer recommended</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {seasProps.length > 0 && (
+          <View style={styles.sectionBlock}>
+            <View style={[styles.sectionHeader, { borderLeftColor: C.accentGold }]}>
+              <Text style={[styles.sectionLabel, { color: C.accentGold }]}>{SCOPE_LABEL.season}</Text>
+              <Text style={styles.sectionTagline}>{SCOPE_TAGLINE.season}</Text>
+            </View>
+            {seasProps.map((p) => (
+              <View key={p.template_prop_id} style={styles.readOnlyCard}>
+                <Text style={styles.readOnlyQuestion}>{p.question}</Text>
+                {!p.is_active && (
+                  <Text style={styles.legacyBadge}>⚠ No longer recommended</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.btn, { marginTop: 8 }]}
+          onPress={() => router.replace(`/fantasy/${leagueId}/${seasonId}`)}
+        >
+          <Text style={styles.btnText}>← Back to League Hub</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
   // ── Error ─────────────────────────────────────────────────────────────────────
   if (step === "error") {
     return (
@@ -191,25 +356,38 @@ export default function DraftDaySetupScreen() {
     );
   }
 
-  // ── Publishing ────────────────────────────────────────────────────────────────
+  // ── Publishing / Saving ────────────────────────────────────────────────────
   if (step === "publishing") {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator color={C.tint} size="large" />
-        <Text style={[styles.mutedText, { marginTop: 16 }]}>Publishing Draft Day…</Text>
+        <Text style={[styles.mutedText, { marginTop: 16 }]}>
+          {isManageMode ? "Saving changes…" : "Publishing Draft Day…"}
+        </Text>
       </View>
     );
   }
 
-  const allTemplates     = templates ? [...templates.competition, ...templates.season] : [];
-  const selectedItems    = allTemplates.filter((t) => selected.has(t.id));
-  const competitionCount = selectedItems.filter((t) => t.scoring_scope === "competition").length;
-  const seasonCount      = selectedItems.filter((t) => t.scoring_scope === "season").length;
+  // ── Shared computed values (used in choose + review steps) ──────────────────
+  const allActiveTemplates = templates ? [...templates.competition, ...templates.season] : [];
+
+  // For review: build selectedItems from all sources (active + legacy)
+  const allTemplateById: Record<string, DraftDayTemplate> = {};
+  for (const t of allActiveTemplates) allTemplateById[t.id] = t;
+  for (const t of legacyTemplates)   allTemplateById[t.id] = t;
+
+  const selectedItems    = [...selected].map((id) => allTemplateById[id]).filter(Boolean);
+  const competitionItems = selectedItems.filter((t) => t.scoring_scope === "competition");
+  const seasonItems      = selectedItems.filter((t) => t.scoring_scope === "season");
   const totalSelected    = selected.size;
   const remaining        = MAX_QUESTIONS - totalSelected;
 
-  // ── Step 2: Review Draft Day ─────────────────────────────────────────────────
+  // ── Step 2: Review ─────────────────────────────────────────────────────────
   if (step === "review") {
+    const reviewLabel = isManageMode ? "REVIEW CHANGES" : "REVIEW DRAFT DAY";
+    const publishBtn  = isManageMode ? "💾  Save Changes" : "🚀  Publish Draft Day";
+    const onConfirm   = isManageMode ? handleSaveChanges : handlePublish;
+
     return (
       <ScrollView
         style={styles.container}
@@ -222,42 +400,51 @@ export default function DraftDaySetupScreen() {
           <Text style={styles.linkText}>← Back to Questions</Text>
         </TouchableOpacity>
 
-        {/* League header */}
-        <Text style={styles.previewLabel}>REVIEW DRAFT DAY</Text>
+        <Text style={styles.previewLabel}>{reviewLabel}</Text>
         <Text style={styles.previewTitle}>Draft Day Swayger</Text>
         <Text style={styles.previewSubtitle}>
           {sport.charAt(0).toUpperCase() + sport.slice(1)} · {new Date().getFullYear()} Season
         </Text>
         <Text style={styles.reviewHint}>
-          Make sure these are the questions you want your league to answer.
+          {isManageMode
+            ? "Review your changes before saving. These questions will replace the current set."
+            : "Make sure these are the questions you want your league to answer."}
         </Text>
 
-        {/* Competition count */}
         <View style={[styles.previewCard, { borderColor: SCOPE_COLOR.competition }]}>
           <Text style={[styles.previewCardLabel, { color: SCOPE_COLOR.competition }]}>
             DRAFT DAY PICKS
           </Text>
-          <Text style={styles.previewCardCount}>{competitionCount} question{competitionCount !== 1 ? "s" : ""}</Text>
+          <Text style={styles.previewCardCount}>
+            {competitionItems.length} question{competitionItems.length !== 1 ? "s" : ""}
+          </Text>
           <Text style={styles.previewCardTagline}>{SCOPE_TAGLINE.competition}</Text>
-          {selectedItems
-            .filter((t) => t.scoring_scope === "competition")
-            .map((t) => (
-              <Text key={t.id} style={styles.previewListItem}>· {t.question}</Text>
-            ))}
+          {competitionItems.map((t) => (
+            <View key={t.id} style={styles.previewItemRow}>
+              <Text style={styles.previewListItem}>· {t.question}</Text>
+              {legacyTemplates.some((l) => l.id === t.id) && (
+                <Text style={styles.legacyBadgeSmall}>legacy</Text>
+              )}
+            </View>
+          ))}
         </View>
 
-        {/* Season count */}
         <View style={[styles.previewCard, { borderColor: SCOPE_COLOR.season, marginTop: 12 }]}>
           <Text style={[styles.previewCardLabel, { color: SCOPE_COLOR.season }]}>
             SEASON RECEIPTS
           </Text>
-          <Text style={styles.previewCardCount}>{seasonCount} question{seasonCount !== 1 ? "s" : ""}</Text>
+          <Text style={styles.previewCardCount}>
+            {seasonItems.length} question{seasonItems.length !== 1 ? "s" : ""}
+          </Text>
           <Text style={styles.previewCardTagline}>{SCOPE_TAGLINE.season}</Text>
-          {selectedItems
-            .filter((t) => t.scoring_scope === "season")
-            .map((t) => (
-              <Text key={t.id} style={styles.previewListItem}>· {t.question}</Text>
-            ))}
+          {seasonItems.map((t) => (
+            <View key={t.id} style={styles.previewItemRow}>
+              <Text style={styles.previewListItem}>· {t.question}</Text>
+              {legacyTemplates.some((l) => l.id === t.id) && (
+                <Text style={styles.legacyBadgeSmall}>legacy</Text>
+              )}
+            </View>
+          ))}
         </View>
 
         <View style={styles.previewTotalRow}>
@@ -268,16 +455,22 @@ export default function DraftDaySetupScreen() {
 
         <TouchableOpacity
           style={[styles.btn, { marginTop: 24 }]}
-          onPress={handlePublish}
+          onPress={onConfirm}
           activeOpacity={0.8}
         >
-          <Text style={styles.btnText}>🚀  Publish Draft Day</Text>
+          <Text style={styles.btnText}>{publishBtn}</Text>
         </TouchableOpacity>
       </ScrollView>
     );
   }
 
   // ── Step 1: Choose Questions ─────────────────────────────────────────────────
+  const screenTitle    = isManageMode ? "Manage Draft Day" : "Set Up Draft Day";
+  const screenSubtitle = isManageMode
+    ? "Update the questions your league will answer. Changes apply immediately after saving."
+    : "Choose which questions your league will answer before the draft begins.";
+  const reviewBtnLabel = isManageMode ? "Review Changes →" : "Review Draft Day →";
+
   return (
     <ScrollView
       style={styles.container}
@@ -286,19 +479,21 @@ export default function DraftDaySetupScreen() {
         { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 40 },
       ]}
     >
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.replace(`/fantasy/${leagueId}/${seasonId}`)}>
         <Text style={styles.linkText}>← League Hub</Text>
       </TouchableOpacity>
 
-      <Text style={styles.screenTitle}>Set Up Draft Day</Text>
-      <Text style={styles.screenSubtitle}>
-        Choose which questions your league will answer before the draft begins.
-      </Text>
+      <Text style={styles.screenTitle}>{screenTitle}</Text>
+      <Text style={styles.screenSubtitle}>{screenSubtitle}</Text>
 
       {(["competition", "season"] as const).map((scope) => {
-        const group = scope === "competition" ? templates!.competition : templates!.season;
-        if (group.length === 0) return null;
-        const color = SCOPE_COLOR[scope];
+        const color       = SCOPE_COLOR[scope];
+        const activeGroup = scope === "competition" ? templates!.competition : templates!.season;
+        const legacyGroup = legacyTemplates.filter((t) => t.scoring_scope === scope);
+        // All templates shown for this scope: legacy first, then active
+        const hasContent  = legacyGroup.length > 0 || activeGroup.length > 0;
+        if (!hasContent) return null;
+
         return (
           <View key={scope} style={styles.sectionBlock}>
             <View style={[styles.sectionHeader, { borderLeftColor: color }]}>
@@ -306,7 +501,49 @@ export default function DraftDaySetupScreen() {
               <Text style={styles.sectionTagline}>{SCOPE_TAGLINE[scope]}</Text>
             </View>
 
-            {group.map((tmpl) => {
+            {/* Legacy (inactive) templates — visible but marked */}
+            {legacyGroup.map((tmpl) => {
+              const isSelected = selected.has(tmpl.id);
+              return (
+                <Pressable
+                  key={tmpl.id}
+                  style={[
+                    styles.templateCard,
+                    styles.legacyCard,
+                    isSelected && styles.templateCardSelected,
+                    isSelected && { borderColor: color },
+                  ]}
+                  onPress={() => toggleTemplate(tmpl.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                >
+                  <View style={[styles.check, isSelected && { backgroundColor: color }]}>
+                    {isSelected && <Text style={styles.checkMark}>✓</Text>}
+                  </View>
+                  <View style={styles.templateBody}>
+                    <View style={styles.legacyRow}>
+                      <Text style={styles.legacyBadge}>⚠ No longer recommended</Text>
+                    </View>
+                    <Text style={[
+                      styles.templateQuestion,
+                      isSelected && { color: C.text },
+                    ]}>
+                      {tmpl.question}
+                    </Text>
+                    <View style={styles.templateMeta}>
+                      <Text style={[styles.metaPill, { color }]}>
+                        {scope === "competition" ? "Draft Day Pick" : "Season Receipt"}
+                      </Text>
+                      <Text style={styles.metaDot}>·</Text>
+                      <Text style={styles.metaPoints}>{tmpl.point_value} pts</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+
+            {/* Active templates */}
+            {activeGroup.map((tmpl) => {
               const isSelected = selected.has(tmpl.id);
               const isDisabled = !isSelected && atCap;
               return (
@@ -322,11 +559,9 @@ export default function DraftDaySetupScreen() {
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: isSelected, disabled: isDisabled }}
                 >
-                  {/* Checkmark */}
                   <View style={[styles.check, isSelected && { backgroundColor: color }]}>
                     {isSelected && <Text style={styles.checkMark}>✓</Text>}
                   </View>
-
                   <View style={styles.templateBody}>
                     <Text style={[
                       styles.templateQuestion,
@@ -356,7 +591,6 @@ export default function DraftDaySetupScreen() {
         );
       })}
 
-      {/* Cap warning */}
       {atCap && (
         <View style={styles.capBanner}>
           <Text style={styles.capBannerText}>
@@ -365,7 +599,6 @@ export default function DraftDaySetupScreen() {
         </View>
       )}
 
-      {/* Footer CTA */}
       <View style={styles.footerRow}>
         <View style={styles.footerCounts}>
           <Text style={styles.footerCount}>
@@ -381,7 +614,7 @@ export default function DraftDaySetupScreen() {
           disabled={totalSelected === 0}
           activeOpacity={0.8}
         >
-          <Text style={styles.btnText}>Review Draft Day →</Text>
+          <Text style={styles.btnText}>{reviewBtnLabel}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -406,6 +639,27 @@ const styles = StyleSheet.create({
   alreadyIcon:     { fontSize: 40, marginBottom: 12 },
   alreadyTitle:    { fontSize: 22, fontWeight: "800", color: C.text, textAlign: "center" },
   alreadySubtitle: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+
+  // Read-only manage mode
+  readOnlyBanner: {
+    backgroundColor: "#1A1A2E",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#4B5563",
+    padding: 12,
+    marginBottom: 20,
+  },
+  readOnlyBannerText: { fontSize: 13, color: C.textSecondary, lineHeight: 19 },
+  readOnlyCard: {
+    backgroundColor: C.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 12,
+    marginBottom: 8,
+    gap: 4,
+  },
+  readOnlyQuestion: { fontSize: 14, color: C.textSecondary, lineHeight: 20 },
 
   // Choose step
   screenTitle:    { fontSize: 24, fontWeight: "800", color: C.text, marginBottom: 6 },
@@ -434,6 +688,25 @@ const styles = StyleSheet.create({
   templateCardSelected: { backgroundColor: "#0A0A18" },
   templateCardDisabled: { opacity: 0.4 },
 
+  // Legacy (inactive) template card variant
+  legacyCard: {
+    borderColor: "#4B5563",
+    borderStyle: "dashed",
+  },
+  legacyRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  legacyBadge: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#D97706",
+    letterSpacing: 0.3,
+  },
+  legacyBadgeSmall: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#D97706",
+    marginLeft: 6,
+  },
+
   check: {
     width: 22,
     height: 22,
@@ -454,7 +727,6 @@ const styles = StyleSheet.create({
   metaDot:          { color: C.textMuted, fontSize: 11 },
   metaPoints:       { fontSize: 11, color: C.textMuted },
 
-  // Cap warning
   capBanner: {
     backgroundColor: "#2A1500",
     borderRadius: 10,
@@ -491,6 +763,7 @@ const styles = StyleSheet.create({
   previewCardLabel:   { fontSize: 11, fontWeight: "700", letterSpacing: 0.7, marginBottom: 2 },
   previewCardCount:   { fontSize: 20, fontWeight: "700", color: C.text },
   previewCardTagline: { fontSize: 12, color: C.textMuted, marginBottom: 8 },
+  previewItemRow:     { flexDirection: "row", alignItems: "center", flexWrap: "wrap" },
   previewListItem:    { fontSize: 13, color: C.textSecondary, lineHeight: 21 },
   previewTotalRow:    { alignItems: "center", marginTop: 16 },
   previewTotalText:   { fontSize: 14, color: C.textMuted },

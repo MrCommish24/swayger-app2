@@ -215,6 +215,19 @@ export interface DraftDayTemplates {
   season: DraftDayTemplate[];
 }
 
+// One entry in the current_props list returned by GET /draft-day.
+// Represents a snapshot of a currently-selected template with its library
+// metadata. is_active reflects the template's current state in the library —
+// false means the template was deactivated after this Draft Day was published.
+export interface DraftDayCurrentProp {
+  template_prop_id: string;
+  question: string;
+  scoring_scope: string;
+  point_value: number;
+  is_active: boolean;
+  supports_no_one: boolean;
+}
+
 export interface DraftDayStatus {
   room_id: string;
   card_id: string;
@@ -222,6 +235,12 @@ export interface DraftDayStatus {
   room_status: "draft" | "active" | "finalized";
   card_status: "closed" | "open" | "locked" | "settled";
   prop_counts: { competition: number; season: number };
+  // Number of member picks submitted for this card. 0 = safe to edit.
+  // Absent (undefined) before Phase 4B or if the picks table doesn't exist yet.
+  pick_count: number;
+  // Currently selected props with library metadata. Used by manage mode to
+  // reconstruct the commissioner's selection, including inactive legacy props.
+  current_props: DraftDayCurrentProp[];
   created_at: string;
 }
 
@@ -268,6 +287,21 @@ export async function publishDraftDay(
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/publish`,
     { method: "POST", body: JSON.stringify({ selected_prop_ids: selectedPropIds }) },
+    auth
+  );
+}
+
+// PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props
+// Commissioner-only. Atomically replaces props when card is 'open' + zero picks.
+export async function updateDraftDayProps(
+  leagueId: string,
+  seasonId: string,
+  selectedPropIds: string[],
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ prop_counts: { competition: number; season: number } }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/props`,
+    { method: "PATCH", body: JSON.stringify({ selected_prop_ids: selectedPropIds }) },
     auth
   );
 }

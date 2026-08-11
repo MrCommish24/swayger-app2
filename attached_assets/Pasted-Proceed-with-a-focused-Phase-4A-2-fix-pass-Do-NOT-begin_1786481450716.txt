@@ -1,0 +1,441 @@
+Proceed with a focused Phase 4A.2 fix pass.
+
+Do NOT begin Phase 4B member picks yet.
+
+The investigation is accepted.
+
+Implement both confirmed fixes:
+
+1. LOCK PICKS WEB CONFIRMATION BUG
+2. MANAGE / EDIT EXISTING DRAFT DAY BEFORE PICKS
+
+No SQL migration is required.
+
+--------------------------------------------------
+1. FIX LOCK PICKS ON WEB
+--------------------------------------------------
+
+Confirmed root cause:
+
+React Native Web Alert.alert does not reliably invoke the named button-array onPress callback, so POST /draft-day/lock never leaves the client.
+
+Do not change the lock endpoint or lifecycle logic.
+
+Replace the current Alert.alert-based confirmation with a cross-platform confirmation UX that works reliably on:
+- Expo web
+- iOS
+- Android
+
+Preferred behavior:
+
+Commissioner taps:
+
+[ Lock Picks ]
+
+Card enters an inline confirmation state:
+
+Lock Draft Day picks?
+
+Members won’t be able to submit or change picks until you unlock them.
+
+[ Cancel ]   [ Lock Picks ]
+
+Then the explicit Lock Picks button calls the existing API.
+
+Requirements:
+- no API request on Cancel
+- only one request while mutation is pending
+- disable controls while locking
+- success refreshes card state to locked
+- error shows a useful message
+- commissioner-only
+- preserve current idempotency
+- Unlock behavior remains unchanged unless needed for consistent loading/error states
+
+Do not use browser-specific window.confirm if an inline cross-platform UI can avoid divergence.
+
+--------------------------------------------------
+2. BUILD MANAGE DRAFT DAY / EDIT-BEFORE-PICKS
+--------------------------------------------------
+
+Confirmed current gap:
+
+Edit functionality does not exist.
+
+Current behavior:
+- published Draft Day exists
+- hub has no Manage CTA
+- setup screen detects existing Draft Day and dead-ends
+- no update-props endpoint exists
+
+Implement the minimum safe V1 edit flow.
+
+PRODUCT RULE
+
+Commissioner may edit Draft Day questions only when:
+
+card.status = 'open'
+AND
+there are ZERO member picks for that Draft Day card
+
+If either condition fails:
+
+- locked → editing blocked
+- any picks exist → editing blocked
+- settled/finalized → editing blocked
+
+Do not allow edits that could change a competition after members have started playing.
+
+--------------------------------------------------
+3. HUB UX
+--------------------------------------------------
+
+For commissioner with published/open Draft Day and zero picks:
+
+Show:
+
+DRAFT DAY SWAYGER
+Ready
+
+[ Manage Draft Day ]
+[ Lock Picks ]
+
+“Member play coming next” may remain as a disabled informational state until Phase 4B.
+
+Manage Draft Day routes to the existing Draft Day setup screen in explicit manage mode.
+
+Example:
+
+/fantasy/draft-day/:leagueId/:seasonId?manage=1
+
+For locked Draft Day:
+
+Show:
+[ Manage Draft Day ] only if useful for read-only viewing
+[ Unlock Picks ]
+
+Do NOT imply questions can be edited while locked.
+
+If Manage opens while editing is prohibited, show the existing selected questions read-only with a clear explanation.
+
+--------------------------------------------------
+4. SETUP SCREEN MANAGE MODE
+--------------------------------------------------
+
+Update:
+
+app/fantasy/draft-day/[leagueId]/[seasonId].tsx
+
+Current guard:
+
+existing Draft Day
+→ already_published dead-end
+
+Replace with lifecycle-aware behavior.
+
+If Draft Day does not exist:
+→ normal setup flow
+
+If Draft Day exists and manage=1:
+→ load existing Draft Day props
+→ map template_prop_id values to current template cards
+→ pre-select the currently published questions
+→ show Manage Draft Day mode
+
+If:
+card.status='open'
+AND pick count = 0
+
+allow:
+- select/deselect questions
+- preserve 15-question cap
+- Review Draft Day
+- Save Changes
+
+Use “Save Changes”, NOT “Publish Draft Day”.
+
+If editing is not allowed:
+show current questions read-only and why:
+
+Examples:
+
+“Draft Day picks are locked. Unlock picks before making changes.”
+
+or
+
+“Members have already submitted picks, so Draft Day questions can no longer be changed.”
+
+Do not send user into a duplicate setup flow.
+
+--------------------------------------------------
+5. NEW UPDATE ENDPOINT
+--------------------------------------------------
+
+Add a commissioner-only endpoint such as:
+
+PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props
+
+Use the project’s existing route convention if a slightly different path is cleaner.
+
+Authorization:
+requireFantasyCommissioner
+
+Server validation BEFORE mutation:
+
+1. Draft Day room exists for league_season_id
+2. room belongs to correct Fantasy league season
+3. card exists
+4. card.status === 'open'
+5. count of existing picks for props on this card === 0
+6. selected template count <= 15
+7. every selected template:
+   - is active
+   - experience_type='fantasy'
+   - competition_type='draft_day'
+   - matches sport or valid global behavior
+8. preserve stable answer-option generation
+9. preserve scoring_scope
+10. preserve point_value
+11. preserve answer_target_type
+12. preserve supports_no_one behavior
+
+If picks exist:
+return 409 with a clear error.
+
+If card not open:
+return 409 with a clear error.
+
+--------------------------------------------------
+6. UPDATE MUST BE ATOMIC
+--------------------------------------------------
+
+Do not implement:
+
+DELETE props
+then sequentially INSERT props from Express
+
+without transaction protection.
+
+The update operation conceptually means:
+
+replace current Draft Day prop snapshot with the new selected set
+
+All-or-nothing.
+
+Use the existing PL/pgSQL RPC pattern if needed for atomicity.
+
+If this requires a small CREATE OR REPLACE function, write the SQL file and STOP for manual Supabase application before claiming the feature is complete.
+
+Do not avoid SQL merely because the investigation initially said “no migration required” if atomicity genuinely requires an RPC.
+
+The goal is correctness, not avoiding SQL.
+
+If the existing DB/API can perform this atomically without new SQL, explain how.
+
+--------------------------------------------------
+7. CURRENT SELECTION / TEMPLATE MAPPING
+--------------------------------------------------
+
+Existing gameday_props already store template_prop_id.
+
+Use that to reconstruct the commissioner’s current selection.
+
+Do not try to match by question string.
+
+If a historical selected template is now inactive, like:
+
+fdd_fb_biggest_reach
+fdd_fb_clock_longest
+
+the commissioner must still be able to SEE that currently-published question in Manage mode.
+
+Important:
+
+Do not silently drop it merely because the library template is now inactive.
+
+Preferred manage behavior:
+
+- display existing inactive/legacy selected prop
+- mark it something like “No longer recommended”
+- allow commissioner to deselect it
+- once removed and saved, it should not be re-addable from the active template library
+
+This matters for my manually-created league, which currently contains two templates that were deactivated after it was published.
+
+--------------------------------------------------
+8. SAVE CHANGES
+--------------------------------------------------
+
+When commissioner saves:
+
+- same gameday_room
+- same gameday_pick_card
+- replace gameday_props atomically
+- no new Draft Day room
+- no duplicate competition
+- preserve room_code
+- preserve card status='open'
+- return updated counts
+
+After save:
+→ return to League Hub
+→ hub refetches
+→ Draft Day Ready remains
+→ question counts update
+
+Do not use “republish.”
+
+--------------------------------------------------
+9. LOCK AFTER EDIT
+--------------------------------------------------
+
+After successful edit:
+- Lock Picks must still work
+- card transitions open → locked
+- Manage mode becomes read-only / editing prohibited
+- Unlock returns locked → open
+- if zero picks and no settlement, editing may be allowed again after unlock
+
+Once Phase 4B creates member picks:
+even if later unlocked, questions must remain immutable because picks exist.
+
+--------------------------------------------------
+10. TEST AGAINST MY EXISTING LEAGUE
+--------------------------------------------------
+
+Use the currently-created manual league during QA:
+
+league_id:
+8606215a-c656-4e82-9571-a0e8884f034c
+
+season_id:
+8ac13a13-d35f-40f7-bcf5-4a6bc1601e6e
+
+Current Draft Day:
+room_id:
+dd72243b-4710-40a5-9490-2766f8ec916d
+
+card_id:
+49337bf3-699e-4c47-bc18-b2b0909e3a14
+
+Current state:
+room.status='active'
+card.status='open'
+0 picks
+11 pending props
+
+It contains the now-inactive:
+- fdd_fb_biggest_reach
+- fdd_fb_clock_longest
+
+Verify specifically:
+
+1. Hub shows Manage Draft Day.
+2. Manage opens the current competition.
+3. All 11 existing selected props are visible.
+4. Inactive legacy props are visible and marked appropriately.
+5. I can remove those two.
+6. I can add newer objective props.
+7. Save Changes updates the SAME room/card.
+8. No duplicate Draft Day room is created.
+9. Reopening Manage shows the saved selection.
+10. Lock Picks sends an actual POST on web.
+11. Card becomes locked.
+12. Unlock works.
+13. No stale hub state.
+
+--------------------------------------------------
+11. TESTS
+--------------------------------------------------
+
+Add tests for:
+
+LOCK UX / API
+- client confirmation path results in lock API call
+- lock endpoint still commissioner-only
+- lock open → locked
+- idempotent lock
+- unlock locked → open
+
+MANAGE
+- current selected template IDs load correctly
+- legacy inactive selected prop remains visible
+- active templates still selectable
+- 15-question cap preserved in edit mode
+
+SERVER UPDATE
+- commissioner can update open Draft Day with zero picks
+- non-commissioner rejected
+- update locked card rejected
+- update with existing picks rejected
+- 16 templates rejected
+- invalid/inactive NEW template cannot be newly selected
+- existing inactive template can remain until explicitly removed if that is the chosen compatibility behavior
+- same room_id after update
+- same card_id after update
+- props replaced atomically
+- answer options regenerated correctly
+- supports_no_one preserved
+- scoring_scope and point_value preserved
+
+REGRESSION
+- Phase 2 stays green
+- Phase 3 stays green
+- Phase 3B stays green
+- Phase 4A/4A.1 stays green
+- existing Game Day unaffected
+
+--------------------------------------------------
+12. IMPORTANT RPC CHECK
+--------------------------------------------------
+
+Also verify whether the corrected publish_fantasy_draft_day RPC with:
+
+card.status='open'
+
+is now actually live in Supabase.
+
+The investigation reported it was not yet live.
+
+Do not assume it has been applied.
+
+Return whether:
+- live RPC contains 'open'
+or
+- manual SQL is still required
+
+Do not reintroduce the removed post-RPC server patch.
+
+--------------------------------------------------
+RETURN
+--------------------------------------------------
+
+Return:
+
+1. lock UI fix implemented
+2. manage/edit architecture implemented
+3. files changed
+4. API/RPC changes
+5. any SQL requiring manual Supabase application
+6. behavior of inactive historical templates
+7. exact results against my existing manual league
+8. exact test counts
+9. regression results
+10. corrected publish RPC live-state verification
+11. exact manual QA I should perform
+
+Then STOP.
+
+Do not begin Phase 4B.
+
+Final status:
+
+PHASE 4A.2 READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

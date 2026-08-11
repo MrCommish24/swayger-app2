@@ -1079,24 +1079,67 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      // Count props by scope
+      // Count props by scope AND collect current props with library metadata
       const { data: props } = await supabase
         .from("gameday_props")
-        .select("scoring_scope")
-        .eq("card_id", (card as any).id);
+        .select("id, template_prop_id, scoring_scope, point_value, display_order")
+        .eq("card_id", (card as any).id)
+        .order("display_order", { ascending: true });
 
-      const propList = props ?? [];
+      const propList         = props ?? [];
       const competitionCount = propList.filter((p: any) => p.scoring_scope === "competition").length;
       const seasonCount      = propList.filter((p: any) => p.scoring_scope === "season").length;
 
+      // Pick count — safe for Phase 4B: table may not exist yet, returns 0
+      let pickCount = 0;
+      try {
+        const { count } = await supabase
+          .from("gameday_prop_picks")
+          .select("id", { count: "exact", head: true })
+          .eq("card_id", (card as any).id);
+        pickCount = count ?? 0;
+      } catch { pickCount = 0; }
+
+      // Enrich current_props with live library metadata (is_active, question, supports_no_one).
+      // Used by manage mode to reconstruct selection including inactive legacy props.
+      const templatePropIds = propList.map((p: any) => p.template_prop_id).filter(Boolean);
+      let libraryMap: Record<string, { question: string; is_active: boolean; supports_no_one: boolean }> = {};
+      if (templatePropIds.length > 0) {
+        const { data: libRows } = await supabase
+          .from("gameday_prop_library")
+          .select("id, question, is_active, supports_no_one")
+          .in("id", templatePropIds);
+        for (const row of libRows ?? []) {
+          libraryMap[(row as any).id] = {
+            question:        (row as any).question ?? "",
+            is_active:       (row as any).is_active ?? true,
+            supports_no_one: (row as any).supports_no_one ?? false,
+          };
+        }
+      }
+
+      const currentProps = propList.map((p: any) => {
+        const lib = libraryMap[p.template_prop_id] ?? { question: "", is_active: true, supports_no_one: false };
+        return {
+          template_prop_id: p.template_prop_id as string,
+          question:         lib.question,
+          scoring_scope:    p.scoring_scope as string,
+          point_value:      p.point_value as number,
+          is_active:        lib.is_active,
+          supports_no_one:  lib.supports_no_one,
+        };
+      });
+
       res.json({
-        room_id:     (room as any).id,
-        card_id:     (card as any).id,
-        room_code:   (room as any).room_code ?? null,
-        room_status: (room as any).status,
-        card_status: (card as any).status,
-        prop_counts: { competition: competitionCount, season: seasonCount },
-        created_at:  (room as any).created_at,
+        room_id:       (room as any).id,
+        card_id:       (card as any).id,
+        room_code:     (room as any).room_code ?? null,
+        room_status:   (room as any).status,
+        card_status:   (card as any).status,
+        prop_counts:   { competition: competitionCount, season: seasonCount },
+        pick_count:    pickCount,
+        current_props: currentProps,
+        created_at:    (room as any).created_at,
       });
     }
   );
@@ -1335,6 +1378,269 @@ export function registerFantasyRoutes(app: Express) {
         card_id:         newCardId,
         room_code:       roomCode,
         already_existed: false,
+      });
+    }
+  );
+
+  // ── PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props
+  //
+  // Commissioner-only. Atomically replaces props on an existing Draft Day
+  // when editing is safe: card.status='open' AND pick_count=0.
+  //
+  // Grandfathering: templates that were already published are allowed even if
+  // now inactive. New templates (not in the existing set) must be active.
+  //
+  // Auth: commissioner or co-commissioner only.
+  //
+  // Body: { selected_prop_ids: string[] }
+  //
+  // Errors:
+  //   404 — no Draft Day room / card for this season
+  //   409 — card is locked/settled (cannot edit) OR picks already exist
+  //   400 — 0 or >15 templates, or invalid new template
+  //   500 — RPC failure (requires supabase/gameday-fantasy-phase4a2-manage.sql)
+  app.patch(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res.status(400).json({ error: "select at least one question" });
+        return;
+      }
+
+      const MAX_DRAFT_DAY_QUESTIONS = 15;
+      if (selected_prop_ids.length > MAX_DRAFT_DAY_QUESTIONS) {
+        res.status(400).json({
+          error:    `Too many questions selected. Maximum is ${MAX_DRAFT_DAY_QUESTIONS}.`,
+          max:      MAX_DRAFT_DAY_QUESTIONS,
+          selected: selected_prop_ids.length,
+        });
+        return;
+      }
+
+      // ── Find room ───────────────────────────────────────────────────────────
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+
+      // ── Find pick card ──────────────────────────────────────────────────────
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+
+      const cardStatus = (card as any).status as string;
+      const cardId     = (card as any).id as string;
+
+      // ── Lifecycle guard: must be open ───────────────────────────────────────
+      if (cardStatus !== "open") {
+        res.status(409).json({
+          error: cardStatus === "locked"
+            ? "Draft Day picks are locked. Unlock picks before making changes."
+            : "Draft Day has been finalized and cannot be changed.",
+          card_status: cardStatus,
+        });
+        return;
+      }
+
+      // ── Pick count guard ────────────────────────────────────────────────────
+      let pickCount = 0;
+      try {
+        const { count } = await supabase
+          .from("gameday_prop_picks")
+          .select("id", { count: "exact", head: true })
+          .eq("card_id", cardId);
+        pickCount = count ?? 0;
+      } catch { pickCount = 0; }
+
+      if (pickCount > 0) {
+        res.status(409).json({
+          error:      "Members have already submitted picks. Draft Day questions cannot be changed.",
+          pick_count: pickCount,
+        });
+        return;
+      }
+
+      // ── Gather league + season metadata ─────────────────────────────────────
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, season_year, fantasy_leagues(id, league_name, sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const sport = ((season as any).fantasy_leagues as any).sport as string;
+
+      // ── Template validation (grandfathering rule) ───────────────────────────
+      // Templates already in the published set are grandfathered (kept even if
+      // now inactive). Only NEW additions must pass the is_active check.
+      const { data: existingProps } = await supabase
+        .from("gameday_props")
+        .select("template_prop_id")
+        .eq("card_id", cardId);
+
+      const existingIds      = new Set((existingProps ?? []).map((p: any) => p.template_prop_id as string));
+      const grandfatheredIds = selected_prop_ids.filter((id) => existingIds.has(id));
+      const newIds           = selected_prop_ids.filter((id) => !existingIds.has(id));
+
+      // Grandfathered: no is_active filter (already published; may be inactive)
+      let grandfatheredTemplates: any[] = [];
+      if (grandfatheredIds.length > 0) {
+        const { data: gfData } = await supabase
+          .from("gameday_prop_library")
+          .select("id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one")
+          .in("id", grandfatheredIds)
+          .eq("experience_type", "fantasy")
+          .eq("competition_type", "draft_day")
+          .eq("sport", sport);
+        grandfatheredTemplates = gfData ?? [];
+
+        if (grandfatheredTemplates.length !== grandfatheredIds.length) {
+          const found   = new Set(grandfatheredTemplates.map((t: any) => t.id));
+          const missing = grandfatheredIds.filter((id) => !found.has(id));
+          res.status(400).json({ error: `Existing templates not found in library: ${missing.join(", ")}` });
+          return;
+        }
+      }
+
+      // New: must be active, correct experience/competition/sport
+      let newTemplates: any[] = [];
+      if (newIds.length > 0) {
+        const newFull = await supabase
+          .from("gameday_prop_library")
+          .select("id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one")
+          .in("id", newIds)
+          .eq("experience_type", "fantasy")
+          .eq("competition_type", "draft_day")
+          .eq("sport", sport)
+          .eq("is_active", true);
+
+        if (newFull.error?.message?.includes("supports_no_one")) {
+          const fb = await supabase
+            .from("gameday_prop_library")
+            .select("id, question, scoring_scope, point_value, answer_target_type, answer_options")
+            .in("id", newIds)
+            .eq("experience_type", "fantasy")
+            .eq("competition_type", "draft_day")
+            .eq("sport", sport)
+            .eq("is_active", true);
+          newTemplates = (fb.data ?? []).map((t: any) => ({ ...t, supports_no_one: false }));
+        } else {
+          newTemplates = newFull.data ?? [];
+        }
+
+        if (newTemplates.length !== newIds.length) {
+          const found   = new Set(newTemplates.map((t: any) => t.id));
+          const invalid = newIds.filter((id) => !found.has(id));
+          res.status(400).json({
+            error:       `Some templates are not available: ${invalid.join(", ")}`,
+            invalid_ids: invalid,
+          });
+          return;
+        }
+      }
+
+      // Build lookup by id to preserve selected_prop_ids ordering
+      const templateById: Record<string, any> = {};
+      for (const t of [...grandfatheredTemplates, ...newTemplates]) templateById[t.id] = t;
+
+      // ── Fetch members + teams for answer_options snapshot ───────────────────
+      const [membersResult, teamsResult] = await Promise.all([
+        supabase
+          .from("fantasy_season_members")
+          .select("id, fantasy_league_members(display_name)")
+          .eq("league_season_id", seasonId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("fantasy_teams")
+          .select("id, team_name")
+          .eq("league_season_id", seasonId),
+      ]);
+
+      const memberList = (membersResult.data ?? []).map((sm: any) => ({
+        id:           sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+      })) as Array<{ id: string; display_name: string | null }>;
+      const teamList = (teamsResult.data ?? []) as Array<{ id: string; team_name: string | null }>;
+
+      // ── Build props payload (preserving selection order) ────────────────────
+      const propsPayload = selected_prop_ids.map((id, i) => {
+        const tmpl = templateById[id];
+        return {
+          library_id:         tmpl.id,
+          question:           tmpl.question,
+          answer_options:     buildAnswerOptions(
+            tmpl.answer_target_type,
+            memberList,
+            teamList,
+            tmpl.answer_options,
+            tmpl.supports_no_one ?? false
+          ),
+          scoring_scope:      tmpl.scoring_scope,
+          point_value:        tmpl.point_value,
+          answer_target_type: tmpl.answer_target_type ?? null,
+          display_order:      i,
+        };
+      });
+
+      // ── Atomic replace via update_fantasy_draft_day_props RPC ───────────────
+      // Requires: supabase/gameday-fantasy-phase4a2-manage.sql applied.
+      const { error: rpcError } = await supabase.rpc(
+        "update_fantasy_draft_day_props",
+        { p_card_id: cardId, p_props: propsPayload }
+      );
+
+      if (rpcError) {
+        console.error("[fantasy] update_fantasy_draft_day_props RPC error:", rpcError.message);
+        res.status(500).json({ error: "Failed to update Draft Day questions. Is the Phase 4A.2 SQL applied?" });
+        return;
+      }
+
+      // Fetch updated counts for the response
+      const { data: updatedProps } = await supabase
+        .from("gameday_props")
+        .select("scoring_scope")
+        .eq("card_id", cardId);
+
+      const updatedList = updatedProps ?? [];
+      const compCount   = updatedList.filter((p: any) => p.scoring_scope === "competition").length;
+      const seasCount   = updatedList.filter((p: any) => p.scoring_scope === "season").length;
+
+      console.log(
+        `[fantasy] Draft Day props updated: card=${cardId.slice(0, 8)}… props=${propsPayload.length}`
+      );
+
+      res.json({
+        card_id:     cardId,
+        room_id:     (room as any).id,
+        prop_counts: { competition: compCount, season: seasCount },
       });
     }
   );

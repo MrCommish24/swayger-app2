@@ -3,3 +3,4 @@
 - [Gameday Fantasy Phase 2 Nav](gameday-fantasy-phase2-nav.md) — route structure, discovery entry on Game Day hub, post-setup redirect, retry safety, auth loading pattern
 - [Gameday Fantasy Phase 3 Nav](gameday-fantasy-phase3-nav.md) — seat claim RPC, guest token pattern, join-info route, role-aware hub, 60/60 test pass
 - [Gameday Fantasy Phase 4A](gameday-fantasy-phase4a-nav.md) — Draft Day setup, inline publish pattern, DDL pending, requireFantasyCommissioner naming trap, 49/49 tests
+- [Gameday Fantasy Phase 4A.2](gameday-fantasy-phase4a2-nav.md) — Lock inline confirm (Alert web bug), manage edit-before-picks, PATCH endpoint, grandfathering rule, SQL required, 93/93 tests

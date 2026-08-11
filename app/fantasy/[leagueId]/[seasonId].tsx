@@ -59,40 +59,51 @@ const C = Colors.dark;
 //   finalized  — card_status = 'settled' (read-only)
 //
 // Commissioner actions:
-//   unset   → Set Up Draft Day  (navigates to setup wizard)
-//   open    → Lock Picks        (with confirmation)
-//   locked  → Unlock Picks      (if no settlement started)
+//   unset            → Set Up Draft Day (navigates to setup wizard)
+//   open + 0 picks   → Manage Draft Day (edit questions) + Lock Picks (inline confirm)
+//   open + picks     → View Draft Day (read-only) + Lock Picks
+//   locked           → View Draft Day (read-only) + Unlock Picks
 //
+// Lock Picks uses inline confirmation UI to avoid Alert.alert web limitations.
 // "Open Draft Day" is disabled until Phase 4B member pick submission is built.
-// The generic "Share" button is removed to avoid confusion with "Invite Members."
-//
-// Separated into its own function component for readability; lives in the same
-// file because it's hub-only and shares the same styles/constants.
 interface DraftDayCardProps {
   draftDay: import("@/lib/fantasy-api").DraftDayStatus | null | undefined;
   isCommissioner: boolean;
-  lockingDraftDay: boolean;
+  canEdit:          boolean; // card is 'open' AND pick_count === 0
+  lockingDraftDay:  boolean;
   unlockingDraftDay: boolean;
+  lockError:        string | null;
   onSetup:   () => void;
-  onLock:    () => void;
+  onManage:  () => void;
+  onLock:    () => void; // direct API call, no Alert — called after inline confirm
   onUnlock:  () => void;
 }
 
 function DraftDayCard({
   draftDay,
   isCommissioner,
+  canEdit,
   lockingDraftDay,
   unlockingDraftDay,
+  lockError,
   onSetup,
+  onManage,
   onLock,
   onUnlock,
 }: DraftDayCardProps) {
+  const [confirmingLock, setConfirmingLock] = React.useState(false);
+
+  // Reset inline confirm when lock succeeds (card becomes locked)
+  React.useEffect(() => {
+    if (draftDay?.card_status === "locked") setConfirmingLock(false);
+  }, [draftDay?.card_status]);
+
   // Not yet fetched — show nothing to avoid flicker
   if (draftDay === undefined) return null;
 
-  const isLocked     = draftDay?.card_status === "locked";
-  const isFinalized  = draftDay?.card_status === "settled";
-  const isPublished  = !!draftDay;
+  const isLocked    = draftDay?.card_status === "locked";
+  const isFinalized = draftDay?.card_status === "settled";
+  const isPublished = !!draftDay;
 
   // ── State: Not yet set up ─────────────────────────────────────────────────
   if (!isPublished) {
@@ -171,44 +182,96 @@ function DraftDayCard({
 
         {/* Commissioner controls */}
         {isCommissioner && !isFinalized && (
-          <View style={styles.draftDayActionRow}>
+          <View style={{ gap: 8 }}>
 
-            {/* Lock Picks (only while open) */}
-            {!isLocked && (
-              <TouchableOpacity
-                style={[
-                  styles.btn,
-                  { flex: 1, backgroundColor: "#5B21B6" },
-                  lockingDraftDay && { opacity: 0.5 },
-                ]}
-                onPress={onLock}
-                disabled={lockingDraftDay}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.btnText}>
-                  {lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}
-                </Text>
-              </TouchableOpacity>
-            )}
+            {/* Manage / View Draft Day */}
+            <TouchableOpacity
+              style={[styles.btn, styles.btnSecondary]}
+              onPress={onManage}
+              disabled={lockingDraftDay}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.btnText, { color: C.tint }]}>
+                {canEdit && !isLocked ? "✏️  Manage Draft Day" : "👁  View Draft Day"}
+              </Text>
+            </TouchableOpacity>
 
-            {/* Unlock Picks (only while locked) */}
-            {isLocked && (
-              <TouchableOpacity
-                style={[
-                  styles.btn,
-                  styles.btnSecondary,
-                  { flex: 1 },
-                  unlockingDraftDay && { opacity: 0.5 },
-                ]}
-                onPress={onUnlock}
-                disabled={unlockingDraftDay}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.btnText, { color: C.tint }]}>
-                  {unlockingDraftDay ? "Unlocking…" : "🔓  Unlock Picks"}
-                </Text>
-              </TouchableOpacity>
-            )}
+            {/* Lock / Unlock row */}
+            <View style={styles.draftDayActionRow}>
+
+              {/* Lock Picks — inline confirm (avoids Alert.alert web bug) */}
+              {!isLocked && !confirmingLock && (
+                <TouchableOpacity
+                  style={[
+                    styles.btn,
+                    { flex: 1, backgroundColor: "#5B21B6" },
+                    lockingDraftDay && { opacity: 0.5 },
+                  ]}
+                  onPress={() => setConfirmingLock(true)}
+                  disabled={lockingDraftDay}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.btnText}>🔒  Lock Picks</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Inline confirmation state */}
+              {!isLocked && confirmingLock && (
+                <View style={styles.lockConfirmBox}>
+                  <Text style={styles.lockConfirmTitle}>Lock Draft Day picks?</Text>
+                  <Text style={styles.lockConfirmBody}>
+                    Members won't be able to submit or change picks until you unlock them.
+                  </Text>
+                  <View style={styles.lockConfirmButtons}>
+                    <TouchableOpacity
+                      style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                      onPress={() => setConfirmingLock(false)}
+                      disabled={lockingDraftDay}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.btn,
+                        { flex: 1, backgroundColor: "#5B21B6" },
+                        lockingDraftDay && { opacity: 0.5 },
+                      ]}
+                      onPress={onLock}
+                      disabled={lockingDraftDay}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.btnText}>
+                        {lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {lockError && (
+                    <Text style={styles.lockErrorText}>{lockError}</Text>
+                  )}
+                </View>
+              )}
+
+              {/* Unlock Picks (only while locked) */}
+              {isLocked && (
+                <TouchableOpacity
+                  style={[
+                    styles.btn,
+                    styles.btnSecondary,
+                    { flex: 1 },
+                    unlockingDraftDay && { opacity: 0.5 },
+                  ]}
+                  onPress={onUnlock}
+                  disabled={unlockingDraftDay}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.btnText, { color: C.tint }]}>
+                    {unlockingDraftDay ? "Unlocking…" : "🔓  Unlock Picks"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+            </View>
           </View>
         )}
       </View>
@@ -261,6 +324,7 @@ export default function LeagueHubScreen() {
   const [draftDay, setDraftDay]           = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
   const [lockingDraftDay, setLockingDraftDay]   = useState(false);
   const [unlockingDraftDay, setUnlockingDraftDay] = useState(false);
+  const [lockError, setLockError]         = useState<string | null>(null);
   // Track initial mount so useFocusEffect doesn't double-fetch on first render
   const initialFocusRef = useRef(true);
 
@@ -617,36 +681,28 @@ export default function LeagueHubScreen() {
           <DraftDayCard
             draftDay={draftDay}
             isCommissioner={isCommissioner}
+            canEdit={draftDay?.card_status === "open" && (draftDay?.pick_count ?? 0) === 0}
             lockingDraftDay={lockingDraftDay}
             unlockingDraftDay={unlockingDraftDay}
+            lockError={lockError}
             onSetup={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}`)}
-            onLock={() => {
+            onManage={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}?manage=1`)}
+            onLock={async () => {
+              // Called after inline confirm — no Alert.alert (breaks on web)
               if (!session || lockingDraftDay) return;
-              // Confirmation required — accidental lock is hard to recover from
-              Alert.alert(
-                "Lock Draft Day picks?",
-                "Members won't be able to submit or change picks until you unlock them.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Lock Picks",
-                    style: "destructive",
-                    onPress: async () => {
-                      setLockingDraftDay(true);
-                      try {
-                        await lockDraftDay(leagueId, seasonId, { session });
-                        setDraftDay((prev) =>
-                          prev ? { ...prev, card_status: "locked" as const } : prev
-                        );
-                      } catch (e: any) {
-                        console.error("[hub] lock draft day:", e.message);
-                      } finally {
-                        setLockingDraftDay(false);
-                      }
-                    },
-                  },
-                ]
-              );
+              setLockError(null);
+              setLockingDraftDay(true);
+              try {
+                await lockDraftDay(leagueId, seasonId, { session });
+                setDraftDay((prev) =>
+                  prev ? { ...prev, card_status: "locked" as const } : prev
+                );
+              } catch (e: any) {
+                setLockError("Failed to lock. Please try again.");
+                console.error("[hub] lock draft day:", e.message);
+              } finally {
+                setLockingDraftDay(false);
+              }
             }}
             onUnlock={async () => {
               if (!session || unlockingDraftDay) return;
@@ -908,6 +964,20 @@ const styles = StyleSheet.create({
   draftDayActions: { gap: 8 },
   draftDayActionRow: { flexDirection: "row", gap: 8 },
   draftDayComingSoon: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 19, paddingVertical: 4 },
+
+  // Inline lock confirmation (replaces Alert.alert — unreliable on web)
+  lockConfirmBox: {
+    backgroundColor: "#1a0a2e",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#5B21B6",
+    padding: 16,
+    gap: 8,
+  },
+  lockConfirmTitle: { fontSize: 15, fontWeight: "700", color: C.text },
+  lockConfirmBody:  { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
+  lockConfirmButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
+  lockErrorText: { fontSize: 12, color: C.danger, textAlign: "center", marginTop: 4 },
 
   // Shared
   btn: {
