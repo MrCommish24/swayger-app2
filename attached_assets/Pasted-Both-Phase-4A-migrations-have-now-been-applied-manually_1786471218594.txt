@@ -1,0 +1,109 @@
+Both Phase 4A migrations have now been applied manually in Supabase:
+
+1. supabase/gameday-fantasy-phase4a-draft-day.sql
+2. supabase/gameday-fantasy-phase4a1-polish.sql
+
+Treat the live database as current through Phase 4A.1.
+
+Do NOT write or apply any additional migration.
+
+Run the complete post-migration verification now.
+
+Specifically verify:
+
+1. gameday_props.answer_target_type exists and is populated correctly for new Fantasy Draft Day props.
+
+2. publish_fantasy_draft_day RPC is live and the publish route is using the RPC path rather than the sequential-JS fallback.
+
+3. gameday_prop_library.supports_no_one exists.
+
+4. Templates with supports_no_one=true produce a stable synthetic answer option:
+
+{id:"no_one", label:"No one", type:"static"}
+
+and templates without supports_no_one do not receive it.
+
+5. The subjective Draft Day templates identified in Phase 4A.1 are inactive and no longer returned as recommended active templates.
+
+6. The four new objective football templates are active and returned correctly:
+- most RBs
+- most WRs
+- last to draft an RB
+- three QBs
+
+7. Existing Draft Day pick cards were migrated appropriately to status='open'.
+
+8. A newly published Draft Day also creates:
+room.status='active'
+pick_card.status='open'
+
+9. Confirm the intended lifecycle is now:
+
+No Draft Day
+→ Set Up Draft Day
+
+Published / open
+→ Draft Day Ready / Manage Draft Day
+
+Locked
+→ Picks Locked / Unlock Picks where permitted
+
+Eventually:
+→ Finalized / Results
+
+10. Verify the League Hub re-fetch on focus fixes the previously observed stale state:
+publish Draft Day
+→ return to league hub
+→ Set Up Draft Day must NOT still appear.
+
+11. Verify the setup screen guard:
+if Draft Day already exists
+→ setup screen must show existing/live state rather than allowing a second setup flow.
+
+12. Verify the 15-question cap:
+- 15 accepted
+- 16 rejected server-side
+- client blocks selection beyond 15
+
+13. Verify lock/unlock:
+- commissioner can lock
+- confirmation exists client-side
+- non-commissioner cannot lock
+- repeated lock is idempotent
+- commissioner can unlock before settlement
+- repeated unlock is idempotent
+- non-commissioner cannot unlock
+- unlock rejected if a prop has already been settled
+
+14. Verify current template answer options contain actual member display names from the fantasy_league_members join rather than blank/incorrect labels.
+
+15. Run every relevant regression suite and return exact counts:
+
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A / 4A.1
+- Game Day normalization / settlement regression if applicable
+
+Do not begin Phase 4B.
+
+RETURN ONLY:
+
+1. exact test counts/results
+2. whether all prior skipped Phase 4A.1 assertions are now passing
+3. confirmation publish is using the RPC
+4. template verification results
+5. answer-option / No one verification
+6. lifecycle verification
+7. stale-hub-state verification
+8. lock/unlock verification
+9. any remaining issue
+10. final status:
+
+PHASE 4A.1 COMPLETE — READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
+
+Stop after verification.

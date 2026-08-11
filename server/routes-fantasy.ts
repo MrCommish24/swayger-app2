@@ -1283,108 +1283,74 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      // ── Inline publish (room → pick_card → props) ─────────────────────────
-      // Simulates the atomic PL/pgSQL RPC. On any failure we attempt rollback.
-      // NOTE: True DB-level atomicity requires the publish_fantasy_draft_day()
-      // PL/pgSQL function to be applied to Supabase (see gameday-fantasy-phase4a-draft-day.sql).
-
-      let newRoomId: string | null = null;
-      let newCardId: string | null = null;
-
-      try {
-        // 1. Create room
-        const { data: roomRow, error: roomErr } = await supabase
-          .from("gameday_rooms")
-          .insert({
-            room_name:        roomName,
-            experience_type:  "fantasy",
-            competition_type: "draft_day",
-            league_season_id: seasonId,
-            sport,
-            room_code:        roomCode,
-            host_user_id:     userId,
-            status:           "active",
-            is_private:       true,
-          })
-          .select("id")
-          .single();
-
-        if (roomErr || !roomRow) {
-          throw new Error(`Failed to create room: ${roomErr?.message}`);
+      // ── Atomic publish via publish_fantasy_draft_day() RPC ───────────────────
+      // All inserts (room + pick_card + props) happen inside a single PL/pgSQL
+      // transaction. If anything fails, the DB rolls back automatically — no
+      // orphan rows, no partial state.
+      //
+      // The RPC creates the pick card with status='closed'. We immediately patch
+      // it to 'open' after the RPC succeeds: 'open' is the Phase 4A.1 lifecycle
+      // state meaning "Draft Day published; picks available when Phase 4B lands."
+      // The RPC itself cannot be changed without a new migration, so the patch
+      // is intentional and documented here.
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "publish_fantasy_draft_day",
+        {
+          p_league_season_id: seasonId,
+          p_room_name:        roomName,
+          p_sport:            sport,
+          p_room_code:        roomCode,
+          p_host_user_id:     userId,
+          p_props:            propsPayload,
         }
-        newRoomId = (roomRow as any).id as string;
+      );
 
-        // 2. Create pick card
-        // status='open': Phase 4B member pick submission uses 'open' as the
-        // "picks available" gate. Using 'open' from publish forward makes the
-        // lifecycle unambiguous: open → locked → settled.
-        const { data: cardRow, error: cardErr } = await supabase
-          .from("gameday_pick_cards")
-          .insert({
-            room_id:       newRoomId,
-            title:         "Draft Day",
-            phase:         "draft_day",
-            status:        "open",
-            display_order: 0,
-          })
-          .select("id")
-          .single();
+      if (rpcError || !rpcResult) {
+        console.error("[fantasy] publish_fantasy_draft_day RPC error:", rpcError?.message);
+        res.status(500).json({ error: "Failed to publish Draft Day" });
+        return;
+      }
 
-        if (cardErr || !cardRow) {
-          throw new Error(`Failed to create pick card: ${cardErr?.message}`);
-        }
-        newCardId = (cardRow as any).id as string;
+      const newRoomId      = rpcResult.room_id as string;
+      const newCardId      = rpcResult.card_id as string;
+      const alreadyExisted = rpcResult.already_existed as boolean;
 
-        // 3. Insert props — try with answer_target_type, fall back without if column missing
-        const propRows = propsPayload.map((p) => ({
-          card_id:            newCardId,
-          template_prop_id:   p.library_id,
-          question:           p.question,
-          answer_options:     p.answer_options,
-          scoring_scope:      p.scoring_scope,
-          point_value:        p.point_value,
-          answer_target_type: p.answer_target_type,
-          display_order:      p.display_order,
-          status:             "pending",
-        }));
-
-        const { error: propErr } = await supabase.from("gameday_props").insert(propRows);
-
-        if (propErr) {
-          // If the column doesn't exist yet, retry without it
-          if (propErr.message?.includes("answer_target_type")) {
-            console.warn("[fantasy] answer_target_type column missing — inserting without it");
-            const propRowsFallback = propRows.map(({ answer_target_type: _drop, ...rest }) => rest);
-            const { error: propErr2 } = await supabase.from("gameday_props").insert(propRowsFallback);
-            if (propErr2) throw new Error(`Failed to insert props (fallback): ${propErr2.message}`);
-          } else {
-            throw new Error(`Failed to insert props: ${propErr.message}`);
-          }
-        }
-
+      if (alreadyExisted) {
         console.log(
-          `[fantasy] Draft Day published: season=${seasonId.slice(0, 8)}… room=${newRoomId.slice(0, 8)}… props=${propsPayload.length}`
+          `[fantasy] Draft Day already exists (RPC idempotent): room=${String(newRoomId).slice(0, 8)}…`
         );
-
-        res.status(201).json({
+        res.status(200).json({
           room_id:         newRoomId,
           card_id:         newCardId,
-          room_code:       roomCode,
-          already_existed: false,
+          room_code:       null,
+          already_existed: true,
         });
-      } catch (publishErr: any) {
-        // Attempt partial rollback to avoid orphan rows
-        if (newCardId) {
-          await supabase.from("gameday_props").delete().eq("card_id", newCardId).then(() =>
-            supabase.from("gameday_pick_cards").delete().eq("id", newCardId)
-          );
-        }
-        if (newRoomId) {
-          await supabase.from("gameday_rooms").delete().eq("id", newRoomId);
-        }
-        console.error("[fantasy] publish Draft Day failed (rolled back):", publishErr.message);
-        res.status(500).json({ error: "Failed to publish Draft Day" });
+        return;
       }
+
+      // Patch pick card to 'open': the RPC creates it as 'closed' (the RPC
+      // predates the Phase 4A.1 decision to use 'open' as the publish-time
+      // state). This single UPDATE is safe post-commit.
+      const { error: patchErr } = await supabase
+        .from("gameday_pick_cards")
+        .update({ status: "open", updated_at: new Date().toISOString() })
+        .eq("id", newCardId);
+
+      if (patchErr) {
+        console.error("[fantasy] card status patch failed:", patchErr.message);
+        // Non-fatal: room + card + props are committed. Log and continue.
+      }
+
+      console.log(
+        `[fantasy] Draft Day published via RPC: season=${seasonId.slice(0, 8)}… room=${newRoomId.slice(0, 8)}… props=${propsPayload.length}`
+      );
+
+      res.status(201).json({
+        room_id:         newRoomId,
+        card_id:         newCardId,
+        room_code:       roomCode,
+        already_existed: false,
+      });
     }
   );
 
