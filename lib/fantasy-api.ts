@@ -104,6 +104,8 @@ export interface FantasyParticipant {
   team_name: string | null;
   manager_id: string | null;
   manager_role: string | null;
+  /** Whether this seat has an active claim. Populated by GET /seasons/:id. */
+  is_claimed: boolean;
 }
 
 /** The authenticated/guest caller's identity within this league. Null if no claim. */
@@ -164,6 +166,18 @@ export interface JoinInfo {
   seats: JoinInfoSeat[];
   /** Pre-identified caller seat. Non-null → skip seat selection in UI. */
   my_seat: FantasyViewer | null;
+}
+
+// POST /api/fantasy/claim/upgrade
+export async function upgradeGuestClaim(
+  guestToken: string,
+  auth: { session: NonNullable<Parameters<typeof fantasyFetch>[2]["session"]> }
+): Promise<{ claim_id: string; league_member_id: string; upgraded: boolean; already_upgraded?: boolean }> {
+  return fantasyFetch(
+    "/api/fantasy/claim/upgrade",
+    { method: "POST", body: JSON.stringify({ guest_token: guestToken }) },
+    auth
+  );
 }
 
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/claim

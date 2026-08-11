@@ -3,21 +3,13 @@
  * ──────────────────────────────────────────────────────────────────────────────
  * Fantasy League Hub — role-aware season overview (Phase 3).
  *
- * Shows:
- *   • League name, sport, season year, status
- *   • MY TEAM card — viewer's own seat (if they have an active claim)
+ * Features:
+ *   • MY TEAM card — viewer's seat (if they have an active claim)
+ *   • Commissioner-only claim-status column: "Joined" / "Waiting" per seat
  *   • Invite Members share button — commissioner only
- *   • Full participants table (display_name, team, role badges)
- *   • Weekly reward card (if set)
- *   • Draft Day placeholder
- *
- * Identity:
- *   • Authenticated user → Bearer token
- *   • Guest (device-only claim) → X-Fantasy-Guest-Token header
- *   • Neither → prompt to sign in
- *
- * Data source: GET /api/fantasy/leagues/:leagueId/seasons/:seasonId
- * (includes viewer field identifying the caller's role/team)
+ *   • Guest post-claim welcome banner (shows when ?joined=1 in URL)
+ *   • Silent guest → auth claim upgrade when session appears
+ *   • "Back to Swayger" + "Create Account" CTAs for guest viewers
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -38,10 +30,10 @@ import { useAuth } from "@/lib/auth-context";
 import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   fantasyFetch,
+  upgradeGuestClaim,
   FANTASY_SPORTS,
   FantasySeasonDetail,
   FantasyParticipant,
-  FantasyViewer,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
@@ -57,7 +49,6 @@ const STATUS_LABEL: Record<string, string> = {
   completed: "Completed",
   archived:  "Archived",
 };
-
 const STATUS_COLOR: Record<string, string> = {
   upcoming:  C.textMuted,
   active:    "#22c55e",
@@ -65,7 +56,6 @@ const STATUS_COLOR: Record<string, string> = {
   archived:  C.textMuted,
 };
 
-/** Build a shareable invite URL for the given league/season. */
 function buildInviteUrl(leagueId: string, seasonId: string): string {
   const path = `/fantasy/join/${leagueId}/${seasonId}`;
   if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -81,22 +71,24 @@ export default function LeagueHubScreen() {
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
   const { guestToken, guestTokenLoading } = useFantasyGuestToken();
-  const { leagueId, seasonId } = useLocalSearchParams<{
+  const { leagueId, seasonId, joined } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
+    joined?: string;
   }>();
 
-  const [detail, setDetail] = useState<FantasySeasonDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [detail, setDetail]       = useState<FantasySeasonDetail | null>(null);
+  const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]         = useState<string | null>(null);
+
+  // Welcome banner: shown immediately after a successful claim (?joined=1)
+  const [showWelcome, setShowWelcome] = useState(joined === "1");
 
   const fetchDetail = useCallback(
     async (quiet = false) => {
       if (!leagueId || !seasonId) return;
-      // Need at least one identity to fetch hub
       if (!session && !guestToken) return;
-
       if (!quiet) setLoading(true);
       setError(null);
       try {
@@ -123,6 +115,14 @@ export default function LeagueHubScreen() {
     fetchDetail();
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
 
+  // Silent guest → auth upgrade when session appears while a guest token exists
+  useEffect(() => {
+    if (!session || !guestToken) return;
+    upgradeGuestClaim(guestToken, { session }).catch(() => {
+      // Fire-and-forget; failure is non-critical
+    });
+  }, [session?.access_token, guestToken]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchDetail(true);
@@ -132,14 +132,11 @@ export default function LeagueHubScreen() {
     if (!leagueId || !seasonId) return;
     try {
       const url = buildInviteUrl(leagueId, seasonId);
-      await Share.share({
-        message: `Join my fantasy league on Swayger! ${url}`,
-        url,
-      });
+      await Share.share({ message: `Join my fantasy league on Swayger! ${url}`, url });
     } catch { /* user cancelled */ }
   };
 
-  // ── Auth guard ──────────────────────────────────────────────────────────────
+  // ── Loading / auth guard ────────────────────────────────────────────────────
   if (authLoading || guestTokenLoading || (loading && !detail)) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -167,7 +164,7 @@ export default function LeagueHubScreen() {
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
-          <Text style={styles.backLinkText}>← Back</Text>
+          <Text style={styles.linkText}>← Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -176,19 +173,18 @@ export default function LeagueHubScreen() {
   if (!detail) return null;
 
   const { league, season, participants, viewer } = detail;
-
   const commissioner = participants.find((p) => p.role === "commissioner");
   const members = participants.filter((p) => p.role !== "commissioner");
   const orderedParticipants: FantasyParticipant[] = commissioner
     ? [commissioner, ...members]
     : participants;
 
-  const sportEmoji = SPORT_EMOJI[league.sport] ?? "🏆";
-  const sportLabel = league.sport.charAt(0).toUpperCase() + league.sport.slice(1);
-  const statusLabel = STATUS_LABEL[season.status] ?? season.status;
-  const statusColor = STATUS_COLOR[season.status] ?? C.textMuted;
-
+  const sportEmoji   = SPORT_EMOJI[league.sport] ?? "🏆";
+  const sportLabel   = league.sport.charAt(0).toUpperCase() + league.sport.slice(1);
+  const statusLabel  = STATUS_LABEL[season.status] ?? season.status;
+  const statusColor  = STATUS_COLOR[season.status] ?? C.textMuted;
   const isCommissioner = viewer?.role === "commissioner" || viewer?.role === "co_commissioner";
+  const isGuest        = !session && !!guestToken;
 
   return (
     <ScrollView
@@ -201,120 +197,203 @@ export default function LeagueHubScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.tint} />
       }
     >
-      {/* Back */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.backLinkText}>← Game Day</Text>
-      </TouchableOpacity>
-
-      {/* League header */}
-      <View style={styles.leagueHeader}>
-        <Text style={styles.sportEmoji}>{sportEmoji}</Text>
-        <View style={styles.leagueHeaderText}>
-          <Text style={styles.leagueName} numberOfLines={2}>
-            {league.league_name}
-          </Text>
-          <Text style={styles.leagueMeta}>
-            {sportLabel} · {season.season_year} Season
-          </Text>
-        </View>
-        <View style={[styles.statusBadge, { borderColor: statusColor }]}>
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-      </View>
-
-      {/* ── Commissioner: Invite Members button ─────────────────────────────── */}
-      {isCommissioner && (
-        <TouchableOpacity style={styles.inviteBtn} onPress={handleShare} activeOpacity={0.8}>
-          <Text style={styles.inviteBtnIcon}>🔗</Text>
-          <View style={styles.inviteBtnText}>
-            <Text style={styles.inviteBtnTitle}>Invite Members</Text>
-            <Text style={styles.inviteBtnSub}>Share the league join link</Text>
-          </View>
-          <Text style={styles.inviteBtnArrow}>›</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── My Team card ────────────────────────────────────────────────────── */}
-      {viewer && (
-        <View style={[
-          styles.myTeamCard,
-          isCommissioner ? styles.myTeamCardCommissioner : styles.myTeamCardMember,
-        ]}>
-          <Text style={styles.myTeamLabel}>MY TEAM</Text>
-          <Text style={styles.myTeamName}>
-            {viewer.display_name ?? "—"}
-          </Text>
+      {/* ── Guest welcome banner (?joined=1) ──────────────────────────────── */}
+      {showWelcome && viewer && (
+        <View style={styles.welcomeCard}>
+          <Text style={styles.welcomeEmoji}>🎉</Text>
+          <Text style={styles.welcomeHeadline}>You're in!</Text>
+          <Text style={styles.welcomeLeague}>{league.league_name}</Text>
+          <Text style={styles.welcomeName}>{viewer.display_name}</Text>
           {viewer.team_name && (
-            <Text style={styles.myTeamTeam}>{viewer.team_name}</Text>
+            <Text style={styles.welcomeTeam}>{viewer.team_name}</Text>
           )}
-          {isCommissioner && (
-            <View style={styles.myTeamRoleBadge}>
-              <Text style={styles.myTeamRoleText}>
-                {viewer.role === "co_commissioner" ? "Co-Commissioner" : "Commissioner"}
+
+          <TouchableOpacity
+            style={[styles.btn, { marginTop: 16 }]}
+            onPress={() => setShowWelcome(false)}
+          >
+            <Text style={styles.btnText}>Open My League</Text>
+          </TouchableOpacity>
+
+          {isGuest && (
+            <>
+              <View style={styles.welcomeDivider} />
+              <Text style={styles.welcomeUpgradeHint}>
+                Create a free account to access your league from any device.
               </Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Weekly reward */}
-      {season.default_reward_description && (
-        <View style={styles.rewardCard}>
-          <Text style={styles.rewardLabel}>WEEKLY REWARD</Text>
-          <Text style={styles.rewardText}>
-            {season.default_reward_amount_display
-              ? `${season.default_reward_amount_display} — `
-              : ""}
-            {season.default_reward_description}
-          </Text>
-        </View>
-      )}
-
-      {/* Participants */}
-      <Text style={styles.sectionLabel}>
-        MANAGERS & TEAMS · {orderedParticipants.length}
-      </Text>
-
-      <View style={styles.participantsCard}>
-        {orderedParticipants.map((p, i) => {
-          const isMe = viewer?.league_member_id === p.league_member_id;
-          return (
-            <View
-              key={p.season_member_id}
-              style={[
-                styles.participantRow,
-                i > 0 && styles.participantRowBorder,
-                isMe && styles.participantRowMe,
-              ]}
-            >
-              <View style={styles.participantLeft}>
-                <Text style={[styles.participantName, isMe && styles.participantNameMe]}>
-                  {p.display_name ?? "—"}
-                  {isMe && <Text style={styles.meBadge}> · You</Text>}
+              <TouchableOpacity
+                style={[styles.btn, styles.btnSecondary, { marginTop: 10 }]}
+                onPress={() => router.push("/auth")}
+              >
+                <Text style={[styles.btnText, { color: C.tint }]}>
+                  Create Account / Sign In
                 </Text>
-                {p.role === "commissioner" && (
-                  <Text style={styles.commissionerBadge}>Commissioner</Text>
-                )}
-                {p.role === "co_commissioner" && (
-                  <Text style={styles.commissionerBadge}>Co-Commissioner</Text>
-                )}
-              </View>
-              <Text style={styles.teamName} numberOfLines={1}>
-                {p.team_name ?? <Text style={{ color: C.textMuted }}>No team</Text>}
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity
+            style={styles.backToSwayger}
+            onPress={() => router.replace("/(tabs)")}
+          >
+            <Text style={styles.linkText}>← Back to Swayger</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!showWelcome && (
+        <>
+          {/* Back */}
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.linkText}>← Game Day</Text>
+          </TouchableOpacity>
+
+          {/* League header */}
+          <View style={styles.leagueHeader}>
+            <Text style={styles.sportEmoji}>{sportEmoji}</Text>
+            <View style={styles.leagueHeaderText}>
+              <Text style={styles.leagueName} numberOfLines={2}>
+                {league.league_name}
+              </Text>
+              <Text style={styles.leagueMeta}>
+                {sportLabel} · {season.season_year} Season
               </Text>
             </View>
-          );
-        })}
-      </View>
+            <View style={[styles.statusBadge, { borderColor: statusColor }]}>
+              <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
+          </View>
 
-      {/* Phase placeholder */}
-      <View style={styles.phaseCard}>
-        <Text style={styles.phaseIcon}>📋</Text>
-        <Text style={styles.phaseTitle}>Draft Day</Text>
-        <Text style={styles.phaseSubtitle}>
-          Prop assignment and draft management coming in the next phase.
-        </Text>
-      </View>
+          {/* Commissioner: Invite Members button */}
+          {isCommissioner && (
+            <TouchableOpacity style={styles.inviteBtn} onPress={handleShare} activeOpacity={0.8}>
+              <Text style={styles.inviteBtnIcon}>🔗</Text>
+              <View style={styles.inviteBtnText}>
+                <Text style={styles.inviteBtnTitle}>Invite Members</Text>
+                <Text style={styles.inviteBtnSub}>Share the league join link</Text>
+              </View>
+              <Text style={styles.inviteBtnArrow}>›</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* My Team card */}
+          {viewer && (
+            <View style={[
+              styles.myTeamCard,
+              isCommissioner ? styles.myTeamCardCommissioner : styles.myTeamCardMember,
+            ]}>
+              <Text style={styles.myTeamLabel}>MY TEAM</Text>
+              <Text style={styles.myTeamName}>{viewer.display_name ?? "—"}</Text>
+              {viewer.team_name && (
+                <Text style={styles.myTeamTeam}>{viewer.team_name}</Text>
+              )}
+              {isCommissioner && (
+                <Text style={styles.myTeamRole}>
+                  {viewer.role === "co_commissioner" ? "Co-Commissioner" : "Commissioner"}
+                </Text>
+              )}
+              {isGuest && (
+                <TouchableOpacity
+                  style={styles.upgradeLink}
+                  onPress={() => router.push("/auth")}
+                >
+                  <Text style={styles.upgradeLinkText}>
+                    Sign in to keep your seat across devices →
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Weekly reward */}
+          {season.default_reward_description && (
+            <View style={styles.rewardCard}>
+              <Text style={styles.rewardLabel}>WEEKLY REWARD</Text>
+              <Text style={styles.rewardText}>
+                {season.default_reward_amount_display
+                  ? `${season.default_reward_amount_display} — `
+                  : ""}
+                {season.default_reward_description}
+              </Text>
+            </View>
+          )}
+
+          {/* Participants */}
+          <Text style={styles.sectionLabel}>
+            MANAGERS & TEAMS · {orderedParticipants.length}
+          </Text>
+          {isCommissioner && (
+            <Text style={styles.sectionHint}>
+              "Joined" = seat claimed · "Waiting" = not yet claimed
+            </Text>
+          )}
+
+          <View style={styles.participantsCard}>
+            {orderedParticipants.map((p, i) => {
+              const isMe = viewer?.league_member_id === p.league_member_id;
+              return (
+                <View
+                  key={p.season_member_id}
+                  style={[
+                    styles.participantRow,
+                    i > 0 && styles.participantRowBorder,
+                    isMe && styles.participantRowMe,
+                  ]}
+                >
+                  <View style={styles.participantLeft}>
+                    <Text style={[styles.participantName, isMe && styles.participantNameMe]}>
+                      {p.display_name ?? "—"}
+                      {isMe ? <Text style={styles.meBadge}> · You</Text> : null}
+                    </Text>
+                    {(p.role === "commissioner" || p.role === "co_commissioner") && (
+                      <Text style={styles.commissionerBadge}>
+                        {p.role === "co_commissioner" ? "Co-Commissioner" : "Commissioner"}
+                      </Text>
+                    )}
+                    {p.team_name ? (
+                      <Text style={styles.teamName}>{p.team_name}</Text>
+                    ) : null}
+                  </View>
+
+                  {/* Claim status — commissioner-only */}
+                  {isCommissioner && (
+                    <View style={[
+                      styles.claimBadge,
+                      p.is_claimed ? styles.claimBadgeJoined : styles.claimBadgeWaiting,
+                    ]}>
+                      <Text style={[
+                        styles.claimBadgeText,
+                        p.is_claimed ? styles.claimBadgeTextJoined : styles.claimBadgeTextWaiting,
+                      ]}>
+                        {p.is_claimed ? "Joined" : "Waiting"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Phase placeholder */}
+          <View style={styles.phaseCard}>
+            <Text style={styles.phaseIcon}>📋</Text>
+            <Text style={styles.phaseTitle}>Draft Day</Text>
+            <Text style={styles.phaseSubtitle}>
+              Prop assignment and draft management coming in the next phase.
+            </Text>
+          </View>
+
+          {/* Guest: back to Swayger home */}
+          {isGuest && (
+            <TouchableOpacity
+              style={styles.backToSwayger}
+              onPress={() => router.replace("/(tabs)")}
+            >
+              <Text style={styles.linkText}>← Back to Swayger</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -331,10 +410,40 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  backBtn: { marginBottom: 16 },
-  backLinkText: { color: C.tint, fontSize: 15, fontWeight: "600" },
+  // Welcome banner
+  welcomeCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.tint,
+    padding: 24,
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 16,
+  },
+  welcomeEmoji:   { fontSize: 40, marginBottom: 4 },
+  welcomeHeadline:{ fontSize: 26, fontWeight: "800", color: C.text },
+  welcomeLeague:  { fontSize: 15, color: C.textMuted, marginTop: -2, marginBottom: 8 },
+  welcomeName:    { fontSize: 20, fontWeight: "700", color: C.text },
+  welcomeTeam:    { fontSize: 14, color: C.textSecondary },
+  welcomeDivider: {
+    height: 1,
+    backgroundColor: C.border,
+    alignSelf: "stretch",
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  welcomeUpgradeHint: {
+    fontSize: 13,
+    color: C.textMuted,
+    textAlign: "center",
+    lineHeight: 18,
+    paddingHorizontal: 8,
+  },
+  backToSwayger: { marginTop: 14, alignItems: "center" },
 
   // Header
+  backBtn: { marginBottom: 16 },
   leagueHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -354,7 +463,7 @@ const styles = StyleSheet.create({
   },
   statusText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
 
-  // Invite button (commissioner only)
+  // Invite button
   inviteBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -366,10 +475,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  inviteBtnIcon: { fontSize: 22 },
-  inviteBtnText: { flex: 1 },
+  inviteBtnIcon:  { fontSize: 22 },
+  inviteBtnText:  { flex: 1 },
   inviteBtnTitle: { fontSize: 15, fontWeight: "700", color: C.tint },
-  inviteBtnSub: { fontSize: 12, color: C.textMuted, marginTop: 1 },
+  inviteBtnSub:   { fontSize: 12, color: C.textMuted, marginTop: 1 },
   inviteBtnArrow: { fontSize: 22, color: C.tint, fontWeight: "300" },
 
   // My Team card
@@ -380,14 +489,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 4,
   },
-  myTeamCardCommissioner: {
-    backgroundColor: "#0D1235",
-    borderColor: C.tint,
-  },
-  myTeamCardMember: {
-    backgroundColor: "#0A1F0A",
-    borderColor: "#22c55e",
-  },
+  myTeamCardCommissioner: { backgroundColor: "#0D1235", borderColor: C.tint },
+  myTeamCardMember:       { backgroundColor: "#0A1F0A", borderColor: "#22c55e" },
   myTeamLabel: {
     fontSize: 10,
     fontWeight: "700",
@@ -397,13 +500,9 @@ const styles = StyleSheet.create({
   },
   myTeamName: { fontSize: 20, fontWeight: "700", color: C.text },
   myTeamTeam: { fontSize: 14, color: C.textSecondary },
-  myTeamRoleBadge: { marginTop: 6, alignSelf: "flex-start" },
-  myTeamRoleText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.tint,
-    letterSpacing: 0.4,
-  },
+  myTeamRole: { fontSize: 11, fontWeight: "700", color: C.tint, letterSpacing: 0.4, marginTop: 4 },
+  upgradeLink: { marginTop: 8 },
+  upgradeLinkText: { fontSize: 12, color: C.tint },
 
   // Reward
   rewardCard: {
@@ -423,16 +522,19 @@ const styles = StyleSheet.create({
   },
   rewardText: { color: C.text, fontSize: 14, lineHeight: 20 },
 
-  // Section label
+  // Participants
   sectionLabel: {
     fontSize: 11,
     fontWeight: "700",
     color: C.textMuted,
     letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  sectionHint: {
+    fontSize: 11,
+    color: C.textMuted,
     marginBottom: 10,
   },
-
-  // Participants
   participantsCard: {
     backgroundColor: C.surface,
     borderRadius: 14,
@@ -459,9 +561,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: C.tint,
     letterSpacing: 0.4,
-    marginTop: 2,
+    marginTop: 1,
   },
-  teamName: { fontSize: 14, color: C.textSecondary, flexShrink: 1 },
+  teamName: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
+
+  // Claim status badges
+  claimBadge: {
+    borderRadius: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderWidth: 1,
+    minWidth: 62,
+    alignItems: "center",
+  },
+  claimBadgeJoined:  { backgroundColor: "#0A1F0A", borderColor: "#22c55e" },
+  claimBadgeWaiting: { backgroundColor: C.surfaceLight, borderColor: C.border },
+  claimBadgeText:    { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  claimBadgeTextJoined:  { color: "#22c55e" },
+  claimBadgeTextWaiting: { color: C.textMuted },
 
   // Phase placeholder
   phaseCard: {
@@ -472,24 +589,27 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
     gap: 8,
+    marginBottom: 16,
   },
-  phaseIcon: { fontSize: 32 },
-  phaseTitle: { fontSize: 16, fontWeight: "700", color: C.text },
-  phaseSubtitle: {
-    fontSize: 13,
-    color: C.textMuted,
-    textAlign: "center",
-    lineHeight: 19,
-  },
+  phaseIcon:     { fontSize: 32 },
+  phaseTitle:    { fontSize: 16, fontWeight: "700", color: C.text },
+  phaseSubtitle: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 19 },
 
-  // Error/loading
-  errorText: { color: C.danger, fontSize: 14, textAlign: "center" },
+  // Shared
   btn: {
     backgroundColor: C.tint,
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 24,
-    marginTop: 8,
+    alignItems: "center",
+    alignSelf: "stretch",
   },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  btnSecondary: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: C.tint,
+  },
+  btnText:   { color: "#fff", fontWeight: "700", fontSize: 15 },
+  linkText:  { color: C.tint, fontSize: 14, fontWeight: "600" },
+  errorText: { color: C.danger, fontSize: 14, textAlign: "center" },
 });

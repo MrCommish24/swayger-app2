@@ -1,0 +1,149 @@
+Pause Draft Day work.
+
+Manual Phase 3 QA uncovered three issues. Investigate and fix these before we move on.
+
+1. COMMISSIONER CLAIM VISIBILITY
+
+On the Fantasy League Hub, the commissioner should be able to quickly see who has claimed their seat.
+
+Do not build a large invite-management system.
+
+Add a simple status to each member/team row, based on active fantasy_member_claims:
+
+- Joined / Claimed
+- Waiting / Not claimed
+
+Example:
+
+Darius — The Monstars        Joined
+Mike — Sunday Scaries        Joined
+Chris — Fourth & Long        Waiting
+
+The commissioner should be able to glance at the league and know who is ready.
+
+Normal members do not need to see claim-management details unless useful for the league experience.
+
+2. GUEST POST-CLAIM EXPERIENCE
+
+Current behavior:
+After a guest accepts an invite, they effectively remain on a Fantasy League waiting page with no clear way back to the main hub/home experience.
+
+This feels like a dead end.
+
+Improve the successful guest-claim state so it clearly communicates:
+
+- You joined the league
+- Your identity/team
+- Draft Day / competitions will appear here when available
+- A clear action to Open League / League Hub
+- A clear way to navigate back into Swayger
+
+Also evaluate the conversion opportunity here.
+
+Preferred UX:
+
+“You’re in Food Pyramid”
+“Mike — Sunday Scaries”
+
+Then offer:
+
+[ Open My League ]
+
+and a secondary account CTA such as:
+
+“Create an account to keep your league across devices”
+
+Do NOT force account creation before or after claiming.
+
+Preserve Continue as Guest.
+
+This should align with the planned guest-to-authenticated claim upgrade rather than create a separate identity model.
+
+3. CRITICAL: INVITE LINK FAILS FOR SECOND MEMBER
+
+Manual repro:
+
+- Commissioner copies invite link.
+- First user opens invite and successfully claims one seat.
+- Commissioner copies/uses the same invitation link in a new incognito browser.
+- Second user attempts to open/join.
+- UI shows generic “Failed to fetch” with Try Again.
+
+The same league invitation MUST remain reusable for multiple league members.
+
+Expected behavior after Mike claims:
+
+- invite URL still works
+- Mike is visibly unavailable/claimed
+- Chris and other unclaimed seats remain selectable
+- another user can claim Chris
+- only attempts to claim Mike should return 409 / already claimed
+
+Investigate this as a real bug.
+
+Do not assume the invite is invalidated by design.
+
+Trace:
+
+- exact frontend request that fails
+- HTTP method + route
+- backend status/error
+- server logs
+- guest-token behavior
+- auth/session state
+- join-info response after one claim
+- CORS/network behavior in incognito
+- whether partial unique index or claim RPC is incorrectly affecting join-info
+- whether the generic UI is swallowing a specific 409/4xx/5xx
+
+Replace generic “Failed to fetch” with a useful user-facing error where appropriate, but first fix the underlying bug.
+
+4. GUEST → AUTHENTICATED CLAIM UPGRADE
+
+Do not build this blindly yet, but assess it as part of the guest post-claim flow.
+
+Desired future behavior:
+
+guest claims Mike
+→ later signs in / creates account
+→ existing guest claim upgrades or links safely to authenticated user
+→ Mike does not lose the seat
+→ no duplicate active claim
+→ cross-device access becomes available
+
+If the existing Phase 3 schema/RPC supports a clean upgrade, propose the minimum implementation.
+
+Do not create a second claim record that violates one-active-claim-per-seat.
+
+5. TESTS REQUIRED
+
+Add/verify:
+
+- commissioner sees claimed vs waiting status
+- same invite works before any claim
+- same invite works after 1 seat claimed
+- same invite works after multiple seats claimed
+- claimed seat unavailable
+- unclaimed seat still claimable
+- second user can claim a different seat
+- duplicate claim of same seat by different identity → 409
+- guest successful claim has clear navigation to league hub
+- guest reload stays recognized on same device
+- no regression to authenticated member claim
+- Phase 2 67/67 remains green
+- Phase 3 60/60 remains green or updated suite is fully green
+
+6. RETURN
+
+Return:
+
+1. root cause of the Failed to fetch bug
+2. exact fix
+3. files changed
+4. commissioner claim-status UX
+5. revised guest post-claim UX
+6. guest-to-auth upgrade recommendation
+7. updated test counts/results
+8. exact manual QA sequence I should run
+
+Do not begin Draft Day yet.

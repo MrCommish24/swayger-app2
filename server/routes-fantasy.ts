@@ -533,7 +533,24 @@ export function registerFantasyRoutes(app: Express) {
       // Resolve viewer — null if caller has no active claim in this league
       const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
 
-      res.json({ league, season, participants, viewer });
+      // Add is_claimed to each participant (one extra query; powers commissioner claim-status view)
+      const lmIds = participants.map((p: any) => p.league_member_id).filter(Boolean);
+      const { data: activeClaims } = lmIds.length
+        ? await supabase
+            .from("fantasy_member_claims")
+            .select("league_member_id")
+            .in("league_member_id", lmIds)
+            .eq("is_active", true)
+        : { data: [] };
+      const claimedMemberIds = new Set(
+        (activeClaims ?? []).map((c: any) => c.league_member_id)
+      );
+      const participantsWithClaims = participants.map((p: any) => ({
+        ...p,
+        is_claimed: p.league_member_id ? claimedMemberIds.has(p.league_member_id) : false,
+      }));
+
+      res.json({ league, season, participants: participantsWithClaims, viewer });
     }
   );
 
@@ -730,6 +747,91 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       res.status(result.already_existed ? 200 : 201).json(result);
+    }
+  );
+
+  // ── POST /api/fantasy/claim/upgrade ────────────────────────────────────────
+  //
+  // Upgrades a guest claim to an authenticated claim.
+  // Called after a guest signs in / creates an account.
+  //
+  // Auth: Bearer JWT required.
+  // Body: { guest_token: string }
+  //
+  // Finds the active claim held by guest_token, sets user_id = auth user,
+  // clears guest_token. No new row is created — the partial unique index
+  // (one active claim per seat) is never violated.
+  //
+  // Response:
+  //   200 — upgraded: true (or already_upgraded: true if user already holds it)
+  //   400 — guest_token missing
+  //   404 — no active guest claim found for this token
+  //   500 — DB error
+  app.post(
+    "/api/fantasy/claim/upgrade",
+    async (req: Request, res: Response) => {
+      const userId = requireFantasyAuth(req, res);
+      if (!userId) return;
+
+      const { guest_token } = req.body as { guest_token?: string };
+      if (!guest_token?.trim()) {
+        res.status(400).json({ error: "guest_token is required" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+
+      // Find the active guest claim
+      const { data: claim } = await supabase
+        .from("fantasy_member_claims")
+        .select("id, league_member_id")
+        .eq("guest_token", guest_token.trim())
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!claim) {
+        res.status(404).json({ error: "No active guest claim found for this token" });
+        return;
+      }
+
+      // Check if this user already has an active claim on the same seat
+      const { data: existing } = await supabase
+        .from("fantasy_member_claims")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("league_member_id", (claim as any).league_member_id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (existing) {
+        // Idempotent: user already holds an authenticated claim on this seat
+        res.json({ already_upgraded: true, claim_id: (existing as any).id });
+        return;
+      }
+
+      // Upgrade: bind user_id, clear guest_token (same row, no new record)
+      const { data: updated, error } = await supabase
+        .from("fantasy_member_claims")
+        .update({ user_id: userId, guest_token: null })
+        .eq("id", (claim as any).id)
+        .select("id, league_member_id")
+        .maybeSingle();
+
+      if (error) {
+        console.error("[fantasy] claim upgrade error:", error.message);
+        res.status(500).json({ error: "Failed to upgrade claim" });
+        return;
+      }
+
+      console.log(
+        `[fantasy] Claim upgraded: member=${(claim as any).league_member_id?.slice(0, 8)}… user=${userId.slice(0, 8)}…`
+      );
+
+      res.json({
+        claim_id:         (updated as any).id,
+        league_member_id: (updated as any).league_member_id,
+        upgraded:         true,
+      });
     }
   );
 }

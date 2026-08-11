@@ -39,6 +39,13 @@ description: Route structure, claim architecture, SQL migration, and test result
 ## Invite URL Format
 `/fantasy/join/:leagueId/:seasonId` — deterministic, built client-side, no server lookup needed
 
+## Phase 3B fixes (post-QA)
+- **CORS root cause:** `X-Fantasy-Guest-Token` was missing from `Access-Control-Allow-Headers` in `server/index.ts`. Browser CORS preflight blocked all guest-token requests (Node.js tests passed because they ignore CORS). Fix: added the header to the allowed list.
+- **Commissioner claim visibility:** `GET /seasons/:id` now queries `fantasy_member_claims` and adds `is_claimed: boolean` to each participant. Hub shows "Joined"/"Waiting" badges (commissioner-only).
+- **Guest post-claim UX:** Hub detects `?joined=1` query param and shows a welcome banner ("You're in!", team info, "Open My League", "Create Account", "Back to Swayger").
+- **Guest → Auth upgrade:** `POST /api/fantasy/claim/upgrade` endpoint. UPDATE existing claim row (set user_id, clear guest_token). No new row = partial unique index never violated. Auto-triggered silently in hub when session appears alongside guest token.
+- Test file: `server/test-fantasy-phase3b.ts` (36 tests, all green)
+
 ## Phase 4 (not yet built)
 - Draft Day — prop assignment and matchup management
 - Score tracking / weekly results
