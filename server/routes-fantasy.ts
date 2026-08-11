@@ -1288,11 +1288,9 @@ export function registerFantasyRoutes(app: Express) {
       // transaction. If anything fails, the DB rolls back automatically — no
       // orphan rows, no partial state.
       //
-      // The RPC creates the pick card with status='closed'. We immediately patch
-      // it to 'open' after the RPC succeeds: 'open' is the Phase 4A.1 lifecycle
-      // state meaning "Draft Day published; picks available when Phase 4B lands."
-      // The RPC itself cannot be changed without a new migration, so the patch
-      // is intentional and documented here.
+      // The RPC creates the pick card directly with status='open' (Phase 4A.1
+      // atomic lifecycle fix applied). No post-RPC mutation is needed.
+      // Lifecycle: open → locked → settled.
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         "publish_fantasy_draft_day",
         {
@@ -1326,19 +1324,6 @@ export function registerFantasyRoutes(app: Express) {
           already_existed: true,
         });
         return;
-      }
-
-      // Patch pick card to 'open': the RPC creates it as 'closed' (the RPC
-      // predates the Phase 4A.1 decision to use 'open' as the publish-time
-      // state). This single UPDATE is safe post-commit.
-      const { error: patchErr } = await supabase
-        .from("gameday_pick_cards")
-        .update({ status: "open", updated_at: new Date().toISOString() })
-        .eq("id", newCardId);
-
-      if (patchErr) {
-        console.error("[fantasy] card status patch failed:", patchErr.message);
-        // Non-fatal: room + card + props are committed. Log and continue.
       }
 
       console.log(

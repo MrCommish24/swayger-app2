@@ -283,11 +283,16 @@ async function main() {
 
   // ── §5. Commissioner publishes ─────────────────────────────────────────────
   section("5. Commissioner Publishes Draft Day");
+  const defaultCompIds   = competitionTemplates.filter((t: any) => t.is_default).map((t: any) => t.id);
+  const defaultSeasonIds = seasonTemplates.filter((t: any) => t.is_default).map((t: any) => t.id);
+  // Always include fdd_fb_three_qbs so §9b can verify the 'no_one' E2E path.
+  const threeQbsId = competitionTemplates.find((t: any) => t.id === "fdd_fb_three_qbs")?.id ?? null;
   const selectedIds = [
-    ...competitionTemplates.filter((t: any) => t.is_default).map((t: any) => t.id),
-    ...seasonTemplates.filter((t: any) => t.is_default).map((t: any) => t.id),
+    ...defaultCompIds,
+    ...defaultSeasonIds,
+    ...(threeQbsId && !defaultCompIds.includes(threeQbsId) ? [threeQbsId] : []),
   ];
-  note(`Selecting ${selectedIds.length} default templates: ${selectedIds.join(", ")}`);
+  note(`Selecting ${selectedIds.length} templates: ${selectedIds.join(", ")}`);
 
   let publishedRoomId: string  = "";
   let publishedCardId: string  = "";
@@ -491,6 +496,70 @@ async function main() {
       ids.includes(mike_sm_id)
         ? pass("Mike's season_member_id present in answer_options")
         : fail("Mike missing from answer_options", `mike_sm_id=${mike_sm_id.slice(0,8)}… opts=${JSON.stringify(ids.map((i: any) => i.slice(0,8)))}`);
+    }
+  }
+
+  // ── §9b. "No one" E2E — fdd_fb_three_qbs answer_options ──────────────────
+  section("9b. 'No one' E2E — fdd_fb_three_qbs includes stable {id:'no_one'} option");
+  {
+    const threeQbsProp = allProps.find((p: any) => p.template_prop_id === "fdd_fb_three_qbs");
+    if (!threeQbsProp) {
+      skip("fdd_fb_three_qbs not in published props — not in template list or SQL migration not applied");
+    } else {
+      const opts = threeQbsProp.answer_options as any[];
+
+      Array.isArray(opts)
+        ? pass("answer_options is an array")
+        : fail("answer_options not an array", typeof opts);
+
+      const memberOpts = (opts ?? []).filter((o: any) => o.type === "season_member");
+      const noOneOpts  = (opts ?? []).filter((o: any) => o.id === "no_one");
+
+      memberOpts.length >= 2
+        ? pass(`${memberOpts.length} season_member options present alongside no_one`)
+        : fail("Season member options", `Expected ≥2 member opts, got ${memberOpts.length}`);
+
+      // Exactly one no_one — no duplicates
+      noOneOpts.length === 1
+        ? pass("Exactly one 'no_one' option (no duplicate)")
+        : fail("no_one option count", `Expected exactly 1, got ${noOneOpts.length}`);
+
+      if (noOneOpts.length > 0) {
+        const noOne = noOneOpts[0];
+        noOne.id === "no_one"
+          ? pass("no_one.id === 'no_one' (canonical ID)")
+          : fail("no_one.id", `Got ${noOne.id}`);
+        noOne.label === "No one"
+          ? pass("no_one.label === 'No one'")
+          : fail("no_one.label", `Got ${noOne.label}`);
+        noOne.type === "static"
+          ? pass("no_one.type === 'static'")
+          : fail("no_one.type", `Got ${noOne.type}`);
+      }
+
+      // no_one must be the last option (appended after member snapshot)
+      const lastOpt = (opts ?? [])[opts.length - 1];
+      lastOpt?.id === "no_one"
+        ? pass("no_one is the last option in the array (correct append position)")
+        : fail("no_one position", `Last option: ${JSON.stringify(lastOpt)}`);
+
+      note(`fdd_fb_three_qbs answer_options: ${JSON.stringify((opts ?? []).map((o: any) => ({ id: o.id, type: o.type })))}`);
+    }
+
+    // Cross-check: a normal member-target template WITHOUT supports_no_one must
+    // NOT receive a no_one option.
+    const normalMemberProp = allProps.find((p: any) =>
+      p.template_prop_id !== "fdd_fb_three_qbs" &&
+      Array.isArray(p.answer_options) &&
+      p.answer_options.some((o: any) => o.type === "season_member")
+    );
+    if (normalMemberProp) {
+      const hasNoOne = (normalMemberProp.answer_options as any[]).some((o: any) => o.id === "no_one");
+      !hasNoOne
+        ? pass(`Normal member-target prop (${normalMemberProp.template_prop_id}) has no 'no_one' option`)
+        : fail("Normal member-target prop got no_one unexpectedly", normalMemberProp.template_prop_id);
+    } else {
+      note("No other member-target props in selection to cross-check (not a failure)");
     }
   }
 

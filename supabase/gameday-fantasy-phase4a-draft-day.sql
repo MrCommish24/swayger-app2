@@ -331,11 +331,12 @@ BEGIN
   RETURNING id INTO v_room_id;
 
   -- ── Create pick card ─────────────────────────────────────────────────────
-  -- status='closed': members cannot submit picks until the commissioner opens
-  -- or locks the card. Phase 4B will open/lock via the existing card-status
-  -- conventions (PATCH /api/gameday/cards/:cardId/lock).
+  -- status='open': Phase 4A.1 lifecycle decision. 'open' is the authoritative
+  -- "picks available" state. Phase 4B uses card_status='open' as the gate for
+  -- member pick submission. Lifecycle: open → locked → settled.
+  -- (Previously 'closed'; corrected in Phase 4A.1 atomic lifecycle fix.)
   INSERT INTO gameday_pick_cards (room_id, title, phase, status, display_order)
-  VALUES (v_room_id, 'Draft Day', 'draft_day', 'closed', 0)
+  VALUES (v_room_id, 'Draft Day', 'draft_day', 'open', 0)
   RETURNING id INTO v_card_id;
 
   -- ── Snapshot props ───────────────────────────────────────────────────────

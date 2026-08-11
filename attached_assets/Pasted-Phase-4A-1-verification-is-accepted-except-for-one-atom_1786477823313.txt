@@ -1,0 +1,88 @@
+Phase 4A.1 verification is accepted except for one atomic lifecycle correction and one missing end-to-end assertion.
+
+Do NOT begin Phase 4B yet.
+
+1. MOVE THE OPEN CARD STATE INTO THE PUBLISH RPC
+
+Current behavior:
+
+publish_fantasy_draft_day RPC
+→ atomically creates room/card/props
+→ card is created with status='closed'
+
+then Express performs a separate:
+
+UPDATE gameday_pick_cards SET status='open'
+
+This creates a failure window where the RPC commits successfully but the post-RPC update fails, leaving:
+
+room.status='active'
+card.status='closed'
+
+Phase 4B will use card.status='open' as the authoritative member-pick gate, so successful publish must atomically produce the final open state.
+
+Update publish_fantasy_draft_day so the gameday_pick_cards row is created directly with:
+
+status='open'
+
+Remove the separate post-RPC UPDATE from the server.
+
+Successful publish should atomically result in:
+
+room.status='active'
+card.status='open'
+all selected props created
+
+No follow-up mutation should be necessary to make the competition playable.
+
+Use CREATE OR REPLACE FUNCTION if possible and provide the exact SQL I need to apply manually.
+
+2. ADD ONE TRUE NO-ONE END-TO-END TEST
+
+The current report confirms the supports_no_one builder is wired, but the actual published test props did not include fdd_fb_three_qbs.
+
+Add one test that explicitly publishes/selects:
+
+fdd_fb_three_qbs
+
+Then read the resulting gameday_prop back and verify answer_options includes exactly one stable synthetic option:
+
+{
+  id: "no_one",
+  label: "No one",
+  type: "static"
+}
+
+alongside the expected season-member structured options.
+
+Also verify:
+- no duplicate no_one
+- canonical ID is "no_one"
+- normal member-target templates without supports_no_one do not get it
+
+3. REGRESSION
+
+After I apply the SQL, rerun:
+
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A/4A.1
+
+Return exact counts.
+
+Do not begin Phase 4B.
+
+Return:
+1. exact RPC change
+2. SQL requiring manual application
+3. server code removed/changed
+4. No-one E2E test result
+5. full regression counts
+6. final status
+
+PHASE 4A.1 COMPLETE — READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
