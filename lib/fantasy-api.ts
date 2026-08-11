@@ -56,6 +56,9 @@ export interface SetupLeagueResponse {
   claim_id: string;
   season_id: string;
   season_member_id: string;
+  /** Commissioner's team — created atomically in setup_fantasy_league v2 */
+  team_id: string;
+  manager_id: string;
 }
 
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants

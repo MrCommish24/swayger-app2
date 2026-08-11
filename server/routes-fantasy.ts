@@ -179,6 +179,7 @@ export function registerFantasyRoutes(app: Express) {
       league_name,
       sport,
       display_name,
+      team_name,
       season_year,
       reward_description,
       reward_amount_display,
@@ -186,6 +187,7 @@ export function registerFantasyRoutes(app: Express) {
       league_name?: string;
       sport?: string;
       display_name?: string;
+      team_name?: string;
       season_year?: number;
       reward_description?: string;
       reward_amount_display?: string;
@@ -201,6 +203,10 @@ export function registerFantasyRoutes(app: Express) {
     }
     if (!display_name?.trim()) {
       res.status(400).json({ error: "display_name is required" });
+      return;
+    }
+    if (!team_name?.trim()) {
+      res.status(400).json({ error: "team_name is required" });
       return;
     }
     if (
@@ -219,6 +225,7 @@ export function registerFantasyRoutes(app: Express) {
       p_league_name:           league_name.trim(),
       p_sport:                 sport,
       p_display_name:          display_name.trim(),
+      p_team_name:             team_name.trim(),
       p_season_year:           season_year,
       p_reward_description:    reward_description?.trim() || null,
       p_reward_amount_display: reward_amount_display?.trim() || null,

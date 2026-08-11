@@ -162,6 +162,9 @@ export default function FantasySetupScreen() {
       // 1. Create league + first season (atomic RPC).
       // On retry after a participant failure, setupResult is already set —
       // skip this call to prevent a duplicate league from being created.
+      // Commissioner row is guaranteed to be present (validated in step 2).
+      const commissionerRow = participants.find((p) => p.isCommissioner)!;
+
       let setup = setupResult;
       if (!setup) {
         setup = await fantasyFetch<SetupLeagueResponse>(
@@ -172,6 +175,11 @@ export default function FantasySetupScreen() {
               league_name:           leagueName.trim(),
               sport,
               display_name:          displayName.trim(),
+              // team_name is required — commissioner's team is created atomically
+              // inside setup_fantasy_league (rows 6+7 of the RPC). If this call
+              // succeeds, the commissioner ALWAYS has a team. No separate
+              // /participants call for the commissioner is needed.
+              team_name:             commissionerRow.teamName.trim(),
               season_year:           parsedYear,
               reward_description:    rewardDescription.trim() || undefined,
               reward_amount_display: rewardAmount.trim() || undefined,
@@ -182,25 +190,20 @@ export default function FantasySetupScreen() {
         setSetupResult(setup);
       }
 
-      // 2. Add participants — commissioner first, then others
-      const ordered = [
-        ...participants.filter((p) => p.isCommissioner),
-        ...participants.filter((p) => !p.isCommissioner),
-      ];
+      // 2. Add non-commissioner participants only.
+      // The commissioner's own team is created atomically inside setup_fantasy_league
+      // (step 6 + 7 of the RPC). No separate /participants call is needed for the
+      // commissioner — that was the source of the partial-state gap.
+      const nonCommissioners = participants.filter((p) => !p.isCommissioner);
 
-      for (const p of ordered) {
+      for (const p of nonCommissioners) {
         await fantasyFetch(
           `/api/fantasy/leagues/${setup.league_id}/seasons/${setup.season_id}/participants`,
           {
             method: "POST",
             body: JSON.stringify({
-              display_name:      p.displayName.trim(),
-              team_name:         p.teamName.trim(),
-              // Commissioner: pass existing league_member_id so the RPC
-              // skips creating a duplicate league_member row.
-              ...(p.isCommissioner
-                ? { league_member_id: setup.league_member_id }
-                : {}),
+              display_name: p.displayName.trim(),
+              team_name:    p.teamName.trim(),
             }),
           },
           { session }

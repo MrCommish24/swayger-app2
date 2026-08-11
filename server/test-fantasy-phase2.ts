@@ -210,6 +210,7 @@ async function run() {
     league_name: `QA League ${RUN_ID}`,
     sport:       "football",
     display_name: "QA Commissioner",
+    team_name:   "QA Monsters",
     season_year: 2026,
     reward_description: "Dinner for the group",
     reward_amount_display: "$50",
@@ -251,6 +252,18 @@ async function run() {
       ? pass("Float season_year → 400")
       : fail("Float season_year validation", `Expected 400, got ${r.status}`);
   }
+  {
+    const r = await api("/api/fantasy/leagues/setup", { method: "POST", token, body: { ...validSetup, team_name: "" } });
+    r.status === 400
+      ? pass("Empty team_name → 400")
+      : fail("Empty team_name validation", `Expected 400, got ${r.status}`);
+  }
+  {
+    const r = await api("/api/fantasy/leagues/setup", { method: "POST", token, body: { ...validSetup, team_name: undefined } });
+    r.status === 400
+      ? pass("Missing team_name → 400")
+      : fail("Missing team_name validation", `Expected 400, got ${r.status}`);
+  }
 
   // ── 4. SUCCESS — setup_fantasy_league ────────────────────────────────────────
   section("4. Success Path — POST /leagues/setup");
@@ -268,6 +281,13 @@ async function run() {
       note(`claim_id:         ${r.body.claim_id}`);
       note(`season_id:        ${r.body.season_id}`);
       note(`season_member_id: ${r.body.season_member_id}`);
+      note(`team_id:          ${r.body.team_id}`);
+      note(`manager_id:       ${r.body.manager_id}`);
+      // v2 invariant: setup must return the commissioner's team atomically
+      r.body.team_id && r.body.manager_id
+        ? pass("POST /leagues/setup → response includes team_id and manager_id (atomic invariant)")
+        : fail("Atomic invariant violated: team_id or manager_id missing from setup response", JSON.stringify(r.body), "CRITICAL",
+            "setup_fantasy_league RPC must have been applied with the v2 patch that adds rows 6 and 7.");
     } else {
       fail("POST /leagues/setup success path", `Expected 201 with IDs, got ${r.status}: ${JSON.stringify(r.body)}`, "CRITICAL");
     }
@@ -279,7 +299,7 @@ async function run() {
     return reportFinal();
   }
 
-  const { league_id, league_member_id, claim_id, season_id, season_member_id } = setupResult;
+  const { league_id, league_member_id, claim_id, season_id, season_member_id, team_id: setup_team_id, manager_id: setup_manager_id } = setupResult;
 
   // ── 5. Database integrity after league creation ───────────────────────────────
   section("5. Database Integrity — After League Creation");
@@ -348,12 +368,32 @@ async function run() {
     }
   }
 
-  // No teams yet
+  // Commissioner's team must exist immediately after setup (v2 atomic invariant)
   {
     const rows = await dbQuery("fantasy_teams", { league_season_id: season_id });
-    rows.length === 0
-      ? pass("fantasy_teams: 0 rows before participants added (correct)")
-      : fail("fantasy_teams: expected 0 rows before participants", `Got ${rows.length}`);
+    if (rows.length === 1) {
+      const t = rows[0];
+      t.team_name === "QA Monsters" && t.id === setup_team_id
+        ? pass("fantasy_teams: 1 row after setup — commissioner's team created atomically")
+        : fail("fantasy_teams: team_name or id mismatch after setup", JSON.stringify(t), "CRITICAL");
+    } else {
+      fail("fantasy_teams: expected exactly 1 row after setup (commissioner's team)", `Got ${rows.length}`, "CRITICAL",
+        "setup_fantasy_league RPC v2 must create fantasy_teams row in the same transaction.");
+    }
+  }
+  {
+    const rows = await dbQuery("fantasy_team_managers", {});
+    const smRows = await dbQuery("fantasy_season_members", { league_season_id: season_id });
+    const smIds = new Set(smRows.map((r: any) => r.id));
+    const ourMgrs = rows.filter((r: any) => smIds.has(r.season_member_id));
+    if (ourMgrs.length === 1) {
+      const m = ourMgrs[0];
+      m.id === setup_manager_id && m.fantasy_team_id === setup_team_id && m.is_active === true && m.role === "manager"
+        ? pass("fantasy_team_managers: 1 row after setup — commissioner's manager assignment created atomically")
+        : fail("fantasy_team_managers: incorrect field values after setup", JSON.stringify(m), "CRITICAL");
+    } else {
+      fail("fantasy_team_managers: expected exactly 1 row after setup (commissioner's manager)", `Got ${ourMgrs.length}`, "CRITICAL");
+    }
   }
 
   // ── 6. Authorization — non-commissioner 403 ──────────────────────────────────
@@ -427,9 +467,33 @@ async function run() {
       : fail("Fake season ID must reject", `Expected 403 or 400, got ${r.status}: ${JSON.stringify(r.body)}`);
   }
 
-  // ── 8. add_fantasy_season_participant — commissioner's own row ────────────────
-  section("8. Success Path — Commissioner's Own Team");
+  // ── 8. Commissioner team — already present from setup; /participants idempotent ─
+  section("8. Commissioner Team Invariant");
 
+  // 8a. Verify GET /seasons/:id immediately after setup shows commissioner with team_name.
+  // No /participants call for the commissioner should be needed.
+  {
+    const r = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, { token });
+    if (r.status === 200) {
+      const comm = (r.body.participants ?? []).find((p: any) => p.role === "commissioner");
+      if (comm) {
+        comm.team_name === "QA Monsters"
+          ? pass("GET /seasons/:id right after setup: commissioner already has team_name (no /participants call needed)")
+          : fail("Commissioner team_name missing right after setup", `Got: ${comm.team_name}`, "CRITICAL",
+              "setup_fantasy_league v2 must atomically create fantasy_teams and fantasy_team_managers.");
+        comm.team_id === setup_team_id
+          ? pass("Commissioner team_id matches setup response (same atomic transaction)")
+          : fail("Commissioner team_id mismatch", `Setup returned ${setup_team_id}, GET returned ${comm.team_id}`, "CRITICAL");
+      } else {
+        fail("Commissioner not found in participants after setup", JSON.stringify(r.body.participants), "CRITICAL");
+      }
+    } else {
+      fail("GET /seasons/:id for invariant check", `Expected 200, got ${r.status}: ${JSON.stringify(r.body)}`, "CRITICAL");
+    }
+  }
+
+  // 8b. Calling /participants for the commissioner with league_member_id must return
+  // already_exists=true (idempotent recovery — the RPC detects the existing active team).
   let commTeamResult: any = null;
   {
     const r = await api(
@@ -438,19 +502,78 @@ async function run() {
         method: "POST",
         token,
         body: {
-          display_name:      "QA Commissioner",
-          team_name:         "QA Monsters",
-          league_member_id:  league_member_id,
+          display_name:     "QA Commissioner",
+          team_name:        "QA Monsters",
+          league_member_id: league_member_id,
         },
       }
     );
-    if (r.status === 201 && r.body.already_exists === false) {
-      pass("Commissioner's own team row → 201, already_exists=false");
+    if (r.status === 200 && r.body.already_exists === true) {
+      pass("POST /participants for commissioner (already has team) → 200 already_exists=true (idempotent)");
       commTeamResult = r.body;
-      note(`team_id:    ${r.body.team_id}`);
-      note(`manager_id: ${r.body.manager_id}`);
+      r.body.team_id === setup_team_id
+        ? pass("Idempotent /participants returns same team_id as setup response")
+        : fail("Idempotent /participants team_id mismatch", `Setup: ${setup_team_id}, participants: ${r.body.team_id}`, "HIGH");
+      r.body.manager_id === setup_manager_id
+        ? pass("Idempotent /participants returns same manager_id as setup response")
+        : fail("Idempotent /participants manager_id mismatch", `Setup: ${setup_manager_id}, participants: ${r.body.manager_id}`, "HIGH");
     } else {
-      fail("Commissioner's own team row", `Expected 201 already_exists=false, got ${r.status}: ${JSON.stringify(r.body)}`, "CRITICAL");
+      fail("POST /participants for commissioner (idempotency)", `Expected 200 already_exists=true, got ${r.status}: ${JSON.stringify(r.body)}`, "HIGH");
+    }
+  }
+
+  // ── 8c. Partial-State Recovery ───────────────────────────────────────────────
+  // Simulate the old partial-state gap: commissioner has a season_member row
+  // but no team or manager. This could happen with old code, or if a DB operation
+  // is manually retried after partial failure.
+  section("8c. Partial-State Recovery — Commissioner with no team");
+
+  {
+    // Delete the commissioner's team and manager directly from the DB
+    await service.from("fantasy_team_managers").delete().eq("id", setup_manager_id);
+    await service.from("fantasy_teams").delete().eq("id", setup_team_id);
+    pass("Simulated partial state: deleted commissioner's team and manager from DB");
+
+    // Verify GET /seasons/:id now shows commissioner with team_name=null
+    const r1 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, { token });
+    if (r1.status === 200) {
+      const comm = (r1.body.participants ?? []).find((p: any) => p.role === "commissioner");
+      comm && comm.team_name === null
+        ? pass("Partial state confirmed: commissioner appears with team_name=null in GET /seasons/:id")
+        : fail("Partial state verification failed", `Expected team_name=null, got ${comm?.team_name}`, "HIGH");
+    }
+
+    // Recovery: call /participants for commissioner — must create a new team
+    const r2 = await api(
+      `/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`,
+      {
+        method: "POST",
+        token,
+        body: {
+          display_name:     "QA Commissioner",
+          team_name:        "QA Monsters Recovered",
+          league_member_id: league_member_id,
+        },
+      }
+    );
+    if (r2.status === 201 && r2.body.already_exists === false) {
+      pass("Recovery via /participants → 201 already_exists=false (new team created)");
+      note(`recovered team_id:    ${r2.body.team_id}`);
+      note(`recovered manager_id: ${r2.body.manager_id}`);
+
+      // Update tracked IDs so cleanup works correctly
+      commTeamResult = r2.body;
+
+      // Verify the recovered state is correct
+      const r3 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}`, { token });
+      if (r3.status === 200) {
+        const comm = (r3.body.participants ?? []).find((p: any) => p.role === "commissioner");
+        comm?.team_name === "QA Monsters Recovered"
+          ? pass("Recovery confirmed: commissioner has team_name after /participants recovery call")
+          : fail("Recovery verification failed", `Expected 'QA Monsters Recovered', got ${comm?.team_name}`, "HIGH");
+      }
+    } else {
+      fail("Partial-state recovery via /participants", `Expected 201 already_exists=false, got ${r2.status}: ${JSON.stringify(r2.body)}`, "HIGH");
     }
   }
 
@@ -487,32 +610,8 @@ async function run() {
   }
 
   // ── 10. Duplicate request behavior ──────────────────────────────────────────
-  section("10. Duplicate Request Idempotency");
-
-  // Re-submit commissioner's team row — should return 200 already_exists=true
-  if (commTeamResult) {
-    const r = await api(
-      `/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`,
-      {
-        method: "POST",
-        token,
-        body: {
-          display_name:     "QA Commissioner",
-          team_name:        "QA Monsters",
-          league_member_id: league_member_id,
-        },
-      }
-    );
-    if (r.status === 200 && r.body.already_exists === true) {
-      pass("Duplicate commissioner row → 200 already_exists=true (idempotent)");
-      // Verify same IDs returned
-      r.body.team_id === commTeamResult.team_id && r.body.manager_id === commTeamResult.manager_id
-        ? pass("Duplicate response returns same team_id and manager_id")
-        : fail("Duplicate response IDs mismatch", `Expected ${commTeamResult.team_id}, got ${r.body.team_id}`);
-    } else {
-      fail("Duplicate commissioner row idempotency", `Expected 200 already_exists=true, got ${r.status}: ${JSON.stringify(r.body)}`);
-    }
-  }
+  section("10. Duplicate Request Idempotency — Non-Commissioner Participants");
+  // Commissioner idempotency is covered in §8b above.
 
   // Re-submit participant Mike — should return 200 already_exists=true
   if (p2Result) {
@@ -561,9 +660,10 @@ async function run() {
       : fail("fantasy_teams count", `Expected 3, got ${rows.length}`);
 
     const teamNames = rows.map((r: any) => r.team_name).sort();
-    const expectedTeams = ["Fourth & Long", "QA Monsters", "Sunday Scaries"].sort();
+    // Commissioner's team was recreated as "QA Monsters Recovered" in §8c
+    const expectedTeams = ["Fourth & Long", "QA Monsters Recovered", "Sunday Scaries"].sort();
     JSON.stringify(teamNames) === JSON.stringify(expectedTeams)
-      ? pass("All 3 team names correct")
+      ? pass("All 3 team names correct (including recovered commissioner team name)")
       : fail("Team names mismatch", `Expected ${JSON.stringify(expectedTeams)}, got ${JSON.stringify(teamNames)}`);
   }
 

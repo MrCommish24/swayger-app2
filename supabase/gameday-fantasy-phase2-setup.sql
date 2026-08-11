@@ -17,13 +17,21 @@
 -- ────────────────────────────────────────────────────────────
 -- 1. setup_fantasy_league
 --
--- Atomic bootstrap: creates all five records or none.
+-- Atomic bootstrap: creates all SEVEN records or none.
 --
 --   1. fantasy_leagues
 --   2. fantasy_league_members  (creator)
 --   3. fantasy_member_claims   (user_id → league_member)
 --   4. fantasy_league_seasons  (initial season, status='upcoming')
 --   5. fantasy_season_members  (creator, role='commissioner')
+--   6. fantasy_teams           (commissioner's own team)       ← v2 addition
+--   7. fantasy_team_managers   (commissioner manages team)     ← v2 addition
+--
+-- The commissioner's team is created here rather than in a separate
+-- add_fantasy_season_participant call so the invariant is enforced
+-- atomically: a successful setup always produces a commissioner with
+-- a team. A failed network call after setup returns can never leave
+-- the commissioner without a team.
 --
 -- Called by: POST /api/fantasy/leagues/setup
 -- ────────────────────────────────────────────────────────────
@@ -32,6 +40,7 @@ CREATE OR REPLACE FUNCTION setup_fantasy_league(
   p_league_name           TEXT,
   p_sport                 TEXT,
   p_display_name          TEXT,
+  p_team_name             TEXT,
   p_season_year           INTEGER,
   p_reward_description    TEXT DEFAULT NULL,
   p_reward_amount_display TEXT DEFAULT NULL
@@ -46,6 +55,8 @@ DECLARE
   v_claim_id         UUID;
   v_season_id        UUID;
   v_season_member_id UUID;
+  v_team_id          UUID;
+  v_manager_id       UUID;
 BEGIN
   -- Validate inputs (server also validates, but DB is the authority)
   IF p_sport NOT IN ('football', 'basketball', 'baseball') THEN
@@ -56,6 +67,9 @@ BEGIN
   END IF;
   IF trim(p_display_name) = '' THEN
     RAISE EXCEPTION 'Display name cannot be empty.';
+  END IF;
+  IF trim(p_team_name) = '' THEN
+    RAISE EXCEPTION 'Team name cannot be empty.';
   END IF;
   IF p_season_year < 1900 OR p_season_year > 2100 THEN
     RAISE EXCEPTION 'Season year must be between 1900 and 2100.';
@@ -98,12 +112,24 @@ BEGIN
   VALUES (v_season_id, v_league_member_id, 'commissioner')
   RETURNING id INTO v_season_member_id;
 
+  -- 6. fantasy_teams — commissioner's own team (atomic with league creation)
+  INSERT INTO fantasy_teams (league_season_id, team_name)
+  VALUES (v_season_id, trim(p_team_name))
+  RETURNING id INTO v_team_id;
+
+  -- 7. fantasy_team_managers — commissioner manages their team
+  INSERT INTO fantasy_team_managers (fantasy_team_id, season_member_id, role)
+  VALUES (v_team_id, v_season_member_id, 'manager')
+  RETURNING id INTO v_manager_id;
+
   RETURN json_build_object(
     'league_id',        v_league_id,
     'league_member_id', v_league_member_id,
     'claim_id',         v_claim_id,
     'season_id',        v_season_id,
-    'season_member_id', v_season_member_id
+    'season_member_id', v_season_member_id,
+    'team_id',          v_team_id,
+    'manager_id',       v_manager_id
   );
 END;
 $$;
