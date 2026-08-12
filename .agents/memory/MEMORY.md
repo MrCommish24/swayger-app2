@@ -5,3 +5,4 @@
 - [Gameday Fantasy Phase 4A](gameday-fantasy-phase4a-nav.md) — Draft Day setup, inline publish pattern, DDL pending, requireFantasyCommissioner naming trap, 49/49 tests
 - [Gameday Fantasy Phase 4A.2](gameday-fantasy-phase4a2-nav.md) — Lock inline confirm (Alert web bug), manage edit-before-picks, PATCH endpoint, grandfathering rule, SQL required, 93/93 tests
 - [Gameday Fantasy Phase 4B](gameday-fantasy-phase4b-nav.md) — Member picks, my_pick_count vs pick_count, participant-on-play-only, published-snapshot validation, pick_count table bug, app.get not router.get
+- [Gameday Fantasy Manage League](gameday-fantasy-manage-league.md) — Atomic rename RPC, lifecycle-aware add (draft_day_eligible), eligibility 403 guard, PATCH /members endpoint, manage screen. SQL not yet applied.

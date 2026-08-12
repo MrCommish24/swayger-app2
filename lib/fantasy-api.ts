@@ -75,7 +75,9 @@ export interface AddParticipantResponse {
   league_member_id: string;
   season_member_id: string;
   team_id: string;
-  manager_id: string;
+  manager_id: string | null;
+  /** False when member was added as "League Only" after Draft Day picks exist. */
+  draft_day_eligible: boolean;
 }
 
 // GET /api/fantasy/leagues
@@ -176,6 +178,33 @@ export const FANTASY_PENDING_UPGRADE_KEY = "fantasy_pending_claim_upgrade";
 export interface FantasyPendingUpgrade {
   guest_token: string;
   league_member_id: string;
+}
+
+// PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId
+export interface UpdateMemberPayload {
+  display_name: string;
+  team_name: string;
+}
+
+export interface UpdateMemberResponse {
+  league_member_id: string;
+  team_id: string | null;
+  props_updated: number;
+  participant_updated: boolean;
+}
+
+export async function updateMember(
+  leagueId: string,
+  seasonId: string,
+  seasonMemberId: string,
+  payload: UpdateMemberPayload,
+  auth: { session?: Session | null; guestToken?: string | null }
+): Promise<UpdateMemberResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/members/${seasonMemberId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+    auth
+  );
 }
 
 // POST /api/fantasy/claim/upgrade

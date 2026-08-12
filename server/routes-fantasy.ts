@@ -169,6 +169,7 @@ async function resolveViewer(
   team_name: string | null;
   fantasy_team_id: string | null;
   role: string;
+  draft_day_eligible: boolean;
 } | null> {
   if (!identity.userId && !identity.guestToken) return null;
 
@@ -200,7 +201,7 @@ async function resolveViewer(
   // Find season_member for this league_member in this season
   const { data: sm } = await supabase
     .from("fantasy_season_members")
-    .select("id, role")
+    .select("id, role, draft_day_eligible")
     .eq("league_season_id", seasonId)
     .eq("league_member_id", lmId)
     .eq("is_active", true)
@@ -226,6 +227,7 @@ async function resolveViewer(
     team_name: teamName,
     fantasy_team_id: fantasyTeamId,
     role: (sm as any).role,
+    draft_day_eligible: (sm as any).draft_day_eligible ?? true,
   };
 }
 
@@ -417,16 +419,75 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      const { data, error } = await supabase.rpc("add_fantasy_season_participant", {
-        p_league_id:        leagueId,
-        p_league_season_id: seasonId,
-        p_display_name:     display_name.trim(),
-        p_team_name:        team_name.trim(),
-        p_league_member_id: league_member_id ?? null,
+      // ── Determine Draft Day lifecycle to set eligibility and snapshot update ──
+      // The server — never the client — decides draft_day_eligible.
+      //
+      // No Draft Day        → eligible=true,  no snapshot update
+      // Draft Day, 0 picks  → eligible=true,  append to answer_options (atomic)
+      // picks > 0 OR locked → eligible=false, no snapshot update
+      // settled             → eligible=false, no snapshot update
+
+      const { data: ddRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      let eligible = true;
+      let roomIdForSnapshot: string | null = null;
+
+      if (ddRoom) {
+        const ddRoomId = (ddRoom as any).id as string;
+        const { data: ddCard } = await supabase
+          .from("gameday_pick_cards")
+          .select("id, status")
+          .eq("room_id", ddRoomId)
+          .eq("phase", "draft_day")
+          .maybeSingle();
+
+        if (ddCard) {
+          const cardStatus = (ddCard as any).status as string;
+          if (cardStatus === "locked" || cardStatus === "settled") {
+            eligible = false;
+          } else if (cardStatus === "open") {
+            // Count existing picks for this card's props
+            const { data: propRows } = await supabase
+              .from("gameday_props")
+              .select("id")
+              .eq("card_id", (ddCard as any).id);
+            const ddPropIds = (propRows ?? []).map((p: any) => p.id as string);
+            let pickCount = 0;
+            if (ddPropIds.length > 0) {
+              const { count } = await supabase
+                .from("gameday_picks")
+                .select("id", { count: "exact", head: true })
+                .in("prop_id", ddPropIds);
+              pickCount = count ?? 0;
+            }
+            if (pickCount === 0) {
+              roomIdForSnapshot = ddRoomId; // safe to update snapshots atomically
+            } else {
+              eligible = false;
+            }
+          }
+        }
+      }
+
+      const { data, error } = await supabase.rpc("add_fantasy_season_participant_v2", {
+        p_league_id:          leagueId,
+        p_league_season_id:   seasonId,
+        p_display_name:       display_name.trim(),
+        p_team_name:          team_name.trim(),
+        p_league_member_id:   league_member_id ?? null,
+        p_draft_day_eligible: eligible,
+        p_room_id:            roomIdForSnapshot,
       });
 
       if (error) {
-        console.error("[fantasy] add_fantasy_season_participant error:", error.message);
+        console.error("[fantasy] add_fantasy_season_participant_v2 error:", error.message);
         const isValidationError =
           error.message.includes("not found") ||
           error.message.includes("does not belong") ||
@@ -439,10 +500,79 @@ export function registerFantasyRoutes(app: Express) {
 
       const result = data as any;
       console.log(
-        `[fantasy] Participant added: season=${seasonId.slice(0, 8)}… member=${result.league_member_id?.slice(0, 8)}… team=${result.team_id?.slice(0, 8)}… already_exists=${result.already_exists}`
+        `[fantasy] Participant added: season=${seasonId.slice(0, 8)}… member=${result.league_member_id?.slice(0, 8)}… team=${result.team_id?.slice(0, 8)}… eligible=${result.draft_day_eligible} already_exists=${result.already_exists}`
       );
 
       res.status(result.already_exists ? 200 : 201).json(result);
+    }
+  );
+
+  // ── PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId
+  //
+  // Atomic rename: updates display_name + team_name for one season member and
+  // propagates new labels into any active (unsettled) Draft Day answer_options
+  // and gameday_participants snapshot — all in one PL/pgSQL transaction.
+  //
+  // Auth: commissioner or co-commissioner only.
+  // Body: { display_name: string, team_name: string }
+  app.patch(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, seasonMemberId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { display_name, team_name } = req.body as {
+        display_name?: string;
+        team_name?: string;
+      };
+
+      if (!display_name?.trim()) {
+        res.status(400).json({ error: "display_name is required" });
+        return;
+      }
+      if (!team_name?.trim()) {
+        res.status(400).json({ error: "team_name is required" });
+        return;
+      }
+
+      // Verify seasonMemberId belongs to this season
+      const { data: smCheck } = await supabase
+        .from("fantasy_season_members")
+        .select("id")
+        .eq("id", seasonMemberId)
+        .eq("league_season_id", seasonId)
+        .maybeSingle();
+
+      if (!smCheck) {
+        res.status(404).json({ error: "Member not found in this season" });
+        return;
+      }
+
+      const { data, error } = await supabase.rpc("update_fantasy_member", {
+        p_season_member_id: seasonMemberId,
+        p_display_name:     display_name.trim(),
+        p_team_name:        team_name.trim(),
+        p_season_id:        seasonId,
+      });
+
+      if (error) {
+        console.error("[fantasy] update_fantasy_member error:", error.message);
+        const isValidation = error.message.includes("cannot be empty") || error.message.includes("not found");
+        res.status(isValidation ? 400 : 500).json({
+          error: isValidation ? error.message : "Failed to update member",
+        });
+        return;
+      }
+
+      console.log(
+        `[fantasy] Member renamed: season=${seasonId.slice(0, 8)}… sm=${seasonMemberId.slice(0, 8)}… ` +
+        `props_updated=${(data as any)?.props_updated} participant_updated=${(data as any)?.participant_updated}`
+      );
+
+      res.json(data);
     }
   );
 
@@ -1982,6 +2112,15 @@ export function registerFantasyRoutes(app: Express) {
 
       const cardStatus = (card as any).status as string;
 
+      // ── Eligibility guard — late "Add to League Only" members cannot play ────────
+      if (!viewer.draft_day_eligible) {
+        res.status(403).json({
+          error: "You are not eligible for this Draft Day competition.",
+          draft_day_eligible: false,
+        });
+        return;
+      }
+
       // ── Ensure participant (participant creation lives here, NOT in GET /draft-day) ──
       const { participant_id: participantId } = await ensureFantasyParticipant(
         supabase,
@@ -2102,6 +2241,15 @@ export function registerFantasyRoutes(app: Express) {
       const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
       if (!viewer) {
         res.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+
+      // ── Eligibility guard — late "Add to League Only" members cannot pick ─────
+      if (!viewer.draft_day_eligible) {
+        res.status(403).json({
+          error: "You are not eligible for this Draft Day competition.",
+          draft_day_eligible: false,
+        });
         return;
       }
 

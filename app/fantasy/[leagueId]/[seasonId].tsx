@@ -596,6 +596,22 @@ export default function LeagueHubScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Commissioner: Manage League button */}
+          {isCommissioner && (
+            <TouchableOpacity
+              style={styles.inviteBtn}
+              onPress={() => router.push(`/fantasy/manage/${leagueId}/${seasonId}` as any)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inviteBtnIcon}>⚙</Text>
+              <View style={styles.inviteBtnText}>
+                <Text style={styles.inviteBtnTitle}>Manage League</Text>
+                <Text style={styles.inviteBtnSub}>Edit members, names & teams</Text>
+              </View>
+              <Text style={styles.inviteBtnArrow}>›</Text>
+            </TouchableOpacity>
+          )}
+
           {/* My Team card */}
           {viewer && (
             <View style={[

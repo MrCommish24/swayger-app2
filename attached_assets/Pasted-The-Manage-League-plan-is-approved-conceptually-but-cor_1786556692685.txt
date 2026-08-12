@@ -1,0 +1,263 @@
+The Manage League plan is approved conceptually, but correct the following implementation details before Build mode.
+
+Do not change the product scope beyond these corrections.
+
+1. FIX ROOM COLUMN NAME
+
+The proposed update_fantasy_member RPC references:
+
+gr.fantasy_league_season_id
+
+Verify the live schema.
+
+Our established gameday_rooms Fantasy linkage is:
+
+gr.league_season_id
+
+Use the actual live column.
+
+Do not introduce a duplicate fantasy_league_season_id column.
+
+2. FIX PL/PGSQL ROW_COUNT HANDLING
+
+The proposed syntax:
+
+GET DIAGNOSTICS v_participant_upd = (ROW_COUNT > 0);
+
+is invalid.
+
+Use an integer variable, e.g.:
+
+v_participant_rows INT := 0;
+
+UPDATE ...;
+
+GET DIAGNOSTICS v_participant_rows = ROW_COUNT;
+
+v_participant_upd := v_participant_rows > 0;
+
+Audit the complete RPC for valid PostgreSQL/PLpgSQL syntax before returning migration SQL.
+
+3. ADD-MEMBER BEFORE PICKS MUST ADD NEW ANSWER OPTIONS
+
+For:
+
+Draft Day already published
+AND global pick_count = 0
+AND commissioner adds a new member
+
+Do not merely update labels.
+
+The new member and team have new stable IDs.
+
+Regenerate the affected published answer_options snapshots so:
+
+season_member-target props gain:
+
+{
+  id: <new season_member_id>,
+  label: <display name>,
+  type: "season_member"
+}
+
+fantasy_team-target props gain:
+
+{
+  id: <new fantasy_team_id>,
+  label: <team name>,
+  type: "fantasy_team"
+}
+
+Preserve:
+- static answers
+- no_one
+- option type
+- valid ordering behavior
+- existing question set
+- scoring_scope
+- point_value
+
+Because pick_count=0, this is safe.
+
+Test explicitly that the new member appears as a selectable published answer after being added.
+
+4. MAKE LATE "ADD TO LEAGUE ONLY" ATOMIC
+
+Current proposal:
+
+add_fantasy_season_participant
+→ creates draft_day_eligible=true
+→ separate UPDATE flips it false
+
+Do not use this two-step state transition.
+
+The user action:
+
+"Add to League Only"
+
+must atomically create the member/season member/team/team-manager with:
+
+draft_day_eligible=false
+
+when Draft Day has already received picks.
+
+Prefer extending the existing participant RPC with an explicit parameter such as:
+
+p_draft_day_eligible BOOLEAN DEFAULT TRUE
+
+or create a narrowly-scoped wrapper RPC if changing the existing signature risks regressions.
+
+The backend determines the correct value based on lifecycle.
+
+Do not trust a client-provided eligibility boolean.
+
+Required lifecycle:
+
+no Draft Day
+→ eligible=true
+
+published + pick_count=0
+→ eligible=true
+→ update published answer universe atomically
+
+pick_count>0
+→ eligible=false
+→ current Draft Day untouched
+
+locked
+→ eligible=false
+→ current Draft Day untouched
+
+There must never be a committed intermediate state where a late League-Only member is temporarily Draft Day eligible.
+
+5. CONSIDER MAKING ADD + SNAPSHOT UPDATE ATOMIC TOO
+
+When pick_count=0 and Draft Day is already published:
+
+Add member
++
+update published answer_options
+
+is one logical commissioner operation.
+
+Do not:
+
+commit new league member
+→ separately mutate Draft Day answer options
+
+If the second operation fails, the league roster and published Draft Day universe become inconsistent.
+
+Use a transactional RPC/wrapper for the post-publish add path if necessary.
+
+The result should be all-or-nothing.
+
+6. RENAME PROPAGATION
+
+Keep the proposed stable-ID rename approach.
+
+Member rename:
+- fantasy_league_members.display_name updated
+- matching season_member answer_options labels updated for active/unsettled Draft Day
+- gameday_participants.display_name updated
+- selected_answer unchanged
+
+Team rename:
+- fantasy_teams.team_name updated
+- matching fantasy_team answer_options labels updated
+- gameday_participants.team_name updated
+- selected_answer unchanged
+
+After settled/finalized:
+- update current league/member/team names
+- preserve historical Draft Day snapshots
+
+Ensure JSONB aggregation preserves existing answer-option order.
+
+7. REMOVE THE DISABLED "COMING SOON" RESET OPTION
+
+For V1, do NOT display a disabled:
+
+"Add to Draft Day & Reset Picks — Coming Soon"
+
+choice.
+
+If picks already exist, explain:
+
+"Draft Day has already started. You can still add this member to the league, but they won't participate in the current Draft Day."
+
+Actions:
+
+[Cancel]
+[Add to League Only]
+
+We can design/reset existing picks later if real usage shows we need it.
+
+Do not promise unavailable functionality in the UI.
+
+8. MANAGE LEAGUE V1
+
+Proceed with:
+
+Hub
+→ Manage League
+
+Members & Teams
+
+- Add Member
+- Edit Display Name
+- Edit Fantasy Team Name
+
+No:
+- hard delete
+- deactivation
+- reset picks
+- Phase 4C
+
+9. REQUIRED TESTS
+
+In addition to the proposed tests, prove:
+
+A. Add after publish + pick_count=0:
+- member created
+- eligible=true
+- member ID added to published season_member options
+- team ID added to published fantasy_team options
+- no existing options lost
+- no duplicate option IDs
+- no_one preserved where applicable
+
+B. Add after pick_count>0:
+- member created
+- eligible=false AT COMMIT
+- published answer_options unchanged
+- existing picks unchanged
+- GET /draft-day/play returns 403 for late member
+
+C. Atomic failure:
+- deliberately force snapshot-update failure in test/transaction if practical
+- verify member creation does not partially commit
+
+D. Rename:
+- IDs unchanged
+- labels change
+- option ordering unchanged
+- selected answers unchanged
+
+10. RETURN UPDATED BUILD REPORT
+
+After implementing, return:
+
+1. exact migration SQL
+2. atomic add-member design
+3. atomic rename design
+4. files changed
+5. answer-universe regeneration behavior
+6. late-member eligibility behavior
+7. test counts
+8. regressions
+9. exact SQL I must apply manually
+10. manual QA sequence
+
+Then STOP.
+
+Do not begin Phase 4C.
