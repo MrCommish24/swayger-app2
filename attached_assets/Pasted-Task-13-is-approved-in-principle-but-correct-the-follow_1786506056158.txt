@@ -1,0 +1,223 @@
+Task #13 is approved in principle, but correct the following implementation details before entering Build mode.
+
+Do not reopen the Phase 4B product scope.
+
+## 1. DO NOT RE-ADD EXISTING GAMEDAY_PARTICIPANT COLUMNS
+
+The Fantasy foundation migration already added these columns to `gameday_participants`:
+
+* `season_member_id`
+* `fantasy_team_id`
+* `team_name`
+
+Verify the live schema and existing migration history.
+
+Do NOT add these columns again in the Phase 4B migration.
+
+The only new DB object currently proposed for `gameday_participants` should be the partial unique index needed for idempotent Fantasy competition participation:
+
+`(room_id, season_member_id) WHERE season_member_id IS NOT NULL`
+
+Before creating the index:
+
+1. Query for any existing duplicate `(room_id, season_member_id)` combinations.
+2. Confirm none exist.
+3. If duplicates unexpectedly exist, STOP and report them instead of silently deleting data.
+
+If clean, create the partial unique index using a safe, explicitly named index.
+
+Preserve normal Game Day participants where `season_member_id IS NULL`.
+
+## 2. SEPARATE GLOBAL PICK COUNT FROM MY PICK COUNT
+
+Do not use:
+
+`draftDay.pick_count > 0`
+
+to determine whether the current member has made picks.
+
+`pick_count` is the GLOBAL competition pick count and is needed for the fairness invariant:
+
+global pick_count > 0
+→ commissioner can no longer edit Draft Day props.
+
+The member CTA needs a separate viewer-specific count.
+
+Expose/derive:
+
+* `pick_count` = total picks by all participants for props on this Draft Day card
+* `my_pick_count` = picks belonging only to the current viewer's `gameday_participant`
+* `total_props`
+
+Hub member CTA:
+
+`card=open && my_pick_count=0`
+→ **Make My Picks**
+
+`card=open && my_pick_count>0`
+→ **View / Update My Picks**
+
+`card=locked`
+→ **View My Picks**
+
+Commissioner management/edit rules must continue using GLOBAL `pick_count`, not `my_pick_count`.
+
+Test specifically:
+
+Darius submits one pick.
+Mike submits zero.
+
+Expected:
+
+* global `pick_count > 0`
+* Darius sees **View / Update My Picks**
+* Mike still sees **Make My Picks**
+* commissioner Draft Day editing is blocked because somebody has started playing.
+
+## 3. ANSWER VALIDATION MUST USE THE PUBLISHED PROP SNAPSHOT
+
+Do not special-case `"no_one"` by checking the mutable prop-library `supports_no_one` field during pick submission.
+
+The published `gameday_props.answer_options` snapshot is authoritative.
+
+Server validation should be:
+
+`selected_answer` MUST exactly match an `answer_options[].id` value for that published prop.
+
+Examples:
+
+season member UUID → accepted only if present
+
+fantasy team UUID → accepted only if present
+
+`"no_one"` → accepted only if the published prop actually contains `{id:"no_one", ...}`
+
+fabricated `"no_one"` for a prop that does not contain that option → rejected
+
+This preserves historical integrity even if the underlying template is modified later.
+
+Do not validate legal answers from the live template library after publish.
+
+## 4. FIX THE PICK-COUNT TABLE BUG BEFORE BUILDING ON IT
+
+The inspection found that current:
+
+* GET `/draft-day`
+* PATCH `/draft-day/props`
+
+reference a nonexistent `gameday_prop_picks` table.
+
+Correct both to use the actual authoritative `gameday_picks` table through the props belonging to the Draft Day card.
+
+Verify the exact `gameday_picks` schema before changing queries.
+
+Then prove:
+
+before first pick:
+global `pick_count = 0`
+→ Manage Draft Day editable
+
+after first real `gameday_picks` insert:
+global `pick_count > 0`
+→ Manage becomes read-only
+→ PATCH `/draft-day/props` returns 409
+
+This fairness invariant is critical.
+
+## 5. PARTICIPANT CREATION
+
+Proceed with the proposed Fantasy participant model:
+
+Fantasy claim
+→ league_member
+→ season_member
+→ fantasy team assignment
+→ `gameday_participant`
+
+Participant snapshot should preserve:
+
+* `room_id`
+* `season_member_id`
+* `fantasy_team_id`
+* display name snapshot
+* team name snapshot
+
+Use the new partial unique index for race-safe idempotency.
+
+Do not create a second participant for a returning member.
+
+Guest → authenticated upgrade must continue resolving to the same `season_member_id`, therefore the same Draft Day participant and picks.
+
+## 6. PLAY ENDPOINT
+
+`GET /draft-day/play` should return member-specific play state, including:
+
+* room/card status
+* published props
+* participant_id
+* my picks
+* `my_pick_count`
+* `total_props`
+
+It may also return global `pick_count` if genuinely useful, but member UI should not confuse the two.
+
+Do not expose `correct_answer`.
+
+## 7. HUB STATE
+
+If obtaining `my_pick_count` requires the member-play endpoint, choose the minimum clean implementation.
+
+Do not create a `gameday_participant` merely from rendering every Home screen if that creates unnecessary competition participation records.
+
+It is acceptable for participant creation to occur when the member first enters Draft Day, with the hub having a lightweight member-pick-state query if necessary.
+
+Explain the chosen behavior.
+
+## 8. KEEP ALL OTHER TASK #13 REQUIREMENTS
+
+Proceed with:
+
+* member Draft Day play screen
+* partial picking
+* saved picks restored
+* editing while open
+* locked read-only view
+* commissioner playing like a normal member
+* authenticated member play
+* guest play
+* guest → authenticated continuity
+* stable answer IDs
+* cross-season validation
+* correct-answer sanitization
+* fairness lock after first pick
+* no settlement/scoring/leaderboard work
+
+## 9. BUILD AFTER THESE CORRECTIONS
+
+You do not need another planning checkpoint after incorporating these changes.
+
+Proceed to Build mode for Phase 4B.
+
+If SQL is required for the partial unique index:
+
+* write the migration
+* do NOT apply it automatically
+* return exact SQL/manual Supabase instructions
+* stop at the appropriate SQL-required checkpoint if tests depend on it
+
+In the final Phase 4B report, explicitly include:
+
+1. confirmation the three existing participant columns were NOT recreated
+2. unique-index verification
+3. global `pick_count` vs `my_pick_count` behavior
+4. nonexistent pick-table bug fix
+5. published answer-option validation behavior
+6. participant idempotency
+7. guest/auth continuity
+8. fairness invariant test
+9. exact tests and regressions
+10. manual QA sequence
+
+Then STOP.
+
+Do not begin Phase 4C.

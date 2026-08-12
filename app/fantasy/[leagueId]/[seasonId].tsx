@@ -69,12 +69,16 @@ const C = Colors.dark;
 interface DraftDayCardProps {
   draftDay: import("@/lib/fantasy-api").DraftDayStatus | null | undefined;
   isCommissioner: boolean;
-  canEdit:          boolean; // card is 'open' AND pick_count === 0
+  canEdit:          boolean; // card is 'open' AND global pick_count === 0
   lockingDraftDay:  boolean;
   unlockingDraftDay: boolean;
   lockError:        string | null;
+  /** Viewer's own pick count — drives the member CTA label. 0 = no picks yet. */
+  myPickCount:      number;
   onSetup:   () => void;
   onManage:  () => void;
+  /** Navigate to the member play screen. */
+  onPlay:    () => void;
   onLock:    () => void; // direct API call, no Alert — called after inline confirm
   onUnlock:  () => void;
 }
@@ -86,8 +90,10 @@ function DraftDayCard({
   lockingDraftDay,
   unlockingDraftDay,
   lockError,
+  myPickCount,
   onSetup,
   onManage,
+  onPlay,
   onLock,
   onUnlock,
 }: DraftDayCardProps) {
@@ -169,16 +175,27 @@ function DraftDayCard({
       {/* Actions */}
       <View style={styles.draftDayActions}>
 
-        {/* "Open Draft Day" — disabled until Phase 4B member picks are built */}
-        <TouchableOpacity
-          style={[styles.btn, styles.btnDisabledSolid]}
-          disabled={true}
-          activeOpacity={1}
-        >
-          <Text style={[styles.btnText, { color: C.textMuted }]}>
-            Member play coming next
-          </Text>
-        </TouchableOpacity>
+        {/* Member CTA — available to all recognised members (including commissioner) */}
+        {isLocked ? (
+          <TouchableOpacity
+            style={[
+              styles.btn,
+              { backgroundColor: "#1A1500", borderWidth: 1, borderColor: C.accentGold },
+            ]}
+            onPress={onPlay}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.btnText, { color: C.accentGold }]}>
+              👁  View My Picks
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.btn} onPress={onPlay} activeOpacity={0.8}>
+            <Text style={styles.btnText}>
+              {myPickCount > 0 ? "✏️  View / Update My Picks" : "🏈  Make My Picks"}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Commissioner controls */}
         {isCommissioner && !isFinalized && (
@@ -685,8 +702,10 @@ export default function LeagueHubScreen() {
             lockingDraftDay={lockingDraftDay}
             unlockingDraftDay={unlockingDraftDay}
             lockError={lockError}
+            myPickCount={draftDay?.my_pick_count ?? 0}
             onSetup={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}`)}
             onManage={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}?manage=1`)}
+            onPlay={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/play`)}
             onLock={async () => {
               // Called after inline confirm — no Alert.alert (breaks on web)
               if (!session || lockingDraftDay) return;

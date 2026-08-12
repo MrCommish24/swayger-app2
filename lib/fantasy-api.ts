@@ -235,9 +235,13 @@ export interface DraftDayStatus {
   room_status: "draft" | "active" | "finalized";
   card_status: "closed" | "open" | "locked" | "settled";
   prop_counts: { competition: number; season: number };
-  // Number of member picks submitted for this card. 0 = safe to edit.
-  // Absent (undefined) before Phase 4B or if the picks table doesn't exist yet.
+  // Global: total picks submitted by ALL members for this card's props.
+  // Used for the fairness invariant — commissioner cannot edit when > 0.
   pick_count: number;
+  // Viewer-specific: picks belonging to the current caller's participant only.
+  // Used for the member hub CTA label (Make My Picks vs View / Update My Picks).
+  // 0 when the caller has no participant row yet (first visit, pre-play).
+  my_pick_count: number;
   // Currently selected props with library metadata. Used by manage mode to
   // reconstruct the commissioner's selection, including inactive legacy props.
   current_props: DraftDayCurrentProp[];
@@ -328,6 +332,75 @@ export async function unlockDraftDay(
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/unlock`,
     { method: "POST" },
+    auth
+  );
+}
+
+// ── Draft Day Play (Phase 4B) ─────────────────────────────────────────────────
+
+/** A single published answer choice for a Draft Day prop. */
+export interface DraftDayAnswerOption {
+  id: string;
+  label: string;
+  type: "season_member" | "fantasy_team" | "player" | "yes_no" | "static";
+}
+
+/** A published prop returned in the play state. */
+export interface DraftDayProp {
+  id: string;
+  question: string;
+  answer_options: DraftDayAnswerOption[];
+  scoring_scope: "competition" | "season";
+  point_value: number;
+}
+
+/**
+ * Member-specific play state returned by GET /draft-day/play.
+ * correct_answer is never included — server strips it.
+ */
+export interface DraftDayPlayState {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  card_status: "open" | "locked" | "settled";
+  participant_id: string;
+  props: DraftDayProp[];
+  /** propId → selected answerId for this viewer's picks */
+  my_picks: Record<string, string>;
+  my_pick_count: number;
+  total_props: number;
+  pick_count: number; // global, for informational use
+  league_name?: string | null;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play
+export async function getDraftDayPlay(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDayPlayState> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/play`,
+    { method: "GET" },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks
+export async function submitDraftDayPick(
+  leagueId: string,
+  seasonId: string,
+  propId: string,
+  selectedAnswer: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ pick_id: string; prop_id: string; selected_answer: string }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/picks`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prop_id: propId, selected_answer: selectedAnswer }),
+    },
     auth
   );
 }

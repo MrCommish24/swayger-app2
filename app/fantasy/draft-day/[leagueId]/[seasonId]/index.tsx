@@ -158,6 +158,8 @@ export default function DraftDaySetupScreen() {
               answer_target_type: null,
               supports_no_one:   p.supports_no_one,
               is_default:        false,
+              settlement_window: "",   // inactive legacy — not relevant for display
+              display_order:     0,
             }));
           setLegacyTemplates(legacy);
 

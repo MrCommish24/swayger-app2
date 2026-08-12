@@ -167,6 +167,7 @@ async function resolveViewer(
   season_member_id: string;
   display_name: string | null;
   team_name: string | null;
+  fantasy_team_id: string | null;
   role: string;
 } | null> {
   if (!identity.userId && !identity.guestToken) return null;
@@ -207,23 +208,83 @@ async function resolveViewer(
 
   if (!sm) return null;
 
-  // Find team
+  // Find team — include id for fantasy_team_id snapshot in ensureFantasyParticipant
   const { data: mgr } = await supabase
     .from("fantasy_team_managers")
-    .select("fantasy_teams(team_name)")
+    .select("fantasy_teams(id, team_name)")
     .eq("season_member_id", (sm as any).id)
     .eq("is_active", true)
     .maybeSingle();
 
-  const teamName = (mgr as any)?.fantasy_teams?.team_name ?? null;
+  const teamName     = (mgr as any)?.fantasy_teams?.team_name ?? null;
+  const fantasyTeamId = (mgr as any)?.fantasy_teams?.id ?? null;
 
   return {
     league_member_id: lmId,
     season_member_id: (sm as any).id,
     display_name: (lm as any).display_name ?? null,
     team_name: teamName,
+    fantasy_team_id: fantasyTeamId,
     role: (sm as any).role,
   };
+}
+
+// ── Participant upsert (Fantasy) ──────────────────────────────────────────────
+// Creates a gameday_participants row for the season member in this room, or
+// returns the existing one. Race-safe via the partial unique index:
+//   gameday_participants_room_season_member_uniq (room_id, season_member_id)
+//   WHERE season_member_id IS NOT NULL
+//
+// Must NOT be called from read-only endpoints (e.g. GET /draft-day) so that
+// browsing the hub never creates phantom competition participants.
+async function ensureFantasyParticipant(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  roomId: string,
+  viewer: NonNullable<Awaited<ReturnType<typeof resolveViewer>>>
+): Promise<{ participant_id: string }> {
+  // 1. Check for existing participant
+  const { data: existing } = await supabase
+    .from("gameday_participants")
+    .select("id")
+    .eq("room_id", roomId)
+    .eq("season_member_id", viewer.season_member_id)
+    .maybeSingle();
+
+  if (existing) return { participant_id: (existing as any).id };
+
+  // 2. Insert — unique index prevents duplicates under concurrency
+  const insertPayload: Record<string, unknown> = {
+    room_id:          roomId,
+    season_member_id: viewer.season_member_id,
+    // display_name is NOT NULL in gameday_participants; display_name comes from
+    // fantasy_league_members.display_name (NOT NULL), so null is unexpected but
+    // we provide a safe fallback to avoid a schema error.
+    display_name:     viewer.display_name ?? viewer.team_name ?? "Fantasy Member",
+    team_name:        viewer.team_name,
+  };
+  if (viewer.fantasy_team_id) insertPayload.fantasy_team_id = viewer.fantasy_team_id;
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from("gameday_participants")
+    .insert(insertPayload)
+    .select("id")
+    .single();
+
+  if (insertErr) {
+    // Unique violation (23505) — another request beat us; fetch the existing row
+    if ((insertErr as any).code === "23505") {
+      const { data: race } = await supabase
+        .from("gameday_participants")
+        .select("id")
+        .eq("room_id", roomId)
+        .eq("season_member_id", viewer.season_member_id)
+        .maybeSingle();
+      if (race) return { participant_id: (race as any).id };
+    }
+    throw new Error(`Failed to create participant: ${insertErr.message}`);
+  }
+
+  return { participant_id: (inserted as any).id };
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -1086,19 +1147,23 @@ export function registerFantasyRoutes(app: Express) {
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
 
-      const propList         = props ?? [];
+      const propList  = props ?? [];
+      const propIds   = propList.map((p: any) => p.id as string);
       const competitionCount = propList.filter((p: any) => p.scoring_scope === "competition").length;
       const seasonCount      = propList.filter((p: any) => p.scoring_scope === "season").length;
 
-      // Pick count — safe for Phase 4B: table may not exist yet, returns 0
+      // Global pick count — total picks by ALL participants across this card's props.
+      // gameday_picks has no card_id column; join via prop_id.
       let pickCount = 0;
-      try {
-        const { count } = await supabase
-          .from("gameday_prop_picks")
-          .select("id", { count: "exact", head: true })
-          .eq("card_id", (card as any).id);
-        pickCount = count ?? 0;
-      } catch { pickCount = 0; }
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase
+            .from("gameday_picks")
+            .select("id", { count: "exact", head: true })
+            .in("prop_id", propIds);
+          pickCount = count ?? 0;
+        } catch { pickCount = 0; }
+      }
 
       // Enrich current_props with live library metadata (is_active, question, supports_no_one).
       // Used by manage mode to reconstruct selection including inactive legacy props.
@@ -1130,16 +1195,44 @@ export function registerFantasyRoutes(app: Express) {
         };
       });
 
+      // ── Viewer-specific pick count (my_pick_count) ────────────────────────────
+      // Read-only — no participant creation. Returns 0 if the caller has no
+      // participant row yet (first visit before entering the play screen).
+      let myPickCount = 0;
+      try {
+        const viewerIdentity = getCallerIdentity(req);
+        if ((viewerIdentity.userId || viewerIdentity.guestToken) && propIds.length > 0) {
+          const viewerData = await resolveViewer(supabase, viewerIdentity, seasonId, leagueId);
+          if (viewerData) {
+            const { data: vParticipant } = await supabase
+              .from("gameday_participants")
+              .select("id")
+              .eq("room_id", (room as any).id)
+              .eq("season_member_id", viewerData.season_member_id)
+              .maybeSingle();
+            if (vParticipant) {
+              const { count: myCount } = await supabase
+                .from("gameday_picks")
+                .select("id", { count: "exact", head: true })
+                .in("prop_id", propIds)
+                .eq("participant_id", (vParticipant as any).id);
+              myPickCount = myCount ?? 0;
+            }
+          }
+        }
+      } catch { myPickCount = 0; }
+
       res.json({
-        room_id:       (room as any).id,
-        card_id:       (card as any).id,
-        room_code:     (room as any).room_code ?? null,
-        room_status:   (room as any).status,
-        card_status:   (card as any).status,
-        prop_counts:   { competition: competitionCount, season: seasonCount },
-        pick_count:    pickCount,
-        current_props: currentProps,
-        created_at:    (room as any).created_at,
+        room_id:        (room as any).id,
+        card_id:        (card as any).id,
+        room_code:      (room as any).room_code ?? null,
+        room_status:    (room as any).status,
+        card_status:    (card as any).status,
+        prop_counts:    { competition: competitionCount, season: seasonCount },
+        pick_count:     pickCount,
+        my_pick_count:  myPickCount,
+        current_props:  currentProps,
+        created_at:     (room as any).created_at,
       });
     }
   );
@@ -1464,15 +1557,25 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      // ── Pick count guard ────────────────────────────────────────────────────
+      // ── Pick count guard (GLOBAL) ────────────────────────────────────────────
+      // gameday_picks has no card_id column — join via prop_id.
+      // Fetch existing prop IDs for this card first.
+      const { data: existingCardPropsForGuard } = await supabase
+        .from("gameday_props")
+        .select("id")
+        .eq("card_id", cardId);
+      const guardPropIds = (existingCardPropsForGuard ?? []).map((p: any) => p.id as string);
+
       let pickCount = 0;
-      try {
-        const { count } = await supabase
-          .from("gameday_prop_picks")
-          .select("id", { count: "exact", head: true })
-          .eq("card_id", cardId);
-        pickCount = count ?? 0;
-      } catch { pickCount = 0; }
+      if (guardPropIds.length > 0) {
+        try {
+          const { count } = await supabase
+            .from("gameday_picks")
+            .select("id", { count: "exact", head: true })
+            .in("prop_id", guardPropIds);
+          pickCount = count ?? 0;
+        } catch { pickCount = 0; }
+      }
 
       if (pickCount > 0) {
         res.status(409).json({
@@ -1812,6 +1915,297 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       res.json({ card_status: "open", already_unlocked: false });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play ──────
+  //
+  // Member-facing play state for Draft Day.
+  //
+  // - Resolves the caller via userId or guestToken.
+  // - Creates a gameday_participants row if needed (idempotent via partial
+  //   unique index). This is the ONLY endpoint that creates participants — the
+  //   hub's GET /draft-day intentionally does NOT.
+  // - Returns all published props with answer_options (snapshot).
+  //   correct_answer is intentionally stripped.
+  // - Returns my_picks: a propId→answerId map for this participant only.
+  // - Returns my_pick_count, total_props for progress display.
+  //
+  // Auth: any resolved viewer (authenticated user OR guest with a claim).
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play",
+    async (req: Request, res: Response) => {
+      const supabase  = getServiceSupabase();
+      const { leagueId, seasonId } = req.params;
+      const identity  = getCallerIdentity(req);
+
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      // ── Resolve viewer ────────────────────────────────────────────────────────
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+
+      // ── Find Draft Day room for this season ───────────────────────────────────
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, room_code")
+        .eq("league_season_id", seasonId)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "draft_day")
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No Draft Day competition found for this season." });
+        return;
+      }
+
+      const roomId = (room as any).id as string;
+
+      // ── Find the pick card ────────────────────────────────────────────────────
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", roomId)
+        .eq("phase", "draft_day")
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day card not found." });
+        return;
+      }
+
+      const cardStatus = (card as any).status as string;
+
+      // ── Ensure participant (participant creation lives here, NOT in GET /draft-day) ──
+      const { participant_id: participantId } = await ensureFantasyParticipant(
+        supabase,
+        roomId,
+        viewer
+      );
+
+      // ── Fetch published props — strip correct_answer ──────────────────────────
+      const { data: rawProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, answer_options, display_order")
+        .eq("card_id", (card as any).id)
+        .order("display_order", { ascending: true });
+
+      const publishedProps = (rawProps ?? []).map((p: any) => ({
+        id:             p.id as string,
+        question:       p.question as string,
+        scoring_scope:  p.scoring_scope as string,
+        point_value:    p.point_value as number,
+        // answer_options is the authoritative published snapshot; correct_answer excluded
+        answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
+        display_order:  p.display_order as number,
+      }));
+
+      const propIds    = publishedProps.map((p) => p.id);
+      const totalProps = publishedProps.length;
+
+      // ── Fetch this participant's picks ────────────────────────────────────────
+      const { data: rawPicks } = propIds.length > 0
+        ? await supabase
+            .from("gameday_picks")
+            .select("prop_id, selected_answer")
+            .in("prop_id", propIds)
+            .eq("participant_id", participantId)
+        : { data: [] };
+
+      const myPicks: Record<string, string> = {};
+      for (const pick of rawPicks ?? []) {
+        myPicks[(pick as any).prop_id as string] = (pick as any).selected_answer as string;
+      }
+      const myPickCount = Object.keys(myPicks).length;
+
+      // ── Global pick count (for informational use; not used for member UI) ─────
+      let globalPickCount = 0;
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase
+            .from("gameday_picks")
+            .select("id", { count: "exact", head: true })
+            .in("prop_id", propIds);
+          globalPickCount = count ?? 0;
+        } catch { globalPickCount = 0; }
+      }
+
+      // ── League name (for display) ─────────────────────────────────────────────
+      const { data: seasonRow } = await supabase
+        .from("fantasy_league_seasons")
+        .select("fantasy_leagues(league_name)")
+        .eq("id", seasonId)
+        .maybeSingle();
+      const leagueName = (seasonRow as any)?.fantasy_leagues?.league_name ?? null;
+
+      res.json({
+        room_id:         roomId,
+        card_id:         (card as any).id,
+        room_code:       (room as any).room_code ?? null,
+        card_status:     cardStatus,
+        participant_id:  participantId,
+        props:           publishedProps,
+        my_picks:        myPicks,
+        my_pick_count:   myPickCount,
+        total_props:     totalProps,
+        pick_count:      globalPickCount,
+        league_name:     leagueName,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks ────
+  //
+  // Submit (or update) a single pick for a Draft Day prop.
+  //
+  // Validation:
+  //   1. Card must be "open" (not locked / settled). Returns 409 if locked.
+  //   2. Prop must belong to this card (cross-season protection).
+  //   3. selected_answer must exactly match an answer_options[].id in the
+  //      PUBLISHED prop snapshot — not the live template library.
+  //   4. "no_one" is only valid if the published prop contains {id:"no_one"}.
+  //
+  // Upsert: UNIQUE (prop_id, participant_id) means re-submitting the same prop
+  // overwrites the previous answer (edit while open).
+  //
+  // Auth: any resolved viewer.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks",
+    async (req: Request, res: Response) => {
+      const supabase  = getServiceSupabase();
+      const { leagueId, seasonId } = req.params;
+      const identity  = getCallerIdentity(req);
+
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { prop_id, selected_answer } = req.body ?? {};
+
+      if (!prop_id || typeof prop_id !== "string") {
+        res.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (!selected_answer || typeof selected_answer !== "string") {
+        res.status(400).json({ error: "selected_answer is required" });
+        return;
+      }
+
+      // ── Resolve viewer ────────────────────────────────────────────────────────
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+
+      // ── Find Draft Day room for this season ───────────────────────────────────
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status")
+        .eq("league_season_id", seasonId)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "draft_day")
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No Draft Day competition found." });
+        return;
+      }
+
+      const roomId = (room as any).id as string;
+
+      // ── Find pick card — must be open ─────────────────────────────────────────
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", roomId)
+        .eq("phase", "draft_day")
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day card not found." });
+        return;
+      }
+
+      const cardStatus = (card as any).status as string;
+
+      if (cardStatus !== "open") {
+        res.status(409).json({
+          error:       "Picks are locked. No more changes accepted.",
+          card_status: cardStatus,
+        });
+        return;
+      }
+
+      // ── Validate prop belongs to THIS card (cross-season protection) ──────────
+      const { data: prop } = await supabase
+        .from("gameday_props")
+        .select("id, answer_options")
+        .eq("id", prop_id)
+        .eq("card_id", (card as any).id)
+        .maybeSingle();
+
+      if (!prop) {
+        res.status(400).json({ error: "Prop not found on this Draft Day card." });
+        return;
+      }
+
+      // ── Validate selected_answer against the PUBLISHED snapshot ───────────────
+      // Do NOT check the live prop_library template — the snapshot is authoritative.
+      // This preserves historical integrity even if the template is modified later.
+      const answerOptions: Array<{ id: string }> = Array.isArray((prop as any).answer_options)
+        ? (prop as any).answer_options
+        : [];
+      const validAnswerIds = new Set(answerOptions.map((o) => o.id));
+
+      if (!validAnswerIds.has(selected_answer)) {
+        res.status(400).json({
+          error:           "Invalid answer. selected_answer must match a published answer option ID.",
+          valid_answer_ids: Array.from(validAnswerIds),
+        });
+        return;
+      }
+
+      // ── Ensure participant (idempotent) ───────────────────────────────────────
+      const { participant_id: participantId } = await ensureFantasyParticipant(
+        supabase,
+        roomId,
+        viewer
+      );
+
+      // ── Upsert pick via UNIQUE (prop_id, participant_id) ──────────────────────
+      const { data: upserted, error: upsertErr } = await supabase
+        .from("gameday_picks")
+        .upsert(
+          {
+            prop_id:          prop_id,
+            participant_id:   participantId,
+            selected_answer:  selected_answer,
+            submitted_at:     new Date().toISOString(),
+          },
+          { onConflict: "prop_id,participant_id" }
+        )
+        .select("id, prop_id, selected_answer")
+        .single();
+
+      if (upsertErr) {
+        console.error("[fantasy] pick upsert error:", upsertErr.message);
+        res.status(500).json({ error: "Failed to save pick. Please try again." });
+        return;
+      }
+
+      res.json({
+        pick_id:         (upserted as any).id,
+        prop_id:         (upserted as any).prop_id,
+        selected_answer: (upserted as any).selected_answer,
+      });
     }
   );
 }
