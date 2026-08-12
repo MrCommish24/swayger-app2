@@ -1,0 +1,239 @@
+The investigation is accepted, but revise the Manage League plan before implementation.
+
+Do NOT begin Phase 4C.
+
+Three product/architecture corrections are required.
+
+1. LATE MEMBER ADDITION AFTER PICKS EXIST
+
+Do NOT simply add a new member to the active league while leaving the existing Draft Day answer universe unchanged and allow that member to participate normally.
+
+That can create an unfair/invalid prop.
+
+Example:
+
+Published prop:
+"Who drafts the most RBs?"
+
+Existing answer_options:
+Darius
+Mike
+Rob
+
+Members begin making picks.
+
+Commissioner then adds Chris.
+
+If Chris participates in the draft and ultimately drafts the most RBs, Chris could be the objectively correct answer even though no existing participant was ever allowed to select Chris.
+
+Therefore distinguish:
+
+LEAGUE MEMBERSHIP
+from
+CURRENT DRAFT DAY ELIGIBILITY.
+
+Recommended lifecycle:
+
+A. BEFORE DRAFT DAY PUBLISH
+→ Add normally.
+→ Member is eligible for Draft Day.
+
+B. AFTER PUBLISH, GLOBAL pick_count = 0
+→ Add normally.
+→ Regenerate affected season_member / fantasy_team answer_options for the existing Draft Day snapshot.
+→ No reset required because nobody has picked.
+
+C. AFTER GLOBAL pick_count > 0 BUT CARD STILL OPEN
+
+Commissioner must explicitly choose:
+
+OPTION 1:
+"Add to League Only"
+
+Result:
+- create persistent league member
+- create season member/team
+- member exists in league
+- member is NOT added to the currently-active Draft Day answer universe
+- member should not participate in this Draft Day competition if doing so could make them an outcome for existing roster-target props
+- they participate in future competitions
+
+OPTION 2:
+"Add to Draft Day & Reset Picks"
+
+Result:
+- add member
+- delete/reset ALL existing Draft Day picks for this card
+- regenerate relevant published answer_options using the new roster
+- preserve the existing question set
+- card remains/open returns to open
+- every participant starts Draft Day picks again from zero
+- show a strong confirmation explaining that existing picks will be erased
+
+This reset must be explicit. Never silently reset picks.
+
+D. AFTER CARD LOCKED
+→ allow "Add to League Only"
+→ do not alter current Draft Day
+→ do not reset current Draft Day from the Manage Members flow
+
+Do not implement the full reset behavior until you confirm the safest atomic approach.
+
+2. RENAME BEHAVIOR
+
+Stable IDs make display-name/team-name corrections semantically safe.
+
+If:
+
+Mike → Michael
+
+the season_member_id stays identical.
+
+Therefore, while the Draft Day competition is active, prefer updating the DISPLAY LABEL associated with that same stable ID in relevant published answer_options.
+
+Existing gameday_picks.selected_answer values do not change.
+
+Similarly:
+
+The Ballers → Sunday Scaries
+
+fantasy_team_id remains the same.
+Update corresponding published answer-option labels when appropriate.
+
+Recommended lifecycle:
+
+Before/fresh Draft Day:
+→ update current league name/team name
+→ update active Draft Day snapshot labels for the same stable IDs
+
+After picks exist but before settlement:
+→ label correction still allowed because IDs do not change
+→ do not reset picks
+
+After Draft Day is settled/finalized:
+→ preserve historical competition snapshots unless we later build an explicit historical correction mechanism
+
+Also consider updating the current gameday_participant display/team snapshot for an active Draft Day when it is clearly a correction and the stable identity is unchanged.
+
+Do not modify selected_answer IDs.
+
+3. MEMBER + TEAM EDIT SHOULD BE ONE USER OPERATION
+
+The proposed Edit modal lets commissioner edit:
+
+- display_name
+- team_name
+
+Do NOT make the UI perform two unrelated PATCH requests where one can succeed and one fail.
+
+Treat:
+
+"Save Member Changes"
+
+as one logical operation.
+
+Prefer one commissioner-authenticated endpoint such as:
+
+PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId
+
+body:
+{
+  display_name,
+  team_name
+}
+
+The server should update the appropriate:
+
+- fantasy_league_members
+- fantasy_teams
+
+and, when applicable, active Draft Day snapshot labels
+
+as one atomic operation.
+
+If this requires a small PL/pgSQL RPC to guarantee atomicity across tables/JSONB snapshots, use that pattern.
+
+If SQL is required:
+- write migration
+- do not apply automatically
+- return manual Supabase instructions
+
+4. MINIMUM MANAGE LEAGUE UX
+
+Proceed conceptually with:
+
+Fantasy League Hub
+→ ⚙ Manage League
+
+MEMBERS & TEAMS
+
+Darius
+The Monstars
+[Edit]
+
+Mike
+Sunday Scaries
+[Edit]
+
+[ + Add Member ]
+
+For V1:
+
+EDIT MEMBER:
+- Display Name
+- Fantasy Team Name
+- Save Changes
+
+ADD MEMBER:
+- Display Name
+- Fantasy Team Name
+
+Behavior should depend on Draft Day lifecycle.
+
+If no Draft Day or pick_count=0:
+→ normal add
+
+If picks already exist:
+→ explain that Draft Day has started
+→ offer the appropriate safe behavior:
+   Add to League Only
+   OR, if implemented in this phase, Add to Draft Day & Reset Picks
+
+If locked:
+→ Add to League Only
+
+Do not build hard delete.
+
+Do not build deactivation yet unless necessary.
+
+5. INVESTIGATE ONE MORE THING BEFORE BUILDING RESET
+
+Determine whether "Add to League Only" requires an explicit current-Draft-Day eligibility field, or whether we can safely infer eligibility from the published answer_options / existing competition participant state.
+
+We need a clear rule preventing a late-added member from entering the current Draft Day when they were intentionally excluded from its answer universe.
+
+Do NOT hack this with frontend-only hiding.
+
+Return the recommended minimum server-enforced mechanism.
+
+6. RETURN REVISED PLAN FIRST
+
+Return:
+
+1. revised lifecycle matrix
+2. exact handling of late-added members
+3. how current-Draft-Day eligibility is enforced
+4. reset-picks architecture if commissioner chooses Add to Draft Day
+5. rename propagation behavior
+6. atomic member/team edit design
+7. files/RPCs/endpoints required
+8. SQL required
+9. test plan
+10. whether you recommend building late-member reset in this phase or deferring it
+
+End with:
+
+READY TO BUILD MANAGE LEAGUE
+
+Do not implement yet.
+Do not begin Phase 4C.
