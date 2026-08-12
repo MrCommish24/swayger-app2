@@ -1,5 +1,4 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- Phase 4B: Fantasy Draft Day Participant Idempotency
+-- Phase 4B: Fantasy Draft Day — Participant Idempotency Index
 -- ─────────────────────────────────────────────────────────────────────────────
 --
 -- Columns season_member_id, fantasy_team_id, team_name were already added to
