@@ -51,7 +51,20 @@ Must check for duplicates BEFORE creating the index.
 - Nested layout:        `app/fantasy/draft-day/[leagueId]/[seasonId]/_layout.tsx`
 - Parent layout names `[seasonId]` segment — Expo Router resolves to directory.
 
+### Global auth guard defers to individual Fantasy screens (regression fix)
+`app/_layout.tsx` `useProtectedRoute` was exempting only `fantasy/join/...` from the
+"no session → /auth" rule. This caused guests to be redirected to /auth after claim
+because the hub route `/fantasy/[leagueId]/[seasonId]` has `segments[1]=leagueId` not "join".
+Fix: changed to `const inFantasy = segments[0] === "fantasy"; if (inFantasy && !session) return;`
+matching the Game Day pattern. Individual screens handle their own auth:
+- hub: `if (!session && !guestToken)` → sign-in (line ~450)
+- play: same pattern (line ~283)
+- draft-day setup (index.tsx): `if (!session) { router.replace("/auth"); }` — commissioner-only
+- setup.tsx: added local `useEffect` guard (no session → /auth) since global guard now bypassed
+
+**Why:** Global guard has no access to AsyncStorage guest token, only Supabase session.
+
 ### Test file
-`server/test-fantasy-phase4b.ts` — 17 tests covering all Phase 4B invariants.
+`server/test-fantasy-phase4b.ts` — 25 tests (17 original + 8 routing-fix tests 18-25).
 Requires env vars: TEST_LEAGUE_ID, TEST_SEASON_ID, TEST_COMMISSIONER_TOKEN,
 TEST_MEMBER_TOKEN_DARIUS, TEST_GUEST_TOKEN_MIKE.

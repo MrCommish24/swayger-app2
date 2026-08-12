@@ -19,7 +19,7 @@
  * Duplicate-safe: RPCs return already_exists=true on retry.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -63,6 +63,15 @@ export default function FantasySetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
+
+  // ── Auth guard ───────────────────────────────────────────────────────────────
+  // The global route guard now defers all /fantasy/* routes to individual screens
+  // so that guest members can reach the hub and play screens. Setup is
+  // commissioner-only, so we enforce auth locally.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session) router.replace("/auth");
+  }, [authLoading, session]);
 
   // ── Wizard step ─────────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>(0);

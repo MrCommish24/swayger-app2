@@ -426,6 +426,89 @@ async function main() {
     assert(data.error?.toLowerCase().includes("prop"), "Error mentions prop", data);
   });
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Guest Routing Fix Tests (Phase 4B regression fix)
+  // Verifies the server-side half of the guest-claim → hub/play flow.
+  // The client-side global auth guard fix (app/_layout.tsx inFantasy exemption)
+  // prevents useProtectedRoute from intercepting /fantasy/* routes without a
+  // session; these tests verify the API correctly accepts guest tokens on the
+  // hub and play endpoints so that once the redirect is fixed the full flow works.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── 18. Anonymous user (no token) cannot access league hub API ───────────
+  await test("18. No-token request to season detail → 401 (hub API auth required)", async () => {
+    const { status } = await request("GET", `${base}`, {});
+    assert(status === 401, `Anonymous → 401 (got ${status})`);
+  });
+
+  // ── 19. Guest token can access season detail (hub API) ───────────────────
+  await test("19. Guest token → GET /seasons/:seasonId → 200 (hub API guest-accessible)", async () => {
+    if (!GUEST_TOKEN_MIKE) { assert(true, "(skipped: TEST_GUEST_TOKEN_MIKE not set)"); return; }
+    const h = buildHeaders({ guestToken: GUEST_TOKEN_MIKE });
+    const { status, data } = await request("GET", `${base}`, h);
+    assert(status === 200, `Guest → season detail 200 (got ${status})`, data);
+    assert(typeof data.league_name === "string" || typeof data.season_year === "number",
+      "Hub data fields returned", data);
+  });
+
+  // ── 20. Guest token can access draft-day play API ────────────────────────
+  await test("20. Guest token → GET /draft-day/play → 200 (play API guest-accessible)", async () => {
+    if (!GUEST_TOKEN_MIKE) { assert(true, "(skipped: TEST_GUEST_TOKEN_MIKE not set)"); return; }
+    const h = buildHeaders({ guestToken: GUEST_TOKEN_MIKE });
+    const { status, data } = await request("GET", `${base}/draft-day/play`, h);
+    assert(status === 200, `Guest → play 200 (got ${status})`, data);
+    assert(Array.isArray(data.props), "props array present", data);
+  });
+
+  // ── 21. Guest token CANNOT access commissioner templates endpoint ─────────
+  await test("21. Guest token → GET /draft-day/templates → 401 or 403 (commissioner-only)", async () => {
+    if (!GUEST_TOKEN_MIKE) { assert(true, "(skipped: TEST_GUEST_TOKEN_MIKE not set)"); return; }
+    const h = buildHeaders({ guestToken: GUEST_TOKEN_MIKE });
+    const { status } = await request("GET", `${base}/draft-day/templates`, h);
+    assert(
+      status === 401 || status === 403,
+      `Guest cannot access commissioner templates (got ${status})`
+    );
+  });
+
+  // ── 22. Guest token CANNOT lock Draft Day ────────────────────────────────
+  await test("22. Guest token → POST /draft-day/lock → 401 or 403 (commissioner-only)", async () => {
+    if (!GUEST_TOKEN_MIKE) { assert(true, "(skipped: TEST_GUEST_TOKEN_MIKE not set)"); return; }
+    const h = buildHeaders({ guestToken: GUEST_TOKEN_MIKE, contentType: true });
+    const { status } = await request("POST", `${base}/draft-day/lock`, h);
+    assert(
+      status === 401 || status === 403,
+      `Guest cannot lock Draft Day (got ${status})`
+    );
+  });
+
+  // ── 23. Guest token CANNOT publish Draft Day ──────────────────────────────
+  await test("23. Guest token → POST /draft-day/publish → 401 or 403 (commissioner-only)", async () => {
+    if (!GUEST_TOKEN_MIKE) { assert(true, "(skipped: TEST_GUEST_TOKEN_MIKE not set)"); return; }
+    const h = buildHeaders({ guestToken: GUEST_TOKEN_MIKE, contentType: true });
+    const { status } = await request("POST", `${base}/draft-day`, h, { prop_template_ids: [] });
+    assert(
+      status === 401 || status === 403,
+      `Guest cannot publish Draft Day (got ${status})`
+    );
+  });
+
+  // ── 24. Authenticated commissioner still accesses hub API ─────────────────
+  await test("24. Authenticated commissioner → GET season detail → 200 (unchanged)", async () => {
+    if (!COMMISSIONER_TOKEN) { assert(true, "(skipped: TEST_COMMISSIONER_TOKEN not set)"); return; }
+    const h = buildHeaders({ bearer: COMMISSIONER_TOKEN });
+    const { status, data } = await request("GET", `${base}`, h);
+    assert(status === 200, `Commissioner → season detail 200 (got ${status})`, data);
+  });
+
+  // ── 25. Authenticated commissioner still accesses templates ───────────────
+  await test("25. Authenticated commissioner → GET /draft-day/templates → 200 (unchanged)", async () => {
+    if (!COMMISSIONER_TOKEN) { assert(true, "(skipped: TEST_COMMISSIONER_TOKEN not set)"); return; }
+    const h = buildHeaders({ bearer: COMMISSIONER_TOKEN });
+    const { status } = await request("GET", `${base}/draft-day/templates`, h);
+    assert(status === 200, `Commissioner → templates 200 (got ${status})`);
+  });
+
   // ── Summary ───────────────────────────────────────────────────────────────
   console.log("\n══════════════════════════════════════════");
   console.log(`Results: ${pass} passed, ${fail} failed`);

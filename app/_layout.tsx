@@ -81,9 +81,13 @@ function useProtectedRoute() {
     // Game Day rooms are accessible to guests — join flow handles auth inline.
     const inGameday = segments[0] === "gameday";
     if (inGameday && !session) return;
-    // Fantasy league invite links are public — guest/account choice happens on the join screen.
-    const inFantasyJoin = segments[0] === "fantasy" && segments[1] === "join";
-    if (inFantasyJoin && !session) return;
+    // All Fantasy routes support both authenticated members and durable guest claims.
+    // The join screen handles the initial identity choice; hub and play screens have
+    // their own guest-aware auth guards. /fantasy/setup has its own session-only guard.
+    // The global guard cannot distinguish a valid guest token from an anonymous visitor,
+    // so it defers to each individual screen — matching the Game Day pattern.
+    const inFantasy = segments[0] === "fantasy";
+    if (inFantasy && !session) return;
 
     if (!session && !inAuthGroup && !inAuthCallback) {
       // Save the intended destination so we can return there after sign-in.

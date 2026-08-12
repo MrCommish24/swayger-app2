@@ -1,0 +1,94 @@
+Proceed with the guest Fantasy route fix.
+
+The investigation is accepted.
+
+Implement the minimum correct fix in app/_layout.tsx:
+
+Replace the narrow fantasy/join-only exemption with an all-Fantasy-route exemption, matching the existing Game Day pattern.
+
+BEFORE:
+
+const inFantasyJoin = segments[0] === "fantasy" && segments[1] === "join";
+if (inFantasyJoin && !session) return;
+
+AFTER:
+
+const inFantasy = segments[0] === "fantasy";
+if (inFantasy && !session) return;
+
+Reason:
+Fantasy supports both authenticated members and durable guest claims. The global auth guard cannot distinguish those identities because it only knows about the Supabase session. Individual Fantasy screens already have access to the guest token and Fantasy viewer resolution.
+
+Before finalizing, audit every currently reachable /fantasy route and confirm each one safely handles:
+
+1. authenticated user
+2. valid Fantasy guest token where guest access is intended
+3. neither auth session nor valid guest token
+
+Do not leave any Fantasy route accidentally public just because the global guard is bypassed.
+
+Specifically audit at least:
+
+- /fantasy/setup
+- /fantasy/join/:leagueId/:seasonId
+- /fantasy/:leagueId/:seasonId
+- /fantasy/draft-day/:leagueId/:seasonId
+- /fantasy/draft-day/:leagueId/:seasonId/play
+
+Expected rules:
+
+/fantasy/setup
+→ authenticated only
+→ if no session, redirect/show sign in
+
+/fantasy/join/...
+→ guest or authenticated allowed
+
+/fantasy/:leagueId/:seasonId
+→ authenticated claimed member OR valid Fantasy guest claim
+→ otherwise sign in / deny
+
+/fantasy/draft-day/:leagueId/:seasonId
+→ commissioner management/setup
+→ authenticated commissioner only
+→ guests must NOT gain commissioner access
+
+/fantasy/draft-day/:leagueId/:seasonId/play
+→ authenticated claimed member OR valid Fantasy guest claim
+→ otherwise sign in / deny
+
+IMPORTANT:
+Do not rely on route exemption alone.
+Verify the commissioner Draft Day setup/manage screen has its own authenticated commissioner authorization and does not become guest-accessible due to this change.
+
+Add tests for:
+
+1. Guest claim → league hub succeeds without auth session
+2. Guest claim → Draft Day play succeeds without auth session
+3. Guest is NOT redirected to /auth after claim
+4. Unclaimed anonymous user cannot access league hub as a member
+5. Guest cannot access commissioner Draft Day management/setup
+6. /fantasy/setup still requires authentication
+7. Authenticated commissioner flow unchanged
+8. Existing Game Day routing unchanged
+
+No SQL changes.
+
+Then rerun:
+- Phase 3
+- Phase 3B
+- Phase 4A/4A.1/4A.2
+- Phase 4B
+
+Return:
+1. exact code change
+2. Fantasy route audit
+3. confirmation commissioner routes remain protected
+4. guest claim → hub result
+5. guest hub → Draft Day play result
+6. exact test counts
+7. any regression found
+
+Then STOP.
+
+Do not begin Phase 4C.
