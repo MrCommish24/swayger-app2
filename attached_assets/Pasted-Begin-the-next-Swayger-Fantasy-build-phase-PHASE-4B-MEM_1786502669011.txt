@@ -1,0 +1,952 @@
+Begin the next Swayger Fantasy build phase:
+
+PHASE 4B — MEMBER DRAFT DAY PICK EXPERIENCE
+
+Phase 4A.2 is complete and verified.
+
+Current verified state:
+- Fantasy league setup works
+- Member claim flow works
+- Guest + authenticated identity works
+- Commissioner can see Joined / Waiting
+- Draft Day setup works
+- Draft Day props can be edited before picks
+- Draft Day publish/update are atomic
+- Draft Day card lifecycle is:
+  open → locked → settled/finalized
+- card.status='open' is the server-authoritative gate for accepting picks
+- commissioner lock/unlock works
+- stable structured answer_options are live
+- supports_no_one is live
+- Phase 4A.2 suite = 100/100 PASS
+
+Do NOT reopen prior architecture.
+
+OBJECTIVE
+
+Build the actual member-facing Draft Day play loop.
+
+At the end of Phase 4B, a claimed Fantasy League member should be able to:
+
+Fantasy League Hub
+→ Open Draft Day
+→ see Draft Day questions
+→ make predictions
+→ save picks
+→ change picks while card is open
+→ return later and see their saved picks
+→ lose edit ability when commissioner locks picks
+→ still see what they picked after lock
+
+This phase is about PARTICIPATION.
+
+Do NOT build settlement, leaderboard, Draft Day winner, or season standings yet.
+
+--------------------------------------------------
+1. CORE MEMBER JOURNEY
+--------------------------------------------------
+
+Preferred flow:
+
+Member opens Swayger
+→ My Fantasy Leagues
+→ Food Pyramid
+→ Draft Day Swayger card
+
+If card.status='open':
+
+DRAFT DAY SWAYGER
+Picks are open
+
+[ Make My Picks ]
+
+Member enters Draft Day:
+
+FOOD PYRAMID
+2026 Draft Day Swayger
+
+“Let’s see how well you know your league.”
+
+Then questions are displayed in two visually distinct groups:
+
+DRAFT DAY PICKS
+“These determine today’s Draft Day winner.”
+
+SEASON RECEIPTS
+“Lock these in now. We’ll bring the receipts back later.”
+
+Member selects one answer per question.
+
+Member can:
+- answer some questions
+- save progress
+- return later
+- change picks while open
+
+When ready:
+
+[ Save My Picks ]
+
+Do NOT require every question to be answered unless there is a strong product reason.
+
+Prefer partial completion with visible progress.
+
+Example:
+
+6 of 8 picks made
+
+This is important because Draft Day is a live social environment; forcing completion can create unnecessary friction.
+
+--------------------------------------------------
+2. WHO CAN PLAY
+--------------------------------------------------
+
+Only a valid Fantasy League participant for this season should be able to submit picks.
+
+Identity must resolve through the existing Fantasy system:
+
+authenticated user OR durable Fantasy guest token
+→ fantasy_member_claims
+→ fantasy_league_members
+→ fantasy_season_members
+→ target league season
+
+The user should NOT need to claim again if already recognized.
+
+Commissioner is also a normal participant and should be able to make picks using their commissioner seat.
+
+Do not create a separate commissioner-picks model.
+
+If an unclaimed person reaches Draft Day:
+→ route them through the existing seat-claim flow
+→ then return them to Draft Day
+
+Do not create duplicate participants.
+
+--------------------------------------------------
+3. COMPETITION PARTICIPANT RECORD
+--------------------------------------------------
+
+Inspect the current gameday_participants model.
+
+For a Fantasy Draft Day member entering the competition, create or reuse a gameday_participants row containing:
+
+- room_id
+- season_member_id
+- fantasy_team_id
+- display_name snapshot
+- team_name snapshot
+- existing auth/guest participation fields where applicable
+
+The Fantasy participant should represent:
+
+“Mike — Sunday Scaries in this Draft Day competition”
+
+while persistent identity remains in Fantasy member tables.
+
+Do not use gameday_participants as the persistent league identity.
+
+Creation must be idempotent.
+
+Returning to Draft Day must reuse the same competition participant.
+
+For co-managers:
+- each season_member may participate as their own person
+- fantasy_team_id may be the same for two managers
+- do not collapse co-managers into one participant
+
+--------------------------------------------------
+4. CROSS-SEASON / CROSS-LEAGUE SAFETY
+--------------------------------------------------
+
+Enforce the integrity rules previously approved.
+
+Before creating/reusing a Fantasy gameday_participant verify:
+
+room.league_season_id
+===
+season_member.league_season_id
+===
+fantasy_team.league_season_id
+
+And verify the season member belongs to the league being accessed.
+
+Reject cross-season or cross-league manipulated IDs.
+
+Do not rely solely on FK validity.
+
+--------------------------------------------------
+5. MEMBER DRAFT DAY ENTRY POINT
+--------------------------------------------------
+
+Update the Fantasy League Hub Draft Day card.
+
+Current placeholder:
+“Member play coming next”
+
+Replace it.
+
+For a recognized league member:
+
+If Draft Day does not exist:
+→ Draft Day has not been published yet
+
+If card.status='open':
+→ [ Make My Picks ]
+or if picks already exist:
+→ [ View / Update My Picks ]
+
+If card.status='locked':
+→ [ View My Picks ]
+with:
+“Picks are locked”
+
+If finalized later:
+→ Phase 4C will define results behavior
+
+Commissioner should see both:
+- member play CTA
+- commissioner management controls
+
+Example commissioner card:
+
+DRAFT DAY SWAYGER
+Ready
+
+[ Make My Picks ]
+[ Manage Draft Day ]
+[ Lock Picks ]
+
+Do not force commissioner to choose between playing and managing.
+
+--------------------------------------------------
+6. MEMBER DRAFT DAY SCREEN
+--------------------------------------------------
+
+Create a member-facing Draft Day route.
+
+Use the existing routing conventions.
+
+Conceptually:
+
+/fantasy/draft-day/:leagueId/:seasonId/play
+
+or another clean nested route.
+
+Do NOT reuse the commissioner setup screen for gameplay.
+
+The member screen should be purpose-built for fast picking.
+
+Header should communicate:
+
+League name
+Draft Day Swayger
+Open / Locked state
+progress
+
+Example:
+
+FOOD PYRAMID
+Draft Day Swayger
+
+6 of 8 picks made
+
+--------------------------------------------------
+7. QUESTION PRESENTATION
+--------------------------------------------------
+
+Render the existing published gameday_props.
+
+Do not regenerate questions from the template library on the member screen.
+
+The published gameday_props snapshot is authoritative.
+
+Use:
+- question
+- answer_options
+- scoring_scope
+- point_value if useful
+- display_order
+
+Group visually by:
+
+scoring_scope='competition'
+→ Draft Day Picks
+
+scoring_scope='season'
+→ Season Receipts
+
+Do not expose internal terms like scoring_scope.
+
+Preferred copy:
+
+DRAFT DAY PICKS
+“Score points today.”
+
+SEASON RECEIPTS
+“Locked today. Settled later.”
+
+--------------------------------------------------
+8. ANSWER OPTIONS
+--------------------------------------------------
+
+Fantasy answer_options are structured objects:
+
+{
+  id,
+  label,
+  type
+}
+
+Render label.
+
+Submit/store the canonical id.
+
+Do NOT submit labels as selected_answer.
+
+Examples:
+
+Mike selects:
+
+Darius
+
+Persist:
+selected_answer = <Darius season_member UUID>
+
+If selecting:
+
+No one
+
+Persist:
+selected_answer = "no_one"
+
+Existing Game Day legacy string answer_options must remain backward compatible.
+
+Do not globally rewrite Game Day pick handling unless required.
+
+--------------------------------------------------
+9. PICK STORAGE
+--------------------------------------------------
+
+Inspect existing gameday_picks schema and pick submission routes.
+
+Reuse the existing competition engine where safe.
+
+Fantasy Draft Day picks should use the existing gameday_picks table.
+
+Ensure a pick is uniquely associated with:
+
+participant
++ prop
+
+Returning/editing should UPDATE/upsert the existing pick, not create duplicates.
+
+If the existing Game Day route already provides this safely, extend it.
+
+If Fantasy structured answer IDs require a Fantasy-specific route, add the minimum endpoint rather than destabilizing Game Day.
+
+Do not create a fantasy_picks table.
+
+--------------------------------------------------
+10. PICK SUBMISSION RULES
+--------------------------------------------------
+
+Server must be authoritative.
+
+A Fantasy Draft Day pick can be created/changed only if:
+
+1. room exists
+2. room.experience_type='fantasy'
+3. room.competition_type='draft_day'
+4. participant belongs to room
+5. card.status='open'
+6. prop belongs to that card
+7. selected answer ID exists in that prop's snapshotted answer_options
+8. participant/season identity is valid
+
+If card.status='locked':
+→ return 409 or appropriate conflict response
+
+If prop doesn't belong to room/card:
+→ reject
+
+If answer ID isn't in answer_options:
+→ reject
+
+Do not rely on frontend-disabled controls.
+
+--------------------------------------------------
+11. PARTIAL PICKING / SAVE MODEL
+--------------------------------------------------
+
+Prefer progressive saving rather than one giant all-or-nothing submission.
+
+Recommended behavior:
+
+Member taps an answer
+→ local state changes
+
+Then either:
+A. save each pick immediately
+OR
+B. Save My Picks persists the current changed set
+
+Inspect existing Game Day pick UX and reuse its strongest pattern.
+
+My preference for Draft Day UX:
+
+- selections feel immediate
+- Save My Picks provides explicit confidence
+- returning to screen restores saved picks
+
+If auto-saving each answer materially simplifies reliability, that is acceptable, but make the saved state visible.
+
+Do not make users wonder whether picks were recorded.
+
+Examples:
+
+“Saved”
+“6 of 8 picks saved”
+
+--------------------------------------------------
+12. PICK EDITING
+--------------------------------------------------
+
+While card.status='open':
+
+- member can change a previously saved pick
+- update same gameday_picks row
+- refreshed screen shows latest selection
+
+After card.status='locked':
+
+- existing picks remain visible
+- answer controls become read-only
+- no changes accepted server-side
+
+Important:
+Locking does NOT erase picks.
+
+--------------------------------------------------
+13. MEMBER DOES NOT HAVE TO ANSWER EVERYTHING
+--------------------------------------------------
+
+Do NOT automatically require 100% completion to participate.
+
+A member may submit 5 of 8 picks.
+
+Unanswered questions simply have no gameday_picks row.
+
+This supports:
+- late joiners
+- quick live behavior
+- interruption during the draft
+
+Show progress clearly:
+
+5 of 8 picks made
+
+If you identify a strong existing engine constraint requiring all answers, report it before forcing that behavior.
+
+--------------------------------------------------
+14. LOCK TRANSITION EXPERIENCE
+--------------------------------------------------
+
+If commissioner locks while a member has Draft Day open:
+
+Member UI should detect the state change reasonably quickly.
+
+Inspect existing realtime/subscription infrastructure.
+
+Preferred:
+- reuse existing realtime room/card updates if already available
+
+Otherwise:
+- refresh on focus
+- refresh after failed submission
+- simple polling if absolutely necessary
+
+Do not build elaborate new realtime infrastructure just for this.
+
+If member attempts a pick after lock:
+server returns conflict
+→ client refreshes
+→ show:
+
+“Picks are locked.”
+
+Member should never think the change saved if it did not.
+
+--------------------------------------------------
+15. PICKS LOCKED MEMBER VIEW
+--------------------------------------------------
+
+When locked:
+
+FOOD PYRAMID
+Draft Day Swayger
+
+🔒 PICKS LOCKED
+
+“Your predictions are in.”
+
+Then show questions + their selections.
+
+For unanswered questions:
+“No pick”
+
+Do not reveal other members’ picks yet unless that is already an intentional Game Day behavior.
+
+Phase 4B is about MY PICKS.
+
+Leaderboard / public picks come later.
+
+--------------------------------------------------
+16. SEASON RECEIPTS UX
+--------------------------------------------------
+
+Season Receipts should feel special.
+
+They are long-term predictions made on Draft Day.
+
+Examples:
+
+Who finishes first?
+Who finishes last?
+Who scores the most points?
+
+Once locked, consider copy such as:
+
+“Receipt locked 🔒”
+“See you at the end of the season.”
+
+Do not overbuild visual effects.
+
+The important behavior is:
+
+- submitted on Draft Day
+- stored like any pick
+- scoring_scope='season'
+- remains pending later
+
+Do not score them in Phase 4B.
+
+--------------------------------------------------
+17. DO NOT LEAK ANSWERS
+--------------------------------------------------
+
+correct_answer must not be exposed unnecessarily to member-facing Draft Day APIs.
+
+Inspect the current room/prop fetch responses.
+
+If the existing Game Day room endpoint returns correct_answer to clients before settlement, identify and fix the Fantasy member response.
+
+Member gameplay should receive:
+- question
+- answer options
+- scoring scope
+- point value if desired
+- member's selected answer
+
+NOT:
+- correct_answer before settlement
+
+This is important.
+
+Do not break host/admin settlement functionality.
+
+--------------------------------------------------
+18. SCORING IS NOT PART OF THIS PHASE
+--------------------------------------------------
+
+Do NOT calculate Draft Day winner yet.
+
+Do NOT modify:
+- leaderboard
+- final standings
+- settlement flows
+unless necessary to prevent incorrect behavior from leaking into the member screen.
+
+Remember for Phase 4C:
+
+Draft Day winner must eventually use:
+SUM(gameday_props.point_value for correct competition-scope picks)
+
+NOT:
+correct picks × 10
+
+And must exclude:
+scoring_scope='season'
+
+Do not lose this requirement.
+
+--------------------------------------------------
+19. DRAFT DAY PROP EDITING INTERACTION
+--------------------------------------------------
+
+Phase 4A.2 allows commissioner to edit props only when pick_count=0.
+
+Once the first member pick is created:
+
+GET /draft-day pick_count must reflect >0
+
+Manage Draft Day must become read-only.
+
+PATCH /draft-day/props must return 409.
+
+Test this end-to-end.
+
+This is a critical fairness invariant.
+
+--------------------------------------------------
+20. INVITE / MEMBER ENTRY
+--------------------------------------------------
+
+Current League Invite remains:
+
+league onboarding / seat claiming
+
+For Phase 4B, make sure after claiming a seat the member can naturally enter Draft Day if one is published/open.
+
+Preferred member journey from league invite:
+
+Open invite
+→ claim Mike — Sunday Scaries
+→ league hub
+→ Draft Day Ready
+→ Make My Picks
+
+Do not build a second redundant claim flow.
+
+Do not add QR yet.
+
+--------------------------------------------------
+21. HOME DISCOVERABILITY
+--------------------------------------------------
+
+After claiming, members already see the league under My Fantasy Leagues.
+
+Preserve:
+
+Home
+→ My Fantasy Leagues
+→ Food Pyramid
+→ Make My Picks
+
+Do not add a Fantasy bottom tab.
+
+--------------------------------------------------
+22. GUEST PLAY
+--------------------------------------------------
+
+Guest league members must be able to play Draft Day if their Fantasy seat claim is valid.
+
+Reuse the existing Fantasy guest token.
+
+Do not require account creation.
+
+Guest picks must persist on the same device through their persistent guest claim.
+
+If guest upgrades to authenticated identity later:
+- existing gameday participant and picks must still resolve to the same Fantasy season_member
+- no pick duplication/loss
+
+Test this explicitly.
+
+--------------------------------------------------
+23. COMMISSIONER PLAY
+--------------------------------------------------
+
+Commissioner should play exactly like a league member.
+
+Their existing commissioner Fantasy claim resolves their season_member.
+
+They should receive:
+- Make My Picks
+- their picks
+- locked state
+
+Commissioner management controls remain available separately.
+
+Do not automatically assume commissioner participates if they somehow are not an active season member, but normal bootstrap guarantees they currently are.
+
+--------------------------------------------------
+24. API DESIGN
+--------------------------------------------------
+
+Inspect existing routes before inventing endpoints.
+
+Likely capabilities needed:
+
+GET Draft Day member-play state
+POST/PUT/upsert individual pick
+possibly ensure/create Fantasy gameday_participant
+
+Prefer a small, member-focused API.
+
+Conceptually:
+
+GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play
+
+POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks
+
+or reuse existing Game Day route if compatibility is clean.
+
+Return enough state for one member:
+- room/card IDs
+- room/card status
+- props
+- member participant identity
+- existing picks
+- progress counts
+
+Do not expose commissioner-only data unnecessarily.
+
+--------------------------------------------------
+25. PARTICIPANT CREATION ATOMICITY
+--------------------------------------------------
+
+If entering Draft Day requires creating a gameday_participants row, make it safe and idempotent.
+
+Avoid:
+two simultaneous opens
+→ two participants for same season_member/room
+
+Use the simplest reliable existing pattern.
+
+If the DB lacks an appropriate uniqueness constraint and race safety cannot be achieved cleanly at server level, report before adding unnecessary schema.
+
+Do not overengineer theoretical concurrency, but double taps/retries must be safe.
+
+--------------------------------------------------
+26. ERROR STATES
+--------------------------------------------------
+
+Provide useful states for:
+
+- Draft Day not published
+- user is not a claimed season member
+- picks locked
+- unavailable/invalid prop
+- failed save
+- network error
+- no questions configured
+
+Avoid raw:
+“Failed to fetch”
+
+where the server provides a meaningful error.
+
+--------------------------------------------------
+27. TESTING — IDENTITY / ENTRY
+--------------------------------------------------
+
+Test:
+
+- commissioner enters Draft Day
+- authenticated member enters
+- guest member enters
+- unclaimed user rejected or routed appropriately
+- wrong league claim rejected
+- cross-season member rejected
+- returning member reuses same gameday_participant
+- duplicate entry does not duplicate participant
+
+--------------------------------------------------
+28. TESTING — PICKS
+--------------------------------------------------
+
+Test:
+
+- open card accepts valid pick
+- same participant changes pick while open
+- update modifies existing pick rather than duplicate
+- partial picking allowed
+- unanswered prop remains unanswered
+- selected answer must exist in answer_options
+- no_one accepted only when present
+- fabricated answer ID rejected
+- prop from another card rejected
+- participant from another room rejected
+- locked card rejects create
+- locked card rejects update
+- existing picks remain readable after lock
+
+--------------------------------------------------
+29. TESTING — FAIRNESS
+--------------------------------------------------
+
+After first pick:
+
+- Draft Day pick_count > 0
+- commissioner Manage Draft Day becomes read-only
+- PATCH /draft-day/props returns 409
+- prop set cannot be modified
+- lock still works
+
+This must be proven.
+
+--------------------------------------------------
+30. TESTING — GUEST UPGRADE
+--------------------------------------------------
+
+Scenario:
+
+Guest Mike
+→ claims seat
+→ makes Draft Day picks
+→ later explicitly upgrades guest claim to authenticated Mike
+
+Verify:
+- same fantasy league member
+- same fantasy season member
+- same gameday participant
+- same picks
+- no duplicate picks
+- authenticated Mike can view previously-created guest picks
+
+--------------------------------------------------
+31. REGRESSION
+--------------------------------------------------
+
+Run:
+
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A / 4A.1 / 4A.2
+- new Phase 4B suite
+- Game Day normalization/settlement regression
+- relevant 1v1 checks
+
+Do not silently fix unrelated failures.
+
+Return exact counts.
+
+--------------------------------------------------
+32. MANUAL QA I SHOULD BE ABLE TO DO
+--------------------------------------------------
+
+COMMISSIONER:
+
+1. Open Food Pyramid.
+2. Draft Day Ready.
+3. Tap Make My Picks.
+4. Answer 3–4 questions.
+5. Save.
+6. Return to hub.
+7. Reopen Draft Day.
+8. Verify my saved picks are selected.
+9. Verify Manage Draft Day is now read-only because a pick exists.
+10. Lock Picks.
+11. Reopen Draft Day.
+12. See my predictions but cannot edit them.
+
+AUTHENTICATED MEMBER:
+
+1. Sign in as Mike.
+2. Open Food Pyramid from My Fantasy Leagues.
+3. Tap Make My Picks.
+4. See Draft Day Picks + Season Receipts.
+5. Submit some, not necessarily all.
+6. Return and change one while open.
+7. Commissioner locks.
+8. Mike sees Picks Locked and cannot change answers.
+
+GUEST:
+
+1. Open league invite in incognito.
+2. Claim Chris.
+3. Open league hub.
+4. Tap Make My Picks.
+5. Submit picks as guest.
+6. Reload.
+7. Saved picks remain.
+8. Optionally perform explicit guest → account upgrade.
+9. Existing picks remain after upgrade.
+
+--------------------------------------------------
+33. DO NOT BUILD
+--------------------------------------------------
+
+Do NOT build:
+
+- settlement UI
+- correct-answer entry
+- Draft Day leaderboard
+- Draft Day winner
+- final standings
+- season standings
+- Week 1
+- weekly props
+- rewards processing
+- QR
+- notifications
+- provider imports
+- roster copy/paste
+- league archive/delete
+- season renewal
+
+--------------------------------------------------
+34. IMPLEMENTATION PROCESS
+--------------------------------------------------
+
+Before coding:
+
+1. Inspect current gameday_participants constraints and existing join logic.
+2. Inspect gameday_picks schema and existing Game Day pick upsert behavior.
+3. Inspect existing room/member prop response for correct_answer leakage.
+4. Inspect Fantasy claim resolution and guest token logic.
+5. Inspect Fantasy League Hub and DraftDayCard.
+6. Determine minimum new routes/RPCs required.
+7. Determine whether any SQL is genuinely needed.
+
+If SQL is needed:
+- write migration
+- do NOT apply automatically
+- return exact manual application instructions
+- tests may remain partially blocked until I apply it
+
+Then build.
+
+--------------------------------------------------
+RETURN AFTER BUILD
+--------------------------------------------------
+
+Return:
+
+1. architecture/code inspection findings
+2. member Draft Day play design implemented
+3. files changed
+4. any SQL/migration requiring manual Supabase application
+5. API/RPC changes
+6. participant creation/reuse behavior
+7. authenticated-member behavior
+8. guest behavior
+9. commissioner play behavior
+10. pick persistence/update behavior
+11. partial-pick behavior
+12. lock behavior
+13. correct_answer exposure findings/fix
+14. edit-after-first-pick fairness behavior
+15. guest→auth continuity result
+16. exact tests/results
+17. bugs found/fixed during QA
+18. exact manual QA sequence
+19. remaining Phase 4C dependencies
+
+Then STOP.
+
+Do not begin settlement or leaderboard work.
+
+Final status:
+
+PHASE 4B READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
