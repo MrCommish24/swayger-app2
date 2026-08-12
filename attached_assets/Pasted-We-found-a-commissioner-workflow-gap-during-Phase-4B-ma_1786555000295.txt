@@ -1,0 +1,214 @@
+We found a commissioner workflow gap during Phase 4B manual QA.
+
+Do NOT begin Phase 4C.
+
+INVESTIGATE ONLY FIRST.
+
+PROBLEM
+
+After creating a Fantasy League, the commissioner does not appear to have a way to return later and manage the league roster.
+
+During Draft Day this is realistic:
+
+- commissioner forgot to add someone
+- member joins late
+- display name is wrong
+- fantasy team name is wrong
+- commissioner needs to correct league structure
+
+We need to understand what functionality already exists versus what was never built.
+
+--------------------------------------------------
+1. AUDIT CURRENT COMMISSIONER MEMBER MANAGEMENT
+--------------------------------------------------
+
+Inspect current:
+
+- fantasy_leagues
+- fantasy_league_members
+- fantasy_league_seasons
+- fantasy_season_members
+- fantasy_teams
+- fantasy_team_managers
+
+Inspect all current Fantasy routes/RPCs relating to:
+
+- adding participants
+- updating members
+- updating teams
+- removing/deactivating members
+- league setup
+
+Specifically determine:
+
+1. Can the existing POST /participants endpoint add another member to an ALREADY CREATED season?
+2. Does it remain callable after Draft Day has been published?
+3. Does it remain callable after gameday_picks exist?
+4. Is there any backend rule currently preventing this?
+5. Is the apparent lockout simply because no post-setup Manage Members UI exists?
+6. Is there currently any endpoint for:
+   - edit league member display name
+   - edit fantasy team name
+   - remove/deactivate member
+   - change team manager assignment
+
+Do not assume the setup wizard is the only available backend capability.
+
+--------------------------------------------------
+2. IDENTIFY CURRENT GATES
+--------------------------------------------------
+
+Return the exact conditions, if any, that currently prevent commissioner roster changes based on:
+
+- season status
+- Draft Day existence
+- Draft Day card status
+- presence of gameday_picks
+- room finalized status
+
+We need to know what ACTUALLY locks roster management today.
+
+--------------------------------------------------
+3. ANALYZE IMPACT ON PUBLISHED DRAFT DAY PROPS
+--------------------------------------------------
+
+Published Fantasy props use stable structured answer_options snapshots.
+
+Example:
+
+{
+  id: season_member_id,
+  label: "Mike",
+  type: "season_member"
+}
+
+Analyze these scenarios:
+
+A. Rename Mike → Michael
+
+Underlying ID remains the same.
+
+Determine the safest behavior for:
+- fantasy_league_members display_name
+- published gameday_props answer_options labels
+- existing gameday_picks
+- gameday_participant display-name snapshot
+
+B. Rename fantasy team
+
+Same analysis using fantasy_team_id.
+
+C. Add a new league member BEFORE any Draft Day picks exist
+
+Determine whether published member/team-target props can safely regenerate answer_options.
+
+D. Add a new league member AFTER Draft Day picks exist but card is still open
+
+This is the critical case.
+
+Do NOT silently change the choice universe.
+
+Evaluate this proposed rule:
+
+If the roster change adds/removes a possible answer after picks exist:
+→ commissioner must explicitly reset existing Draft Day picks before the published answer_options can be regenerated.
+
+Simple label corrections using the same stable IDs should NOT require a reset.
+
+E. Remove/deactivate a member after picks exist
+
+Analyze separately because existing picks may point to that member's stable ID.
+
+--------------------------------------------------
+4. DO NOT CHANGE THE EXISTING PROP FAIRNESS RULE
+--------------------------------------------------
+
+Current rule remains:
+
+Once any gameday_picks exist:
+→ Draft Day QUESTIONS cannot be added/removed/changed.
+
+Do not weaken this rule.
+
+Roster administration is a separate concern.
+
+We need to distinguish:
+
+QUESTION SET CHANGE
+vs.
+DISPLAY LABEL CORRECTION
+vs.
+ANSWER-UNIVERSE / ROSTER CHANGE
+
+--------------------------------------------------
+5. RECOMMEND MANAGE LEAGUE UX
+--------------------------------------------------
+
+Evaluate adding a commissioner-only:
+
+Manage League
+
+from the Fantasy League Hub.
+
+Likely first version:
+
+MEMBERS & TEAMS
+
+Member row:
+Darius
+The Monstars
+[Edit]
+
+Actions:
++ Add Member
+
+Edit:
+- Display Name
+- Fantasy Team Name
+
+Do not build a large commissioner admin system.
+
+Determine minimum UI needed to solve Draft Day correction scenarios.
+
+--------------------------------------------------
+6. PROPOSE LIFECYCLE RULES
+--------------------------------------------------
+
+Recommend explicit rules for:
+
+- add member before Draft Day publish
+- add member after publish but before picks
+- add member after picks but before lock
+- add member after lock
+- rename member before/after picks
+- rename team before/after picks
+- remove/deactivate member before/after picks
+
+Consider both competition fairness and practical commissioner needs.
+
+--------------------------------------------------
+7. RETURN ONLY — DO NOT IMPLEMENT
+--------------------------------------------------
+
+Return:
+
+1. what league/member management exists today
+2. whether there is actually a current lock/gate
+3. what is UI-only missing functionality
+4. current API/RPC capabilities
+5. rename safety analysis
+6. add-member safety analysis
+7. remove-member safety analysis
+8. effect on answer_options snapshots
+9. effect on existing picks
+10. recommended lifecycle rules
+11. minimum Manage League feature
+12. whether SQL changes are required
+13. proposed implementation order
+
+End with:
+
+READY TO PLAN MANAGE LEAGUE
+
+Do not build yet.
+Do not begin Phase 4C.
