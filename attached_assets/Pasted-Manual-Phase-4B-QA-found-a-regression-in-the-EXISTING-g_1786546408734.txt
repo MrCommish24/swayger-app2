@@ -1,0 +1,221 @@
+Manual Phase 4B QA found a regression in the EXISTING guest league-claim flow.
+
+Do NOT begin new feature work.
+Investigate before fixing.
+
+BUG
+
+Manual sequence:
+
+1. Open Fantasy League invite link in a fresh/incognito browser.
+2. Choose "Continue as Guest."
+3. Select who I am in the league / claim an available seat.
+4. Claim succeeds or appears to succeed.
+5. Instead of entering the league as a guest, I am redirected to the general Swayger sign-in page.
+
+This is incorrect.
+
+EXPECTED FLOW
+
+League Invite
+→ Continue as Guest
+→ Select league seat
+→ claim seat using durable fantasy guest token
+→ guest success / league hub
+→ guest can access Draft Day
+→ account creation/sign-in remains OPTIONAL
+
+The user should NOT be forced to authenticate after explicitly choosing Continue as Guest.
+
+This behavior previously worked in Phase 3 / Phase 3B.
+
+--------------------------------------------------
+1. REPRODUCE THE EXACT FLOW
+--------------------------------------------------
+
+Reproduce using a fresh incognito session with no auth session.
+
+Trace:
+
+invite URL
+→ guest choice
+→ seat selection
+→ claim API
+→ claim response
+→ client navigation
+→ destination
+
+Report the exact route at every step.
+
+--------------------------------------------------
+2. CONFIRM WHETHER CLAIM ACTUALLY SUCCEEDS
+--------------------------------------------------
+
+After selecting the seat, inspect:
+
+- request to the guest claim endpoint
+- HTTP status
+- response body
+- guest token used
+- fantasy_member_claims row created/resolved
+- league_member_id
+- season_member_id
+
+Determine whether:
+
+A. claim succeeds and routing incorrectly sends guest to sign-in
+
+or
+
+B. claim fails and fallback routing sends user to sign-in.
+
+Do not assume.
+
+--------------------------------------------------
+3. TRACE THE REDIRECT SOURCE
+--------------------------------------------------
+
+Find the exact code responsible for navigating to the Swayger sign-in page.
+
+Inspect:
+
+- Fantasy join screen
+- guest claim success handler
+- league hub route
+- auth guards/layouts
+- useFocusEffect/useEffect redirects
+- resolveViewer changes from Phase 4B
+- My Fantasy Leagues auth assumptions
+- Draft Day member CTA/play route
+- any router.replace("/login"), router.push("/login"), sign-in redirect helpers, or authenticated-only wrappers
+
+Return the exact file and line/logic causing the redirect.
+
+--------------------------------------------------
+4. CHECK PHASE 3 EXPECTED BEHAVIOR
+--------------------------------------------------
+
+Phase 3 previously implemented:
+
+Guest claims seat
+→ durable fgt_* guest token stored in AsyncStorage
+→ guest success screen
+→ Open My League
+→ Create Account / Sign In OPTIONAL
+
+Verify whether that behavior still exists in code.
+
+Determine whether Phase 4B accidentally bypassed or invalidated it.
+
+Do not replace the established guest model.
+
+--------------------------------------------------
+5. CHECK GUEST TOKEN PERSISTENCE
+--------------------------------------------------
+
+Immediately after guest seat claim verify:
+
+- fgt_* token exists
+- AsyncStorage contains the expected Fantasy guest token
+- subsequent Fantasy API calls send:
+  X-Fantasy-Guest-Token
+- token resolves through fantasy_member_claims
+- resolveViewer recognizes the guest
+
+If token storage is asynchronous, inspect whether navigation is occurring before the token is persisted/read.
+
+Check for a race such as:
+
+claim succeeds
+→ navigation to hub
+→ hub loads before guest token becomes available
+→ resolveViewer says unauthenticated
+→ auth guard redirects to sign-in
+
+This is a plausible failure mode but prove it before fixing.
+
+--------------------------------------------------
+6. CHECK LEAGUE HUB AUTH GUARD
+--------------------------------------------------
+
+The Fantasy League Hub must support BOTH:
+
+authenticated Fantasy member
+OR
+valid Fantasy guest claim
+
+It must not have a blanket:
+
+"no Supabase auth user → redirect to sign-in"
+
+rule.
+
+Verify whether the hub currently assumes authentication before attempting guest resolution.
+
+Expected:
+
+no Supabase auth session
++ valid Fantasy guest token/claim
+= valid guest league member
+
+--------------------------------------------------
+7. CHECK PHASE 4B PLAY ACCESS
+--------------------------------------------------
+
+Once guest claim works, verify:
+
+guest
+→ league hub
+→ Draft Day card
+→ Make My Picks
+→ /draft-day/play
+→ GET /draft-day/play resolves guest via X-Fantasy-Guest-Token
+→ same season_member_id
+→ competition participant created/reused
+
+Do NOT require account creation to play Draft Day.
+
+--------------------------------------------------
+8. DO NOT DAMAGE GUEST → AUTH UPGRADE
+--------------------------------------------------
+
+Preserve the existing explicit upgrade behavior:
+
+Guest
+→ intentionally taps Create Account / Sign In
+→ pending-upgrade context identifies the specific guest claim
+→ auth
+→ that guest claim converts to user_id
+→ same league_member
+→ same season_member
+→ same Draft Day participant/picks
+
+Do not auto-upgrade a guest merely because an auth session later exists.
+
+--------------------------------------------------
+9. RETURN FIRST — DO NOT FIX YET
+--------------------------------------------------
+
+Return:
+
+1. exact reproduction result
+2. whether guest claim succeeds
+3. exact route that sends user to sign-in
+4. exact file/function causing redirect
+5. whether guest token exists after claim
+6. whether X-Fantasy-Guest-Token is sent afterward
+7. whether resolveViewer recognizes the guest
+8. whether this was introduced by Phase 4B or was pre-existing
+9. minimum code fix required
+10. tests that should be added
+11. whether any SQL is required
+
+End with:
+
+READY TO FIX
+
+or
+
+NEEDS MORE INFORMATION
+
+Do not begin Phase 4C.
