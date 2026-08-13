@@ -1,0 +1,179 @@
+The durable Fantasy Add Member idempotency SQL has already been applied in Supabase.
+
+Do NOT make more schema changes unless verification reveals a defect.
+
+Run full live verification of the implemented durable idempotency path.
+
+1. VERIFY LIVE DB OBJECTS
+
+Confirm live:
+
+- fantasy_participant_operations exists
+- fpo_operator_key_unique exists
+- add_fantasy_season_participant_idempotent RPC exists
+- service_role can execute the RPC
+
+Report the exact unique key definition.
+
+2. VERIFY REQUEST HASH CONTENT
+
+Confirm the persisted request hash includes the immutable meaning of the operation, including:
+
+- league_id
+- season_id
+- operator_user_id
+- normalized display_name
+- normalized team_name
+
+Report the exact canonicalization/hash logic.
+
+Same key + semantically identical request must replay.
+Same key + materially different request must 409.
+
+3. VERIFY RESPONSE STATUS DURABILITY
+
+The implementation claims:
+
+same key + same request
+→ same HTTP status and same body as original
+
+Explain exactly how the original HTTP status is persisted.
+
+If the table has response_status, show it.
+
+If status is stored inside result_json, show how.
+
+Do NOT reconstruct original 201 vs 200 based on assumptions during replay.
+
+Prove:
+- fresh creation originally 201 → replay 201
+- existing-member/idempotent result originally 200 → replay 200
+
+4. RUN B4a–B4e AGAINST LIVE DB
+
+B4a — same key + same body
+
+Two requests, no league_member_id:
+→ same league_member_id
+→ same season_member_id
+→ same fantasy_team_id
+→ exactly one business operation
+→ exactly one participant/member/team creation
+
+B4b — same key + different body
+
+→ 409
+→ code = IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST
+→ no second member created
+
+B4c — different keys + identical names
+
+→ two distinct legitimate members
+→ different IDs
+→ names remain non-unique
+
+B4d — durable replay
+
+Prove replay comes from fantasy_participant_operations and does not depend on any process-local cache.
+
+Inspect the stored operation:
+- request_hash
+- result_json
+- response status representation
+- resulting IDs
+
+B4e — missing Idempotency-Key
+
+→ 400
+→ code = IDEMPOTENCY_KEY_REQUIRED
+→ no member created
+
+5. TEST CONCURRENT DUPLICATE REQUESTS
+
+Add a new test:
+
+B4f — same key + same body submitted concurrently or near-simultaneously.
+
+Expected:
+- both requests receive the same successful result
+- exactly one fantasy_participant_operations row
+- exactly one league_member
+- exactly one season_member
+- exactly one fantasy_team
+- exactly one team_manager assignment
+
+This is important because the DB unique constraint is intended to protect race conditions, not only sequential retries.
+
+6. TEST TRANSACTION ROLLBACK
+
+Verify the atomic boundary:
+
+idempotency slot
++ member/team creation
++ eligibility behavior
++ Draft Day snapshot update when applicable
++ result sealing
+
+must all commit or all roll back.
+
+If practical, force a failure after the operation row would normally be reserved but before the RPC completes.
+
+Expected:
+- no stranded fantasy_participant_operations row
+- no partial member/team records
+- retry with same key can succeed normally
+
+7. VERIFY CLIENT KEY PERSISTENCE
+
+Confirm:
+
+- opening a fresh Add Member operation generates one key
+- key persisted to AsyncStorage before request
+- network failure keeps same key
+- reload restores same pending key
+- successful confirmed response clears it
+- intentional Cancel clears it
+- starting a genuinely new Add Member operation gets a new key
+
+Do not clear the key merely because fetch throws.
+
+8. REGRESSION
+
+Run:
+
+- Manage League suite
+- Phase 3
+- Phase 3B
+- Phase 4A / 4A.1 / 4A.2
+- Phase 4B
+
+Return exact totals:
+- tests
+- passed
+- failed
+- skipped
+
+9. RETURN
+
+Return:
+
+1. live DB object verification
+2. request-hash definition
+3. response-status persistence mechanism
+4. B4a–B4f results
+5. rollback/atomicity result
+6. client persistence result
+7. regression totals
+8. any defect found
+9. whether any additional SQL is required
+10. updated manual QA sequence
+
+End with:
+
+IDEMPOTENCY VERIFIED — READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
+
+Do not begin Phase 4C.

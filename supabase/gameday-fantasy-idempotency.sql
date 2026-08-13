@@ -56,6 +56,15 @@ CREATE INDEX IF NOT EXISTS idx_fpo_created_at
 
 ALTER TABLE public.fantasy_participant_operations ENABLE ROW LEVEL SECURITY;
 
+-- Service role needs a permissive policy so audit/test queries via PostgREST can
+-- read rows.  (SECURITY DEFINER functions run as the function owner and bypass RLS
+-- natively; the policy is only needed for direct PostgREST table access.)
+CREATE POLICY "service_role_all" ON public.fantasy_participant_operations
+  AS PERMISSIVE FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
 -- ── RPC ───────────────────────────────────────────────────────────────────────
 --
 -- add_fantasy_season_participant_idempotent
