@@ -1,0 +1,299 @@
+The idempotency investigation is accepted.
+
+The root cause is confirmed.
+
+However, DO NOT implement the proposed in-memory Map idempotency cache.
+
+That is not sufficiently durable for production.
+
+A retry may reach:
+- a different server process
+- a restarted process
+- another deployment/container/serverless instance
+
+The exact failure case we need to solve is:
+
+DB transaction commits
+→ response is lost
+→ client retries
+→ retry must return the original result instead of creating another member
+
+An in-memory cache cannot guarantee this.
+
+Proceed with a DURABLE request-idempotency design.
+
+Do not begin Phase 4C.
+
+--------------------------------------------------
+1. CLIENT IDEMPOTENCY KEY
+--------------------------------------------------
+
+For each intentional Add Member operation generate a unique opaque idempotency key.
+
+Do NOT derive it from:
+- display_name
+- team_name
+- league_member_id
+
+Names are not identities.
+
+The SAME intentional request/retry must reuse the same key.
+
+A genuinely new Add Member action must get a new key, even if the names happen to be identical.
+
+Send the key as:
+
+Idempotency-Key: <opaque UUID>
+
+or use the project's existing idempotency-header convention if one already exists.
+
+--------------------------------------------------
+2. DO NOT RELY ONLY ON COMPONENT STATE
+--------------------------------------------------
+
+A request can commit and then the page/app can reload before receiving the response.
+
+Therefore preserve the pending Add Member idempotency key sufficiently to survive a normal retry/reload until:
+
+A. success is confirmed
+→ clear the pending key
+
+or
+
+B. commissioner intentionally cancels/resets and begins a new Add Member operation
+→ discard old pending operation and generate a new key
+
+Use the minimum reliable existing client-storage pattern.
+
+Do not overbuild.
+
+--------------------------------------------------
+3. DURABLE SERVER IDEMPOTENCY
+--------------------------------------------------
+
+Implement durable DB-backed idempotency.
+
+Do NOT use a process-local Map as the authoritative mechanism.
+
+Before designing new tables, inspect whether the project already has a durable idempotency-operation pattern that can safely be reused.
+
+If not, create the minimum Fantasy-specific operation table.
+
+Conceptual fields:
+
+- id UUID
+- league_season_id UUID
+- operator_user_id UUID
+- idempotency_key TEXT
+- request_hash TEXT
+- league_member_id UUID nullable
+- season_member_id UUID nullable
+- fantasy_team_id UUID nullable
+- response_status INT nullable
+- created_at timestamptz
+
+Use the actual schema conventions of the project.
+
+Required unique protection:
+
+operator identity + idempotency key
+
+Optionally include league/season in the uniqueness scope if there is a strong reason, but explain the choice.
+
+--------------------------------------------------
+4. REQUEST HASH
+--------------------------------------------------
+
+Compute a canonical request hash from the immutable meaning of the request, including at least:
+
+- league_id
+- season_id
+- commissioner/operator identity
+- normalized display_name
+- normalized team_name
+- any other field that changes the meaning of the add-member operation
+
+If the same idempotency key is received with a DIFFERENT request hash:
+
+return 409:
+
+IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST
+
+Do not replay an old response for a different request.
+
+--------------------------------------------------
+5. BUSINESS OPERATION MUST BE ATOMIC
+--------------------------------------------------
+
+The durable idempotency operation and member creation must not introduce another partial-commit problem.
+
+Preferred behavior:
+
+Same transaction/RPC:
+
+1. reserve/check idempotency key
+2. detect replay/different-request conflict
+3. if new:
+   - create league_member
+   - create season_member
+   - create fantasy_team
+   - create team_manager
+   - determine draft_day_eligible
+   - update published Draft Day answer universe when appropriate
+   - persist result IDs on idempotency operation
+4. commit
+5. return result
+
+A retry after commit must be able to read the durable operation and return the exact original IDs.
+
+If this requires extending/wrapping add_fantasy_season_participant_v2, do that.
+
+Do NOT use:
+DB member creation commits
+→ then separately insert idempotency record
+
+That recreates the same failure window.
+
+--------------------------------------------------
+6. REQUIRED BEHAVIOR
+--------------------------------------------------
+
+TEST A — SAME KEY + SAME BODY
+
+Request 1:
+Idempotency-Key=A
+Mike / Sunday Scaries
+
+→ 201
+→ IDs X/Y/Z
+
+Request 2:
+Idempotency-Key=A
+Mike / Sunday Scaries
+
+→ replay original successful response
+→ SAME league_member_id
+→ SAME season_member_id
+→ SAME fantasy_team_id
+→ exactly one member/team created
+
+Whether replay returns HTTP 200 or original 201 is a design choice; choose one convention and document it.
+
+TEST B — SAME KEY + DIFFERENT BODY
+
+Request 1:
+Key=A
+Mike / Sunday Scaries
+
+Request 2:
+Key=A
+Chris / Crushers
+
+→ 409
+→ IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST
+→ no Chris row created
+
+TEST C — DIFFERENT KEY + SAME NAMES
+
+Request 1:
+Key=A
+Mike / Sunday Scaries
+
+Request 2:
+Key=B
+Mike / Sunday Scaries
+
+→ both are treated as intentional distinct adds
+→ two distinct members allowed
+
+Names must NOT become unique constraints.
+
+TEST D — RETRY AFTER SERVER PROCESS RESET
+
+Prove that replay works using the DB record rather than process memory.
+
+The test does not need to literally restart production, but it must demonstrate no process-local cache is required.
+
+--------------------------------------------------
+7. OPERATOR SCOPE
+--------------------------------------------------
+
+Scope the key to the authenticated commissioner/operator identity.
+
+Same key string from another authorized operator must not accidentally replay the first operator's request.
+
+Also include operator identity in request_hash or equivalent protection.
+
+--------------------------------------------------
+8. PRESERVE EXISTING LIFECYCLE RULES
+--------------------------------------------------
+
+Do not change:
+
+Before picks:
+→ new member eligible
+→ published answer universe updated atomically
+
+After picks:
+→ Add to League Only
+→ new member draft_day_eligible=false
+→ current Draft Day untouched
+
+Locked:
+→ league-only addition
+→ current Draft Day untouched
+
+The idempotency implementation wraps these existing behaviors; it does not replace them.
+
+--------------------------------------------------
+9. SQL
+
+I expect this likely WILL require a small SQL migration because durable idempotency requires database state.
+
+If SQL is required:
+
+- write it
+- make it rerunnable/safe
+- do NOT apply automatically
+- give me exact Supabase instructions
+
+Do not tell me "no SQL required" merely to avoid a migration.
+
+--------------------------------------------------
+10. REPLACE B4 TEST
+--------------------------------------------------
+
+Remove the misleading idempotency test that manually feeds league_member_id from request 1 into request 2.
+
+That is NOT the actual Manage League UI retry path.
+
+Replace it with:
+
+B4a same key + same request → one creation, same IDs
+B4b same key + changed request → 409
+B4c different keys + identical names → two legitimate creations
+B4d replay works without relying on in-memory state
+B4e no idempotency key behavior — decide whether key is REQUIRED for this mutation or whether a safe fallback exists
+
+For the Manage League UI, I prefer requiring an idempotency key.
+
+--------------------------------------------------
+RETURN FIRST IF ARCHITECTURE CHANGES SIGNIFICANTLY
+
+Return:
+
+1. durable idempotency architecture
+2. whether existing project idempotency infrastructure was reused
+3. DB objects required
+4. transaction boundary
+5. client key persistence strategy
+6. API behavior on replay
+7. behavior on key/payload mismatch
+8. SQL required
+9. updated test plan
+
+If the implementation is straightforward after inspection, proceed to build it.
+
+Then STOP.
+
+Do not begin Phase 4C.

@@ -27,6 +27,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -40,6 +41,28 @@ import {
   getDraftDay,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+
+// ── Idempotency helpers ────────────────────────────────────────────────────────
+
+/**
+ * Generate a UUID v4 for idempotency keys.
+ * Uses crypto.randomUUID() when available (React Native ≥0.73 / Expo SDK 50+),
+ * falling back to a Math.random-based implementation for older environments.
+ */
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/** AsyncStorage key for a pending Add Member idempotency key for this league+season. */
+function addMemberIdemStorageKey(leagueId: string, seasonId: string): string {
+  return `fantasy_add_member_idem_${leagueId}_${seasonId}`;
+}
 
 const C = Colors.dark;
 
@@ -94,6 +117,13 @@ export default function ManageLeagueScreen() {
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [addSuccess, setAddSuccess] = useState<string | null>(null);
+  /**
+   * Durable idempotency key for the current Add Member operation.
+   * Generated once per intentional operation and persisted to AsyncStorage
+   * so it survives a network timeout + retry or an app reload.
+   * Cleared on confirmed success or intentional cancel.
+   */
+  const [addIdemKey, setAddIdemKey] = useState<string | null>(null);
 
   // ── Auth guard ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -176,7 +206,19 @@ export default function ManageLeagueScreen() {
   const lifecycle = getLifecycle(draftDay);
   const needsLeagueOnlyConfirm = lifecycle === "picks_exist" || lifecycle === "locked" || lifecycle === "settled";
 
-  const openAdd = () => {
+  /**
+   * Opens the Add Member form.  Loads the pending idempotency key from
+   * AsyncStorage (surviving a prior network timeout + app reload) or generates
+   * a fresh UUID for this new intentional operation.
+   */
+  const openAdd = async () => {
+    const storageKey = addMemberIdemStorageKey(leagueId, seasonId);
+    let key = await AsyncStorage.getItem(storageKey).catch(() => null);
+    if (!key) {
+      key = generateUUID();
+      AsyncStorage.setItem(storageKey, key).catch(() => {});
+    }
+    setAddIdemKey(key);
     setShowAdd(true);
     setAddName("");
     setAddTeam("");
@@ -185,7 +227,14 @@ export default function ManageLeagueScreen() {
     setAddSuccess(null);
   };
 
+  /**
+   * Closes the Add Member form after an intentional cancel.
+   * Discards the pending idempotency key so the next openAdd generates a fresh one.
+   */
   const closeAdd = () => {
+    // Intentional cancel — discard the pending idempotency key.
+    AsyncStorage.removeItem(addMemberIdemStorageKey(leagueId, seasonId)).catch(() => {});
+    setAddIdemKey(null);
     setShowAdd(false);
     setAddName("");
     setAddTeam("");
@@ -203,6 +252,15 @@ export default function ManageLeagueScreen() {
       return;
     }
 
+    // Defensive: ensure we always have a key even if openAdd's AsyncStorage read
+    // was slow and the user somehow reached handleAdd without one.
+    let idemKey = addIdemKey;
+    if (!idemKey) {
+      idemKey = generateUUID();
+      setAddIdemKey(idemKey);
+      AsyncStorage.setItem(addMemberIdemStorageKey(leagueId, seasonId), idemKey).catch(() => {});
+    }
+
     setAddSaving(true);
     setAddError(null);
     try {
@@ -214,10 +272,18 @@ export default function ManageLeagueScreen() {
         `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
         {
           method: "POST",
+          headers: {
+            // Sent on every attempt; the server replays the original result on retry.
+            "Idempotency-Key": idemKey,
+          },
           body: JSON.stringify({ display_name: addName.trim(), team_name: addTeam.trim() }),
         },
         { session }
       );
+
+      // Success — clear the pending key so the next Add Member gets a fresh one.
+      AsyncStorage.removeItem(addMemberIdemStorageKey(leagueId, seasonId)).catch(() => {});
+      setAddIdemKey(null);
 
       if (result.already_exists) {
         setAddSuccess(`${addName.trim()} is already in this league.`);
@@ -231,6 +297,9 @@ export default function ManageLeagueScreen() {
 
       loadData();
     } catch (e: any) {
+      // Do NOT clear the idempotency key on network failure — the same key will be
+      // sent on the user's next retry, allowing the server to return the original
+      // result if the transaction already committed.
       setAddError(e.message ?? "Failed to add member");
     } finally {
       setAddSaving(false);

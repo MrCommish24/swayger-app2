@@ -33,8 +33,32 @@
 
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "crypto";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * SHA-256 of the canonical add-member request.
+ * Detects idempotency key reuse with a semantically different body.
+ * Components: leagueId, seasonId, operatorUserId, normalized display_name, normalized team_name.
+ * draft_day_eligible and room_id are excluded because they are server-determined, not client intent.
+ */
+function _computeAddMemberHash(
+  leagueId: string,
+  seasonId: string,
+  operatorUserId: string,
+  displayName: string,
+  teamName: string,
+): string {
+  const raw = [
+    leagueId,
+    seasonId,
+    operatorUserId,
+    displayName.trim().toLowerCase(),
+    teamName.trim().toLowerCase(),
+  ].join("|");
+  return createHash("sha256").update(raw).digest("hex");
+}
 
 function getServiceSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -393,10 +417,9 @@ export function registerFantasyRoutes(app: Express) {
       );
       if (!commissioner) return;
 
-      const { display_name, team_name, league_member_id } = req.body as {
+      const { display_name, team_name } = req.body as {
         display_name?: string;
         team_name?: string;
-        league_member_id?: string;
       };
 
       if (!display_name?.trim()) {
@@ -407,6 +430,23 @@ export function registerFantasyRoutes(app: Express) {
         res.status(400).json({ error: "team_name is required" });
         return;
       }
+
+      // Idempotency key — required for this mutation.
+      // The client generates one UUID per intentional add-member operation and
+      // persists it until the server confirms success.  Retries send the same
+      // key; a replay returns the original IDs without creating duplicate rows.
+      const idempotencyKey = (req.headers["idempotency-key"] as string | undefined)?.trim();
+      if (!idempotencyKey) {
+        res.status(400).json({
+          error: "Idempotency-Key header is required for this operation.",
+          code:  "IDEMPOTENCY_KEY_REQUIRED",
+        });
+        return;
+      }
+
+      const requestHash = _computeAddMemberHash(
+        leagueId, seasonId, commissioner.userId, display_name, team_name
+      );
 
       const { data: seasonCheck } = await supabase
         .from("fantasy_league_seasons")
@@ -476,18 +516,28 @@ export function registerFantasyRoutes(app: Express) {
         }
       }
 
-      const { data, error } = await supabase.rpc("add_fantasy_season_participant_v2", {
+      const { data, error } = await supabase.rpc("add_fantasy_season_participant_idempotent", {
         p_league_id:          leagueId,
         p_league_season_id:   seasonId,
         p_display_name:       display_name.trim(),
         p_team_name:          team_name.trim(),
-        p_league_member_id:   league_member_id ?? null,
         p_draft_day_eligible: eligible,
         p_room_id:            roomIdForSnapshot,
+        p_idempotency_key:    idempotencyKey,
+        p_operator_user_id:   commissioner.userId,
+        p_request_hash:       requestHash,
       });
 
       if (error) {
-        console.error("[fantasy] add_fantasy_season_participant_v2 error:", error.message);
+        // Idempotency key reused with a semantically different request body
+        if (error.message.includes("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")) {
+          res.status(409).json({
+            error: "Idempotency key was used with a different request. Generate a new key for a different add-member operation.",
+            code:  "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST",
+          });
+          return;
+        }
+        console.error("[fantasy] add_fantasy_season_participant_idempotent error:", error.message);
         const isValidationError =
           error.message.includes("not found") ||
           error.message.includes("does not belong") ||

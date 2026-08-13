@@ -64,10 +64,15 @@ export interface SetupLeagueResponse {
 }
 
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants
+//
+// Requires the Idempotency-Key header — one UUID per intentional add-member
+// operation, persisted by the client until success is confirmed.  The server
+// replays the original result (same IDs) for retries with the same key.
 export interface AddParticipantPayload {
   display_name: string;
   team_name: string;
-  league_member_id?: string; // omit for new participants; supply for commissioner's own row
+  // league_member_id intentionally omitted: identity is established by the
+  // idempotency key, not by a pre-existing league_member row.
 }
 
 export interface AddParticipantResponse {

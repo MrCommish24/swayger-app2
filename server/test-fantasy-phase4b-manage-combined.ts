@@ -67,11 +67,19 @@ const svc = createClient(SUP_URL, SUP_KEY, {
 
 async function api(
   path: string,
-  opts: { method?: string; token?: string; guestToken?: string; body?: object } = {}
+  opts: {
+    method?: string;
+    token?: string;
+    guestToken?: string;
+    body?: object;
+    /** Extra request headers (e.g. "Idempotency-Key"). Merged after auth headers. */
+    extraHeaders?: Record<string, string>;
+  } = {}
 ): Promise<{ status: number; body: any }> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.token)      headers["Authorization"]         = `Bearer ${opts.token}`;
-  if (opts.guestToken) headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.token)        headers["Authorization"]         = `Bearer ${opts.token}`;
+  if (opts.guestToken)   headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.extraHeaders) Object.assign(headers, opts.extraHeaders);
   try {
     const res = await fetch(`${BASE}${path}`, {
       method: opts.method ?? "GET",
@@ -324,6 +332,7 @@ async function main() {
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Darius", team_name: "Sunday Scaries" },
+      extraHeaders: { "Idempotency-Key": `idem-darius-${RUN_ID}` },
     });
     if (r.status !== 201) {
       ko("Add Darius participant → 201", JSON.stringify(r.body));
@@ -353,6 +362,7 @@ async function main() {
     const addR = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Mike", team_name: "Fourth & Long" },
+      extraHeaders: { "Idempotency-Key": `idem-mike-${RUN_ID}` },
     });
     if (addR.status !== 201 && addR.status !== 200) {
       ko("Add Mike participant", JSON.stringify(addR.body));
@@ -444,6 +454,7 @@ async function main() {
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "BeforePicks", team_name: "Early Bird FC" },
+      extraHeaders: { "Idempotency-Key": `idem-beforepicks-${RUN_ID}` },
     });
     if (r.status === 201 || r.status === 200) {
       r.body.draft_day_eligible === true
@@ -646,6 +657,7 @@ async function main() {
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "LateArrival", team_name: "Late Squad" },
+      extraHeaders: { "Idempotency-Key": `idem-latearrival-${RUN_ID}` },
     });
     if (r.status === 201 || r.status === 200) {
       r.body.draft_day_eligible === false
@@ -1039,36 +1051,160 @@ async function main() {
     r.status === 400 ? ok("B2. Blank display_name → 400") : ko(`B2. Should be 400, got ${r.status}`);
   }
 
+  // B3 uses a stable idempotency key; B4a replays it to verify durable idempotency.
+  const b3IdemKey = `idem-b3-${RUN_ID}`;
   let b3LeagueMemberId = "";
+  let b3SeasonMemberId = "";
+  let b3TeamId = "";
   {
     // B3. Add member after picks exist → eligible=false
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Another Late Member", team_name: "Too Late FC" },
+      extraHeaders: { "Idempotency-Key": b3IdemKey },
     });
     (r.status === 201 || r.status === 200) ? ok(`B3. Add member → ${r.status}`) : ko(`B3. Should be 201/200, got ${r.status}`, JSON.stringify(r.body));
     typeof r.body.draft_day_eligible === "boolean" ? ok("B3. draft_day_eligible in response") : ko("B3. draft_day_eligible missing from response");
-    // eligible=false because picks now exist
     r.body.draft_day_eligible === false ? ok("B3. draft_day_eligible=false (picks exist)") : ko(`B3. draft_day_eligible should be false, got ${r.body.draft_day_eligible}`);
     b3LeagueMemberId = r.body.league_member_id ?? "";
-    note(`season_member_id=${r.body.season_member_id?.slice(0,8)}… league_member_id=${b3LeagueMemberId.slice(0,8)}…`);
+    b3SeasonMemberId = r.body.season_member_id ?? "";
+    b3TeamId         = r.body.team_id          ?? "";
+    note(`B3 ids: league_member=${b3LeagueMemberId.slice(0,8)}… season_member=${b3SeasonMemberId.slice(0,8)}… team=${b3TeamId.slice(0,8)}…`);
+  }
+
+  // ── §B4: Durable idempotency tests (replaces the old "pass league_member_id" B4) ──
+  //
+  // B4a — same key + same body → replay: identical IDs, exactly one member created
+  // B4b — same key + different body → 409 IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST
+  // B4c — different key + identical names → two distinct members created (names ≠ identity)
+  // B4d — replay works without process-local cache (DB-backed proof)
+  // B4e — missing key → 400 IDEMPOTENCY_KEY_REQUIRED
+
+  {
+    // B4a. Same key + same body → server replays original result, same IDs
+    const r = await api(`${base}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "Another Late Member", team_name: "Too Late FC" },
+      extraHeaders: { "Idempotency-Key": b3IdemKey },   // same key as B3
+    });
+    (r.status === 201 || r.status === 200) ? ok(`B4a. Replay → ${r.status}`) : ko(`B4a. Should be 201/200 replay, got ${r.status}`, JSON.stringify(r.body));
+    r.body.league_member_id === b3LeagueMemberId ? ok("B4a. league_member_id identical (no duplicate)")   : ko(`B4a. league_member_id differs: got ${r.body.league_member_id?.slice(0,8)} expected ${b3LeagueMemberId.slice(0,8)}`);
+    r.body.season_member_id === b3SeasonMemberId ? ok("B4a. season_member_id identical (no duplicate)")   : ko(`B4a. season_member_id differs`);
+    r.body.team_id          === b3TeamId         ? ok("B4a. fantasy_team_id identical (no duplicate)")    : ko(`B4a. team_id differs`);
+
+    // Confirm only one fantasy_league_members row for "Another Late Member" in this league
+    const { data: lmRows } = await svc
+      .from("fantasy_league_members")
+      .select("id")
+      .eq("league_id", league_id)
+      .eq("display_name", "Another Late Member");
+    (lmRows?.length ?? 0) === 1
+      ? ok("B4a. Exactly 1 league_member row in DB (no phantom duplicate)")
+      : ko(`B4a. Expected 1 league_member row, found ${lmRows?.length ?? 0}`);
   }
 
   {
-    // B4. Idempotent — re-add same league_member_id → 200 already_exists.
-    // The v2 RPC upserts on (league_season_id, league_member_id) conflict.
-    // Must supply league_member_id to trigger the idempotency path; calling
-    // without it would create a new league_member_id each time.
+    // B4b. Same key + different body → 409
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
-      body: {
-        display_name: "Another Late Member",
-        team_name:    "Too Late FC",
-        league_member_id: b3LeagueMemberId,
-      },
+      body: { display_name: "Chris", team_name: "Crushers" },  // different names
+      extraHeaders: { "Idempotency-Key": b3IdemKey },           // same key as B3
     });
-    r.status === 200        ? ok("B4. Idempotent add (same league_member_id) → 200") : ko(`B4. Should be 200, got ${r.status}`, JSON.stringify(r.body));
-    r.body.already_exists   ? ok("B4. already_exists=true")                           : ko("B4. already_exists should be true");
+    r.status === 409 ? ok("B4b. Key reuse with different body → 409") : ko(`B4b. Should be 409, got ${r.status}`, JSON.stringify(r.body));
+    (r.body.code === "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")
+      ? ok("B4b. Correct error code IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")
+      : ko("B4b. Wrong or missing error code", JSON.stringify(r.body));
+
+    // Confirm Chris was NOT created
+    const { data: chrisRows } = await svc
+      .from("fantasy_league_members")
+      .select("id")
+      .eq("league_id", league_id)
+      .eq("display_name", "Chris");
+    (chrisRows?.length ?? 0) === 0
+      ? ok("B4b. Chris row NOT created (request correctly rejected)")
+      : ko(`B4b. Chris row exists — was incorrectly created (found ${chrisRows?.length})`);
+  }
+
+  {
+    // B4c. Different key + identical names → two distinct members allowed
+    // Names are not identities; different keys represent different intentional adds.
+    const r = await api(`${base}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "Another Late Member", team_name: "Too Late FC" },
+      extraHeaders: { "Idempotency-Key": `idem-b4c-${RUN_ID}` },  // NEW key
+    });
+    (r.status === 201 || r.status === 200) ? ok(`B4c. New key + same names → ${r.status} (new member)`) : ko(`B4c. Should be 201/200, got ${r.status}`, JSON.stringify(r.body));
+    r.body.league_member_id !== b3LeagueMemberId
+      ? ok("B4c. Different league_member_id (genuinely new member)")
+      : ko("B4c. league_member_id is the same — should have been a new member");
+
+    // Confirm two distinct rows now exist for this display_name
+    const { data: dupeRows } = await svc
+      .from("fantasy_league_members")
+      .select("id")
+      .eq("league_id", league_id)
+      .eq("display_name", "Another Late Member");
+    (dupeRows?.length ?? 0) === 2
+      ? ok("B4c. 2 league_member rows for same name (intentional distinct adds — correct)")
+      : ko(`B4c. Expected 2 league_member rows, found ${dupeRows?.length ?? 0}`);
+  }
+
+  {
+    // B4d. Durable replay — no process-local cache required.
+    // If idempotency relied on an in-memory Map, it would be reset between "requests"
+    // (or server restarts). Instead we re-send key b3IdemKey and verify the DB
+    // record drives the replay independently of any in-process state.
+    // We simulate cross-process durability by verifying the fantasy_participant_operations
+    // record exists in the DB with the correct result IDs.
+    const { data: opRow } = await svc
+      .from("fantasy_participant_operations")
+      .select("league_member_id, season_member_id, fantasy_team_id, result_json")
+      .eq("idempotency_key", b3IdemKey)
+      .maybeSingle();
+    opRow
+      ? ok("B4d. fantasy_participant_operations row exists (DB-backed, process-independent)")
+      : ko("B4d. fantasy_participant_operations row NOT found — durable record missing");
+    (opRow as any)?.league_member_id === b3LeagueMemberId
+      ? ok("B4d. Stored league_member_id matches B3 result")
+      : ko("B4d. Stored league_member_id mismatch");
+    (opRow as any)?.result_json !== null
+      ? ok("B4d. result_json stored — replay does not require process memory")
+      : ko("B4d. result_json is null — replay cannot serve without process memory");
+
+    // Confirm replay still works (same response served from DB record alone)
+    const replay = await api(`${base}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "Another Late Member", team_name: "Too Late FC" },
+      extraHeaders: { "Idempotency-Key": b3IdemKey },
+    });
+    replay.body.league_member_id === b3LeagueMemberId
+      ? ok("B4d. Third replay returns same IDs (purely DB-driven)")
+      : ko("B4d. Third replay returned different IDs");
+  }
+
+  {
+    // B4e. Missing Idempotency-Key header → 400 IDEMPOTENCY_KEY_REQUIRED
+    // The Manage League UI always sends a key; this guards against callers that don't.
+    const r = await api(`${base}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "NoKey Member", team_name: "Keyless FC" },
+      // No extraHeaders — no Idempotency-Key sent
+    });
+    r.status === 400 ? ok("B4e. Missing key → 400") : ko(`B4e. Should be 400, got ${r.status}`, JSON.stringify(r.body));
+    r.body.code === "IDEMPOTENCY_KEY_REQUIRED"
+      ? ok("B4e. Correct error code IDEMPOTENCY_KEY_REQUIRED")
+      : ko("B4e. Wrong or missing error code", JSON.stringify(r.body));
+
+    // Confirm "NoKey Member" was NOT created
+    const { data: noKeyRows } = await svc
+      .from("fantasy_league_members")
+      .select("id")
+      .eq("league_id", league_id)
+      .eq("display_name", "NoKey Member");
+    (noKeyRows?.length ?? 0) === 0
+      ? ok("B4e. NoKey Member NOT created (request rejected before RPC)")
+      : ko(`B4e. NoKey Member row found — was incorrectly created`);
   }
 
   // ── §ML-C: Auth guard tests ───────────────────────────────────────────────
