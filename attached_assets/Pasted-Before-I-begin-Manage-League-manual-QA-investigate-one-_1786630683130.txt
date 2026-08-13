@@ -1,0 +1,87 @@
+Before I begin Manage League manual QA, investigate one inconsistency in the final report.
+
+DO NOT change code yet.
+
+The final report says:
+
+"add_fantasy_season_participant_v2 creates a new league_member on each call with p_league_member_id=NULL. The idempotency test was fixed by passing the league_member_id from the first response."
+
+But the manual QA says:
+
+"Use + Add Member again with the exact same names and confirm 'already in this league.'"
+
+Those appear contradictory.
+
+The REAL Manage League UI path for adding a NEW member does not know a league_member_id before the first request.
+
+I need to know what happens with a genuine duplicate/retry:
+
+POST /participants
+{
+  display_name: "Mike",
+  team_name: "Sunday Scaries"
+}
+
+followed immediately by the identical request again, with NO league_member_id supplied either time.
+
+INVESTIGATE AGAINST THE CURRENT LIVE CODE/DB.
+
+1. Trace the Manage League + Add Member client request.
+2. Confirm whether it supplies league_member_id.
+3. Trace POST /participants.
+4. Trace add_fantasy_season_participant_v2 when p_league_member_id=NULL.
+5. Run a controlled test with two identical NEW-member requests, both with league_member_id omitted/null.
+6. Report:
+   - first HTTP status/result
+   - second HTTP status/result
+   - league_member_id from each
+   - season_member_id from each
+   - fantasy_team_id from each
+   - number of persistent league_member rows created
+   - number of season_member rows created
+   - number of fantasy_team rows created
+
+Do not alter the test to pass the first response's league_member_id into the second request.
+
+That does NOT test the actual retry/double-submit path.
+
+Also inspect the Manage League UI for:
+- disabled Add button while request is pending
+- protection against double taps
+- retry behavior after a network timeout where the server may have committed successfully but the client did not receive the response
+
+PRODUCT REQUIREMENT
+
+We need to distinguish two concepts:
+
+A. Two legitimate different people may have the same display_name/team_name.
+Therefore names cannot simply be treated as unique identity.
+
+B. The SAME request being retried/double-submitted should not accidentally create duplicate league members.
+
+Determine the minimum correct solution.
+
+Possible approaches could include request-level idempotency, but do not implement until you assess the existing project patterns and recommend the cleanest solution.
+
+Do NOT solve this by creating a unique constraint on display_name or team_name.
+
+RETURN ONLY:
+
+1. actual current behavior for two identical null-league_member_id requests
+2. whether the current Manage League add flow is truly idempotent
+3. whether the final manual QA instruction is currently accurate
+4. double-tap behavior
+5. network-retry behavior
+6. recommended minimum fix, if needed
+7. whether SQL is required
+8. tests that should replace the current B4 idempotency test
+
+End with:
+
+IDEMPOTENCY SAFE
+
+or
+
+IDEMPOTENCY FIX REQUIRED
+
+Do not begin Phase 4C.
