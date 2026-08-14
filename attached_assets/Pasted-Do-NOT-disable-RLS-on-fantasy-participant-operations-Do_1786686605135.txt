@@ -1,0 +1,197 @@
+Do NOT disable RLS on fantasy_participant_operations.
+
+Do NOT add an anon/authenticated SELECT policy.
+
+Current Supabase documentation confirms that sb_secret_ keys are elevated server keys that replace legacy service_role JWTs and bypass RLS.
+
+The previous conclusion:
+
+"sb_secret_ cannot be decoded by PostgREST, therefore it falls back to anon"
+
+is not how the new Supabase API-key architecture works.
+
+The API gateway recognizes the opaque secret key before PostgREST. The secret is not expected to contain a JWT role claim.
+
+INVESTIGATE THE ADMIN CLIENT CONFIGURATION.
+
+1. SHOW ADMIN CLIENT INITIALIZATION
+
+Inspect exactly where `svc`, `svc1`, and `svc2` are created.
+
+Return the initialization code with secrets redacted.
+
+Specifically identify whether there is:
+
+- a manually-set Authorization header
+- global.headers.Authorization
+- accessToken option
+- SSR/session wrapper
+- reuse of an authenticated browser/user client
+- setSession()
+- auth token injection
+- custom fetch wrapper modifying headers
+
+A server admin client using sb_secret_ should be a fresh createClient() instance.
+
+Expected shape:
+
+createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+})
+
+Do not manually convert sb_secret_ into a JWT.
+Do not manually force it into a user Authorization token.
+
+2. RUN THE CORRECT RAW SECRET-KEY TEST
+
+The previous test:
+
+Authorization: Bearer sb_secret_...
+
+is not sufficient evidence.
+
+Run a server-side REST request using the new secret as the Supabase API key according to the new-key convention.
+
+At minimum test:
+
+GET /rest/v1/fantasy_participant_operations?select=*
+
+with:
+
+apikey: <sb_secret_ key>
+
+Do not expose the key in logs.
+
+Report HTTP status and row count.
+
+If the Supabase gateway requires another automatically-generated header in your hosted project configuration, use the documented server-key pattern rather than inventing a JWT.
+
+3. TEST A FRESH SUPABASE-JS ADMIN CLIENT
+
+Create an entirely new diagnostic client:
+
+const diagnosticAdmin = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  }
+);
+
+Do not share this instance with any user-authenticated code.
+
+Using ONLY that client:
+
+diagnosticAdmin
+  .from("fantasy_participant_operations")
+  .select("*")
+
+Return:
+- error
+- status if available
+- row count
+
+Do not discard the error object.
+
+4. VERIFY THE KEY ITSELF
+
+Without exposing it, confirm:
+
+- starts sb_secret_
+- is a key belonging to THIS SAME Supabase project
+- SUPABASE_URL project ref matches the project that issued the secret
+- secret has not been revoked
+
+This cross-project-key possibility needs to be explicitly eliminated.
+
+5. DO NOT USE ORDINARY TABLE COUNTS AS ROLE PROOF
+
+The fact that:
+
+svc count = anon count
+
+on tables where anon may already see every row does not establish the effective privilege level.
+
+Use fantasy_participant_operations itself as the protected-table probe.
+
+6. VERIFY TABLE GRANTS
+
+Also inspect actual SQL grants for:
+
+public.fantasy_participant_operations
+
+Report whether service_role has SELECT.
+
+RLS bypass and table GRANT are separate concepts.
+
+If service_role lacks SELECT, recommend the narrowly scoped:
+
+GRANT SELECT ON public.fantasy_participant_operations TO service_role;
+
+Do NOT grant SELECT to anon or authenticated.
+
+7. SECURITY REQUIREMENT
+
+fantasy_participant_operations is an internal idempotency/audit table.
+
+Desired state:
+
+anon:
+NO access
+
+authenticated:
+NO direct access
+
+service/backend admin:
+read access
+
+SECURITY DEFINER RPC:
+internal read/write access
+
+Do not weaken this just to make integration tests pass.
+
+8. IF ADMIN CLIENT STILL CANNOT READ
+
+If a correctly initialized sb_secret_ client for the correct project still cannot read the table:
+
+return the actual HTTP response headers/error and investigate the Supabase gateway configuration.
+
+Do not infer "anon fallback" merely from an empty SELECT.
+
+9. RETURN
+
+Return:
+
+1. exact redacted svc client initialization
+2. whether Authorization is manually overridden
+3. SUPABASE_URL/key project match verification
+4. fresh admin client result
+5. raw apikey secret-key result
+6. service_role table grants
+7. exact root cause
+8. minimum fix
+9. whether SQL is required
+
+End with:
+
+ADMIN CLIENT FIX REQUIRED
+
+or
+
+SERVICE_ROLE GRANT REQUIRED
+
+or
+
+OTHER ROOT CAUSE
+
+Do not disable RLS.
+Do not create an anon policy.
+Do not begin Phase 4C.
