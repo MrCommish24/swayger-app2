@@ -1,0 +1,285 @@
+Manual QA found a blocking Manage League bug and also caused us to reconsider the late-member lifecycle.
+
+DO NOT begin Phase 4C.
+DO NOT redesign code yet.
+
+FIRST diagnose the Failed to fetch error.
+
+BUG REPRODUCTION
+
+Commissioner:
+→ Fantasy League Hub
+→ Manage League
+→ Draft Day already has picks
+→ Add Member
+→ enters:
+   Display Name: House
+   Fantasy Team Name: Team House
+→ chooses Add to League Only
+→ UI shows:
+
+"Failed to fetch"
+
+Screenshot confirms lifecycle state is correctly detected.
+
+--------------------------------------------------
+PART 1 — DIAGNOSE FAILED TO FETCH
+--------------------------------------------------
+
+Trace the exact browser request.
+
+Inspect:
+
+1. Does clicking Add to League Only produce an OPTIONS preflight?
+2. Does POST /participants ever reach Express?
+3. Exact browser/network error.
+4. Exact server logs.
+5. Exact request headers.
+
+Pay special attention to the newly-required:
+
+Idempotency-Key
+
+header.
+
+We previously had the same class of React Native Web CORS failure when:
+
+X-Fantasy-Guest-Token
+
+was missing from Access-Control-Allow-Headers.
+
+Inspect server/index.ts CORS configuration and confirm whether:
+
+Idempotency-Key
+
+is explicitly allowed.
+
+If preflight fails:
+- report exact OPTIONS response
+- report missing allowed header
+- propose minimum CORS fix
+
+Do NOT assume this is CORS if the POST actually reaches the server.
+
+If POST reaches server:
+trace:
+POST /participants
+→ commissioner auth
+→ lifecycle calculation
+→ idempotent RPC
+→ response/error
+
+Return the exact root cause before changing code.
+
+--------------------------------------------------
+PART 2 — REVISE LATE MEMBER PRODUCT RULE
+--------------------------------------------------
+
+We are changing the proposed V1 behavior.
+
+CURRENT RULE:
+
+Once global pick_count > 0:
+→ new member is draft_day_eligible=false
+→ Add to League Only
+
+NEW PROPOSED RULE:
+
+The Draft Day LOCK should be the primary roster freeze.
+
+If:
+
+card.status = 'open'
+
+the commissioner may add a new member even if picks already exist.
+
+New member should:
+
+- join league
+- join current season
+- be draft_day_eligible=true
+- be able to claim their seat
+- be able to make Draft Day picks
+- be added to relevant published answer_options
+
+Existing picks should NOT be deleted.
+
+Existing players remain free to revise their picks until card locks.
+
+If:
+
+card.status = 'locked'
+
+then:
+→ member may be added to persistent league/season
+→ draft_day_eligible=false for THIS Draft Day
+→ current answer_options unchanged
+→ existing Draft Day remains frozen
+
+--------------------------------------------------
+PART 3 — ANSWER UNIVERSE UPDATE
+--------------------------------------------------
+
+For open Draft Day, adding House must atomically append House to relevant published snapshots:
+
+season_member target:
+{
+  id: <House season_member_id>,
+  label: "House",
+  type: "season_member"
+}
+
+fantasy_team target:
+{
+  id: <House fantasy_team_id>,
+  label: "Team House",
+  type: "fantasy_team"
+}
+
+Preserve:
+
+- existing picks
+- existing answer IDs
+- no_one
+- static answers
+- option ordering rules
+- question set
+- scoring_scope
+- point_value
+
+Do NOT regenerate or delete picks.
+
+The add-member transaction must still be atomic and idempotent.
+
+--------------------------------------------------
+PART 4 — FAIRNESS / MEMBER UX
+--------------------------------------------------
+
+Analyze the minimum way to tell members that the answer universe changed.
+
+Preferred behavior:
+
+When roster changes after picks already exist:
+
+Draft Day play screen shows:
+
+"League roster updated
+A member was added. Some answer choices have changed. Review your picks before they lock."
+
+Ideally affected questions can show:
+
+"Updated — review your pick"
+
+Do not overbuild notifications or real-time infrastructure.
+
+Determine whether we already have enough metadata to detect this.
+
+If not, recommend the smallest reliable mechanism.
+
+Possibilities:
+- card/prop updated_at
+- lightweight revision integer
+- roster revision
+- another minimal field
+
+Do NOT implement an elaborate event/version system without explaining why needed.
+
+The important behavior is:
+players can revise picks until Lock.
+
+--------------------------------------------------
+PART 5 — KEEP QUESTION FAIRNESS RULE
+--------------------------------------------------
+
+Do NOT interpret this as allowing commissioner to modify Draft Day questions after picks exist.
+
+Keep:
+
+global pick_count > 0
+→ commissioner cannot add/remove/change the QUESTION SET.
+
+But roster-derived answer options may expand while card.status='open'.
+
+Distinguish:
+
+QUESTION CHANGE
+from
+ROSTER/ANSWER-UNIVERSE UPDATE.
+
+--------------------------------------------------
+PART 6 — MEMBER REMOVAL
+--------------------------------------------------
+
+Do not build removal yet.
+
+Recommend rule only.
+
+My inclination:
+
+after picks exist:
+→ do not allow commissioner to remove/deactivate an active Draft Day participant casually
+
+because existing picks may reference that member.
+
+Return recommendation.
+
+--------------------------------------------------
+PART 7 — LEAGUE NAME MANAGEMENT
+--------------------------------------------------
+
+Also investigate adding League Details to Manage League.
+
+V1 proposal:
+
+Manage League
+
+LEAGUE DETAILS
+League Name: Burnham Fantasy League
+[Edit]
+
+MEMBERS & TEAMS
+...
+
+League name should be editable by commissioner.
+
+Analyze:
+- current fantasy_leagues column containing league name
+- endpoint/RPC needed
+- whether active Draft Day UI reads league name dynamically or snapshots it
+- what should happen to historical finalized competitions
+
+Recommended rule:
+
+Current persistent league name can change.
+Current/future Fantasy UI should use new name.
+Do NOT rewrite historical finalized competition snapshots solely because league name changes.
+
+Sport and season year should remain non-editable in this V1.
+
+--------------------------------------------------
+RETURN FIRST — DO NOT IMPLEMENT PRODUCT CHANGES YET
+--------------------------------------------------
+
+Return:
+
+1. exact Failed to fetch root cause
+2. whether Idempotency-Key CORS is the cause
+3. minimum bug fix
+4. revised lifecycle matrix using LOCK as roster freeze
+5. architecture impact of making late-added members eligible while open
+6. whether existing picks remain valid
+7. exact answer_options update behavior
+8. recommended member-facing "roster updated" behavior
+9. whether additional DB metadata is needed
+10. member-removal recommendation
+11. league-name edit architecture
+12. SQL/API changes required
+13. test changes required
+
+Then stop.
+
+End with:
+
+READY TO FIX FAILED FETCH + PLAN OPEN-ROSTER CHANGES
+
+Do not begin Phase 4C.
