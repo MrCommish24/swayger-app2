@@ -55,11 +55,12 @@ function note(msg: string) { console.log(INFO + msg); }
 
 async function api(
   path: string,
-  opts: { method?: string; token?: string; guestToken?: string; body?: object } = {}
+  opts: { method?: string; token?: string; guestToken?: string; body?: object; extraHeaders?: Record<string, string> } = {}
 ) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.token)      headers["Authorization"]         = `Bearer ${opts.token}`;
-  if (opts.guestToken) headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.token)        headers["Authorization"]         = `Bearer ${opts.token}`;
+  if (opts.guestToken)   headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.extraHeaders) Object.assign(headers, opts.extraHeaders);
   const res = await fetch(`${BASE_URL}${path}`, {
     method: opts.method ?? "GET",
     headers,
@@ -177,14 +178,17 @@ async function main() {
       api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
         method: "POST", token: commToken,
         body: { display_name: "Mike", team_name: "Sunday Scaries" },
+        extraHeaders: { "Idempotency-Key": `ph3b-mike-${RUN_ID}` },
       }),
       api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
         method: "POST", token: commToken,
         body: { display_name: "Chris", team_name: "Fourth & Long" },
+        extraHeaders: { "Idempotency-Key": `ph3b-chris-${RUN_ID}` },
       }),
       api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
         method: "POST", token: commToken,
         body: { display_name: "Jordan", team_name: "Night Owls" },
+        extraHeaders: { "Idempotency-Key": `ph3b-jordan-${RUN_ID}` },
       }),
     ]);
     if (rm.status !== 201 || rc.status !== 201 || rj.status !== 201) {
@@ -373,6 +377,7 @@ async function main() {
     const rp = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Sam", team_name: "The Sitters" },
+      extraHeaders: { "Idempotency-Key": `ph3b-sam-${RUN_ID}` },
     });
     if (rp.status === 201) {
       const sam_lm_id = rp.body.league_member_id;
@@ -503,6 +508,7 @@ async function main() {
       const rax = await api(`${join_b}/participants`, {
         method: "POST", token: commToken,
         body: { display_name: "Alex B", team_name: "Alex's Army" },
+        extraHeaders: { "Idempotency-Key": `ph3b-alex-${RUN_ID}` },
       });
       if (rax.status !== 201) {
         fail("Add Alex to League B", `${rax.status}`);
@@ -549,6 +555,7 @@ async function main() {
           const rcp = await api(`${join_b}/participants`, {
             method: "POST", token: commToken,
             body: { display_name: "PatchTest", team_name: "Test Squad" },
+            extraHeaders: { "Idempotency-Key": `ph3b-patch-${RUN_ID}` },
           });
           if (rcp.status === 201) {
             const patch_lm_id = rcp.body.league_member_id;
@@ -573,6 +580,7 @@ async function main() {
     const r1 = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Reg Seat", team_name: "Bench Warmers" },
+      extraHeaders: { "Idempotency-Key": `ph3b-reg-${RUN_ID}` },
     });
     r1.status === 201
       ? pass("POST /participants works (Phase 2 regression)")

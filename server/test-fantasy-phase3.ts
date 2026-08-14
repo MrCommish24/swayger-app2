@@ -65,11 +65,12 @@ function note(msg: string) { console.log(INFO + msg); }
 
 async function api(
   path: string,
-  opts: { method?: string; token?: string; guestToken?: string; body?: object } = {}
+  opts: { method?: string; token?: string; guestToken?: string; body?: object; extraHeaders?: Record<string, string> } = {}
 ) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (opts.token) headers["Authorization"] = `Bearer ${opts.token}`;
   if (opts.guestToken) headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.extraHeaders) Object.assign(headers, opts.extraHeaders);
   const res = await fetch(`${BASE_URL}${path}`, {
     method: opts.method ?? "GET",
     headers,
@@ -223,6 +224,7 @@ async function main() {
         method: "POST",
         token: commToken,
         body: { display_name: "Mike", team_name: "Sunday Scaries" },
+        extraHeaders: { "Idempotency-Key": `ph3-mike-${RUN_ID}` },
       }
     );
     if (r.status === 201 && r.body.league_member_id) {
@@ -601,6 +603,7 @@ async function main() {
         method: "POST",
         token: commToken,
         body: { display_name: "Chris", team_name: "Fourth & Long" },
+        extraHeaders: { "Idempotency-Key": `ph3-chris-${RUN_ID}` },
       }
     );
     if (r.status === 201) {
@@ -745,6 +748,7 @@ async function main() {
         method: "POST",
         token: commToken,
         body: { display_name: "Regression Test", team_name: "Test Team" },
+        extraHeaders: { "Idempotency-Key": `ph3-reg-${RUN_ID}` },
       }
     );
     r.status === 201

@@ -68,11 +68,12 @@ function skip(msg: string)  { console.log(SKIP + msg); }
 
 async function api(
   path: string,
-  opts: { method?: string; token?: string; guestToken?: string; body?: object } = {}
+  opts: { method?: string; token?: string; guestToken?: string; body?: object; extraHeaders?: Record<string, string> } = {}
 ) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (opts.token)      headers["Authorization"]         = `Bearer ${opts.token}`;
-  if (opts.guestToken) headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.token)        headers["Authorization"]         = `Bearer ${opts.token}`;
+  if (opts.guestToken)   headers["X-Fantasy-Guest-Token"] = opts.guestToken;
+  if (opts.extraHeaders) Object.assign(headers, opts.extraHeaders);
   const res = await fetch(`${BASE_URL}${path}`, {
     method: opts.method ?? "GET",
     headers,
@@ -196,6 +197,7 @@ async function main() {
     const rm = await api(`/api/fantasy/leagues/${league_id}/seasons/${season_id}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Mike", team_name: "Sunday Scaries" },
+      extraHeaders: { "Idempotency-Key": `ph4a-mike-${RUN_ID}` },
     });
     if (rm.status !== 201) {
       fail("Add Mike", `${rm.status}`);
@@ -1040,6 +1042,7 @@ async function main() {
     const r2 = await api(`${BASE}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Reg Member", team_name: "Reg Team" },
+      extraHeaders: { "Idempotency-Key": `ph4a-reg-${RUN_ID}` },
     });
     r2.status === 201
       ? pass("Phase 2: POST /participants still works")

@@ -1,0 +1,232 @@
+We now have a direct live Supabase finding that changes the diagnosis.
+
+I checked the live database directly.
+
+Confirmed:
+
+* `fantasy_participant_operations` exists
+* `service_role` already has SELECT privilege
+* `anon` and `authenticated` also have table-level privileges
+* the ACL is present
+* current live row count in `fantasy_participant_operations` = 0
+
+Therefore:
+
+DO NOT add any GRANT.
+DO NOT change RLS.
+DO NOT create policies.
+DO NOT disable RLS.
+
+The issue is no longer permissions.
+
+We need to determine whether the idempotency RPC is actually persisting operation rows.
+
+Run ONE controlled add-member operation and inspect the DB immediately afterward.
+
+## 1. USE A BRAND-NEW TEST MEMBER
+
+Use a unique test identity that cannot collide with prior data, e.g.:
+
+Display name:
+`Idem Probe <timestamp>`
+
+Team name:
+`Idem Team <timestamp>`
+
+Generate a brand-new idempotency key:
+
+`Idempotency-Key: <new UUID>`
+
+Use an existing commissioner-owned test league/season where adding a member is safe.
+
+Do not reuse an old key.
+
+## 2. BEFORE THE REQUEST
+
+Query:
+
+```sql
+SELECT count(*)
+FROM fantasy_participant_operations;
+```
+
+Report the count.
+
+Also query specifically for the new idempotency key:
+
+```sql
+SELECT *
+FROM fantasy_participant_operations
+WHERE idempotency_key = '<new key>';
+```
+
+Expected before request:
+0 rows for that key.
+
+## 3. SEND EXACTLY ONE REAL POST /participants REQUEST
+
+Use the same API path the Manage League UI uses.
+
+No `league_member_id`.
+
+Include:
+
+`Idempotency-Key: <new UUID>`
+
+Body:
+
+```json
+{
+  "display_name": "Idem Probe <timestamp>",
+  "team_name": "Idem Team <timestamp>"
+}
+```
+
+Capture:
+
+* HTTP status
+* full JSON response
+* returned league_member_id
+* returned season_member_id
+* returned fantasy_team_id
+* already_exists
+* draft_day_eligible
+
+Do not send a replay yet.
+
+## 4. IMMEDIATELY INSPECT THE LIVE DB
+
+Before any test cleanup, fixture teardown, rollback, or delete:
+
+Query:
+
+```sql
+SELECT
+  id,
+  league_season_id,
+  operator_user_id,
+  idempotency_key,
+  request_hash,
+  result_json,
+  created_at
+FROM fantasy_participant_operations
+WHERE idempotency_key = '<new key>';
+```
+
+Also:
+
+```sql
+SELECT count(*)
+FROM fantasy_participant_operations;
+```
+
+Report whether the durable operation row exists.
+
+## 5. VERIFY BUSINESS ROWS
+
+Using the IDs from the POST response, verify:
+
+* fantasy_league_members row exists
+* fantasy_season_members row exists
+* fantasy_teams row exists
+* fantasy_team_managers row exists
+
+Do not delete anything yet.
+
+## 6. NOW SEND THE REPLAY
+
+Send the exact same request again:
+
+* same commissioner
+* same league/season
+* same Idempotency-Key
+* same body
+
+Expected:
+
+* same IDs returned
+* no second business-member creation
+* operation-table row count for that key remains exactly 1
+
+Then query `fantasy_participant_operations` again and show the same stored `result_json`.
+
+## 7. CHECK THE ACTUAL RPC PATH
+
+Trace the live `POST /participants` route and confirm it is definitely calling:
+
+`add_fantasy_season_participant_idempotent`
+
+and not still calling:
+
+`add_fantasy_season_participant_v2`
+
+directly.
+
+Report the exact function name invoked by the server.
+
+Also inspect the live definition of `add_fantasy_season_participant_idempotent` and verify:
+
+1. it INSERTs into `fantasy_participant_operations`
+2. it calls v2 inside the same transaction
+3. it UPDATEs `result_json`
+4. it does not DELETE the operation row before return
+5. there is no test-only cleanup inside the RPC
+
+## 8. CHECK TEST CLEANUP
+
+Inspect the Phase 4B / Manage League combined test suite.
+
+Determine whether teardown deletes:
+
+* `fantasy_participant_operations`
+* test fantasy_league_members
+* test fantasy_season_members
+* test fantasy_teams
+
+If the operation rows are intentionally cleaned after tests, state that clearly.
+
+That could explain why the live table was empty when checked later.
+
+## 9. CONFIRM DATABASE TARGET
+
+For the controlled request and the direct SQL inspection, report the Supabase project ref being used.
+
+It must be:
+
+`vlxvoienyxzhyaiimccp`
+
+Confirm both the server request and DB verification point to the same project.
+
+## 10. RETURN ONLY THE FORENSICS
+
+Return:
+
+1. operation-table count before request
+2. POST status/body
+3. exact RPC invoked
+4. operation row immediately after first request — present or absent
+5. operation-table count after first request
+6. business rows created
+7. replay status/body
+8. same IDs on replay — yes/no
+9. operation row after replay
+10. whether test teardown deletes operation rows
+11. whether server and inspection use the same Supabase project
+12. definitive explanation for why the table was empty when we checked it
+
+End with one of:
+
+`DURABLE IDEMPOTENCY CONFIRMED — TEST CLEANUP EXPLAINS EMPTY TABLE`
+
+`RPC NOT PERSISTING OPERATION ROW`
+
+`SERVER USING WRONG RPC`
+
+`SERVER/TEST DATABASE MISMATCH`
+
+or
+
+`OTHER ROOT CAUSE`
+
+Do not modify SQL, RLS, grants, or policies during this investigation.
+Do not begin Phase 4C.

@@ -63,6 +63,18 @@ const svc = createClient(SUP_URL, SUP_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// Separate anon client used ONLY for user sign-ins so that svc is never
+// contaminated with a user session.  After signInWithPassword(), supabase-js
+// stores the user JWT in the client's in-memory auth state even with
+// persistSession: false, causing subsequent svc.from(…) table queries to
+// send the user JWT (role: authenticated) instead of the service role key.
+// Tables with no authenticated policy (e.g. fantasy_participant_operations)
+// would silently return 0 rows.
+const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? SUP_KEY;
+const signInClient = createClient(SUP_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
 // ── API helper ────────────────────────────────────────────────────────────────
 
 async function api(
@@ -106,7 +118,8 @@ async function createUser(tag: string) {
 }
 async function signIn(tag: string): Promise<string> {
   const email = `qa-ml-${tag.toLowerCase()}-${RUN_ID}@swayger-test.invalid`;
-  const { data, error } = await svc.auth.signInWithPassword({
+  // Use signInClient (not svc) to keep the service role client's auth state clean.
+  const { data, error } = await signInClient.auth.signInWithPassword({
     email, password: "test-ml-pw-789",
   });
   if (error) throw new Error(`signIn(${tag}): ${error.message}`);
