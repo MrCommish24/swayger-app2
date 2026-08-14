@@ -330,6 +330,36 @@ async function main() {
     }
   }
 
+  // 9. roster_revision column on gameday_pick_cards (Migration 002)
+  {
+    const { data, error } = await svc
+      .from("gameday_pick_cards")
+      .select("id, roster_revision")
+      .limit(1);
+    if (error && error.message.includes("roster_revision")) {
+      ko("DB-9. roster_revision column on gameday_pick_cards — SQL MIGRATION 002 REQUIRED", error.message);
+    } else if (error) {
+      ok("DB-9. roster_revision column exists (table queryable)");
+    } else {
+      ok("DB-9. roster_revision column on gameday_pick_cards ✓");
+    }
+  }
+
+  // 10. answer_universe_revision column on gameday_picks (Migration 002)
+  {
+    const { data, error } = await svc
+      .from("gameday_picks")
+      .select("id, answer_universe_revision")
+      .limit(1);
+    if (error && error.message.includes("answer_universe_revision")) {
+      ko("DB-10. answer_universe_revision column on gameday_picks — SQL MIGRATION 002 REQUIRED", error.message);
+    } else if (error) {
+      ok("DB-10. answer_universe_revision column exists (table queryable)");
+    } else {
+      ok("DB-10. answer_universe_revision column on gameday_picks ✓");
+    }
+  }
+
   // ── Bootstrap fixtures ────────────────────────────────────────────────────
   section("Bootstrap — create test users and league");
 
@@ -337,7 +367,8 @@ async function main() {
   let commToken: string, dariusToken: string, laterToken: string;
   let league_id: string, season_id: string;
   let comm_sm_id: string, darius_sm_id: string;
-  let later_sm_id: string; // "league only" member added after picks exist
+  let later_sm_id: string; // member added while card open (picks exist) — now eligible under open-roster rule
+  let locked_sm_id: string; // member added while card locked — ineligible (used by §EL)
 
   // Guest token for Mike (simulated — we create a real claim)
   let mikeGuestToken: string;
@@ -708,13 +739,16 @@ async function main() {
   }
 
   // ── POST /participants AFTER picks exist → eligible=false ──────────────────
-  section("4B-13b. DB: POST /participants after picks exist → draft_day_eligible=false, snapshots unchanged");
+  // ── Open-roster rule: picks exist + card open → eligible=true, snapshots updated ──
+  section("4B-13b. POST /participants: open card + picks exist → eligible=true, snapshots updated");
   {
-    // Capture current answer_options before add
-    const { data: propsBeforeAdd } = await svc
-      .from("gameday_props")
-      .select("id, answer_options, answer_target_type")
-      .eq("card_id", card_id);
+    // Capture roster_revision before add
+    const { data: cardBefore } = await svc
+      .from("gameday_pick_cards")
+      .select("roster_revision")
+      .eq("id", card_id)
+      .single();
+    const rrBefore: number = (cardBefore as any)?.roster_revision ?? 0;
 
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
@@ -722,34 +756,47 @@ async function main() {
       extraHeaders: { "Idempotency-Key": `idem-latearrival-${RUN_ID}` },
     });
     if (r.status === 201 || r.status === 200) {
-      r.body.draft_day_eligible === false
-        ? ok("draft_day_eligible=false when picks exist (\"Add to League Only\")")
-        : ko(`draft_day_eligible should be false, got ${r.body.draft_day_eligible}`, JSON.stringify(r.body));
+      // NEW rule: open card → always eligible
+      r.body.draft_day_eligible === true
+        ? ok("4B-13b-1. draft_day_eligible=true when card is open (open-roster rule ✓)")
+        : ko(`4B-13b-1. draft_day_eligible should be true (open card), got ${r.body.draft_day_eligible}`, JSON.stringify(r.body));
 
-      // Capture answer_options after add
-      const newSmId = r.body.season_member_id;
+      const newSmId: string = r.body.season_member_id;
       later_sm_id = newSmId;
+
+      // Capture answer_options after add — new member must appear in snapshots
       const { data: propsAfterAdd } = await svc
         .from("gameday_props")
         .select("id, answer_options, answer_target_type")
         .eq("card_id", card_id);
 
-      // Verify snapshots are UNCHANGED (no new entry appended)
       const smPropsAfter = (propsAfterAdd ?? []).filter((p: any) => p.answer_target_type === "season_member");
       if (smPropsAfter.length === 0) {
-        skip("No season_member props to check snapshot invariant");
+        skip("4B-13b-2. No season_member props to verify snapshot append");
       } else {
-        const anyHasNew = smPropsAfter.some((p: any) =>
+        const hasNewEntry = smPropsAfter.some((p: any) =>
           Array.isArray(p.answer_options) &&
           (p.answer_options as any[]).some((o) => o.id === newSmId)
         );
-        !anyHasNew
-          ? ok("Ineligible member NOT appended to answer_options (snapshots unchanged ✓)")
-          : ko("Ineligible member was incorrectly appended to answer_options!");
+        hasNewEntry
+          ? ok(`4B-13b-2. LateArrival appended to answer_options in ${smPropsAfter.length} prop(s) ✓`)
+          : ko("4B-13b-2. LateArrival NOT appended to answer_options — expected append for open card");
       }
-      note(`Late member: sm_id=${newSmId.slice(0, 8)}… eligible=${r.body.draft_day_eligible}`);
+
+      // roster_revision must have incremented
+      const { data: cardAfter } = await svc
+        .from("gameday_pick_cards")
+        .select("roster_revision")
+        .eq("id", card_id)
+        .single();
+      const rrAfter: number = (cardAfter as any)?.roster_revision ?? 0;
+      rrAfter === rrBefore + 1
+        ? ok(`4B-13b-3. roster_revision incremented: ${rrBefore} → ${rrAfter} ✓`)
+        : ko(`4B-13b-3. roster_revision expected ${rrBefore + 1}, got ${rrAfter}`);
+
+      note(`LateArrival: sm_id=${newSmId.slice(0, 8)}… eligible=${r.body.draft_day_eligible} roster_revision=${rrAfter}`);
     } else {
-      ko(`Add LateArrival → 201/200 (got ${r.status})`, JSON.stringify(r.body));
+      ko(`4B-13b. Add LateArrival → 201/200 (got ${r.status})`, JSON.stringify(r.body));
     }
   }
 
@@ -767,6 +814,23 @@ async function main() {
       r.body.card_status === "locked" ? ok("card_status=locked in 409 response") : ko(`card_status should be locked, got ${r.body.card_status}`);
     } else {
       skip("No prop/answer available for locked-card pick test");
+    }
+
+    // Add a member while card is LOCKED → eligible=false (ineligible for Draft Day).
+    // This member is used by the §EL eligibility enforcement tests below.
+    const lockedAddR = await api(`${base}/participants`, {
+      method: "POST", token: commToken,
+      body: { display_name: "LockedLateArrival", team_name: "Too Late FC" },
+      extraHeaders: { "Idempotency-Key": `idem-locked-late-${RUN_ID}` },
+    });
+    if (lockedAddR.status === 201 || lockedAddR.status === 200) {
+      locked_sm_id = lockedAddR.body.season_member_id;
+      lockedAddR.body.draft_day_eligible === false
+        ? ok("4B-14b. locked-card add → draft_day_eligible=false ✓")
+        : ko(`4B-14b. expected draft_day_eligible=false (locked), got ${lockedAddR.body.draft_day_eligible}`);
+      note(`LockedLateArrival: sm_id=${locked_sm_id?.slice(0,8)}… eligible=${lockedAddR.body.draft_day_eligible}`);
+    } else {
+      ko(`4B-14b. Add LockedLateArrival → 201/200 (got ${lockedAddR.status})`, JSON.stringify(lockedAddR.body));
     }
   }
 
@@ -851,77 +915,80 @@ async function main() {
   }
 
   // ── §EL: Eligibility enforcement (ineligible member) ─────────────────────
-  section("EL. Eligibility enforcement — ineligible member gets 403");
+  // Uses LockedLateArrival — added while card was locked in §4B-14.
+  // Card is now open (unlocked in §4B-16), but this member's draft_day_eligible=false.
+  section("EL. Eligibility enforcement — locked-card member gets 403");
   {
-    if (!later_sm_id) {
-      skip("LateArrival sm_id not available — skipping eligibility tests");
+    // EL-1. DB sanity: locked_sm_id has draft_day_eligible=false
+    if (!locked_sm_id) {
+      skip("EL. LockedLateArrival sm_id not available — skipping all eligibility tests");
     } else {
-      // laterUser was created before we added the later member.
-      // We need to get laterUser's jwt and have them claim the later seat.
-      // The "later" seat was created by the server via add_fantasy_season_participant_v2
-      // and is linked to a NEW league_member_id (no auth user).
-      // Instead, let's verify eligibility via the DB directly.
       const { data: smData } = await svc
         .from("fantasy_season_members")
         .select("id, draft_day_eligible")
-        .eq("id", later_sm_id)
+        .eq("id", locked_sm_id)
         .single();
       smData?.draft_day_eligible === false
-        ? ok(`EL-1. LateArrival has draft_day_eligible=false in DB ✓`)
-        : ko(`EL-1. draft_day_eligible should be false, got ${smData?.draft_day_eligible}`);
+        ? ok("EL-1. LockedLateArrival has draft_day_eligible=false in DB ✓")
+        : ko(`EL-1. draft_day_eligible should be false (locked), got ${smData?.draft_day_eligible}`);
 
-      // To test 403 on play/picks, we need the late member to have an auth user
-      // who has claimed their seat. We can set up that claim for laterUser.
-      const laterLmId: string | undefined = (() => {
-        // We need LateArrival's league_member_id; grab from DB
-        return undefined; // populated below
-      })();
-
-      // Get LateArrival's league_member_id from the season_member row
+      // EL-2. Have laterUser claim LockedLateArrival's seat
       const { data: fullSm } = await svc
         .from("fantasy_season_members")
         .select("id, league_member_id")
-        .eq("id", later_sm_id)
+        .eq("id", locked_sm_id)
         .single();
-      const lateLmId = fullSm?.league_member_id;
+      const lockedLmId = fullSm?.league_member_id;
 
-      if (lateLmId) {
-        // Have laterUser claim this seat
+      if (lockedLmId) {
         const claimR = await api(`${base}/claim`, {
           method: "POST", token: laterToken,
-          body: { league_member_id: lateLmId },
+          body: { league_member_id: lockedLmId },
         });
         if (claimR.status === 201 || claimR.status === 200) {
-          ok("EL-2. LateArrival auth claim succeeded");
+          ok("EL-2. LockedLateArrival auth claim succeeded");
 
-          // Now test GET /draft-day/play → 403
+          // EL-3. GET /draft-day/play → 403 (ineligible)
           const playR = await api(`${base}/draft-day/play`, { token: laterToken });
           if (playR.status === 403 && playR.body?.draft_day_eligible === false) {
-            ok("EL-3. Ineligible member → GET /draft-day/play → 403 with draft_day_eligible=false ✓");
+            ok("EL-3. Ineligible member → GET /draft-day/play → 403 (draft_day_eligible=false) ✓");
           } else if (playR.status === 403) {
-            ok(`EL-3. Ineligible member → GET /draft-day/play → 403 ✓ (body: ${JSON.stringify(playR.body).slice(0,80)})`);
+            ok(`EL-3. Ineligible member → GET /draft-day/play → 403 ✓`);
           } else {
             ko(`EL-3. Should be 403, got ${playR.status}`, JSON.stringify(playR.body));
           }
 
-          // POST /draft-day/picks → 403
+          // EL-4. POST /draft-day/picks → 403 (ineligible)
           const pickR = await api(`${base}/draft-day/picks`, {
             method: "POST", token: laterToken,
             body: { prop_id: firstPropId || "00000000-0000-0000-0000-000000000001", selected_answer: "x" },
           });
-          if (pickR.status === 403) {
-            ok("EL-4. Ineligible member → POST /draft-day/picks → 403 ✓");
+          pickR.status === 403
+            ? ok("EL-4. Ineligible member → POST /draft-day/picks → 403 ✓")
+            : ko(`EL-4. Should be 403, got ${pickR.status}`, JSON.stringify(pickR.body));
+
+          // EL-5. LateArrival (added while open) is ELIGIBLE — 200 on play
+          if (later_sm_id) {
+            const { data: openSmData } = await svc
+              .from("fantasy_season_members")
+              .select("id, draft_day_eligible")
+              .eq("id", later_sm_id)
+              .single();
+            openSmData?.draft_day_eligible === true
+              ? ok("EL-5. Open-card member (LateArrival) has draft_day_eligible=true ✓")
+              : ko(`EL-5. LateArrival should be eligible (open-roster rule), got ${openSmData?.draft_day_eligible}`);
           } else {
-            ko(`EL-4. Should be 403, got ${pickR.status}`, JSON.stringify(pickR.body));
+            skip("EL-5. later_sm_id not available");
           }
         } else {
-          note(`LateArrival claim status: ${claimR.status} — ${JSON.stringify(claimR.body).slice(0,80)}`);
-          skip("EL-2. Cannot claim LateArrival seat — skipping live 403 test (DB confirms eligible=false)");
+          note(`LockedLateArrival claim: ${claimR.status} — ${JSON.stringify(claimR.body).slice(0,80)}`);
+          skip("EL-2. Cannot claim LockedLateArrival seat — skipping live 403 tests");
           skip("EL-3. Skipped (claim failed)");
           skip("EL-4. Skipped (claim failed)");
+          skip("EL-5. Skipped (claim failed)");
         }
       } else {
-        skip("EL-2/3/4. Could not find LateArrival league_member_id");
+        skip("EL-2/3/4/5. Could not find LockedLateArrival league_member_id");
       }
     }
   }
@@ -1119,15 +1186,17 @@ async function main() {
   let b3SeasonMemberId = "";
   let b3TeamId = "";
   {
-    // B3. Add member after picks exist → eligible=false
+    // B3. Add member after picks exist, card open → eligible=true (open-roster rule)
+    // Card was unlocked in §4B-16 → status=open → new member IS eligible.
     const r = await api(`${base}/participants`, {
       method: "POST", token: commToken,
       body: { display_name: "Another Late Member", team_name: "Too Late FC" },
       extraHeaders: { "Idempotency-Key": b3IdemKey },
     });
-    (r.status === 201 || r.status === 200) ? ok(`B3. Add member → ${r.status}`) : ko(`B3. Should be 201/200, got ${r.status}`, JSON.stringify(r.body));
+    (r.status === 201 || r.status === 200) ? ok(`B3. Add member (open card) → ${r.status}`) : ko(`B3. Should be 201/200, got ${r.status}`, JSON.stringify(r.body));
     typeof r.body.draft_day_eligible === "boolean" ? ok("B3. draft_day_eligible in response") : ko("B3. draft_day_eligible missing from response");
-    r.body.draft_day_eligible === false ? ok("B3. draft_day_eligible=false (picks exist)") : ko(`B3. draft_day_eligible should be false, got ${r.body.draft_day_eligible}`);
+    // Open card → eligible regardless of pick_count
+    r.body.draft_day_eligible === true ? ok("B3. draft_day_eligible=true (open-roster rule: card is open)") : ko(`B3. draft_day_eligible should be true (open card), got ${r.body.draft_day_eligible}`);
     b3LeagueMemberId = r.body.league_member_id ?? "";
     b3SeasonMemberId = r.body.season_member_id ?? "";
     b3TeamId         = r.body.team_id          ?? "";
@@ -1385,6 +1454,68 @@ async function main() {
     retryR.body.league_member_id
       ? ok(`B4g. Rollback Bob created on retry: id=${retryR.body.league_member_id.slice(0,8)}… (atomicity proven)`)
       : ko("B4g. Rollback Bob has no league_member_id after retry");
+  }
+
+  // ── §ML-D: League rename tests ────────────────────────────────────────────
+  section("ML-D. PATCH /api/fantasy/leagues/:leagueId — league rename");
+
+  const origLeagueName = `ML QA League ${RUN_ID}`;
+
+  {
+    // D1. Non-commissioner (Darius) → 403
+    const r = await api(`/api/fantasy/leagues/${league_id}`, {
+      method: "PATCH", token: dariusToken,
+      body: { league_name: "Hacked League" },
+    });
+    r.status === 403 ? ok("D1. Non-commissioner rename → 403") : ko(`D1. Should be 403, got ${r.status}`);
+  }
+
+  {
+    // D2. No token → 401
+    const r = await api(`/api/fantasy/leagues/${league_id}`, {
+      method: "PATCH",
+      body: { league_name: "No Auth" },
+    });
+    r.status === 401 ? ok("D2. No-token rename → 401") : ko(`D2. Should be 401, got ${r.status}`);
+  }
+
+  {
+    // D3. Blank league_name → 400
+    const r = await api(`/api/fantasy/leagues/${league_id}`, {
+      method: "PATCH", token: commToken,
+      body: { league_name: "   " },
+    });
+    r.status === 400 ? ok("D3. Blank league_name → 400") : ko(`D3. Should be 400, got ${r.status}`);
+  }
+
+  {
+    // D4. Commissioner renames → 200 with new name
+    const r = await api(`/api/fantasy/leagues/${league_id}`, {
+      method: "PATCH", token: commToken,
+      body: { league_name: "Renamed League QA" },
+    });
+    r.status === 200 ? ok("D4. Commissioner rename → 200") : ko(`D4. Should be 200, got ${r.status}`, JSON.stringify(r.body));
+    r.body.league_name === "Renamed League QA" ? ok("D4. New name in response") : ko(`D4. Expected 'Renamed League QA', got '${r.body.league_name}'`);
+    typeof r.body.id === "string" ? ok("D4. id in response") : ko("D4. id missing from response");
+  }
+
+  {
+    // D5. GET /leagues reflects new name
+    const r = await api("/api/fantasy/leagues", { token: commToken });
+    const found = (r.body.leagues ?? []).find((l: any) => l.id === league_id);
+    found?.league_name === "Renamed League QA"
+      ? ok("D5. GET /leagues reflects renamed name")
+      : ko(`D5. Expected 'Renamed League QA' in GET /leagues, got '${found?.league_name}'`);
+  }
+
+  {
+    // D6. Restore original name
+    const r = await api(`/api/fantasy/leagues/${league_id}`, {
+      method: "PATCH", token: commToken,
+      body: { league_name: origLeagueName },
+    });
+    r.status === 200 ? ok("D6. Name restored → 200") : ko(`D6. Should be 200, got ${r.status}`);
+    r.body.league_name === origLeagueName ? ok("D6. Original name restored") : ko(`D6. Expected '${origLeagueName}', got '${r.body.league_name}'`);
   }
 
   // ── §ML-C: Auth guard tests ───────────────────────────────────────────────

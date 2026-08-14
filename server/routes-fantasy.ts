@@ -178,6 +178,63 @@ async function requireFantasyCommissioner(
 }
 
 /**
+ * Verifies the caller is commissioner/co_commissioner in ANY active season of the given league.
+ * Used for league-level operations (e.g. rename) that don't bind to a specific season.
+ * Returns { userId, leagueMemberId } on success, null on failure (response already sent).
+ */
+async function requireFantasyLeagueCommissioner(
+  req: Request,
+  res: Response,
+  supabase: ReturnType<typeof getServiceSupabase>,
+  leagueId: string
+): Promise<{ userId: string; leagueMemberId: string } | null> {
+  const userId = requireFantasyAuth(req, res);
+  if (!userId) return null;
+
+  const { data: claims } = await supabase
+    .from("fantasy_member_claims")
+    .select("league_member_id")
+    .eq("user_id", userId)
+    .eq("is_active", true);
+
+  if (!claims?.length) {
+    res.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+
+  const memberIds = (claims as any[]).map((c) => c.league_member_id);
+
+  const { data: leagueMember } = await supabase
+    .from("fantasy_league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("is_active", true)
+    .in("id", memberIds)
+    .maybeSingle();
+
+  if (!leagueMember) {
+    res.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+
+  // Must be commissioner or co_commissioner in at least one active season
+  const { data: seasonMember } = await supabase
+    .from("fantasy_season_members")
+    .select("id")
+    .eq("league_member_id", (leagueMember as any).id)
+    .eq("is_active", true)
+    .in("role", ["commissioner", "co_commissioner"])
+    .maybeSingle();
+
+  if (!seasonMember) {
+    res.status(403).json({ error: "Commissioner authority required" });
+    return null;
+  }
+
+  return { userId, leagueMemberId: (leagueMember as any).id };
+}
+
+/**
  * Given a caller identity (user_id or guest_token) and a season_id,
  * returns the viewer's participant info or null if they have no claim.
  */
@@ -491,27 +548,15 @@ export function registerFantasyRoutes(app: Express) {
         if (ddCard) {
           const cardStatus = (ddCard as any).status as string;
           if (cardStatus === "locked" || cardStatus === "settled") {
+            // Card is frozen — late additions are league-only (no Draft Day picks)
             eligible = false;
           } else if (cardStatus === "open") {
-            // Count existing picks for this card's props
-            const { data: propRows } = await supabase
-              .from("gameday_props")
-              .select("id")
-              .eq("card_id", (ddCard as any).id);
-            const ddPropIds = (propRows ?? []).map((p: any) => p.id as string);
-            let pickCount = 0;
-            if (ddPropIds.length > 0) {
-              const { count } = await supabase
-                .from("gameday_picks")
-                .select("id", { count: "exact", head: true })
-                .in("prop_id", ddPropIds);
-              pickCount = count ?? 0;
-            }
-            if (pickCount === 0) {
-              roomIdForSnapshot = ddRoomId; // safe to update snapshots atomically
-            } else {
-              eligible = false;
-            }
+            // Card is open regardless of pick_count — new member is eligible and their
+            // name is appended to answer_options atomically inside the RPC.
+            // roster_revision is incremented by the RPC to signal existing pickers
+            // to review their selections.
+            eligible          = true;
+            roomIdForSnapshot = ddRoomId;
           }
         }
       }
@@ -623,6 +668,56 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       res.json(data);
+    }
+  );
+
+  // ── PATCH /api/fantasy/leagues/:leagueId ─────────────────────────────────────
+  //
+  // Commissioner-only league rename.
+  // Does NOT require a specific season — checks commissioner role in any active
+  // season of this league (league-level authority).
+  //
+  // Body: { league_name: string }
+  // Returns: { id, league_name }
+  app.patch(
+    "/api/fantasy/leagues/:leagueId",
+    async (req: Request, res: Response) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requireFantasyLeagueCommissioner(req, res, supabase, leagueId);
+      if (!commissioner) return;
+
+      const { league_name } = req.body as { league_name?: string };
+      const trimmed = league_name?.trim();
+
+      if (!trimmed) {
+        res.status(400).json({ error: "league_name is required and cannot be blank" });
+        return;
+      }
+      if (trimmed.length > 100) {
+        res.status(400).json({ error: "league_name too long (max 100 characters)" });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("fantasy_leagues")
+        .update({ league_name: trimmed, updated_at: new Date().toISOString() })
+        .eq("id", leagueId)
+        .select("id, league_name")
+        .single();
+
+      if (error) {
+        console.error("[fantasy] PATCH /leagues/:leagueId error:", error.message);
+        res.status(500).json({ error: "Failed to update league name" });
+        return;
+      }
+
+      console.log(
+        `[fantasy] League renamed: id=${leagueId.slice(0, 8)}… new_name="${trimmed}"`
+      );
+
+      res.json({ id: (data as any).id, league_name: (data as any).league_name });
     }
   );
 
@@ -2150,7 +2245,7 @@ export function registerFantasyRoutes(app: Express) {
       // ── Find the pick card ────────────────────────────────────────────────────
       const { data: card } = await supabase
         .from("gameday_pick_cards")
-        .select("id, status")
+        .select("id, status, roster_revision")
         .eq("room_id", roomId)
         .eq("phase", "draft_day")
         .maybeSingle();
@@ -2160,7 +2255,8 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      const cardStatus = (card as any).status as string;
+      const cardStatus        = (card as any).status as string;
+      const cardRosterRevision = (card as any).roster_revision ?? 0;
 
       // ── Eligibility guard — late "Add to League Only" members cannot play ────────
       if (!viewer.draft_day_eligible) {
@@ -2181,15 +2277,16 @@ export function registerFantasyRoutes(app: Express) {
       // ── Fetch published props — strip correct_answer ──────────────────────────
       const { data: rawProps } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, answer_options, display_order")
+        .select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
 
       const publishedProps = (rawProps ?? []).map((p: any) => ({
-        id:             p.id as string,
-        question:       p.question as string,
-        scoring_scope:  p.scoring_scope as string,
-        point_value:    p.point_value as number,
+        id:                  p.id as string,
+        question:            p.question as string,
+        scoring_scope:       p.scoring_scope as string,
+        point_value:         p.point_value as number,
+        answer_target_type:  p.answer_target_type as string,
         // answer_options is the authoritative published snapshot; correct_answer excluded
         answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
         display_order:  p.display_order as number,
@@ -2198,18 +2295,33 @@ export function registerFantasyRoutes(app: Express) {
       const propIds    = publishedProps.map((p) => p.id);
       const totalProps = publishedProps.length;
 
+      // Track which props are roster-target (season_member or fantasy_team) for
+      // stale-pick detection. Roster changes don't affect yes_no / static / player props.
+      const rosterTargetPropIds = new Set(
+        publishedProps
+          .filter((p) => p.answer_target_type === "season_member" || p.answer_target_type === "fantasy_team")
+          .map((p) => p.id)
+      );
+
       // ── Fetch this participant's picks ────────────────────────────────────────
       const { data: rawPicks } = propIds.length > 0
         ? await supabase
             .from("gameday_picks")
-            .select("prop_id, selected_answer")
+            .select("prop_id, selected_answer, answer_universe_revision")
             .in("prop_id", propIds)
             .eq("participant_id", participantId)
         : { data: [] };
 
       const myPicks: Record<string, string> = {};
+      const stalePropIds: string[] = [];
       for (const pick of rawPicks ?? []) {
-        myPicks[(pick as any).prop_id as string] = (pick as any).selected_answer as string;
+        const propId  = (pick as any).prop_id as string;
+        const pickRev = (pick as any).answer_universe_revision ?? 0;
+        myPicks[propId] = (pick as any).selected_answer as string;
+        // Flag picks made before the latest roster expansion on roster-target props
+        if (rosterTargetPropIds.has(propId) && pickRev < cardRosterRevision) {
+          stalePropIds.push(propId);
+        }
       }
       const myPickCount = Object.keys(myPicks).length;
 
@@ -2234,17 +2346,19 @@ export function registerFantasyRoutes(app: Express) {
       const leagueName = (seasonRow as any)?.fantasy_leagues?.league_name ?? null;
 
       res.json({
-        room_id:         roomId,
-        card_id:         (card as any).id,
-        room_code:       (room as any).room_code ?? null,
-        card_status:     cardStatus,
-        participant_id:  participantId,
-        props:           publishedProps,
-        my_picks:        myPicks,
-        my_pick_count:   myPickCount,
-        total_props:     totalProps,
-        pick_count:      globalPickCount,
-        league_name:     leagueName,
+        room_id:              roomId,
+        card_id:              (card as any).id,
+        room_code:            (room as any).room_code ?? null,
+        card_status:          cardStatus,
+        roster_revision:      cardRosterRevision,
+        stale_pick_prop_ids:  stalePropIds,
+        participant_id:       participantId,
+        props:                publishedProps,
+        my_picks:             myPicks,
+        my_pick_count:        myPickCount,
+        total_props:          totalProps,
+        pick_count:           globalPickCount,
+        league_name:          leagueName,
       });
     }
   );
@@ -2322,7 +2436,7 @@ export function registerFantasyRoutes(app: Express) {
       // ── Find pick card — must be open ─────────────────────────────────────────
       const { data: card } = await supabase
         .from("gameday_pick_cards")
-        .select("id, status")
+        .select("id, status, roster_revision")
         .eq("room_id", roomId)
         .eq("phase", "draft_day")
         .maybeSingle();
@@ -2332,7 +2446,8 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      const cardStatus = (card as any).status as string;
+      const cardStatus        = (card as any).status as string;
+      const cardRosterRevision = (card as any).roster_revision ?? 0;
 
       if (cardStatus !== "open") {
         res.status(409).json({
@@ -2379,14 +2494,17 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       // ── Upsert pick via UNIQUE (prop_id, participant_id) ──────────────────────
+      // answer_universe_revision captures the card's roster_revision at pick time.
+      // The play state uses this to flag picks that pre-date a roster expansion.
       const { data: upserted, error: upsertErr } = await supabase
         .from("gameday_picks")
         .upsert(
           {
-            prop_id:          prop_id,
-            participant_id:   participantId,
-            selected_answer:  selected_answer,
-            submitted_at:     new Date().toISOString(),
+            prop_id:                  prop_id,
+            participant_id:           participantId,
+            selected_answer:          selected_answer,
+            submitted_at:             new Date().toISOString(),
+            answer_universe_revision: cardRosterRevision,
           },
           { onConflict: "prop_id,participant_id" }
         )

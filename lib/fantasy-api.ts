@@ -276,6 +276,9 @@ export interface DraftDayStatus {
   // Used for the member hub CTA label (Make My Picks vs View / Update My Picks).
   // 0 when the caller has no participant row yet (first visit, pre-play).
   my_pick_count: number;
+  // Number of times the open roster has been expanded (member added while open).
+  // Incremented atomically by the RPC; used to detect stale picks.
+  roster_revision?: number;
   // Currently selected props with library metadata. Used by manage mode to
   // reconstruct the commissioner's selection, including inactive legacy props.
   current_props: DraftDayCurrentProp[];
@@ -397,6 +400,13 @@ export interface DraftDayPlayState {
   card_id: string;
   room_code: string | null;
   card_status: "open" | "locked" | "settled";
+  // How many times the open roster has expanded since the card was published.
+  // A value > 0 means new members were added while picks were already in flight.
+  roster_revision: number;
+  // Prop IDs of roster-target questions where this viewer's saved pick
+  // pre-dates the latest roster expansion (answer_universe_revision < roster_revision).
+  // Empty when roster_revision === 0 or the viewer has no stale picks.
+  stale_pick_prop_ids: string[];
   participant_id: string;
   props: DraftDayProp[];
   /** propId → selected answerId for this viewer's picks */
@@ -434,6 +444,23 @@ export async function submitDraftDayPick(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prop_id: propId, selected_answer: selectedAnswer }),
+    },
+    auth
+  );
+}
+
+// PATCH /api/fantasy/leagues/:leagueId — commissioner-only league rename
+export async function updateLeagueName(
+  leagueId: string,
+  leagueName: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ id: string; league_name: string }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ league_name: leagueName }),
     },
     auth
   );

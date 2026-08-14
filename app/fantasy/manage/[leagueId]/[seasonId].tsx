@@ -35,6 +35,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   fantasyFetch,
   updateMember,
+  updateLeagueName,
   FantasyParticipant,
   FantasySeasonDetail,
   DraftDayStatus,
@@ -69,11 +70,10 @@ const C = Colors.dark;
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type DraftDayLifecycle =
-  | "none"            // no Draft Day published
-  | "open_no_picks"   // published, pick_count = 0
-  | "picks_exist"     // published, open card, picks > 0
-  | "locked"          // card locked
-  | "settled";        // card settled
+  | "none"     // no Draft Day published
+  | "open"     // published and open — new members are eligible + appended to answer choices
+  | "locked"   // card locked — new members are league-only (not eligible for Draft Day)
+  | "settled"; // card settled — new members are league-only
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -81,8 +81,8 @@ function getLifecycle(dd: DraftDayStatus | null | undefined): DraftDayLifecycle 
   if (!dd) return "none";
   if (dd.card_status === "settled") return "settled";
   if (dd.card_status === "locked") return "locked";
-  if (dd.pick_count > 0) return "picks_exist";
-  return "open_no_picks";
+  // open regardless of pick_count — roster expansion is allowed while card is open
+  return "open";
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -108,6 +108,12 @@ export default function ManageLeagueScreen() {
   const [editTeam, setEditTeam] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // ── League name edit state ───────────────────────────────────────────────────
+  const [leagueNameEditing, setLeagueNameEditing] = useState(false);
+  const [leagueNameInput,   setLeagueNameInput]   = useState("");
+  const [leagueNameSaving,  setLeagueNameSaving]  = useState(false);
+  const [leagueNameError,   setLeagueNameError]   = useState<string | null>(null);
 
   // ── Add member state ─────────────────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
@@ -202,9 +208,40 @@ export default function ManageLeagueScreen() {
     }
   };
 
+  // ── League name edit handlers ─────────────────────────────────────────────────
+  const openLeagueNameEdit = () => {
+    setLeagueNameInput(detail?.league?.league_name ?? "");
+    setLeagueNameError(null);
+    setLeagueNameEditing(true);
+  };
+
+  const cancelLeagueNameEdit = () => {
+    setLeagueNameEditing(false);
+    setLeagueNameInput("");
+    setLeagueNameError(null);
+  };
+
+  const handleLeagueNameSave = async () => {
+    if (!session) return;
+    const trimmed = leagueNameInput.trim();
+    if (!trimmed) { setLeagueNameError("League name cannot be blank"); return; }
+    setLeagueNameSaving(true);
+    setLeagueNameError(null);
+    try {
+      await updateLeagueName(leagueId, trimmed, { session });
+      setLeagueNameEditing(false);
+      loadData();
+    } catch (e: any) {
+      setLeagueNameError(e.message ?? "Failed to update league name");
+    } finally {
+      setLeagueNameSaving(false);
+    }
+  };
+
   // ── Add member handlers ───────────────────────────────────────────────────────
   const lifecycle = getLifecycle(draftDay);
-  const needsLeagueOnlyConfirm = lifecycle === "picks_exist" || lifecycle === "locked" || lifecycle === "settled";
+  // Only locked / settled cards prevent Draft Day participation
+  const needsLeagueOnlyConfirm = lifecycle === "locked" || lifecycle === "settled";
 
   /**
    * Opens the Add Member form.  Loads the pending idempotency key from
@@ -350,17 +387,64 @@ export default function ManageLeagueScreen() {
       </TouchableOpacity>
 
       <Text style={styles.title}>⚙ Manage League</Text>
-      <Text style={styles.subtitle}>{league.league_name}</Text>
+
+      {/* ── League Details ───────────────────────────────────────────────── */}
+      <Text style={styles.sectionLabel}>LEAGUE DETAILS</Text>
+      <View style={styles.membersCard}>
+        <View style={[styles.memberRow]}>
+          <View style={styles.memberLeft}>
+            <Text style={styles.fieldLabel}>LEAGUE NAME</Text>
+            {leagueNameEditing ? (
+              <>
+                <TextInput
+                  style={[styles.input, { marginTop: 4 }]}
+                  value={leagueNameInput}
+                  onChangeText={setLeagueNameInput}
+                  autoFocus
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  maxLength={100}
+                  placeholderTextColor={C.textMuted}
+                />
+                {leagueNameError && (
+                  <Text style={[styles.fieldError, { marginTop: 4 }]}>{leagueNameError}</Text>
+                )}
+                <View style={[styles.addFormBtns, { marginTop: 10 }]}>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary]}
+                    onPress={cancelLeagueNameEdit}
+                    disabled={leagueNameSaving}
+                  >
+                    <Text style={[styles.btnText, { color: C.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.btn, leagueNameSaving && styles.btnDisabled]}
+                    onPress={handleLeagueNameSave}
+                    disabled={leagueNameSaving}
+                  >
+                    {leagueNameSaving
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.btnText}>Save</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.memberName}>{league.league_name}</Text>
+            )}
+          </View>
+          {!leagueNameEditing && (
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={openLeagueNameEdit}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.editBtnText}>Edit</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
       {/* ── Draft Day lifecycle notice ────────────────────────────────────── */}
-      {lifecycle === "picks_exist" && (
-        <View style={styles.noticeCard}>
-          <Text style={styles.noticeText}>
-            🏈 Draft Day is active — members have submitted picks.
-            New members can be added to the league but will NOT participate in the current Draft Day.
-          </Text>
-        </View>
-      )}
       {lifecycle === "locked" && (
         <View style={styles.noticeCard}>
           <Text style={styles.noticeText}>
@@ -371,7 +455,7 @@ export default function ManageLeagueScreen() {
       )}
 
       {/* ── Members & Teams ──────────────────────────────────────────────── */}
-      <Text style={styles.sectionLabel}>MEMBERS & TEAMS · {ordered.length}</Text>
+      <Text style={[styles.sectionLabel, { marginTop: 24 }]}>MEMBERS & TEAMS · {ordered.length}</Text>
 
       <View style={styles.membersCard}>
         {ordered.map((p, i) => (
@@ -478,7 +562,7 @@ export default function ManageLeagueScreen() {
               {addError && <Text style={styles.fieldError}>{addError}</Text>}
               {needsLeagueOnlyConfirm && (
                 <Text style={styles.leagueOnlyHint}>
-                  Draft Day is active. This member will be added to the league only — not the current Draft Day.
+                  Draft Day is locked. This member will be added to the league only — they will participate in future competitions.
                 </Text>
               )}
               <View style={styles.addFormBtns}>

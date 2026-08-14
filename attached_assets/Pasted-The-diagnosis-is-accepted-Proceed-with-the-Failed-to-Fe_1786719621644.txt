@@ -1,0 +1,424 @@
+The diagnosis is accepted.
+
+Proceed with the Failed-to-Fetch fix and revised open-roster behavior, with the corrections below.
+
+Do NOT begin Phase 4C.
+
+==================================================
+1. FIX CORS NOW
+==================================================
+
+Confirmed root cause:
+
+Idempotency-Key is missing from Access-Control-Allow-Headers.
+
+Update server/index.ts so the allowed headers include:
+
+Idempotency-Key
+
+Preserve all existing allowed headers, including:
+
+- Content-Type
+- Authorization
+- X-Guest-Session
+- x-admin-token
+- X-Fantasy-Guest-Token
+
+Add a regression test or equivalent verification that an OPTIONS preflight for POST /participants with Idempotency-Key succeeds.
+
+==================================================
+2. NEW DRAFT DAY ROSTER RULE
+==================================================
+
+Adopt:
+
+OPEN = roster can still grow
+LOCKED = current Draft Day roster freezes
+
+Lifecycle:
+
+NO DRAFT DAY
+→ new member eligible=true
+
+DRAFT DAY OPEN, regardless of pick_count
+→ new member eligible=true
+→ include new member/team in published answer universe
+→ existing picks remain untouched
+
+DRAFT DAY LOCKED OR SETTLED
+→ member may still be added to the league
+→ draft_day_eligible=false for this Draft Day
+→ current answer_options unchanged
+→ existing picks unchanged
+
+Remove the current:
+
+pick_count > 0
+→ eligible=false
+
+rule for OPEN cards.
+
+IMPORTANT:
+
+global pick_count > 0 must STILL prevent changing the QUESTION SET.
+
+Keep this invariant:
+
+first pick exists
+→ commissioner cannot add/remove/change Draft Day questions
+
+But roster-derived answer options may expand until Lock.
+
+==================================================
+3. VERIFY THE ACTUAL PROP COLUMN NAME
+==================================================
+
+The report refers to:
+
+target_type
+
+Before coding, verify the live gameday_props schema.
+
+Our established Fantasy column is:
+
+answer_target_type
+
+Do not create or assume a second target_type column.
+
+The roster-append logic must use the actual live field that distinguishes:
+
+- season_member
+- fantasy_team
+- other/static targets
+
+Return which exact column the live RPC uses.
+
+==================================================
+4. OPEN-ROSTER APPEND MUST REMAIN ATOMIC
+==================================================
+
+When House / Team House is added while card.status='open':
+
+same idempotent transaction must:
+
+- create persistent league member
+- create season member
+- create fantasy team
+- create team-manager row
+- set draft_day_eligible=true
+- append House to season_member-target published answer_options
+- append Team House to fantasy_team-target published answer_options
+- increment roster revision
+- seal durable idempotency result
+
+Existing gameday_picks must NOT be deleted or rewritten.
+
+Preserve:
+- existing option IDs
+- existing option order
+- no_one
+- static answers
+- question set
+- scoring_scope
+- point_value
+
+A retry with the same Idempotency-Key must not append duplicate answer options or increment roster_revision twice.
+
+==================================================
+5. USE DURABLE ROSTER REVISION, NOT LOCAL-ONLY LAST-SEEN STATE
+==================================================
+
+I approve adding:
+
+gameday_pick_cards.roster_revision INTEGER NOT NULL DEFAULT 0
+
+Increment it atomically exactly once whenever the OPEN Draft Day answer universe expands because a member is added.
+
+However, do NOT rely only on AsyncStorage/local lastSeenRevision to decide whether a player needs to review a pick.
+
+That fails across:
+- browser reload
+- another device
+- cleared local storage
+- guest → authenticated upgrade
+
+Use a durable per-pick revision.
+
+Inspect gameday_picks and recommend/implement the smallest compatible field, conceptually:
+
+roster_revision INTEGER NOT NULL DEFAULT 0
+
+or:
+
+answer_universe_revision INTEGER NOT NULL DEFAULT 0
+
+For Fantasy Draft Day pick submission:
+
+when a member saves/changes a pick:
+→ store the CURRENT card.roster_revision on that pick
+
+Then member play can determine:
+
+pick.roster_revision < card.roster_revision
+→ this pick was made before the latest roster expansion
+→ mark it:
+   "Updated — review your pick"
+
+When member changes/reconfirms that answer:
+→ upsert pick with current card.roster_revision
+→ review marker disappears
+
+For unanswered props:
+→ simply show the newly expanded options normally
+
+Classic Game Day must remain backward compatible.
+
+If adding the nullable/defaulted column to gameday_picks has unforeseen compatibility issues, report before inventing another architecture.
+
+==================================================
+6. MEMBER-FACING ROSTER UPDATE UX
+==================================================
+
+When:
+
+card.roster_revision > 0
+AND the current member has at least one saved pick whose revision is older than card.roster_revision
+
+show:
+
+"League roster updated
+A member was added. Some answer choices have changed. Review your picks before they lock."
+
+For affected roster-target questions with an older saved pick:
+
+"Updated — review your pick"
+
+Do NOT invalidate the existing pick.
+
+Do NOT force the player to change it.
+
+The player may decide their original answer is still correct.
+
+If they tap/reconfirm the same answer, that counts as reviewed and saves the current revision.
+
+If all of their picks are already at current revision:
+→ no warning needed.
+
+==================================================
+7. LOCK IS THE FREEZE POINT
+==================================================
+
+Once card.status='locked':
+
+- no more current-Draft-Day members may be added
+- late additions are league-only / draft_day_eligible=false
+- answer_options frozen
+- roster_revision frozen
+- member picks read-only
+
+Unlock behavior:
+
+If commissioner unlocks the same Draft Day:
+→ determine whether roster additions become allowed again.
+
+My recommended rule for V1:
+YES.
+
+Unlock returns card to 'open', therefore roster additions may again be included until the next lock.
+
+Do not change the question-set rule:
+if picks have ever existed, questions remain immutable.
+
+==================================================
+8. LEAGUE NAME EDIT — BUILD IT
+==================================================
+
+Add League Details to Manage League.
+
+Example:
+
+LEAGUE DETAILS
+
+League Name
+Burnham Fantasy League
+[Edit]
+
+MEMBERS & TEAMS
+...
+
+Commissioner may change:
+
+league_name
+
+Do NOT expose edits for:
+- sport
+- season year
+
+Use the existing fantasy_leagues.league_name field.
+
+Add a commissioner-only endpoint such as:
+
+PATCH /api/fantasy/leagues/:leagueId
+
+Body:
+{
+  league_name: string
+}
+
+Validate:
+- non-empty
+- trimmed
+- reasonable existing length constraints
+
+Authorization must prove the caller is commissioner/co-commissioner of the relevant league.
+
+Do not merely trust leagueId.
+
+If the existing requireFantasyCommissioner helper requires seasonId, either:
+- pass the current season context from this Manage League route, or
+- add the smallest league-level commissioner resolver
+
+Do not accidentally make league rename dependent on "any random active season" without documenting the authority rule.
+
+Persistent league name updates immediately.
+
+Do NOT rewrite finalized historical competition snapshots.
+
+==================================================
+9. MEMBER REMOVAL
+==================================================
+
+Do NOT build removal in this phase.
+
+Record future rule:
+
+before picks:
+→ removal can eventually be allowed safely
+
+after picks:
+→ active Draft Day participant/member removal is restricted because saved answers may reference their stable IDs
+
+settled:
+→ preserve history
+
+No delete UI now.
+
+==================================================
+10. SQL EXPECTED
+==================================================
+
+I expect a migration for at least:
+
+A.
+gameday_pick_cards.roster_revision
+
+B.
+a durable per-pick roster/answer-universe revision field on gameday_picks
+
+C.
+CREATE OR REPLACE of the relevant participant-add RPC so it:
+- appends roster options whenever card is open
+- increments card roster_revision exactly once per successful new-member operation
+
+Make the migration rerunnable.
+
+Do NOT apply automatically.
+
+Return the exact SQL for manual Supabase application.
+
+==================================================
+11. TESTS
+==================================================
+
+Add/modify tests for:
+
+CORS
+- browser-style OPTIONS preflight permits Idempotency-Key
+
+OPEN + EXISTING PICKS
+- Darius has picks
+- commissioner adds House
+- House eligible=true
+- House season_member option appended
+- House fantasy_team option appended
+- Darius's existing selected_answer unchanged
+- card.roster_revision increments exactly once
+- replaying same idempotency operation does NOT increment revision again
+
+PICK REVISION
+- Darius pick made at roster_revision=0
+- House added → card revision=1
+- Darius old pick remains valid
+- API reports it as needing review
+- Darius reconfirms same answer
+- pick revision becomes 1
+- review marker clears
+
+SEPARATE MEMBER
+- Mike had no picks before House was added
+- Mike simply sees House among current options
+- no fake "review old pick" state for unanswered questions
+
+LOCK
+- add after locked → draft_day_eligible=false
+- no snapshot append
+- roster_revision unchanged
+
+UNLOCK
+- if V1 adopts open-again behavior:
+  unlocked → late member can again be added to active Draft Day
+
+QUESTION FAIRNESS
+- global pick_count>0 still blocks PATCH /draft-day/props
+
+LEAGUE RENAME
+- commissioner → 200
+- regular member → 403
+- blank name → 400
+- hub/manage GET reflects new name
+- sport/year unchanged
+- historical finalized competition data untouched
+
+REGRESSION
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage League
+- classic Game Day
+
+==================================================
+12. RETURN
+==================================================
+
+Return:
+
+1. CORS fix
+2. exact live answer-target column used
+3. revised open-roster implementation
+4. atomic RPC changes
+5. roster_revision design
+6. per-pick revision design
+7. member warning UX
+8. league-name edit implementation
+9. files changed
+10. SQL requiring manual Supabase application
+11. exact test counts
+12. regressions
+13. manual QA sequence
+
+Then STOP.
+
+Do not begin Phase 4C.
+
+Final status:
+
+SQL APPLICATION REQUIRED
+
+or
+
+READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
