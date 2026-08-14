@@ -1,0 +1,139 @@
+Do NOT apply GRANT SELECT yet.
+
+The latest diagnosis still conflicts with current Supabase behavior:
+
+- sb_secret_ keys are documented to use service_role and bypass RLS.
+- a missing table-level GRANT should normally return 42501 permission denied, not HTTP 200 with [].
+
+We need to directly determine the effective role of the request.
+
+1. ADD A TEMPORARY READ-ONLY DIAGNOSTIC RPC
+
+Create or inspect a safe diagnostic SQL function that returns only:
+
+current_user
+session_user
+current_setting('request.jwt.claim.role', true)
+
+Do NOT expose secrets or JWT contents.
+
+Example conceptually:
+
+CREATE OR REPLACE FUNCTION public.debug_request_role()
+RETURNS json
+LANGUAGE sql
+SECURITY INVOKER
+AS $$
+  SELECT json_build_object(
+    'current_user', current_user,
+    'session_user', session_user,
+    'jwt_role', current_setting('request.jwt.claim.role', true)
+  );
+$$;
+
+Grant EXECUTE only as needed for the diagnostic.
+
+If you do not want to create this permanently, provide the exact SQL and remove it after verification.
+
+2. CALL IT WITH THE SAME svc CLIENT
+
+Using the exact same sb_secret_-initialized client that returns [] from fantasy_participant_operations:
+
+rpc('debug_request_role')
+
+Return:
+- current_user
+- session_user
+- jwt_role
+
+This will tell us definitively whether the Data API is executing as:
+- service_role
+- anon
+- another role
+
+3. VERIFY TABLE PRIVILEGE DIRECTLY FROM SQL EDITOR
+
+Run in Supabase SQL Editor:
+
+SELECT
+  has_table_privilege(
+    'service_role',
+    'public.fantasy_participant_operations',
+    'SELECT'
+  ) AS service_role_can_select,
+  has_table_privilege(
+    'anon',
+    'public.fantasy_participant_operations',
+    'SELECT'
+  ) AS anon_can_select,
+  has_table_privilege(
+    'authenticated',
+    'public.fantasy_participant_operations',
+    'SELECT'
+  ) AS authenticated_can_select;
+
+Also return the actual ACL:
+
+SELECT relacl
+FROM pg_class
+WHERE oid = 'public.fantasy_participant_operations'::regclass;
+
+Do not mutate anything.
+
+4. INTERPRET RESULTS
+
+CASE A:
+effective role = service_role
+AND service_role_can_select = false
+→ GRANT SELECT is appropriate.
+
+CASE B:
+effective role = service_role
+AND service_role_can_select = true
+→ neither RLS nor GRANT explains [].
+Investigate query/filter/schema/table state.
+
+CASE C:
+effective role = anon
+→ investigate why sb_secret_ is not being recognized correctly.
+Do NOT weaken table security.
+
+5. VERIFY TABLE ROWS DIRECTLY
+
+In SQL Editor run:
+
+SELECT count(*)
+FROM public.fantasy_participant_operations;
+
+Also retrieve only:
+- id
+- operator_user_id
+- idempotency_key
+- created_at
+
+for the latest few rows.
+
+No secrets.
+
+6. RETURN
+
+Return:
+
+1. effective Data API role
+2. service_role SELECT privilege true/false
+3. anon SELECT privilege true/false
+4. authenticated SELECT privilege true/false
+5. direct SQL row count
+6. Data API row count
+7. definitive root cause
+8. exact minimum fix
+
+Only after that recommend:
+- GRANT SELECT
+- client fix
+- query fix
+- other fix
+
+Do not create anon/authenticated policies.
+Do not disable RLS.
+Do not begin Phase 4C.
