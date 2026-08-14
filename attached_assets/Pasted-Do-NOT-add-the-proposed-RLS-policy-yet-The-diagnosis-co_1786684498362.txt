@@ -1,0 +1,139 @@
+Do NOT add the proposed RLS policy yet.
+
+The diagnosis conflicts with current Supabase behavior.
+
+Supabase documents that a genuine service_role client bypasses RLS entirely. A service_role-specific RLS policy should not be necessary and normally is not evaluated.
+
+Investigate why the direct query is not actually seeing rows.
+
+1. VERIFY THE TEST CLIENT IDENTITY
+
+Inspect the exact Supabase client assigned to `svc` in the failing tests.
+
+Confirm:
+- which environment variable/key initializes it
+- whether it is the service role / secret key
+- whether any user session or JWT is later attached to that client
+- whether the Authorization header is being overridden
+- whether SSR/session-sharing behavior is involved
+
+Do not print or expose the actual secret.
+
+Determine the effective PostgREST role for the request.
+
+2. CHECK TABLE GRANTS
+
+RLS and table privileges are separate.
+
+Read-only inspect the live privileges for:
+
+public.fantasy_participant_operations
+
+Confirm whether service_role has:
+- SELECT
+- INSERT
+- UPDATE
+- DELETE as needed
+
+If service_role lacks SELECT, the correct fix is likely an explicit GRANT, not an RLS policy.
+
+Example conceptually:
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.fantasy_participant_operations
+TO service_role;
+
+But do NOT apply anything until you confirm the actual missing privilege.
+
+3. VERIFY ROWS EXIST WITHOUT POSTGREST
+
+Use a direct SQL/admin query or SECURITY DEFINER diagnostic to confirm whether fantasy_participant_operations actually contains the rows created by B3/B4.
+
+Return:
+- count of rows
+- relevant operation IDs/metadata only
+- no secrets
+
+We need to distinguish:
+
+A. rows exist but the test client cannot see them
+B. rows were never committed
+C. test queries are filtering incorrectly
+
+4. INSPECT THE FAILED DIRECT SELECT
+
+Show the exact Supabase query used by B4d/B4f.
+
+Confirm:
+- table name
+- schema
+- filters
+- operator_user_id value used
+- idempotency_key value used
+- whether `.single()` / `.maybeSingle()` / count behavior could mask an error
+- whether the test checks and prints the Supabase `error` object
+
+A SELECT returning `data=[]` is different from a permission error being swallowed.
+
+Make sure the test does not discard `error`.
+
+5. TEST WITH A CLEAN SERVICE-ROLE CLIENT
+
+Create a dedicated server-only supabase-js client using the service-role/secret key with:
+- persistSession: false
+- autoRefreshToken: false
+- detectSessionInUrl: false
+
+Do not reuse a user-authenticated client.
+
+Using that clean client, run a read-only SELECT against fantasy_participant_operations.
+
+If it sees the rows:
+→ current `svc` client is contaminated/misconfigured.
+
+If it gets a privilege error:
+→ inspect GRANTs.
+
+If it still returns zero rows without error:
+→ inspect filters / transaction behavior.
+
+6. DO NOT CREATE:
+
+CREATE POLICY "service_role_all" ...
+
+unless you can demonstrate that the effective request role is NOT the actual service_role and that such a policy is intentionally required for that role.
+
+A true service_role should bypass RLS.
+
+7. RETURN
+
+Return:
+
+1. effective role of `svc`
+2. whether Authorization is actually service-role
+3. whether any session overrides it
+4. table grants for service_role
+5. whether rows truly exist
+6. exact direct SELECT error/data
+7. root cause of the three failures
+8. exact minimum fix
+9. whether SQL is required
+
+End with:
+
+GRANT REQUIRED
+
+or
+
+CLIENT FIX REQUIRED
+
+or
+
+QUERY/TEST FIX REQUIRED
+
+or
+
+OTHER ROOT CAUSE
+
+Do not apply any policy yet.
+Do not begin Phase 4C.
