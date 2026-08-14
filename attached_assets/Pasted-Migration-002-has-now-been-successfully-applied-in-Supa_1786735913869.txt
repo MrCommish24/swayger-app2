@@ -1,0 +1,302 @@
+Migration 002 has now been successfully applied in Supabase.
+
+Confirmed manually:
+
+* Part A ran successfully
+* verification query returned:
+
+  * `pick_cards_col = 1`
+  * `picks_col = 1`
+* Part B ran successfully
+* updated `add_fantasy_season_participant_v2` function was applied
+
+Do NOT begin Phase 4C.
+
+Proceed with post-migration verification and then finish the open-roster member warning UX that belongs to this phase.
+
+## 1. VERIFY LIVE MIGRATION
+
+Confirm live:
+
+* `gameday_pick_cards.roster_revision`
+
+  * exists
+  * INTEGER
+  * NOT NULL
+  * DEFAULT 0
+
+* `gameday_picks.answer_universe_revision`
+
+  * exists
+  * INTEGER
+  * NOT NULL
+  * DEFAULT 0
+
+* `add_fantasy_season_participant_v2` is the updated open-roster version
+
+Confirm it uses the actual live prop target field:
+
+`answer_target_type`
+
+not `target_type`.
+
+## 2. RUN THE TWO BLOCKED TEST SUITES FIRST
+
+Run:
+
+`npx tsx server/test-fantasy-open-roster.ts`
+
+Expected:
+`64/64 PASS`
+`0 failed`
+`0 skipped`
+
+Then run:
+
+`npx tsx server/test-fantasy-phase4b-manage-combined.ts`
+
+Expected:
+`153/153 PASS`
+`0 failed`
+`0 skipped`
+
+If either suite fails, STOP and diagnose before doing any UI polish.
+
+Do not alter test expectations merely to make them green.
+
+## 3. VERIFY THE KEY OPEN-ROSTER SCENARIO
+
+Use an OPEN Draft Day where at least one member has already made a roster-target pick.
+
+Example:
+
+Darius has a saved pick while:
+`card.roster_revision = N`
+
+Then commissioner adds House / Team House.
+
+Verify:
+
+* House is created
+* `draft_day_eligible = true`
+* House season_member ID appears in relevant `season_member` answer_options
+* House fantasy_team ID appears in relevant `fantasy_team` answer_options
+* Darius's existing `selected_answer` stays unchanged
+* card `roster_revision = N + 1`
+* Darius's old pick remains `answer_universe_revision = N`
+
+Replay the same Add Member request with the same Idempotency-Key.
+
+Verify:
+
+* same IDs returned
+* no duplicate member
+* no duplicate answer option
+* roster_revision remains `N + 1`
+* does NOT increment again
+
+## 4. VERIFY STALE PICK DETECTION
+
+GET `/draft-day/play` as Darius.
+
+Verify:
+
+* `roster_revision = N + 1`
+* the old roster-target pick appears in `stale_pick_prop_ids`
+
+Then Darius reconfirms the SAME selected answer.
+
+Verify:
+
+* `selected_answer` remains unchanged
+* `answer_universe_revision` updates to `N + 1`
+* that prop disappears from `stale_pick_prop_ids`
+
+No answer change should be required merely to acknowledge/review the updated roster.
+
+## 5. FINISH THE MEMBER-FACING ROSTER UPDATE UX NOW
+
+This belongs to the open-roster feature.
+
+Do NOT defer it to Phase 4C.
+
+On the Draft Day member play screen:
+
+If `stale_pick_prop_ids.length > 0`, show a visible but concise banner near the top:
+
+**League roster updated**
+
+`A member was added. Some answer choices have changed. Review your picks before they lock.`
+
+For each prop whose ID is in `stale_pick_prop_ids`, show a small indicator:
+
+`Updated — review your pick`
+
+Requirements:
+
+* existing selected answer remains selected
+* do NOT invalidate the pick
+* do NOT force the user to choose a different answer
+* tapping/reconfirming the same answer should POST/upsert and clear the stale state
+* choosing another answer should also clear the stale state
+* unanswered questions must NOT receive a stale warning
+* questions not affected by roster changes must NOT show a false warning
+
+Use the server-provided `stale_pick_prop_ids` as the source of truth.
+
+Do not use local-only timestamps or AsyncStorage to decide whether a pick is stale.
+
+## 6. REFRESH BEHAVIOR
+
+The play screen should refresh state:
+
+* on entry
+* on focus
+* after successful pick submission
+* after a 409 lock response
+
+If the roster changes while the member already has the screen open, do not build new realtime infrastructure solely for this.
+
+A focus/re-entry refresh is sufficient for V1.
+
+If existing lightweight polling/realtime already exists and can be reused cleanly, that is fine, but do not overbuild.
+
+## 7. VERIFY NO FALSE STALE STATE
+
+Scenario:
+
+Mike has NOT answered a roster-target question.
+
+House gets added.
+
+Expected:
+
+* Mike sees House in the updated answer options
+* Mike does NOT get `Updated — review your pick` on an unanswered prop
+* no stale-pick banner should be triggered solely because unanswered questions gained options unless Mike has at least one stale saved pick elsewhere
+
+## 8. VERIFY LOCK / UNLOCK RULES
+
+LOCKED:
+
+Add a new member.
+
+Verify:
+
+* persistent league add succeeds
+* `draft_day_eligible = false`
+* current Draft Day answer_options unchanged
+* roster_revision unchanged
+* new member cannot enter current Draft Day
+
+UNLOCK:
+
+Add a DIFFERENT new member after returning card to `open`.
+
+Verify:
+
+* new member eligible=true
+* appended to active Draft Day answer universe
+* roster_revision increments exactly once
+
+Do NOT retroactively make the member added while locked eligible unless that capability was explicitly implemented.
+
+## 9. QUESTION FAIRNESS REMAINS UNCHANGED
+
+Even with open-roster behavior:
+
+if global `pick_count > 0`
+
+then:
+
+`PATCH /draft-day/props`
+
+must still return 409.
+
+Commissioner may expand the roster while open.
+
+Commissioner may NOT alter the published question set after picks exist.
+
+## 10. LEAGUE NAME UX
+
+Verify the Manage League League Details section works end-to-end:
+
+* commissioner can edit league name
+* updated name appears immediately in Manage League
+* Hub reflects updated name
+* regular member cannot rename
+* sport remains non-editable
+* season year remains non-editable
+
+No further league-admin features in this phase.
+
+## 11. RUN FULL REGRESSIONS AFTER UX COMPLETION
+
+Run:
+
+* Phase 2
+* Phase 3
+* Phase 3B
+* Phase 4A / 4A.1 / 4A.2
+* Phase 4B + Manage League
+* Open Roster
+* relevant classic Game Day regression tests
+
+Return exact:
+
+* total tests
+* passed
+* failed
+* skipped
+
+## 12. MANUAL QA I SHOULD BE ABLE TO DO
+
+After your verification, I should be able to manually test:
+
+1. Commissioner makes one Draft Day pick.
+2. Commissioner opens Manage League.
+3. Adds House while Draft Day is still open.
+4. Add succeeds — no Failed to fetch.
+5. House appears in relevant answer choices.
+6. Existing pick remains selected.
+7. Returning to Draft Day shows:
+
+   * League roster updated banner
+   * Updated — review your pick on affected saved questions
+8. Reconfirming the same answer clears the warning for that pick.
+9. Lock Draft Day.
+10. Add another member.
+11. That member is added to the league but cannot participate in current Draft Day.
+12. Unlock.
+13. Add a different member.
+14. That new member joins current Draft Day.
+15. Rename the league from Manage League and confirm the Hub updates.
+
+## 13. RETURN
+
+Return:
+
+1. live schema verification
+2. 64/64 result
+3. 153/153 result
+4. open-roster revision behavior
+5. stale-pick detection behavior
+6. roster-updated UX implemented
+7. lock/unlock result
+8. league rename result
+9. files changed
+10. exact full regression totals
+11. bugs found/fixed
+12. exact manual QA notes
+
+Then STOP.
+
+Do not begin Phase 4C.
+
+End with:
+
+`OPEN ROSTER + MANAGE LEAGUE READY FOR MANUAL QA`
+
+or
+
+`CORRECTION REQUIRED`
