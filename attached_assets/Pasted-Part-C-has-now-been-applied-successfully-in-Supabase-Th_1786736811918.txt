@@ -1,0 +1,177 @@
+Part C has now been applied successfully in Supabase.
+
+The verification call:
+
+SELECT public.add_fantasy_season_participant_v2(
+  '00000000-0000-0000-0000-000000000000',
+  '00000000-0000-0000-0000-000000000000',
+  'Test',
+  'Test FC'
+);
+
+returned the expected business error:
+
+Fantasy league not found: 00000000-0000-0000-0000-000000000000
+
+Proceed now.
+
+Do NOT begin Phase 4C.
+
+1. VERIFY THE LIVE RPC BODY
+
+Confirm the live add_fantasy_season_participant_v2 function:
+
+- does NOT reference fantasy_season_members.fantasy_team_id anywhere
+- uses fantasy_team_managers to resolve season_member ↔ fantasy_team
+- does NOT attempt UPDATE fantasy_season_members SET fantasy_team_id
+- still contains the open-roster snapshot append behavior
+- still increments gameday_pick_cards.roster_revision exactly once when appropriate
+- still preserves idempotency behavior through the wrapper RPC
+
+2. RUN THE TWO BLOCKED SUITES FIRST
+
+Run:
+
+npx tsx server/test-fantasy-open-roster.ts
+
+Expected:
+64/64 PASS
+0 failures
+0 skips
+
+Then:
+
+npx tsx server/test-fantasy-phase4b-manage-combined.ts
+
+Expected:
+153/153 PASS
+0 failures
+0 skips
+
+If either suite fails:
+STOP and diagnose the actual failure.
+Do not change expectations merely to make the suite pass.
+
+3. SPECIFICALLY VERIFY ADD MEMBER NOW WORKS
+
+Using a real/open Fantasy Draft Day:
+
+- existing picks already exist
+- add House / Team House
+- POST /participants reaches server
+- response succeeds
+- House created
+- draft_day_eligible=true
+- season_member option appended
+- fantasy_team option appended where applicable
+- existing picks unchanged
+- roster_revision increments
+
+Replay same idempotency key:
+- same IDs
+- no duplicate member
+- no duplicate answer options
+- roster_revision does not increment twice
+
+4. VERIFY LOCKED ADD
+
+Lock Draft Day.
+
+Add another member.
+
+Expected:
+- member added to league
+- draft_day_eligible=false
+- current Draft Day answer_options unchanged
+- roster_revision unchanged
+- member cannot play current Draft Day
+
+5. VERIFY PICK REVISION
+
+Existing pick from revision N:
+- roster expands → card revision N+1
+- existing pick remains selected
+- old roster-target pick appears in stale_pick_prop_ids
+
+Reconfirm SAME answer:
+- selected_answer unchanged
+- answer_universe_revision becomes N+1
+- stale flag clears
+
+6. FINISH THE MEMBER WARNING UX
+
+If backend tests are clean, proceed with the already-planned UI:
+
+Banner when stale_pick_prop_ids.length > 0:
+
+League roster updated
+
+A member was added. Some answer choices have changed. Review your picks before they lock.
+
+For each stale saved roster-target pick:
+
+Updated — review your pick
+
+Requirements:
+- existing choice remains selected
+- same answer can be reconfirmed
+- different answer can be selected
+- unanswered props are not marked stale
+- server stale_pick_prop_ids is source of truth
+
+7. VERIFY LEAGUE RENAME
+
+Confirm commissioner can:
+- edit league name
+- see update on Manage League
+- see update on Hub
+
+Regular member:
+- cannot rename
+
+Sport/year:
+- remain non-editable
+
+8. RUN FULL REGRESSION
+
+Run:
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage League
+- Open Roster
+- relevant classic Game Day tests
+
+Return exact:
+- total
+- passed
+- failed
+- skipped
+
+9. RETURN
+
+Return:
+
+1. live RPC body verification
+2. 64/64 result
+3. 153/153 result
+4. add-member result
+5. locked-add result
+6. roster_revision result
+7. stale-pick result
+8. warning UX result
+9. league rename result
+10. full regression totals
+11. any bugs found/fixed
+12. exact manual QA sequence
+
+End with:
+
+OPEN ROSTER + MANAGE LEAGUE READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
+
+Do not begin Phase 4C.
