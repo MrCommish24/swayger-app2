@@ -2243,20 +2243,35 @@ export function registerFantasyRoutes(app: Express) {
       const roomId = (room as any).id as string;
 
       // ── Find the pick card ────────────────────────────────────────────────────
-      const { data: card } = await supabase
-        .from("gameday_pick_cards")
-        .select("id, status, roster_revision")
-        .eq("room_id", roomId)
-        .eq("phase", "draft_day")
-        .maybeSingle();
+      // roster_revision added by Migration 002 — fall back to base select if not yet applied.
+      let card: Record<string, any> | null = null;
+      let migration002Applied = false;
+      {
+        const { data: d1, error: e1 } = await supabase
+          .from("gameday_pick_cards")
+          .select("id, status, roster_revision")
+          .eq("room_id", roomId)
+          .eq("phase", "draft_day")
+          .maybeSingle();
+        if (!e1) { card = d1 as any; migration002Applied = true; }
+        else {
+          const { data: d2 } = await supabase
+            .from("gameday_pick_cards")
+            .select("id, status")
+            .eq("room_id", roomId)
+            .eq("phase", "draft_day")
+            .maybeSingle();
+          card = d2 as any;
+        }
+      }
 
       if (!card) {
         res.status(404).json({ error: "Draft Day card not found." });
         return;
       }
 
-      const cardStatus        = (card as any).status as string;
-      const cardRosterRevision = (card as any).roster_revision ?? 0;
+      const cardStatus         = card.status as string;
+      const cardRosterRevision = card.roster_revision ?? 0;
 
       // ── Eligibility guard — late "Add to League Only" members cannot play ────────
       if (!viewer.draft_day_eligible) {
@@ -2304,13 +2319,25 @@ export function registerFantasyRoutes(app: Express) {
       );
 
       // ── Fetch this participant's picks ────────────────────────────────────────
-      const { data: rawPicks } = propIds.length > 0
-        ? await supabase
+      // answer_universe_revision added by Migration 002 — fall back if not yet applied.
+      let rawPicks: any[] = [];
+      if (propIds.length > 0) {
+        const { data: rp1, error: rpErr } = await supabase
+          .from("gameday_picks")
+          .select("prop_id, selected_answer, answer_universe_revision")
+          .in("prop_id", propIds)
+          .eq("participant_id", participantId);
+        if (!rpErr) {
+          rawPicks = (rp1 ?? []) as any[];
+        } else {
+          const { data: rp2 } = await supabase
             .from("gameday_picks")
-            .select("prop_id, selected_answer, answer_universe_revision")
+            .select("prop_id, selected_answer")
             .in("prop_id", propIds)
-            .eq("participant_id", participantId)
-        : { data: [] };
+            .eq("participant_id", participantId);
+          rawPicks = (rp2 ?? []) as any[];
+        }
+      }
 
       const myPicks: Record<string, string> = {};
       const stalePropIds: string[] = [];
@@ -2434,20 +2461,35 @@ export function registerFantasyRoutes(app: Express) {
       const roomId = (room as any).id as string;
 
       // ── Find pick card — must be open ─────────────────────────────────────────
-      const { data: card } = await supabase
-        .from("gameday_pick_cards")
-        .select("id, status, roster_revision")
-        .eq("room_id", roomId)
-        .eq("phase", "draft_day")
-        .maybeSingle();
+      // roster_revision added by Migration 002 — fall back to base select if not yet applied.
+      let card: Record<string, any> | null = null;
+      let migration002Applied = false;
+      {
+        const { data: d1, error: e1 } = await supabase
+          .from("gameday_pick_cards")
+          .select("id, status, roster_revision")
+          .eq("room_id", roomId)
+          .eq("phase", "draft_day")
+          .maybeSingle();
+        if (!e1) { card = d1 as any; migration002Applied = true; }
+        else {
+          const { data: d2 } = await supabase
+            .from("gameday_pick_cards")
+            .select("id, status")
+            .eq("room_id", roomId)
+            .eq("phase", "draft_day")
+            .maybeSingle();
+          card = d2 as any;
+        }
+      }
 
       if (!card) {
         res.status(404).json({ error: "Draft Day card not found." });
         return;
       }
 
-      const cardStatus        = (card as any).status as string;
-      const cardRosterRevision = (card as any).roster_revision ?? 0;
+      const cardStatus         = card.status as string;
+      const cardRosterRevision = card.roster_revision ?? 0;
 
       if (cardStatus !== "open") {
         res.status(409).json({
@@ -2496,18 +2538,19 @@ export function registerFantasyRoutes(app: Express) {
       // ── Upsert pick via UNIQUE (prop_id, participant_id) ──────────────────────
       // answer_universe_revision captures the card's roster_revision at pick time.
       // The play state uses this to flag picks that pre-date a roster expansion.
+      // Only included when Migration 002 is confirmed applied (migration002Applied=true).
+      const pickPayload: Record<string, any> = {
+        prop_id:         prop_id,
+        participant_id:  participantId,
+        selected_answer: selected_answer,
+        submitted_at:    new Date().toISOString(),
+      };
+      if (migration002Applied) {
+        pickPayload.answer_universe_revision = cardRosterRevision;
+      }
       const { data: upserted, error: upsertErr } = await supabase
         .from("gameday_picks")
-        .upsert(
-          {
-            prop_id:                  prop_id,
-            participant_id:           participantId,
-            selected_answer:          selected_answer,
-            submitted_at:             new Date().toISOString(),
-            answer_universe_revision: cardRosterRevision,
-          },
-          { onConflict: "prop_id,participant_id" }
-        )
+        .upsert(pickPayload, { onConflict: "prop_id,participant_id" })
         .select("id, prop_id, selected_answer")
         .single();
 

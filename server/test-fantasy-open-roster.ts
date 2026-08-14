@@ -26,7 +26,8 @@ import * as crypto from "crypto";
 const SUPABASE_URL  = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY      = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-const BASE_URL      = `https://${process.env.REPLIT_DEV_DOMAIN ?? "localhost:3001"}`;
+const BASE_URL  = process.env.TEST_API_URL ?? "http://localhost:5000";
+const LOCAL_URL = BASE_URL; // same — both hit the backend directly
 
 const RUN_ID = crypto.randomBytes(6).toString("hex");
 
@@ -108,11 +109,12 @@ async function api(
 }
 
 // ── OPTIONS helper (CORS preflight) ──────────────────────────────────────────
+// Uses LOCAL_URL to bypass the Replit proxy, which does not forward OPTIONS requests.
 async function options(path: string, requestHeaders: string): Promise<Response> {
-  return fetch(`${BASE_URL}${path}`, {
+  return fetch(`${LOCAL_URL}${path}`, {
     method: "OPTIONS",
     headers: {
-      "Origin": "https://example.com",
+      "Origin": "http://localhost:8081",
       "Access-Control-Request-Method": "POST",
       "Access-Control-Request-Headers": requestHeaders,
     },
@@ -321,22 +323,24 @@ async function main() {
   // Publish Draft Day
   {
     const tplR = await api(`${base}/draft-day/templates`, { token: commToken });
-    if (tplR.status !== 200) {
+    if (tplR.status !== 200 || !Array.isArray(tplR.body.competition)) {
       ko("Get templates → 200", JSON.stringify(tplR.body));
       await cleanup();
       process.exit(1);
     }
-    // Prefer season_member props for stale-pick testing; fall back to any
+    // Pick 3 competition + 2 season templates (mirroring combined test)
+    const compIds: string[] = (tplR.body.competition as any[]).slice(0, 3).map((t: any) => t.id);
+    const seasIds: string[] = (tplR.body.season as any[]).slice(0, 2).map((t: any) => t.id);
     const allProps: any[] = [
-      ...(tplR.body.season?.props ?? []),
-      ...(tplR.body.competition?.props ?? []),
+      ...(tplR.body.competition as any[]),
+      ...(tplR.body.season as any[]),
     ];
     if (allProps.length === 0) {
       ko("Templates available for Draft Day publish", "No props returned");
       await cleanup();
       process.exit(1);
     }
-    publishedTemplateIds = allProps.slice(0, Math.min(3, allProps.length)).map((p: any) => p.id);
+    publishedTemplateIds = [...compIds, ...seasIds];
 
     const pubR = await api(`${base}/draft-day/publish`, {
       method: "POST", token: commToken,

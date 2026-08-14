@@ -1,0 +1,204 @@
+Migration 002_open_roster.sql has now been applied manually in the live Supabase project.
+
+Do not begin Phase 4C.
+
+Run the complete post-migration verification.
+
+1. VERIFY LIVE SCHEMA
+
+Confirm live:
+
+- gameday_pick_cards.roster_revision exists
+  - INTEGER
+  - NOT NULL
+  - DEFAULT 0
+
+- gameday_picks.answer_universe_revision exists
+  - INTEGER
+  - NOT NULL
+  - DEFAULT 0
+
+- add_fantasy_season_participant_v2 is the new open-roster definition
+
+Confirm the RPC uses the actual live Fantasy prop targeting column:
+
+answer_target_type
+
+NOT target_type.
+
+2. VERIFY OPEN-ROSTER BEHAVIOR
+
+Test with an OPEN Draft Day that already has picks.
+
+Existing member Darius:
+- has at least one saved pick
+
+Then commissioner adds House / Team House.
+
+Prove:
+
+- House created
+- draft_day_eligible=true
+- House season_member ID appended to relevant published answer_options
+- Team House fantasy_team ID appended to relevant team-target answer_options
+- Darius's existing selected_answer values unchanged
+- no existing option lost
+- no duplicate option IDs
+- no_one preserved
+- question set unchanged
+- roster_revision increments exactly once
+
+Replay the Add Member operation using the same Idempotency-Key.
+
+Prove:
+
+- same member IDs returned
+- no duplicate member
+- no duplicate answer options
+- roster_revision does NOT increment a second time
+
+3. VERIFY PICK REVISION
+
+Before roster expansion:
+
+card.roster_revision = N
+Darius pick.answer_universe_revision = N
+
+Add House:
+
+card.roster_revision = N+1
+Darius saved pick remains at N
+
+GET /draft-day/play should report that roster-target pick in:
+
+stale_pick_prop_ids
+
+Then Darius reconfirms the SAME answer.
+
+Prove:
+
+- selected_answer stays the same
+- answer_universe_revision becomes N+1
+- prop disappears from stale_pick_prop_ids
+
+This should count as "reviewed" without requiring a different answer.
+
+4. VERIFY NO FALSE WARNING
+
+Mike has no prior pick for a roster-target prop.
+
+After House is added:
+
+- Mike sees House in current answer options
+- Mike does NOT get a stale-pick marker for an unanswered question
+
+5. VERIFY LOCK / UNLOCK
+
+LOCKED:
+
+Add another member.
+
+Prove:
+- member can join persistent league
+- draft_day_eligible=false
+- current Draft Day answer_options unchanged
+- roster_revision unchanged
+- member cannot enter current Draft Day play
+
+Then unlock the Draft Day and add a DIFFERENT new member.
+
+Per current V1 rule:
+
+OPEN again
+→ member eligible=true
+→ included in current Draft Day
+→ roster_revision increments
+
+Do not retroactively make the previously locked league-only member eligible unless that behavior was explicitly implemented.
+
+Report this distinction.
+
+6. VERIFY QUESTION FAIRNESS
+
+Even though the roster may expand while open:
+
+if global pick_count > 0
+→ PATCH /draft-day/props still returns 409
+
+The commissioner may NOT change the question set.
+
+This invariant must remain intact.
+
+7. VERIFY CORS
+
+Run a browser-style OPTIONS preflight to POST /participants requesting:
+
+Idempotency-Key
+
+Confirm:
+- OPTIONS succeeds
+- Access-Control-Allow-Headers contains Idempotency-Key
+- actual POST reaches Express
+
+8. VERIFY LEAGUE RENAME
+
+Commissioner:
+PATCH /api/fantasy/leagues/:leagueId
+{ league_name: "New League Name" }
+
+Prove:
+- 200
+- Fantasy League Hub reflects new name
+- Manage League reflects new name
+- regular member → 403
+- no auth → 401
+- blank name → 400
+- sport unchanged
+- season year unchanged
+- finalized historical competition records are not rewritten
+
+9. RUN ALL TEST SUITES
+
+Run:
+
+- server/test-fantasy-open-roster.ts
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A / 4A.1 / 4A.2
+- Phase 4B + Manage League
+- relevant classic Game Day regressions
+
+Return exact:
+
+- total
+- passed
+- failed
+- skipped
+
+10. RETURN
+
+Return:
+
+1. live migration verification
+2. actual answer-target column confirmed
+3. CORS result
+4. open-roster result
+5. idempotent replay / roster_revision result
+6. stale-pick revision result
+7. lock/unlock result
+8. question-set fairness result
+9. league rename result
+10. exact regression totals
+11. bugs found/fixed
+12. exact manual QA sequence for me
+
+End with:
+
+OPEN ROSTER READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
+
+Do not begin Phase 4C.
