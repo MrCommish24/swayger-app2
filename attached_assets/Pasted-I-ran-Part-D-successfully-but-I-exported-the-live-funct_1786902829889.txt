@@ -1,0 +1,174 @@
+I ran Part D successfully, but I exported the live function body from Supabase afterward.
+
+The attached live `prosrc` proves the wrong function body is STILL installed.
+
+The live body still contains:
+
+SELECT sm.id, sm.fantasy_team_id
+
+FROM fantasy_season_members sm
+
+and:
+
+UPDATE fantasy_season_members
+SET fantasy_team_id = v_team_id
+WHERE id = v_season_member_id;
+
+Those columns do not exist and were supposed to be removed.
+
+Therefore Part D did NOT install the corrected v2 function body.
+
+STOP.
+
+Do not create Part E yet.
+Do not begin Phase 4C.
+Do not ask me to rerun Part D unchanged.
+
+We need to resolve the function-overload/signature problem definitively.
+
+1. LIST EVERY LIVE OVERLOAD
+
+Run a catalog query against the live DB and return ALL functions named:
+
+public.add_fantasy_season_participant_v2
+
+For each return:
+
+- oid
+- pg_get_function_identity_arguments(oid)
+- pg_get_function_arguments(oid)
+- pg_get_function_result(oid)
+- prosrc
+
+Also list:
+
+public.add_fantasy_season_participant_idempotent
+
+with the same information.
+
+We need to know exactly how many overloads exist and which body belongs to each signature.
+
+2. TRACE THE SERVER RPC CALL
+
+Inspect the exact server call:
+
+supabase.rpc("add_fantasy_season_participant_v2", {...})
+
+Return the exact argument names being sent.
+
+Map those argument names to the live PostgreSQL overload that PostgREST resolves.
+
+Do not infer from argument count only.
+
+3. INSPECT PART D ITSELF
+
+Read the complete server/migrations/002_open_roster_part_d.sql.
+
+Confirm whether the CREATE FUNCTION body in that file itself still contains:
+
+sm.fantasy_team_id
+
+or:
+
+UPDATE fantasy_season_members SET fantasy_team_id
+
+If yes:
+→ Part D itself was generated incorrectly.
+→ report that directly.
+
+If no:
+→ prove that Part D targeted a different overload than the live runtime overload.
+
+4. DEFINE THE CORRECT FUNCTION BODY
+
+The correct recovery path must resolve team linkage through:
+
+fantasy_team_managers
+
+Conceptually:
+
+SELECT
+  sm.id,
+  ftm.fantasy_team_id
+INTO
+  v_existing_sm_id,
+  v_existing_team_id
+FROM fantasy_season_members sm
+LEFT JOIN fantasy_team_managers ftm
+  ON ftm.season_member_id = sm.id
+ AND ftm.is_active = true
+WHERE sm.league_season_id = p_league_season_id
+  AND sm.league_member_id = p_league_member_id
+  AND sm.is_active = true
+LIMIT 1;
+
+The new-member path must NOT execute:
+
+UPDATE fantasy_season_members
+SET fantasy_team_id = ...
+
+The relationship is created only through:
+
+INSERT INTO fantasy_team_managers (
+  fantasy_team_id,
+  season_member_id,
+  role,
+  is_active
+)
+
+5. DO NOT TOUCH DATA
+
+No:
+- DELETE
+- UPDATE of business rows
+- DROP TABLE
+- TRUNCATE
+- CASCADE
+
+This is only a function-definition correction.
+
+6. RETURN THE EXACT LIVE SIGNATURE TO REPLACE
+
+Before creating another migration, return:
+
+- exact bad overload identity arguments
+- exact good/desired signature
+- exact argument names used by server
+- whether any obsolete overload should be dropped
+- whether the idempotent wrapper needs to be recreated afterward
+
+7. RETURN A SINGLE CORRECTIVE SQL BLOCK
+
+Once the overload is definitively identified, produce ONE minimal SQL block that:
+
+A. drops only the exact bad overload if necessary
+B. creates the corrected function body
+C. recreates the wrapper only if required
+D. includes a verification SELECT using pg_get_functiondef(...) so I can see the final installed body immediately
+
+Do not include test inserts or throwaway business data.
+
+8. REQUIRED POST-RUN VERIFICATION
+
+The SQL should end with a read-only query that proves the installed function body contains:
+
+fantasy_team_managers
+
+and does NOT contain:
+
+fantasy_season_members.fantasy_team_id
+
+or:
+
+SET fantasy_team_id
+
+Then STOP.
+
+Return:
+
+ROOT CAUSE
+EXACT OVERLOAD
+CORRECTIVE SQL
+POST-RUN VERIFICATION
+
+Do not proceed with tests until I have run the corrected SQL.

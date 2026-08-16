@@ -102,12 +102,15 @@ function PropCard({
   selectedAnswer,
   locked,
   savingAnswerId,
+  isStale,
   onSelect,
 }: {
   prop: DraftDayProp;
   selectedAnswer: string | null;
   locked: boolean;
   savingAnswerId: string | null;
+  /** True when this prop's saved pick predates the latest roster expansion. */
+  isStale: boolean;
   onSelect: (answerId: string) => void;
 }) {
   const options: DraftDayAnswerOption[] = Array.isArray(prop.answer_options)
@@ -117,17 +120,28 @@ function PropCard({
     : [];
 
   return (
-    <View style={[styles.propCard, locked && styles.propCardLocked]}>
+    <View style={[
+      styles.propCard,
+      locked && styles.propCardLocked,
+      isStale && !locked && styles.propCardStale,
+    ]}>
       {/* Question row */}
       <View style={styles.propHeader}>
         <Text style={styles.propQuestion}>{prop.question}</Text>
-        {!locked && selectedAnswer && !savingAnswerId && (
+        {!locked && selectedAnswer && !savingAnswerId && !isStale && (
           <Text style={styles.propSavedBadge}>✓ Saved</Text>
         )}
         {locked && !selectedAnswer && (
           <Text style={styles.noPick}>No pick</Text>
         )}
       </View>
+
+      {/* Stale-pick indicator — only on saved picks that predate roster change */}
+      {isStale && !locked && (
+        <View style={styles.staleIndicator}>
+          <Text style={styles.staleIndicatorText}>↺  Updated — review your pick</Text>
+        </View>
+      )}
 
       {/* Answers */}
       <View style={styles.answerList}>
@@ -142,6 +156,19 @@ function PropCard({
           />
         ))}
       </View>
+    </View>
+  );
+}
+
+// ── Stale-pick banner ────────────────────────────────────────────────────────
+
+function RosterUpdatedBanner() {
+  return (
+    <View style={styles.rosterBanner}>
+      <Text style={styles.rosterBannerTitle}>🔄 League roster updated</Text>
+      <Text style={styles.rosterBannerSub}>
+        A member was added. Some answer choices have changed. Review your picks before they lock.
+      </Text>
     </View>
   );
 }
@@ -169,6 +196,11 @@ export default function DraftDayPlayScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [anyEverSaved, setAnyEverSaved] = useState(false);
 
+  // Server-authoritative stale props set — propIds where a saved pick
+  // predates the latest roster expansion (answer_universe_revision < roster_revision).
+  // Cleared locally on successful pick save; re-synced on every server fetch.
+  const [staleProps, setStaleProps] = useState<Set<string>>(new Set());
+
   const initialFocusRef = useRef(true);
 
   const getAuth = useCallback(
@@ -195,6 +227,8 @@ export default function DraftDayPlayScreen() {
           return merged;
         });
         if (Object.keys(state.my_picks ?? {}).length > 0) setAnyEverSaved(true);
+        // Sync stale props from server — this is the authoritative source of truth
+        setStaleProps(new Set(state.stale_pick_prop_ids ?? []));
       } catch (e: any) {
         setError(e.message ?? "Failed to load Draft Day");
       } finally {
@@ -237,6 +271,15 @@ export default function DraftDayPlayScreen() {
       try {
         await submitDraftDayPick(leagueId, seasonId, propId, answerId, getAuth());
         setAnyEverSaved(true);
+        // Clear local stale flag immediately — the answer_universe_revision is now
+        // up-to-date on the server.  A quiet re-fetch confirms the server agrees.
+        setStaleProps((prev) => {
+          const next = new Set(prev);
+          next.delete(propId);
+          return next;
+        });
+        // Quiet re-fetch to sync server state (stale_pick_prop_ids, roster_revision)
+        fetchPlayState(true);
       } catch (e: any) {
         const msg: string = e.message ?? "";
         if (msg.includes("locked") || msg.includes("Picks are locked")) {
@@ -364,6 +407,9 @@ export default function DraftDayPlayScreen() {
         )}
       </View>
 
+      {/* ── Roster-updated banner (shown when open card has stale picks) ─── */}
+      {staleProps.size > 0 && !isLocked && <RosterUpdatedBanner />}
+
       {/* ── Draft Day Picks (competition scope) ────────────────────────────── */}
       {competitionProps.length > 0 && (
         <View style={styles.section}>
@@ -380,6 +426,7 @@ export default function DraftDayPlayScreen() {
               selectedAnswer={picks[prop.id] ?? null}
               locked={isLocked}
               savingAnswerId={savingMap[prop.id] ?? null}
+              isStale={staleProps.has(prop.id)}
               onSelect={(answerId) => handleSelectAnswer(prop.id, answerId)}
             />
           ))}
@@ -404,6 +451,7 @@ export default function DraftDayPlayScreen() {
               selectedAnswer={picks[prop.id] ?? null}
               locked={isLocked}
               savingAnswerId={savingMap[prop.id] ?? null}
+              isStale={staleProps.has(prop.id)}
               onSelect={(answerId) => handleSelectAnswer(prop.id, answerId)}
             />
           ))}
@@ -457,6 +505,45 @@ const styles = StyleSheet.create({
   progressText:    { fontSize: 13, color: C.textSecondary },
   savedText:       { fontSize: 12, color: "#22c55e", fontWeight: "600" },
   saveErrorText:   { fontSize: 12, color: C.danger, fontWeight: "600" },
+
+  // ── Roster-updated banner ──────────────────────────────────────────────
+  rosterBanner: {
+    backgroundColor: "#1C1400",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#92400E",
+    padding: 14,
+    marginBottom: 20,
+    gap: 4,
+  },
+  rosterBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FCD34D",
+  },
+  rosterBannerSub: {
+    fontSize: 13,
+    color: "#D97706",
+    lineHeight: 18,
+  },
+
+  // ── Per-prop stale indicator ────────────────────────────────────────────
+  propCardStale: {
+    borderColor: "#78350F",
+  },
+  staleIndicator: {
+    backgroundColor: "#1C1400",
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    alignSelf: "flex-start",
+  },
+  staleIndicatorText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FCD34D",
+    letterSpacing: 0.2,
+  },
 
   section:    { marginBottom: 32 },
   sectionHead: { marginBottom: 14, gap: 3 },
