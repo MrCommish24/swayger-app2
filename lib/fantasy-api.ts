@@ -269,6 +269,9 @@ export interface DraftDayStatus {
   room_status: "draft" | "active" | "finalized";
   card_status: "closed" | "open" | "locked" | "settled";
   prop_counts: { competition: number; season: number };
+  // How many competition-scope props have been settled so far.
+  // Used by the hub to drive settlement CTAs and progress display.
+  settled_competition_count: number;
   // Global: total picks submitted by ALL members for this card's props.
   // Used for the fairness invariant — commissioner cannot edit when > 0.
   pick_count: number;
@@ -445,6 +448,144 @@ export async function submitDraftDayPick(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prop_id: propId, selected_answer: selectedAnswer }),
     },
+    auth
+  );
+}
+
+// ── Phase 4C: Draft Day Settlement & Results ──────────────────────────────────
+
+/** A competition prop returned by GET /draft-day/settlement. */
+export interface DraftDaySettlementProp {
+  id: string;
+  question: string;
+  display_order: number;
+  point_value: number;
+  scoring_scope: "competition" | "season";
+  status: "pending" | "settled";
+  correct_answer: string | null;
+  answer_options: DraftDayAnswerOption[];
+}
+
+export interface DraftDaySettlementLeaderboardEntry {
+  participant_id: string;
+  season_member_id: string | null;
+  display_name: string;
+  team_name: string | null;
+  points: number;
+  correct_count: number;
+  rank: number;
+  rank_label: string;
+}
+
+export interface DraftDaySettlementState {
+  room_id: string;
+  card_id: string;
+  card_status: string;
+  room_status: string;
+  competition_props: DraftDaySettlementProp[];
+  settled_count: number;
+  total_competition_count: number;
+  all_settled: boolean;
+  preview_leaderboard: DraftDaySettlementLeaderboardEntry[];
+}
+
+export interface DraftDayResultsPickEntry {
+  prop_id: string;
+  question: string;
+  display_order: number;
+  point_value: number;
+  my_answer_id: string | null;
+  my_answer_label: string | null;
+  correct_answer_id: string | null;
+  correct_answer_label: string | null;
+  is_correct: boolean | null;
+  points_earned: number;
+}
+
+export interface DraftDayResultsLeaderboardEntry {
+  participant_id: string;
+  season_member_id: string | null;
+  display_name: string;
+  team_name: string | null;
+  points: number;
+  correct_count: number;
+  rank: number;
+  rank_label: string;
+}
+
+export interface DraftDayResults {
+  finalized: boolean;
+  league_name?: string | null;
+  season_year?: number | null;
+  winners?: Array<{
+    display_name: string;
+    team_name: string | null;
+    points: number;
+    rank_label: string;
+  }>;
+  leaderboard?: DraftDayResultsLeaderboardEntry[];
+  my_competition_picks?: DraftDayResultsPickEntry[];
+  my_total_points?: number;
+  my_correct_count?: number;
+  my_season_pick_count?: number;
+  season_props_pending_count?: number;
+  total_competition_props?: number;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settlement
+export async function getDraftDaySettlement(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDaySettlementState> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/settlement`,
+    {},
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settle
+export async function settleDraftDayProp(
+  leagueId: string,
+  seasonId: string,
+  propId: string,
+  correctAnswer: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ ok: boolean; idempotent: boolean; prop_id: string; correct_answer: string; scoring_scope: string; card_auto_settled: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/settle`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prop_id: propId, correct_answer: correctAnswer }),
+    },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/finalize
+export async function finalizeDraftDay(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ ok: boolean; already_finalized: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/finalize`,
+    { method: "POST" },
+    auth
+  );
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/results
+export async function getDraftDayResults(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<DraftDayResults> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/results`,
+    {},
     auth
   );
 }

@@ -8,3 +8,4 @@
 - [Gameday Fantasy Manage League](gameday-fantasy-manage-league.md) — Atomic rename RPC, lifecycle-aware add (draft_day_eligible), eligibility 403 guard, PATCH /members endpoint, manage screen. SQL not yet applied.
 - [Gameday Fantasy Idempotency](gameday-fantasy-idempotency.md) — fpo table + idempotent RPC; svc-client session contamination trap (signInWithPassword poisons admin client); CASCADE cleanup pattern; debug_request_role RPC applied.
 - [Gameday Fantasy Open Roster](gameday-fantasy-open-roster.md) — open-card adds always eligible; roster_revision + answer_universe_revision columns; stale-pick detection; PATCH /leagues/:leagueId rename; Migration 002 required.
+- [Gameday Fantasy Phase 4C](gameday-fantasy-phase4c-nav.md) — finalization = room_status='finalized' (NOT card='settled'); SUM(point_value) scoring; settle route supports season props post-finalization; queue exclusion via experience_type.

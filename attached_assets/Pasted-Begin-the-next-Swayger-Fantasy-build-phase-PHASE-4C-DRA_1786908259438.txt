@@ -1,0 +1,1113 @@
+Begin the next Swayger Fantasy build phase:
+
+# PHASE 4C — DRAFT DAY SETTLEMENT, SCORING & WINNER
+
+Phase 4B + Manage League + Open Roster are complete.
+
+Current verified state:
+
+* Fantasy league setup works
+* commissioner/member/guest identity works
+* member claiming works
+* persistent Fantasy leagues/seasons/members/teams work
+* Draft Day setup/publish works
+* Draft Day questions become immutable after first pick
+* Draft Day roster may grow while card.status='open'
+* roster freezes when picks are locked
+* open-roster revision warnings work
+* member picks persist and can be updated while open
+* locked picks are read-only
+* durable Add Member idempotency works
+* Manage League works
+* league rename works
+* Migration 002 is live
+* all six suites are green
+* current total regression result: 483/483 PASS
+
+Do NOT reopen prior architecture.
+
+OBJECTIVE
+
+Complete the Draft Day payoff loop:
+
+Draft Day picks
+→ commissioner locks
+→ commissioner resolves objective Draft Day questions
+→ Swayger scores competition-scope picks using each prop's point_value
+→ Draft Day leaderboard is calculated
+→ Draft Day winner is declared
+→ results remain stable historically
+
+Season Receipts must remain pending for later season settlement.
+
+Do NOT build Week 1 or full season standings yet.
+
+==================================================
+
+1. START WITH AN ARCHITECTURE INSPECTION
+   ==================================================
+
+Before coding, inspect the existing Game Day settlement/scoring engine.
+
+Specifically inspect:
+
+* gameday_rooms
+* gameday_pick_cards
+* gameday_props
+* gameday_picks
+* gameday_participants
+* settlement helpers
+* canonical normalization
+* per-room settlement routes
+* global settlement routes
+* finalize-room logic
+* leaderboard calculations
+* receipt/final standings logic
+
+Known existing infrastructure includes:
+
+* per-room settlement
+* canonical settlement helpers
+* global settlement grouping
+* settlement queue
+* settle-group
+* existing Game Day finalization
+* existing leaderboard/final standings code
+* historical scoring assumptions of correct picks × 10
+
+Do not duplicate working settlement infrastructure unnecessarily.
+
+Return internally which existing pieces can be reused cleanly for Fantasy Draft Day and which require Fantasy-specific behavior.
+
+Then implement.
+
+==================================================
+2. CORE SCORING RULE
+====================
+
+Fantasy Draft Day scoring must use:
+
+SUM(point_value for each correct competition-scope pick)
+
+NOT:
+
+correct picks × 10
+
+Each published gameday_prop already has:
+
+point_value
+
+Use the published prop snapshot as authoritative.
+
+For legacy non-Fantasy Game Day behavior:
+
+preserve current 10-point behavior where appropriate.
+
+Do not accidentally change classic Game Day scoring unless the generalized point_value behavior is explicitly backward-compatible.
+
+Audit every existing location that currently calculates:
+
+correct_count * 10
+
+or equivalent.
+
+Return every location found and how it was handled.
+
+==================================================
+3. TWO SCORING SCOPES MUST REMAIN SEPARATE
+==========================================
+
+Fantasy Draft Day contains:
+
+A. `scoring_scope='competition'`
+
+Examples:
+
+* Who drafts the first QB?
+* Who drafts the most RBs?
+* Who drafts three QBs?
+
+These:
+
+* resolve during/end of Draft Day
+* count toward Draft Day score
+* determine Draft Day winner
+
+B. `scoring_scope='season'`
+
+Season Receipts.
+
+Examples:
+
+* Who finishes first?
+* Who finishes last?
+* Who scores the most points this season?
+
+These:
+
+* were picked on Draft Day
+* are locked with Draft Day
+* remain pending
+* are NOT required to finalize Draft Day
+* contribute ZERO to Draft Day leaderboard
+* do NOT affect Draft Day winner
+* will be settled later in a future phase
+
+This separation is non-negotiable.
+
+==================================================
+4. SETTLEMENT UX — COMMISSIONER
+===============================
+
+Commissioner needs a clean settlement flow after Draft Day picks are locked.
+
+Preferred journey:
+
+Fantasy League Hub
+→ Draft Day card
+→ Picks Locked
+→ [ Resolve Draft Day ]
+
+Resolve Draft Day screen:
+
+FOOD PYRAMID
+Draft Day Results
+
+DRAFT DAY PICKS
+
+Question:
+Who drafted the first QB?
+
+Answer choices:
+○ Mr. Roarke
+○ Mal
+○ Rob
+○ House
+○ No one
+
+Commissioner selects the objectively correct answer.
+
+Then next question.
+
+Season Receipts should NOT appear as settlement-required questions in this Draft Day resolution flow.
+
+Instead show a separate informational section:
+
+SEASON RECEIPTS
+Locked for later
+
+“Season predictions will be settled as the season unfolds.”
+
+Do not ask commissioner to resolve them now.
+
+==================================================
+5. ONLY COMPETITION-SCOPE PROPS ARE REQUIRED
+============================================
+
+Draft Day can be finalized when:
+
+* all `scoring_scope='competition'` props are settled
+
+even if:
+
+* every `scoring_scope='season'` prop remains pending
+
+This will likely require changing existing Game Day finalization assumptions if they currently require every prop in the card/room to be settled.
+
+Make the rule Fantasy-specific where necessary.
+
+Do NOT weaken classic Game Day finalization semantics unintentionally.
+
+==================================================
+6. SEASON RECEIPTS MUST BE SETTLEABLE LATER
+===========================================
+
+Important future-proofing requirement:
+
+Once Draft Day room/card is finalized:
+
+season-scope props must still be capable of being settled later.
+
+Existing Game Day settlement code may currently reject settlement when:
+
+room.status='finalized'
+
+or
+card.status='settled'
+
+Inspect this carefully.
+
+For Fantasy:
+
+finalizing the Draft Day competition must NOT permanently prevent later settlement of season-scope props.
+
+Design the lifecycle so:
+
+Draft Day competition finalized
++
+Season Receipts still pending
+
+is a valid state.
+
+Later:
+
+individual season-scope props may transition:
+pending → settled
+
+without reopening/recalculating the Draft Day winner.
+
+Do not build full end-of-season UI now.
+
+But the data model/API must not make later settlement impossible.
+
+==================================================
+7. DRAFT DAY WINNER MUST BECOME HISTORICALLY STABLE
+===================================================
+
+Once Draft Day is finalized:
+
+the Draft Day leaderboard/winner must NOT change later when Season Receipts settle.
+
+Example:
+
+Draft Day:
+Darius = 50
+Mike = 40
+
+Darius wins Draft Day.
+
+Months later Mike gets 30 points from correct Season Receipts.
+
+That must NOT change the historical Draft Day winner.
+
+Therefore:
+
+Draft Day leaderboard must always filter:
+
+scoring_scope='competition'
+
+Future season standings will separately include appropriate season/competition totals.
+
+Do not derive Draft Day winner from “all correct picks in room.”
+
+==================================================
+8. LEADERBOARD CALCULATION
+==========================
+
+Build a Draft Day-specific leaderboard derived from authoritative source records.
+
+Do NOT create a mutable `fantasy_draft_day_scores` table unless absolutely necessary.
+
+Preferred derived calculation:
+
+for each gameday_participant in Fantasy Draft Day room:
+
+SUM(
+gp.point_value
+where:
+gameday_pick participant matches
+gameday_pick.selected_answer == gameday_prop.correct_answer
+gameday_prop.status='settled'
+gameday_prop.scoring_scope='competition'
+)
+
+Return:
+
+* participant_id
+* season_member_id
+* display_name snapshot/current display behavior
+* fantasy_team_id
+* team_name
+* correct_count
+* total_competition_props
+* points
+
+Sort:
+
+1. points DESC
+2. define deterministic tie behavior
+
+Do not silently invent a complex tiebreaker.
+
+For V1, tied points may display:
+
+T-1
+T-1
+
+and allow co-winners.
+
+If current Game Day has a standard tie behavior, inspect and reuse if sensible.
+
+==================================================
+9. PARTICIPANTS WITH PARTIAL PICKS
+==================================
+
+Partial participation is already allowed.
+
+Leaderboard must handle:
+
+* participant answered every prop
+* participant answered only some
+* participant answered none
+
+If participant entered Draft Day but answered nothing:
+
+* decide whether they appear with 0 points
+
+My preference:
+show actual Draft Day participants who have at least one saved competition-scope pick.
+
+Do not clutter the leaderboard with claimed league members who never played.
+
+Inspect existing Game Day leaderboard semantics before implementing.
+
+==================================================
+10. NO ANSWER / NO_ONE
+======================
+
+Correct-answer settlement uses stable IDs.
+
+If correct answer is:
+
+`no_one`
+
+store exactly:
+
+`"no_one"`
+
+Do not convert to label text.
+
+For member/team answers:
+store the stable ID from published `answer_options`.
+
+Validate commissioner-submitted correct answer against that prop's published `answer_options`.
+
+No fabricated correct answers.
+
+==================================================
+11. SETTLEMENT AUTHORIZATION
+============================
+
+Only commissioner/co-commissioner for that Fantasy season may resolve Draft Day results.
+
+Do not rely merely on:
+
+* room host_user_id
+* league creator
+* generic authenticated status
+
+Use Fantasy commissioner authority:
+
+fantasy_member_claim
+→ league_member
+→ season_member
+→ role commissioner/co_commissioner
+
+Preserve existing admin/global settlement infrastructure separately.
+
+==================================================
+12. SETTLEMENT IDEMPOTENCY
+==========================
+
+Settlement must be safe against:
+
+* double clicks
+* retries
+* repeated submission of the same answer
+
+If existing settlement infrastructure already provides durable idempotency, reuse it.
+
+Do not build another idempotency system if the canonical settlement helper already handles it.
+
+Expected:
+
+settle prop → same result again
+= idempotent success
+
+Attempt to change an already-settled answer:
+
+* do not silently mutate history
+* require an explicit correction/reopen path if such functionality already exists
+* otherwise return conflict
+
+Do NOT build correction UI in this phase unless existing Game Day already supports it cleanly.
+
+==================================================
+13. LOCK BEFORE SETTLEMENT
+==========================
+
+Preferred V1 rule:
+
+Commissioner must lock picks before resolving Draft Day props.
+
+If card.status='open':
+
+[ Resolve Draft Day ]
+
+should not be available.
+
+Commissioner first:
+[ Lock Picks ]
+
+Then:
+[ Resolve Draft Day ]
+
+Server must enforce this too.
+
+Do not rely only on disabled UI.
+
+==================================================
+14. SETTLEMENT PROGRESS
+=======================
+
+Hub Draft Day card lifecycle should evolve approximately:
+
+READY
+Picks Open
+
+→
+
+PICKS LOCKED
+[ Resolve Draft Day ]
+
+→
+
+RESOLVING
+4 of 7 Draft Day results entered
+[ Continue Resolving ]
+
+→
+
+RESULTS READY
+[ View Draft Day Results ]
+
+Season Receipts should not make it look incomplete.
+
+Progress denominator = competition-scope props only.
+
+==================================================
+15. FINALIZATION
+================
+
+When all competition-scope props are settled:
+
+commissioner can:
+
+[ Finalize Draft Day ]
+
+Confirmation:
+
+“Finalize Draft Day results?
+
+This will lock the Draft Day winner and standings. Season Receipts will remain pending and be settled later.”
+
+Then finalize.
+
+After finalization:
+
+* Draft Day result/winner visible
+* competition picks remain historical/read-only
+* competition correct answers remain historical
+* season-scope props remain pending
+* season-scope picks remain historical/locked
+* later season-scope settlement remains possible
+
+Do not mark every season prop settled.
+
+==================================================
+16. DRAFT DAY RESULTS SCREEN
+============================
+
+Create a member-facing results experience.
+
+Preferred:
+
+FOOD PYRAMID
+Draft Day Results
+
+🏆 DRAFT DAY CHAMPION
+
+Darius
+The Monstars
+60 points
+
+Leaderboard:
+
+1. Darius — The Monstars — 60
+2. Mike — Sunday Scaries — 50
+3. Chris — Fourth & Long — 30
+
+Then:
+
+YOUR PICKS
+
+Show each competition-scope question:
+
+Who drafted the first QB?
+Your pick: Mike
+Correct answer: Darius
+0 pts
+
+Who drafted the most RBs?
+Your pick: Darius
+Correct answer: Darius
++10 pts
+
+Then separate:
+
+SEASON RECEIPTS 🔒
+
+“Still pending. We’ll bring these receipts back later.”
+
+Do not reveal other members' individual picks unless already intended by current Game Day behavior.
+
+==================================================
+17. RESULTS BEFORE FINALIZATION
+===============================
+
+Commissioner may need to preview standings while resolving.
+
+Members should NOT see partially-settled live standings unless we explicitly decide that.
+
+V1 recommendation:
+
+* commissioner can see settlement progress / preview
+* members continue to see Picks Locked
+* member Results CTA appears only after finalization
+
+This avoids weird partial leaderboards.
+
+==================================================
+18. HUB CTA BEHAVIOR
+====================
+
+Fantasy League Hub Draft Day card should support:
+
+OPEN:
+Member:
+[ Make My Picks ] / [ View / Update My Picks ]
+
+Commissioner additionally:
+[ Manage Draft Day ]
+[ Lock Picks ]
+
+LOCKED + competition props unresolved:
+Member:
+[ View My Picks ]
+
+Commissioner additionally:
+[ Resolve Draft Day ]
+
+PARTIALLY RESOLVED:
+Commissioner:
+[ Continue Resolving ]
+
+Member:
+[ View My Picks ]
+
+ALL COMPETITION PROPS RESOLVED, NOT FINALIZED:
+Commissioner:
+[ Review Results ]
+[ Finalize Draft Day ]
+
+FINALIZED:
+Everyone:
+[ View Draft Day Results ]
+
+Do not overload Manage League with these actions.
+
+==================================================
+19. REWARD DISPLAY
+==================
+
+Reward tracking is still display-only.
+
+If the Draft Day room/competition has a reward field configured, results screen may show:
+
+Prize:
+$50
+or
+Winner gets dinner
+etc.
+
+Do NOT build:
+
+* payment processing
+* payout confirmation
+* winner payment tracking
+
+If Draft Day currently has no specific reward override and only the season default exists, do not invent reward semantics.
+
+Report current behavior and use only established fields.
+
+==================================================
+20. VARIABLE POINT_VALUE AUDIT
+==============================
+
+This is critical.
+
+Search the codebase for every location where Game Day points are calculated using:
+
+* `* 10`
+* `correct * 10`
+* hardcoded 10
+* `correct_count`
+* leaderboard score helpers
+
+Return a list.
+
+For Fantasy Draft Day:
+
+use prop.point_value.
+
+For classic Game Day:
+preserve existing behavior.
+
+If generalized point_value can safely replace hardcoded 10 because all legacy props already default to 10, that may be preferable — but prove backward compatibility before making a global change.
+
+Do not casually rewrite the scoring engine.
+
+==================================================
+21. GLOBAL SETTLEMENT INTERACTION
+=================================
+
+Existing Swayger has global settlement/group settlement infrastructure.
+
+Inspect whether Fantasy Draft Day props will appear in:
+
+settlement queue
+global group settlement
+
+Determine desired V1 behavior.
+
+Preferred:
+
+* Fantasy objective Draft Day props may be compatible with existing global settlement infrastructure if identical question/options/group signatures exist
+* but commissioner-specific Fantasy authority and season-scope filtering must remain correct
+
+Do NOT accidentally cause:
+
+global settlement of a season-receipt prop
+or
+global finalization of a Fantasy Draft Day room
+
+unless deliberately supported.
+
+If safest:
+exclude Fantasy Draft Day from global settlement for this phase and use Fantasy-specific commissioner settlement.
+
+Explain the decision.
+
+==================================================
+22. SEASON-SCOPE CORRECT ANSWERS
+================================
+
+Do NOT set:
+
+correct_answer
+
+for season-scope props during Draft Day finalization.
+
+They remain:
+
+status='pending'
+correct_answer=NULL
+
+unless some legacy schema requires another representation.
+
+==================================================
+23. DATA MODEL / NEW SQL
+========================
+
+Inspect whether existing schema is sufficient.
+
+Preferred:
+reuse existing:
+
+* gameday_props.correct_answer
+* gameday_props.status
+* gameday_picks
+* gameday_participants
+* room/card statuses
+
+Avoid new score tables.
+
+Potentially needed:
+
+* explicit Fantasy competition-finalization metadata if existing room/card lifecycle cannot represent:
+  Draft Day finalized + season props pending
+
+Do not invent columns until you prove the existing lifecycle cannot represent this.
+
+If SQL is needed:
+
+* write migration
+* do NOT apply automatically
+* give exact manual Supabase instructions
+
+==================================================
+24. MEMBER RESULTS API
+======================
+
+Likely need a member-safe result endpoint, conceptually:
+
+GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/results
+
+Return only after finalization:
+
+* Draft Day winner(s)
+* leaderboard
+* current viewer's competition picks/results
+* points earned per prop
+* total score
+* season receipt pending summary
+
+Do not leak admin/settlement-only fields unnecessarily.
+
+Before finalization:
+member request should return an appropriate not-ready state.
+
+==================================================
+25. COMMISSIONER SETTLEMENT API
+===============================
+
+Prefer small Fantasy-specific endpoints wrapping existing canonical settlement logic.
+
+Conceptually:
+
+GET /draft-day/settlement
+
+POST /draft-day/settle
+
+POST /draft-day/finalize
+
+But inspect existing route conventions first.
+
+Settlement state should return:
+
+* competition props
+* current status
+* correct answer if already settled
+* progress
+* preview leaderboard for commissioner
+
+Do not include season-scope props in required settlement progress.
+
+==================================================
+26. CORRECT_ANSWER EXPOSURE
+===========================
+
+Before finalization:
+
+member play APIs must continue hiding correct_answer.
+
+Commissioner settlement API may receive/display correct_answer as needed.
+
+After finalization:
+
+member Results API may reveal correct_answer for competition-scope props.
+
+Season-scope props:
+do not reveal correct answer because none exists yet.
+
+==================================================
+27. FINALIZATION AND LATE SETTLEMENT TEST
+=========================================
+
+This is one of the most important architecture tests.
+
+Scenario:
+
+Draft Day has:
+
+7 competition props
+4 season props
+
+Settle all 7 competition props.
+
+Leave all 4 season props pending.
+
+Finalize Draft Day.
+
+Expected:
+
+* finalize succeeds
+* Draft Day leaderboard/winner freezes
+* 4 season props still pending
+* member results available
+* later system/admin can settle a season prop without reopening the Draft Day competition
+* doing so does NOT change Draft Day leaderboard/winner
+
+Even if end-of-season UI is not built, prove the data/API lifecycle supports this.
+
+==================================================
+28. TIES
+========
+
+Handle ties intentionally.
+
+If two participants have equal highest Draft Day points:
+
+Display co-winners or tied ranking.
+
+Example:
+
+🏆 Draft Day Champions
+
+Darius — 60
+Mike — 60
+
+Do not arbitrarily choose one winner by created_at or participant ID unless an explicit tiebreaker exists.
+
+No tiebreaker system in this phase.
+
+==================================================
+29. ZERO / NO CORRECT PICKS
+===========================
+
+Handle:
+
+* nobody gets a question correct
+* participant gets zero points
+* all participants get zero
+* partial participation
+
+Results should remain valid.
+
+If everyone has zero:
+show tied leaderboard appropriately.
+
+Do not fail finalization because nobody scored.
+
+==================================================
+30. TESTING — SETTLEMENT
+========================
+
+New Phase 4C tests should cover:
+
+* non-commissioner cannot settle
+* guest cannot settle
+* commissioner can settle locked competition prop
+* open card settlement rejected
+* correct answer must exist in published answer_options
+* no_one settlement accepted when published
+* fabricated answer rejected
+* season-scope prop rejected by Draft Day settlement endpoint
+* repeated same settlement idempotent
+* attempted change of already-settled answer handled safely
+* competition settlement progress counts competition props only
+
+==================================================
+31. TESTING — SCORING
+=====================
+
+Test:
+
+* correct pick earns prop.point_value
+* incorrect pick earns 0
+* unanswered earns 0
+* two props with different point_values score correctly
+* hardcoded ×10 is NOT used for Fantasy
+* season-scope correct picks contribute 0 to Draft Day leaderboard
+* partial picks score correctly
+* no_one scores correctly
+* tie standings handled correctly
+
+Use at least one fixture where point values are deliberately NOT 10, e.g.:
+
+5
+15
+25
+
+so a hidden ×10 implementation cannot accidentally pass.
+
+==================================================
+32. TESTING — FINALIZATION
+==========================
+
+Test:
+
+* cannot finalize before all competition props settled
+* CAN finalize with season props pending
+* finalization exposes member Results
+* finalized Draft Day competition leaderboard remains stable
+* later season-scope settlement does not alter Draft Day winner
+* competition correct answers remain immutable after finalization
+* picks remain historical
+
+==================================================
+33. TESTING — MEMBER RESULTS
+============================
+
+Test:
+
+* before finalization member results unavailable/not-ready
+* after finalization authenticated member can view
+* guest participant can view their own results
+* winner identified
+* tied winners supported
+* viewer sees their own picks
+* viewer sees correct answers for competition props
+* viewer sees points per prop
+* season receipts shown pending
+* no other member's private individual picks leaked unless explicitly intended
+
+==================================================
+34. TESTING — REGRESSION
+========================
+
+Run:
+
+* Phase 2
+* Phase 3
+* Phase 3B
+* Phase 4A
+* Phase 4B + Manage League
+* Open Roster
+* new Phase 4C
+* relevant classic Game Day settlement tests
+* relevant 1v1 regression checks
+
+Return exact totals.
+
+Do not silently change old test expectations to accommodate regressions.
+
+==================================================
+35. MANUAL QA I SHOULD BE ABLE TO DO
+====================================
+
+COMMISSIONER:
+
+1. Open existing Fantasy League.
+2. Draft Day has member picks.
+3. Lock Picks.
+4. Hub now shows Resolve Draft Day.
+5. Resolve each Draft Day Pick question.
+6. Season Receipts are clearly excluded / shown as pending for later.
+7. Enter at least one `no_one` result if applicable.
+8. See settlement progress.
+9. Finish all competition props.
+10. Preview Draft Day standings.
+11. Finalize Draft Day.
+12. Hub shows View Draft Day Results.
+13. Open Results.
+14. See champion + leaderboard.
+15. See that Season Receipts remain pending.
+
+MEMBER:
+
+1. Before finalization:
+
+   * sees Picks Locked
+   * does not see partial standings.
+2. After finalization:
+
+   * sees View Draft Day Results.
+3. Results show:
+
+   * their final score
+   * each competition question
+   * their pick
+   * correct answer
+   * points earned
+   * Draft Day leaderboard
+   * champion
+4. Season Receipts show pending/locked for later.
+
+GUEST:
+
+1. Guest who made Draft Day picks can return after finalization.
+2. Same Fantasy guest claim resolves.
+3. Guest can view their results.
+4. Guest does not need to create an account.
+
+==================================================
+36. OUT OF SCOPE
+================
+
+Do NOT build:
+
+* Week 1
+* weekly Swaygers
+* full season standings
+* end-of-season Season Receipt UI
+* season-receipt settlement workflow for commissioners
+* payments/payout processing
+* prize tracking
+* QR
+* notifications
+* provider integrations
+* roster imports
+* league removal/deletion
+* new tiebreaker system
+* public pick reveal for all participants
+* social sharing graphics
+
+Those come later.
+
+==================================================
+37. IMPLEMENTATION PROCESS
+==========================
+
+Before changing code:
+
+1. inspect current Game Day settlement architecture
+2. inspect all hardcoded ×10 scoring locations
+3. inspect Fantasy room/card finalization interaction
+4. inspect whether finalized rooms currently block later prop settlement
+5. inspect global settlement interaction
+6. determine whether new SQL is genuinely necessary
+
+If a major architectural conflict is found, STOP and report it before building around it.
+
+Otherwise proceed.
+
+If SQL is required:
+
+* write migration
+* do not apply automatically
+* stop at SQL checkpoint when necessary
+
+==================================================
+RETURN AFTER BUILD
+==================
+
+Return:
+
+1. existing settlement architecture reused
+2. hardcoded scoring audit
+3. Fantasy settlement architecture
+4. competition-vs-season scope behavior
+5. files changed
+6. API changes
+7. SQL/migration required
+8. commissioner settlement UX
+9. scoring implementation
+10. leaderboard/winner implementation
+11. tie behavior
+12. finalization behavior
+13. season-receipt pending/later-settlement behavior
+14. member results behavior
+15. guest results behavior
+16. global-settlement decision
+17. exact test results
+18. regressions
+19. bugs found/fixed
+20. exact manual QA sequence
+21. remaining dependencies before Week 1
+
+Then STOP.
+
+Do not begin weekly Fantasy work.
+
+Final status:
+
+PHASE 4C READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

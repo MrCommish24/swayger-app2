@@ -38,6 +38,7 @@ import {
   getDraftDay,
   lockDraftDay,
   unlockDraftDay,
+  finalizeDraftDay,
   FANTASY_PENDING_UPGRADE_KEY,
   FantasyPendingUpgrade,
   FANTASY_SPORTS,
@@ -65,7 +66,8 @@ const C = Colors.dark;
 //   locked           → View Draft Day (read-only) + Unlock Picks
 //
 // Lock Picks uses inline confirmation UI to avoid Alert.alert web limitations.
-// "Open Draft Day" is disabled until Phase 4B member pick submission is built.
+// Phase 4C: finalized = room_status === 'finalized' (card stays 'locked', NOT 'settled').
+// Settlement CTAs appear for the commissioner when the card is locked.
 interface DraftDayCardProps {
   draftDay: import("@/lib/fantasy-api").DraftDayStatus | null | undefined;
   isCommissioner: boolean;
@@ -75,12 +77,17 @@ interface DraftDayCardProps {
   lockError:        string | null;
   /** Viewer's own pick count — drives the member CTA label. 0 = no picks yet. */
   myPickCount:      number;
-  onSetup:   () => void;
-  onManage:  () => void;
+  finalizingDraftDay: boolean;
+  finalizeError:    string | null;
+  onSetup:       () => void;
+  onManage:      () => void;
   /** Navigate to the member play screen. */
-  onPlay:    () => void;
-  onLock:    () => void; // direct API call, no Alert — called after inline confirm
-  onUnlock:  () => void;
+  onPlay:        () => void;
+  onLock:        () => void; // direct API call, no Alert — called after inline confirm
+  onUnlock:      () => void;
+  onResolve:     () => void; // navigate to settle screen
+  onFinalize:    () => void; // call finalize API (after inline confirm)
+  onViewResults: () => void; // navigate to results screen
 }
 
 function DraftDayCard({
@@ -91,25 +98,41 @@ function DraftDayCard({
   unlockingDraftDay,
   lockError,
   myPickCount,
+  finalizingDraftDay,
+  finalizeError,
   onSetup,
   onManage,
   onPlay,
   onLock,
   onUnlock,
+  onResolve,
+  onFinalize,
+  onViewResults,
 }: DraftDayCardProps) {
-  const [confirmingLock, setConfirmingLock] = React.useState(false);
+  const [confirmingLock, setConfirmingLock]         = React.useState(false);
+  const [confirmingFinalize, setConfirmingFinalize] = React.useState(false);
 
-  // Reset inline confirm when lock succeeds (card becomes locked)
+  // Reset lock confirm when card becomes locked
   React.useEffect(() => {
     if (draftDay?.card_status === "locked") setConfirmingLock(false);
   }, [draftDay?.card_status]);
 
+  // Reset finalize confirm after finalization completes
+  React.useEffect(() => {
+    if (draftDay?.room_status === "finalized") setConfirmingFinalize(false);
+  }, [draftDay?.room_status]);
+
   // Not yet fetched — show nothing to avoid flicker
   if (draftDay === undefined) return null;
 
-  const isLocked    = draftDay?.card_status === "locked";
-  const isFinalized = draftDay?.card_status === "settled";
+  // Phase 4C: finalized = room_status === 'finalized', NOT card_status === 'settled'
+  const isFinalized = draftDay?.room_status === "finalized";
+  const isLocked    = !isFinalized && draftDay?.card_status === "locked";
   const isPublished = !!draftDay;
+
+  const settledCount  = draftDay?.settled_competition_count ?? 0;
+  const totalComp     = draftDay?.prop_counts?.competition ?? 0;
+  const allCompSettled = totalComp > 0 && settledCount === totalComp;
 
   // ── State: Not yet set up ─────────────────────────────────────────────────
   if (!isPublished) {
@@ -135,21 +158,57 @@ function DraftDayCard({
     );
   }
 
-  // ── State: Published (open / locked / finalized) ──────────────────────────
-  const statusColor = isLocked || isFinalized ? C.accentGold : "#22c55e";
-  const statusLabel = isFinalized ? "FINAL" : isLocked ? "LOCKED" : "READY";
-  const cardTitle   = isFinalized ? "Draft Day Complete" : isLocked ? "Picks Locked" : "Draft Day Ready";
+  // ── State: Finalized ─────────────────────────────────────────────────────
+  if (isFinalized) {
+    return (
+      <View style={[styles.draftDayCard, styles.draftDayCardLocked]}>
+        <View style={styles.draftDayHeader}>
+          <Text style={styles.draftDayIcon}>🏆</Text>
+          <View style={styles.draftDayHeaderText}>
+            <Text style={styles.draftDayLabel}>DRAFT DAY SWAYGER</Text>
+            <Text style={styles.draftDayTitle}>Results Ready</Text>
+          </View>
+          <View style={[styles.draftDayStatusBadge, { borderColor: C.accentGold }]}>
+            <View style={[styles.draftDayStatusDot, { backgroundColor: C.accentGold }]} />
+            <Text style={[styles.draftDayStatusText, { color: C.accentGold }]}>FINAL</Text>
+          </View>
+        </View>
+        <View style={styles.draftDayCounts}>
+          <View style={styles.draftDayCount}>
+            <Text style={styles.draftDayCountNum}>{draftDay.prop_counts.competition}</Text>
+            <Text style={styles.draftDayCountLabel}>Draft Day{"\n"}Picks</Text>
+          </View>
+          <View style={styles.draftDayCount}>
+            <Text style={styles.draftDayCountNum}>{draftDay.prop_counts.season}</Text>
+            <Text style={styles.draftDayCountLabel}>Season{"\n"}Receipts</Text>
+          </View>
+        </View>
+        <View style={styles.draftDayActions}>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: "#B45309" }]}
+            onPress={onViewResults}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.btnText}>🏆  View Draft Day Results</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── State: Open or Locked (active) ───────────────────────────────────────
+  const statusColor = isLocked ? C.accentGold : "#22c55e";
+  const statusLabel = isLocked ? "LOCKED" : "READY";
+  const cardTitle   = isLocked ? "Picks Locked" : "Draft Day Ready";
 
   return (
     <View style={[
       styles.draftDayCard,
-      isLocked || isFinalized ? styles.draftDayCardLocked : styles.draftDayCardActive,
+      isLocked ? styles.draftDayCardLocked : styles.draftDayCardActive,
     ]}>
       {/* Header */}
       <View style={styles.draftDayHeader}>
-        <Text style={styles.draftDayIcon}>
-          {isFinalized ? "🏆" : isLocked ? "🔒" : "📋"}
-        </Text>
+        <Text style={styles.draftDayIcon}>{isLocked ? "🔒" : "📋"}</Text>
         <View style={styles.draftDayHeaderText}>
           <Text style={styles.draftDayLabel}>DRAFT DAY SWAYGER</Text>
           <Text style={styles.draftDayTitle}>{cardTitle}</Text>
@@ -175,19 +234,14 @@ function DraftDayCard({
       {/* Actions */}
       <View style={styles.draftDayActions}>
 
-        {/* Member CTA — available to all recognised members (including commissioner) */}
+        {/* Member CTA — all members see this */}
         {isLocked ? (
           <TouchableOpacity
-            style={[
-              styles.btn,
-              { backgroundColor: "#1A1500", borderWidth: 1, borderColor: C.accentGold },
-            ]}
+            style={[styles.btn, { backgroundColor: "#1A1500", borderWidth: 1, borderColor: C.accentGold }]}
             onPress={onPlay}
             activeOpacity={0.8}
           >
-            <Text style={[styles.btnText, { color: C.accentGold }]}>
-              👁  View My Picks
-            </Text>
+            <Text style={[styles.btnText, { color: C.accentGold }]}>👁  View My Picks</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.btn} onPress={onPlay} activeOpacity={0.8}>
@@ -198,97 +252,148 @@ function DraftDayCard({
         )}
 
         {/* Commissioner controls */}
-        {isCommissioner && !isFinalized && (
+        {isCommissioner && (
           <View style={{ gap: 8 }}>
 
-            {/* Manage / View Draft Day */}
-            <TouchableOpacity
-              style={[styles.btn, styles.btnSecondary]}
-              onPress={onManage}
-              disabled={lockingDraftDay}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.btnText, { color: C.tint }]}>
-                {canEdit && !isLocked ? "✏️  Manage Draft Day" : "👁  View Draft Day"}
-              </Text>
-            </TouchableOpacity>
+            {/* Manage / View Draft Day — only when open */}
+            {!isLocked && (
+              <TouchableOpacity
+                style={[styles.btn, styles.btnSecondary]}
+                onPress={onManage}
+                disabled={lockingDraftDay}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.btnText, { color: C.tint }]}>
+                  {canEdit ? "✏️  Manage Draft Day" : "👁  View Draft Day"}
+                </Text>
+              </TouchableOpacity>
+            )}
 
-            {/* Lock / Unlock row */}
-            <View style={styles.draftDayActionRow}>
-
-              {/* Lock Picks — inline confirm (avoids Alert.alert web bug) */}
-              {!isLocked && !confirmingLock && (
-                <TouchableOpacity
-                  style={[
-                    styles.btn,
-                    { flex: 1, backgroundColor: "#5B21B6" },
-                    lockingDraftDay && { opacity: 0.5 },
-                  ]}
-                  onPress={() => setConfirmingLock(true)}
-                  disabled={lockingDraftDay}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.btnText}>🔒  Lock Picks</Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Inline confirmation state */}
-              {!isLocked && confirmingLock && (
-                <View style={styles.lockConfirmBox}>
-                  <Text style={styles.lockConfirmTitle}>Lock Draft Day picks?</Text>
-                  <Text style={styles.lockConfirmBody}>
-                    Members won't be able to submit or change picks until you unlock them.
-                  </Text>
-                  <View style={styles.lockConfirmButtons}>
-                    <TouchableOpacity
-                      style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
-                      onPress={() => setConfirmingLock(false)}
-                      disabled={lockingDraftDay}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.btn,
-                        { flex: 1, backgroundColor: "#5B21B6" },
-                        lockingDraftDay && { opacity: 0.5 },
-                      ]}
-                      onPress={onLock}
-                      disabled={lockingDraftDay}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.btnText}>
-                        {lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}
-                      </Text>
-                    </TouchableOpacity>
+            {/* Lock Picks (when open) */}
+            {!isLocked && (
+              <View style={styles.draftDayActionRow}>
+                {!confirmingLock && (
+                  <TouchableOpacity
+                    style={[styles.btn, { flex: 1, backgroundColor: "#5B21B6" }, lockingDraftDay && { opacity: 0.5 }]}
+                    onPress={() => setConfirmingLock(true)}
+                    disabled={lockingDraftDay}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>🔒  Lock Picks</Text>
+                  </TouchableOpacity>
+                )}
+                {confirmingLock && (
+                  <View style={styles.lockConfirmBox}>
+                    <Text style={styles.lockConfirmTitle}>Lock Draft Day picks?</Text>
+                    <Text style={styles.lockConfirmBody}>
+                      Members won't be able to submit or change picks until you unlock them.
+                    </Text>
+                    <View style={styles.lockConfirmButtons}>
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                        onPress={() => setConfirmingLock(false)}
+                        disabled={lockingDraftDay}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.btn, { flex: 1, backgroundColor: "#5B21B6" }, lockingDraftDay && { opacity: 0.5 }]}
+                        onPress={onLock}
+                        disabled={lockingDraftDay}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>{lockingDraftDay ? "Locking…" : "🔒  Lock Picks"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {lockError && <Text style={styles.lockErrorText}>{lockError}</Text>}
                   </View>
-                  {lockError && (
-                    <Text style={styles.lockErrorText}>{lockError}</Text>
-                  )}
-                </View>
-              )}
+                )}
+              </View>
+            )}
 
-              {/* Unlock Picks (only while locked) */}
-              {isLocked && (
-                <TouchableOpacity
-                  style={[
-                    styles.btn,
-                    styles.btnSecondary,
-                    { flex: 1 },
-                    unlockingDraftDay && { opacity: 0.5 },
-                  ]}
-                  onPress={onUnlock}
-                  disabled={unlockingDraftDay}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.btnText, { color: C.tint }]}>
-                    {unlockingDraftDay ? "Unlocking…" : "🔓  Unlock Picks"}
+            {/* Settlement CTAs (when locked + room active) */}
+            {isLocked && (
+              <View style={{ gap: 8 }}>
+
+                {/* Progress indicator */}
+                {settledCount > 0 && !allCompSettled && (
+                  <Text style={styles.settlementProgress}>
+                    ⚖️  {settledCount} / {totalComp} questions resolved
                   </Text>
-                </TouchableOpacity>
-              )}
+                )}
 
-            </View>
+                {/* Resolve Draft Day / Continue Resolving */}
+                {!allCompSettled && (
+                  <TouchableOpacity
+                    style={[styles.btn, { backgroundColor: "#1D4ED8" }]}
+                    onPress={onResolve}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>
+                      {settledCount === 0 ? "⚖️  Resolve Draft Day" : "⚖️  Continue Resolving"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Finalize Draft Day — shown when all competition props settled */}
+                {allCompSettled && !confirmingFinalize && (
+                  <TouchableOpacity
+                    style={[styles.btn, { backgroundColor: "#16a34a" }, finalizingDraftDay && { opacity: 0.5 }]}
+                    onPress={() => setConfirmingFinalize(true)}
+                    disabled={finalizingDraftDay}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>🏆  Finalize Draft Day</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Finalize inline confirm */}
+                {allCompSettled && confirmingFinalize && (
+                  <View style={styles.lockConfirmBox}>
+                    <Text style={styles.lockConfirmTitle}>Finalize Draft Day?</Text>
+                    <Text style={styles.lockConfirmBody}>
+                      This permanently seals the leaderboard and reveals results to all members. Season Receipts will settle later.
+                    </Text>
+                    <View style={styles.lockConfirmButtons}>
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                        onPress={() => { setConfirmingFinalize(false); }}
+                        disabled={finalizingDraftDay}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.btn, { flex: 1, backgroundColor: "#16a34a" }, finalizingDraftDay && { opacity: 0.5 }]}
+                        onPress={onFinalize}
+                        disabled={finalizingDraftDay}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>{finalizingDraftDay ? "Finalizing…" : "🏆  Finalize"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {finalizeError && <Text style={styles.lockErrorText}>{finalizeError}</Text>}
+                  </View>
+                )}
+
+                {/* Unlock Picks — only when no settlement has started */}
+                {settledCount === 0 && (
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary, unlockingDraftDay && { opacity: 0.5 }]}
+                    onPress={onUnlock}
+                    disabled={unlockingDraftDay}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnText, { color: C.tint }]}>
+                      {unlockingDraftDay ? "Unlocking…" : "🔓  Unlock Picks"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+              </View>
+            )}
+
           </View>
         )}
       </View>
@@ -338,10 +443,12 @@ export default function LeagueHubScreen() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
-  const [draftDay, setDraftDay]           = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
+  const [draftDay, setDraftDay]                 = useState<DraftDayStatus | null | undefined>(undefined); // undefined=not yet fetched
   const [lockingDraftDay, setLockingDraftDay]   = useState(false);
   const [unlockingDraftDay, setUnlockingDraftDay] = useState(false);
-  const [lockError, setLockError]         = useState<string | null>(null);
+  const [lockError, setLockError]               = useState<string | null>(null);
+  const [finalizingDraftDay, setFinalizingDraftDay] = useState(false);
+  const [finalizeError, setFinalizeError]           = useState<string | null>(null);
   // Track initial mount so useFocusEffect doesn't double-fetch on first render
   const initialFocusRef = useRef(true);
 
@@ -719,9 +826,13 @@ export default function LeagueHubScreen() {
             unlockingDraftDay={unlockingDraftDay}
             lockError={lockError}
             myPickCount={draftDay?.my_pick_count ?? 0}
+            finalizingDraftDay={finalizingDraftDay}
+            finalizeError={finalizeError}
             onSetup={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}`)}
             onManage={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}?manage=1`)}
             onPlay={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/play`)}
+            onResolve={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/settle` as any)}
+            onViewResults={() => router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/results` as any)}
             onLock={async () => {
               // Called after inline confirm — no Alert.alert (breaks on web)
               if (!session || lockingDraftDay) return;
@@ -756,6 +867,23 @@ export default function LeagueHubScreen() {
                 console.error("[hub] unlock draft day:", e.message);
               } finally {
                 setUnlockingDraftDay(false);
+              }
+            }}
+            onFinalize={async () => {
+              if (!session || finalizingDraftDay) return;
+              setFinalizeError(null);
+              setFinalizingDraftDay(true);
+              try {
+                await finalizeDraftDay(leagueId, seasonId, { session });
+                // Refresh hub state to show finalized room
+                fetchDetail(true);
+              } catch (e: any) {
+                setFinalizeError(e.message?.includes("unsettled")
+                  ? "Some questions are not yet resolved. Resolve all Draft Day questions first."
+                  : "Failed to finalize. Please try again.");
+                console.error("[hub] finalize draft day:", e.message);
+              } finally {
+                setFinalizingDraftDay(false);
               }
             }}
           />
@@ -999,6 +1127,7 @@ const styles = StyleSheet.create({
   draftDayActions: { gap: 8 },
   draftDayActionRow: { flexDirection: "row", gap: 8 },
   draftDayComingSoon: { fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 19, paddingVertical: 4 },
+  settlementProgress: { fontSize: 13, color: C.tint, fontWeight: "600", textAlign: "center" },
 
   // Inline lock confirmation (replaces Alert.alert — unreliable on web)
   lockConfirmBox: {

@@ -276,7 +276,7 @@ async function buildSettlementQueue(
        gameday_pick_cards(
          id, phase, status, room_id,
          gameday_rooms(
-           id, room_code, room_name, status,
+           id, room_code, room_name, status, experience_type,
            team_a_name, team_b_name, team_a_star, team_b_star,
            game_date, sport
          )
@@ -289,10 +289,14 @@ async function buildSettlementQueue(
   const props = (rawProps ?? []) as any[];
 
   // Filter to locked cards in active rooms only.
+  // Exclude Fantasy Draft Day rooms — they use JSONB answer_options (objects, not strings)
+  // and have their own commissioner-driven settlement flow. Including them here would cause
+  // normalization failures and incorrect manual_only classifications.
   const eligible = props.filter((p) => {
     const card = p.gameday_pick_cards;
     const room = card?.gameday_rooms;
-    return card?.status === "locked" && room?.status === "active";
+    return card?.status === "locked" && room?.status === "active"
+      && room?.experience_type !== "fantasy";
   });
 
   // Internal accumulator types — not part of the public interface.

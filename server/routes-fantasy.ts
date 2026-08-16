@@ -34,6 +34,7 @@
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
+import { settlePropCore } from "./gameday-settle-helper";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -1418,7 +1419,7 @@ export function registerFantasyRoutes(app: Express) {
       // Count props by scope AND collect current props with library metadata
       const { data: props } = await supabase
         .from("gameday_props")
-        .select("id, template_prop_id, scoring_scope, point_value, display_order")
+        .select("id, template_prop_id, scoring_scope, point_value, display_order, status")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
 
@@ -1426,6 +1427,9 @@ export function registerFantasyRoutes(app: Express) {
       const propIds   = propList.map((p: any) => p.id as string);
       const competitionCount = propList.filter((p: any) => p.scoring_scope === "competition").length;
       const seasonCount      = propList.filter((p: any) => p.scoring_scope === "season").length;
+      const settledCompetitionCount = propList.filter(
+        (p: any) => p.scoring_scope === "competition" && p.status === "settled"
+      ).length;
 
       // Global pick count — total picks by ALL participants across this card's props.
       // gameday_picks has no card_id column; join via prop_id.
@@ -1498,16 +1502,17 @@ export function registerFantasyRoutes(app: Express) {
       } catch { myPickCount = 0; }
 
       res.json({
-        room_id:        (room as any).id,
-        card_id:        (card as any).id,
-        room_code:      (room as any).room_code ?? null,
-        room_status:    (room as any).status,
-        card_status:    (card as any).status,
-        prop_counts:    { competition: competitionCount, season: seasonCount },
-        pick_count:     pickCount,
-        my_pick_count:  myPickCount,
-        current_props:  currentProps,
-        created_at:     (room as any).created_at,
+        room_id:                   (room as any).id,
+        card_id:                   (card as any).id,
+        room_code:                 (room as any).room_code ?? null,
+        room_status:               (room as any).status,
+        card_status:               (card as any).status,
+        prop_counts:               { competition: competitionCount, season: seasonCount },
+        settled_competition_count: settledCompetitionCount,
+        pick_count:                pickCount,
+        my_pick_count:             myPickCount,
+        current_props:             currentProps,
+        created_at:                (room as any).created_at,
       });
     }
   );
@@ -2564,6 +2569,484 @@ export function registerFantasyRoutes(app: Express) {
         pick_id:         (upserted as any).id,
         prop_id:         (upserted as any).prop_id,
         selected_answer: (upserted as any).selected_answer,
+      });
+    }
+  );
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Phase 4C — Draft Day Settlement & Results                             ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  // ── Internal: shared room + card lookup ────────────────────────────────────
+  async function _getDdRoomAndCard(
+    supabase: ReturnType<typeof getServiceSupabase>,
+    seasonId: string
+  ): Promise<{ ok: true; room: any; card: any } | { ok: false; status: number; body: object }> {
+    const { data: room } = await supabase
+      .from("gameday_rooms")
+      .select("id, status")
+      .eq("league_season_id", seasonId)
+      .eq("competition_type", "draft_day")
+      .eq("experience_type", "fantasy")
+      .is("archived_at", null)
+      .maybeSingle();
+    if (!room) return { ok: false, status: 404, body: { error: "No published Draft Day found for this season" } };
+    const { data: card } = await supabase
+      .from("gameday_pick_cards")
+      .select("id, status")
+      .eq("room_id", (room as any).id)
+      .order("created_at", { ascending: true })
+      .maybeSingle();
+    if (!card) return { ok: false, status: 404, body: { error: "Draft Day pick card not found" } };
+    return { ok: true, room, card };
+  }
+
+  // ── Internal: build leaderboard from participants + settled comp picks ──────
+  async function _buildLeaderboard(
+    supabase: ReturnType<typeof getServiceSupabase>,
+    roomId: string,
+    competitionProps: any[]
+  ): Promise<any[]> {
+    const competitionPropIds = competitionProps.map((p: any) => p.id as string);
+    const pointValueMap: Record<string, number> = {};
+    for (const p of competitionProps) pointValueMap[p.id] = (p.point_value as number) ?? 0;
+
+    const { data: participants } = await supabase
+      .from("gameday_participants")
+      .select("id, display_name, season_member_id")
+      .eq("room_id", roomId);
+    const participantList = (participants ?? []) as any[];
+
+    let allPicks: any[] = [];
+    if (participantList.length > 0 && competitionPropIds.length > 0) {
+      const { data: picks } = await supabase
+        .from("gameday_picks")
+        .select("participant_id, prop_id, is_correct")
+        .in("prop_id", competitionPropIds)
+        .in("participant_id", participantList.map((p: any) => p.id as string));
+      allPicks = picks ?? [];
+    }
+
+    // Resolve team names: season_member_id → fantasy_team_managers → fantasy_teams
+    const seasonMemberIds = participantList.map((p: any) => p.season_member_id).filter(Boolean);
+    const teamMap: Record<string, string> = {};
+    if (seasonMemberIds.length > 0) {
+      const { data: managers } = await supabase
+        .from("fantasy_team_managers")
+        .select("season_member_id, fantasy_teams(team_name)")
+        .in("season_member_id", seasonMemberIds);
+      for (const m of managers ?? []) {
+        if ((m as any).fantasy_teams?.team_name) {
+          teamMap[(m as any).season_member_id] = (m as any).fantasy_teams.team_name;
+        }
+      }
+    }
+
+    const scores = participantList.map((p: any) => {
+      const correctPicks = allPicks.filter(
+        (pk: any) => pk.participant_id === p.id && pk.is_correct === true
+      );
+      const points = correctPicks.reduce(
+        (sum: number, pk: any) => sum + (pointValueMap[pk.prop_id] ?? 0), 0
+      );
+      return {
+        participant_id:  p.id as string,
+        season_member_id: p.season_member_id as string | null,
+        display_name:    p.display_name as string,
+        team_name:       p.season_member_id ? (teamMap[p.season_member_id] ?? null) : null,
+        points,
+        correct_count:   correctPicks.length,
+      };
+    });
+
+    // Sort: points DESC, correct_count DESC
+    scores.sort((a: any, b: any) => b.points - a.points || b.correct_count - a.correct_count);
+
+    return scores.map((s: any) => {
+      const rank = scores.filter((x: any) => x.points > s.points).length + 1;
+      const tieCount = scores.filter((x: any) => x.points === s.points).length;
+      return { ...s, rank, rank_label: tieCount > 1 ? `T-${rank}` : String(rank) };
+    });
+  }
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settlement
+  //
+  // Commissioner-only. Returns all competition props with settlement state,
+  // progress, and a preview leaderboard (based on currently-settled props).
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settlement",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      const { data: allProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer")
+        .eq("card_id", (card as any).id)
+        .order("display_order", { ascending: true });
+      const propList = (allProps ?? []) as any[];
+      const competitionProps = propList.filter((p: any) => p.scoring_scope === "competition");
+      const totalCompCount  = competitionProps.length;
+      const settledCount    = competitionProps.filter((p: any) => p.status === "settled").length;
+
+      const previewLeaderboard = settledCount > 0
+        ? await _buildLeaderboard(supabase, (room as any).id, competitionProps)
+        : [];
+
+      res.json({
+        room_id:    (room as any).id,
+        card_id:    (card as any).id,
+        card_status: (card as any).status,
+        room_status: (room as any).status,
+        competition_props: competitionProps.map((p: any) => ({
+          id:             p.id,
+          question:       p.question,
+          display_order:  p.display_order,
+          point_value:    p.point_value,
+          scoring_scope:  p.scoring_scope,
+          status:         p.status,
+          correct_answer: p.correct_answer ?? null,
+          answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
+        })),
+        settled_count:          settledCount,
+        total_competition_count: totalCompCount,
+        all_settled:            totalCompCount > 0 && settledCount === totalCompCount,
+        preview_leaderboard:    previewLeaderboard,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settle
+  //
+  // Commissioner-only. Settles a single prop using the shared settlePropCore helper.
+  //
+  // Competition props:
+  //   - Card must be locked.
+  //   - Blocked if room is already finalized (history is sealed).
+  //   - Idempotent: same prop + same answer → 200 ok.
+  //   - Conflict: same prop + different answer → 409.
+  //
+  // Season props:
+  //   - Allowed even after Draft Day finalization (for late season settlement).
+  //   - Idempotent and conflict rules same as competition.
+  //
+  // correct_answer must be a valid published answer option ID (JSONB objects).
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settle",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { prop_id, correct_answer } = req.body as { prop_id?: string; correct_answer?: string };
+      if (!prop_id)       { res.status(400).json({ error: "prop_id is required" }); return; }
+      if (!correct_answer) { res.status(400).json({ error: "correct_answer is required" }); return; }
+
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      // Card must be locked (regardless of scope)
+      if ((card as any).status !== "locked") {
+        res.status(409).json({
+          error: "Draft Day picks must be locked before settling results",
+          card_status: (card as any).status,
+        });
+        return;
+      }
+
+      // Load and validate prop
+      const { data: prop } = await supabase
+        .from("gameday_props")
+        .select("id, card_id, scoring_scope, status, correct_answer, answer_options, question")
+        .eq("id", prop_id)
+        .eq("card_id", (card as any).id)
+        .maybeSingle();
+      if (!prop) { res.status(404).json({ error: "Prop not found on this Draft Day card" }); return; }
+
+      // Competition props: blocked when room is already finalized
+      if ((prop as any).scoring_scope === "competition" && (room as any).status === "finalized") {
+        res.status(409).json({
+          error: "Draft Day competition results are finalized and cannot be changed.",
+          room_status: "finalized",
+        });
+        return;
+      }
+
+      // Idempotency / conflict check
+      if ((prop as any).status === "settled") {
+        const existing = (prop as any).correct_answer as string;
+        if (existing === correct_answer) {
+          res.json({ ok: true, idempotent: true, prop_id, correct_answer });
+          return;
+        }
+        res.status(409).json({
+          error: "This prop is already settled with a different answer. Changing a settled answer is not supported.",
+          existing_correct_answer: existing,
+        });
+        return;
+      }
+
+      // Validate correct_answer is a published option ID
+      const opts: Array<{ id: string }> = Array.isArray((prop as any).answer_options)
+        ? (prop as any).answer_options
+        : [];
+      const validIds = new Set(opts.map((o) => o.id));
+      if (!validIds.has(correct_answer)) {
+        res.status(400).json({
+          error: "correct_answer must be a valid published answer option ID",
+          valid_answer_ids: Array.from(validIds),
+        });
+        return;
+      }
+
+      const result = await settlePropCore(supabase, {
+        propId:       prop_id,
+        cardId:       (card as any).id,
+        correctAnswer: correct_answer,
+      });
+
+      console.log(
+        `[fantasy] settle prop=${prop_id.slice(0, 8)}… scope=${(prop as any).scoring_scope} ` +
+        `answer=${correct_answer} by=${commissioner.userId.slice(0, 8)}… ` +
+        `card_auto_settled=${result.cardAutoSettled}`
+      );
+
+      res.json({
+        ok:               true,
+        idempotent:       false,
+        prop_id,
+        correct_answer,
+        scoring_scope:    (prop as any).scoring_scope,
+        card_auto_settled: result.cardAutoSettled,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/finalize
+  //
+  // Commissioner-only. Seals the Draft Day competition leaderboard.
+  // Requires: card locked, ALL competition-scope props settled.
+  // Season props may remain pending — this is by design (settled later).
+  // Sets room.status = 'finalized'. Idempotent.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/finalize",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      // Idempotent
+      if ((room as any).status === "finalized") {
+        res.json({ ok: true, already_finalized: true });
+        return;
+      }
+
+      if ((card as any).status !== "locked") {
+        res.status(409).json({
+          error: "Draft Day picks must be locked before finalizing",
+          card_status: (card as any).status,
+        });
+        return;
+      }
+
+      // All competition props must be settled
+      const { data: unsettled } = await supabase
+        .from("gameday_props")
+        .select("id")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .neq("status", "settled");
+
+      if ((unsettled?.length ?? 0) > 0) {
+        res.status(409).json({
+          error: "All Draft Day competition questions must be resolved before finalizing",
+          unsettled_competition_count: unsettled?.length ?? 0,
+        });
+        return;
+      }
+
+      const { error: finalizeErr } = await supabase
+        .from("gameday_rooms")
+        .update({ status: "finalized" })
+        .eq("id", (room as any).id);
+
+      if (finalizeErr) {
+        console.error("[fantasy] finalize error:", finalizeErr.message);
+        res.status(500).json({ error: "Failed to finalize Draft Day" });
+        return;
+      }
+
+      console.log(
+        `[fantasy] Draft Day finalized: room=${String((room as any).id).slice(0, 8)}… ` +
+        `by=${commissioner.userId.slice(0, 8)}…`
+      );
+
+      res.json({ ok: true, already_finalized: false });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/results
+  //
+  // Member-accessible (session or guest token). Returns full Draft Day results
+  // once room.status = 'finalized'. Before finalization: { finalized: false }.
+  //
+  // Response includes: leaderboard, winners (ties = co-winners), viewer's own
+  // competition picks with correct answers + points, season receipts summary.
+  // Scoring: SUM(point_value) for is_correct = true competition picks.
+  // Note: correct_answer is NEVER exposed before finalization.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/results",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      // Results not ready yet
+      if ((room as any).status !== "finalized") {
+        res.json({ finalized: false });
+        return;
+      }
+
+      // Load season metadata
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("season_year, fantasy_leagues(league_name)")
+        .eq("id", seasonId)
+        .maybeSingle();
+
+      // Load all props for this card
+      const { data: allProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options")
+        .eq("card_id", (card as any).id)
+        .order("display_order", { ascending: true });
+      const propList = (allProps ?? []) as any[];
+      const competitionProps = propList.filter((p: any) => p.scoring_scope === "competition");
+      const seasonProps      = propList.filter((p: any) => p.scoring_scope === "season");
+
+      // Build answer-option label lookup
+      const answerLabelMap: Record<string, Record<string, string>> = {};
+      for (const p of propList) {
+        answerLabelMap[p.id] = {};
+        for (const opt of (Array.isArray(p.answer_options) ? p.answer_options : [])) {
+          if (opt?.id && opt?.label) answerLabelMap[p.id][opt.id] = opt.label;
+        }
+      }
+
+      const leaderboard = await _buildLeaderboard(supabase, (room as any).id, competitionProps);
+
+      // Winners = all entries sharing the top score
+      const topPoints = leaderboard[0]?.points ?? 0;
+      const winners   = leaderboard.filter((e: any) => e.points === topPoints);
+
+      // Viewer-specific results
+      let myCompPicks: any[]  = [];
+      let myTotalPoints       = 0;
+      let myCorrectCount      = 0;
+      let mySeasonPickCount   = 0;
+
+      try {
+        const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
+        if (viewerData) {
+          const { data: vParticipant } = await supabase
+            .from("gameday_participants")
+            .select("id")
+            .eq("room_id", (room as any).id)
+            .eq("season_member_id", viewerData.season_member_id)
+            .maybeSingle();
+
+          if (vParticipant) {
+            const vId = (vParticipant as any).id as string;
+            const compPropIds = competitionProps.map((p: any) => p.id as string);
+            const pointValueMap: Record<string, number> = {};
+            for (const p of competitionProps) pointValueMap[p.id] = (p.point_value as number) ?? 0;
+
+            if (compPropIds.length > 0) {
+              const { data: picks } = await supabase
+                .from("gameday_picks")
+                .select("prop_id, selected_answer, is_correct")
+                .eq("participant_id", vId)
+                .in("prop_id", compPropIds);
+              const pickByProp: Record<string, any> = {};
+              for (const pk of picks ?? []) pickByProp[pk.prop_id] = pk;
+
+              myCompPicks = competitionProps.map((prop: any) => {
+                const pick          = pickByProp[prop.id] ?? null;
+                const myAnswerId    = pick?.selected_answer ?? null;
+                const correctId     = prop.correct_answer ?? null;
+                const isCorrect     = pick?.is_correct ?? null;
+                const pointsEarned  = isCorrect === true ? (pointValueMap[prop.id] ?? 0) : 0;
+                if (isCorrect === true) { myTotalPoints += pointsEarned; myCorrectCount++; }
+                return {
+                  prop_id:              prop.id,
+                  question:             prop.question,
+                  display_order:        prop.display_order,
+                  point_value:          prop.point_value,
+                  my_answer_id:         myAnswerId,
+                  my_answer_label:      myAnswerId ? (answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId) : null,
+                  correct_answer_id:    correctId,
+                  correct_answer_label: correctId ? (answerLabelMap[prop.id]?.[correctId] ?? correctId) : null,
+                  is_correct:           isCorrect,
+                  points_earned:        pointsEarned,
+                };
+              });
+            }
+
+            // Season picks count
+            const seasonPropIds = seasonProps.map((p: any) => p.id as string);
+            if (seasonPropIds.length > 0) {
+              const { count } = await supabase
+                .from("gameday_picks")
+                .select("id", { count: "exact", head: true })
+                .eq("participant_id", vId)
+                .in("prop_id", seasonPropIds);
+              mySeasonPickCount = count ?? 0;
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn("[fantasy] results viewer lookup:", e.message);
+      }
+
+      res.json({
+        finalized:                 true,
+        league_name:               (season as any)?.fantasy_leagues?.league_name ?? null,
+        season_year:               (season as any)?.season_year ?? null,
+        winners:                   winners.map((w: any) => ({
+          display_name: w.display_name,
+          team_name:    w.team_name,
+          points:       w.points,
+          rank_label:   w.rank_label,
+        })),
+        leaderboard,
+        my_competition_picks:      myCompPicks,
+        my_total_points:           myTotalPoints,
+        my_correct_count:          myCorrectCount,
+        my_season_pick_count:      mySeasonPickCount,
+        season_props_pending_count: seasonProps.filter((p: any) => p.status === "pending").length,
+        total_competition_props:   competitionProps.length,
       });
     }
   );
