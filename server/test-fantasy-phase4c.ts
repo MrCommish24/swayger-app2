@@ -531,12 +531,15 @@ async function suite_late_season_settlement() {
 
   assert(beforeLeaderboard.length > 0, "Pre-season-settlement leaderboard exists", beforeLeaderboard.length);
 
-  // Find a season prop from settlement state
+  // Find a season prop from the play state.
   // Season props aren't in /settlement (which only returns competition props).
-  // We need to get the season prop ID from the play state.
+  // Use MEMBER_TOKEN_DARIUS (not COMMISSIONER_TOKEN) so we don't inadvertently
+  // create a new gameday_participants row for the commissioner — that would
+  // inflate the leaderboard with a 0-point entry and break the before/after count check.
   const playPath = `/api/fantasy/leagues/${LEAGUE_ID}/seasons/${SEASON_ID}/draft-day/play`;
+  const playToken = MEMBER_TOKEN_DARIUS || COMMISSIONER_TOKEN;
   const { data: playData } = await request("GET", playPath,
-    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+    buildHeaders({ bearer: playToken }));
   const seasonPropsFromPlay = (playData?.props ?? []).filter((p: any) => p.scoring_scope === "season");
 
   if (seasonPropsFromPlay.length === 0) {

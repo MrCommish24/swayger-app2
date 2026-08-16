@@ -14,7 +14,7 @@
     "start": "npx expo start",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
-    "test:fantasy:4c": "TEST_API_BASE=http://localhost:5000 npx ts-node -e \"require('./server/test-fantasy-phase4c.ts')\""
+    "test:fantasy:4c": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-fantasy-phase4c-run.ts"
   },
   "dependencies": {
     "@expo-google-fonts/barlow-condensed": "^0.4.1",

@@ -1,0 +1,184 @@
+Phase 4C hub wiring is accepted.
+
+Do NOT begin Season Receipt settlement UI or weekly Fantasy work.
+
+The next task is Phase 4C end-to-end acceptance verification.
+
+1. RUN PHASE 4C TESTS
+
+Run:
+
+npm run test:fantasy:4c
+
+Return exact:
+- total
+- passed
+- failed
+- skipped
+
+If any test fails, stop and diagnose before changing unrelated code.
+
+2. RUN FULL REGRESSION
+
+Run:
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage League
+- Open Roster
+- Phase 4C
+- relevant classic Game Day settlement regressions
+
+Return exact aggregate totals.
+
+3. VERIFY REAL DRAFT DAY SETTLEMENT FLOW
+
+Using an existing Fantasy Draft Day with member picks:
+
+OPEN
+→ Lock Picks
+
+Verify hub:
+→ Resolve Draft Day
+
+Resolve one competition prop.
+
+Return to hub.
+
+Verify:
+→ Continue Resolving
+→ x/y resolved
+
+Resolve the remaining competition-scope props.
+
+Verify:
+→ season-scope props remain pending
+→ progress denominator includes competition props only
+→ hub now offers Finalize Draft Day
+
+4. FINALIZE
+
+Finalize Draft Day.
+
+Verify:
+
+- room_status = finalized
+- Draft Day competition results become immutable
+- Season Receipts remain pending
+- hub immediately shows:
+
+🏆 View Draft Day Results
+
+Do not require season-scope props to be settled.
+
+5. RESULTS SCREEN
+
+Open results as commissioner.
+
+Verify:
+
+- champion/co-champions correct
+- leaderboard sorted correctly
+- score uses SUM(prop.point_value), not correct_count × 10
+- viewer's picks shown
+- correct answers shown for competition props
+- points earned per prop shown
+- Season Receipts shown as pending
+- no private picks from other members are exposed unnecessarily
+
+Use at least one non-10-point prop in the fixture so hardcoded ×10 scoring cannot pass accidentally.
+
+6. MEMBER / GUEST
+
+Before finalization:
+- member/guest sees Picks Locked
+- no partial standings/results
+
+After finalization:
+- member sees View Draft Day Results
+- guest who previously played can also view results
+- guest identity resolves through existing claim
+- no account creation required
+
+7. STALE HUB REGRESSION
+
+This is part of acceptance QA, not a separate feature yet.
+
+Test navigation:
+
+settlement screen
+→ hub
+
+finalize
+→ hub
+
+results
+→ hub
+
+background/foreground or focus-return
+→ hub
+
+In every case the DraftDayCard must reflect current live state.
+
+Specifically ensure we never show:
+- Resolve Draft Day after finalization
+- Continue Resolving after finalization
+- Picks Locked after finalization
+- stale x/y settlement progress after finalization
+
+If a stale-state bug exists, fix it narrowly using the existing focus/refetch pattern.
+
+Do not build new realtime infrastructure.
+
+8. HISTORICAL STABILITY
+
+After finalization:
+
+record the Draft Day winner/leaderboard.
+
+Then, using a controlled backend/admin test if available, settle one season-scope prop later.
+
+Verify:
+
+- season prop may settle
+- Draft Day room remains finalized
+- historical Draft Day points remain unchanged
+- champion remains unchanged
+- Draft Day results endpoint still filters scoring_scope='competition'
+
+This is a critical Phase 4C invariant.
+
+9. RETURN
+
+Return:
+
+1. Phase 4C test result
+2. full regression totals
+3. settlement progress behavior
+4. finalization result
+5. results screen result
+6. scoring verification
+7. tie behavior
+8. member result behavior
+9. guest result behavior
+10. stale-hub navigation result
+11. later Season Receipt settlement stability result
+12. bugs found/fixed
+13. exact manual QA steps for me
+
+Then STOP.
+
+Do not begin:
+- Season Receipt commissioner UI
+- Week 1
+- weekly Swaygers
+- season standings
+
+End with:
+
+PHASE 4C READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

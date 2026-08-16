@@ -2813,6 +2813,20 @@ export function registerFantasyRoutes(app: Express) {
         correctAnswer: correct_answer,
       });
 
+      // Phase 4C invariant: finalized rooms keep card_status = 'locked' permanently.
+      // settlePropCore auto-settles the card when ALL props (including season props) are
+      // settled. If that cascade fires after finalization (e.g. last season prop settles),
+      // restore card_status to 'locked' so the hub continues to read from room_status.
+      if (result.cardAutoSettled && (room as any).status === "finalized") {
+        await supabase
+          .from("gameday_pick_cards")
+          .update({ status: "locked", updated_at: new Date().toISOString() })
+          .eq("id", (card as any).id);
+        console.log(
+          `[fantasy] settle — card auto-settle suppressed (room finalized), card_status reset to locked`
+        );
+      }
+
       console.log(
         `[fantasy] settle prop=${prop_id.slice(0, 8)}… scope=${(prop as any).scoring_scope} ` +
         `answer=${correct_answer} by=${commissioner.userId.slice(0, 8)}… ` +
