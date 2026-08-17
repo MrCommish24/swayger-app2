@@ -9,6 +9,7 @@ export default function FantasyLayout() {
       <Stack.Screen name="weeks" />
       <Stack.Screen name="standings" />
       <Stack.Screen name="manage" />
+      <Stack.Screen name="recover" />
     </Stack>
   );
 }

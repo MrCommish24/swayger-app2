@@ -243,9 +243,7 @@ function RootLayoutNav() {
         <Stack.Screen name="march-madness/index" options={{ headerShown: false }} />
         <Stack.Screen name="mm-pick/[matchupId]" options={{ headerShown: false }} />
         <Stack.Screen name="picks/index" options={{ headerShown: false }} />
-        <Stack.Screen name="playoffs/index" options={{ headerShown: false }} />
-        <Stack.Screen name="playoffs/bracket" options={{ headerShown: false }} />
-        <Stack.Screen name="playoffs/leaderboard" options={{ headerShown: false }} />
+        <Stack.Screen name="playoffs" options={{ headerShown: false }} />
       </Stack>
       <ToastContainer />
     </>
