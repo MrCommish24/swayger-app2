@@ -1,0 +1,999 @@
+We are beginning the next Swayger Fantasy Season phase.
+
+# PHASE 5.2 — REPEATABLE FANTASY SEASON / WEEK 2+
+
+Current verified state:
+
+- Draft Day works
+- Week 1 Swayger works end-to-end
+- existing members/guests return without rejoining
+- weekly share + reminder + Copy Link work
+- participation counts work
+- Week 1 settlement/finalization works
+- Season Standings aggregate Draft Day + Week 1
+- weekly routes already use :weekNumber
+- buildWeekUrl(leagueId, seasonId, weekNumber) is generic
+- Phase 5 and 5.1 regressions are green
+
+The next goal is NOT to build 18 hardcoded weeks.
+
+The goal is to make the weekly operating loop repeatable:
+
+Week N finalizes
+→ commissioner creates Week N+1
+→ league members automatically have access
+→ same share/re-engagement flow
+→ same settlement flow
+→ Season Standings accumulate
+
+==================================================
+1. PRODUCT PRINCIPLE
+==================================================
+
+Fantasy Season should feel like one persistent league.
+
+The commissioner should NOT:
+
+- recreate the league
+- re-add members
+- resend a league join invitation
+- rebuild identity
+- configure a completely new system every week
+
+Members should NOT:
+
+- reclaim a seat
+- rejoin
+- select their team again
+- create another account
+
+Each new week is simply the next Swayger inside the existing Fantasy season.
+
+==================================================
+2. PRIMARY MILESTONE
+==================================================
+
+After this phase, I should be able to:
+
+1. Finalize Week 1
+2. Create Week 2
+3. Publish Week 2
+4. Share Week 2
+5. Existing members make Week 2 picks
+6. Lock Week 2
+7. Resolve/finalize Week 2
+8. See Season Standings update to:
+
+Draft Day
++
+Week 1
++
+Week 2
+
+Then repeat the same architecture for Week 3 without more code.
+
+==================================================
+3. DO NOT HARDCODE WEEK 2
+==================================================
+
+This is critical.
+
+Do NOT add:
+
+weeklyWeek2 state
+Week2Card component
+/week2-specific functions
+week2-specific URLs
+week2-specific copy
+
+Generalize the existing Week 1 implementation around:
+
+weekNumber
+
+Week 2 should be the first proof that the generalized architecture works.
+
+==================================================
+4. ARCHITECTURE INSPECTION FIRST
+==================================================
+
+Before coding, inspect every remaining place where Week 1 is hardcoded.
+
+Search for:
+
+- "Week 1"
+- weekNumber = 1
+- /weeks/1/
+- weeklyWeek1
+- week1
+- Set Up Week 1
+- Share Week 1
+- Week 1 Swayger
+- any route/helper that assumes 1
+
+Classify each as:
+
+A. legitimate test fixture / copy example
+B. UI that must become dynamic
+C. architecture that must be generalized
+D. intentionally Week-1-only and safe to leave
+
+Return this audit in the final report.
+
+==================================================
+5. CURRENT / NEXT WEEK MODEL
+==================================================
+
+We need a simple way for the hub to know:
+
+- latest published weekly competition
+- next week available to create
+
+Do NOT use today's NFL calendar yet.
+
+V1 should derive from existing Swayger data.
+
+Suggested logic:
+
+published weekly rooms sorted by week_number ASC.
+
+current/latest week =
+highest existing week_number
+
+next week =
+if no weekly rooms exist → 1
+else highest week_number + 1
+
+Examples:
+
+No weekly room:
+next = Week 1
+
+Week 1 exists:
+current = Week 1
+next = Week 2
+
+Week 1 + Week 2 exist:
+current = Week 2
+next = Week 3
+
+Do not infer from real NFL schedule.
+
+==================================================
+6. SHOULD NEXT WEEK BE CREATABLE BEFORE CURRENT WEEK FINALIZES?
+==================================================
+
+Product rule for V1:
+
+Prefer requiring the previous weekly Swayger to be FINALIZED before commissioner can create the next one.
+
+Example:
+
+Week 1 open/locked/resolving:
+do NOT offer Set Up Week 2 yet.
+
+Week 1 finalized:
+offer:
+
+Set Up Week 2
+
+This keeps the operating model simple and avoids overlapping weekly Swaygers in V1.
+
+Enforce server-side, not just UI.
+
+If there is a strong architectural reason not to enforce this, report it before changing the rule.
+
+==================================================
+7. MAX WEEK NUMBER
+==================================================
+
+Current route accepts 1–25.
+
+Keep that technical guard.
+
+Do not hardcode NFL 18 weeks into the engine.
+
+The product may eventually support:
+
+- football
+- basketball
+- baseball
+- fantasy playoffs
+- custom schedules
+
+For UI this phase, simply increment integers.
+
+No NFL schedule API.
+
+==================================================
+8. HUB REDESIGN — ACTIVE WEEK
+==================================================
+
+The Fantasy League Hub should no longer have a hardcoded Week 1 section.
+
+Preferred structure:
+
+FANTASY SEASON
+
+CURRENT SWAYGER
+
+Week 2 Swayger
+Picks Open
+5 / 8 Have Played
+
+[ Make My Picks ]
+
+Commissioner controls:
+[ Share Week 2 ]
+[ Copy Link ]
+[ Remind (3) ]
+[ Manage Week 2 ]
+[ Lock Picks ]
+
+Then, if current week finalized:
+
+Week 2 Swayger
+🏆 Final Results
+[ View Results ]
+
+Commissioner additionally sees:
+
+[ Set Up Week 3 ]
+
+Do not render 18 giant cards.
+
+==================================================
+9. PAST WEEK HISTORY
+==================================================
+
+Add a compact Past Swaygers section.
+
+Example:
+
+PAST SWAYGERS
+
+Draft Day      Darius won      View
+Week 1         Mike won        View
+
+Current Week remains prominent.
+
+Past weeks should be compact rows/cards, not full WeeklyCards.
+
+For V1:
+
+- show finalized weeks only
+- sort newest first or chronological; choose the cleaner UX and report
+- include week number
+- winner/co-winner name if easy
+- View Results CTA
+
+Do not build advanced filtering.
+
+==================================================
+10. DRAFT DAY HISTORY
+==================================================
+
+Draft Day should remain visually distinct.
+
+Do not rename it Week 0 in customer-facing UI.
+
+Internally it counts toward Season Standings.
+
+UI:
+
+DRAFT DAY
+Final Results
+[ View Results ]
+
+Weekly history:
+
+Week 1
+Week 2
+etc.
+
+==================================================
+11. WEEK CREATION UX
+==================================================
+
+When prior week is finalized, commissioner sees:
+
+Set Up Week 2
+
+The setup flow should already accept weekNumber dynamically.
+
+Verify:
+
+- title says Week 2 Swayger
+- share copy says Week 2
+- URLs use /weeks/2/
+- publish RPC receives week_number=2
+- no Week 1 copy remains
+- template library remains weekly
+- question cap remains 8
+
+==================================================
+12. OPTIONAL “USE LAST WEEK’S QUESTIONS”
+==================================================
+
+Do NOT build this unless trivial.
+
+For now commissioner selects weekly templates again.
+
+We may later add:
+
+Use Last Week's Questions
+
+but weekly variety may be desirable and this is not required for repeatability.
+
+Do not scope-creep.
+
+==================================================
+13. CREATE-NEXT-WEEK SAFETY
+==================================================
+
+The DB already has uniqueness:
+
+league_season_id
++ competition_type='weekly'
++ week_number
+
+Preserve this.
+
+Create Week 2 must be retry-safe.
+
+Two clicks must not create two rooms.
+
+If Week 2 already exists:
+
+return/reuse existing Week 2 cleanly.
+
+Do not expose raw unique-index errors.
+
+==================================================
+14. SKIPPING WEEKS
+==================================================
+
+For V1, commissioner should not be able to skip directly from Week 1 to Week 3 via normal UI.
+
+Expected next week is sequential.
+
+Server publish endpoint should verify:
+
+requested week_number == expected next week
+
+unless room for that week already exists.
+
+Example:
+
+Week 1 exists and finalized.
+
+Publish Week 3:
+reject with clear error:
+
+"Week 2 must be created first."
+
+Do not rely solely on hidden UI.
+
+==================================================
+15. PREVIOUS WEEK FINALIZATION RULE
+==================================================
+
+Server should prevent creating Week N if Week N-1 exists but is not finalized.
+
+Clear error.
+
+Example:
+
+"Finalize Week 1 before creating Week 2."
+
+Exception:
+Week 1 creation requires no prior weekly room.
+
+Draft Day finalization should NOT be a technical prerequisite for creating Week 1 unless that is already the intended product rule.
+
+Inspect current behavior and report.
+
+==================================================
+16. MEMBER CONTINUITY
+==================================================
+
+Week 2 must prove continuity.
+
+Existing authenticated member:
+open Week 2 → same season_member_id
+
+Existing guest:
+same-device guest → same persistent claim/season member
+
+No:
+
+- new join
+- new league_member
+- new season_member
+- new fantasy_team
+- new claim
+
+Only weekly gameday_participant may be created.
+
+Test this explicitly across Week 1 → Week 2.
+
+==================================================
+17. ROSTER SNAPSHOT FOR EACH WEEK
+==================================================
+
+When Week 2 publishes:
+
+answer_options should snapshot all members eligible at that moment.
+
+Important:
+
+A member added after Week 1 locked but before Week 2 publish:
+
+- excluded from Week 1
+- INCLUDED in Week 2
+
+This is one of the main reasons weekly competitions are separate rooms.
+
+Test it.
+
+==================================================
+18. OPEN-ROSTER BEHAVIOR REPEATS
+==================================================
+
+Week 2 open:
+
+new member added
+→ eligible for Week 2
+→ answer options expand
+→ roster_revision increments
+→ affected saved picks flagged stale
+
+Week 2 locked:
+
+new member
+→ joins league
+→ excluded from Week 2
+→ eligible for Week 3 later
+
+Same existing mechanism.
+
+No new revision architecture.
+
+==================================================
+19. SHARE / REMINDER GENERALIZATION
+==================================================
+
+All Phase 5.1 re-engagement controls must work dynamically:
+
+Share Week N
+Copy Link
+Remind (N waiting)
+
+Generated share text must use current week number.
+
+Examples:
+
+Week 2 Swayger is live 🏈
+
+Week 3 Swayger reminder 👀
+
+Use:
+
+buildWeekUrl(leagueId, seasonId, weekNumber)
+
+Do not fork URL generation.
+
+==================================================
+20. DEEP-LINK BEHAVIOR ACROSS PAST/CURRENT WEEKS
+==================================================
+
+Week 1 finalized link:
+→ Week 1 Results
+
+Week 2 open link:
+→ Week 2 Play
+
+Week 2 locked:
+→ Week 2 View Picks/read-only
+
+Week 2 finalized:
+→ Week 2 Results
+
+Week 3 unpublished:
+→ safe 404/not available
+
+No dead ends.
+
+==================================================
+21. SEASON STANDINGS
+==================================================
+
+Season Standings must automatically aggregate every finalized weekly room.
+
+No code change should be required when Week 3 exists.
+
+Example:
+
+Draft Day:
+Darius 45
+Mike 30
+
+Week 1:
+Darius 20
+Mike 40
+
+Week 2:
+Darius 35
+Mike 10
+
+Expected:
+
+Darius = 100
+Mike = 80
+
+Breakdown:
+
+Darius
+Draft Day: 45
+Weekly: 55
+Total: 100
+
+Mike
+Draft Day: 30
+Weekly: 50
+Total: 80
+
+Verify query is room-driven, not Week-1-specific.
+
+==================================================
+22. WEEKLY WINS
+==================================================
+
+If weekly_wins is already implemented:
+
+Week 1 winner + Week 2 winner should aggregate.
+
+Co-winners each get one weekly win.
+
+Draft Day does not count.
+
+Verify no Week 1 hardcoding.
+
+==================================================
+23. COMPETITIONS PLAYED
+==================================================
+
+Still defined as:
+
+member submitted ≥1 competition-scope pick in that room.
+
+Across:
+
+Draft Day
+Week 1
+Week 2
+
+Example:
+
+Darius played all 3 → competitions_played=3
+
+Mike skipped Week 2 → competitions_played=2
+
+Opening a play screen without picking does not count.
+
+==================================================
+24. SEASON STANDINGS BEFORE CURRENT WEEK FINALIZES
+==================================================
+
+Current/open Week 2 must NOT affect Season Standings yet.
+
+Standings remain:
+
+Draft Day + Week 1
+
+until Week 2 finalizes.
+
+After Week 2 finalizes:
+refresh → includes Week 2.
+
+This transition must be immediate and deterministic.
+
+==================================================
+25. HUB STANDINGS PREVIEW
+==================================================
+
+Keep compact Season Standings preview.
+
+It should update after each finalized week without structural changes.
+
+Do not show pending Week 2 points.
+
+No "live projected standings" in V1.
+
+==================================================
+26. WEEKLY RESULTS HISTORY
+==================================================
+
+Past weekly result pages remain immutable after finalize.
+
+Creating Week 2 must not alter:
+
+- Week 1 answer snapshots
+- Week 1 member picks
+- Week 1 correct answers
+- Week 1 winner
+- Week 1 scores
+
+Historical stability test required.
+
+==================================================
+27. RESULT CORRECTION / FINALIZATION
+==================================================
+
+Every week reuses the Phase 4C model:
+
+member picks lock
+→ commissioner settles
+→ commissioner can correct A→B→A
+→ finalize
+→ results immutable
+
+Finalization retains:
+
+- immediate loading state
+- single-flight guard
+- idempotent backend
+- already_finalized=true treated as success
+- deterministic navigation
+
+Do not regress this in generalized components.
+
+==================================================
+28. PAST-WEEK COMMISSIONER ACTIONS
+==================================================
+
+For finalized historical weeks:
+
+do not show:
+
+- Share Week
+- Reminder
+- Manage
+- Lock
+- Resolve
+
+Only:
+
+View Results
+
+The season home should feel clean.
+
+==================================================
+29. UNFINALIZED HISTORICAL WEEK
+==================================================
+
+Because we require sequential finalization, there should normally be only one active weekly room.
+
+If malformed/legacy data contains multiple unfinalized weeks:
+
+do not crash.
+
+Choose highest/latest as active or flag the inconsistency.
+
+Report how you handle this defensively.
+
+Do not silently finalize anything.
+
+==================================================
+30. API / CLIENT GENERALIZATION
+==================================================
+
+Audit `lib/fantasy-api.ts`.
+
+Weekly client methods should already take:
+
+weekNumber
+
+Ensure no functions such as:
+
+getWeek1()
+publishWeek1()
+shareWeek1()
+
+remain.
+
+Prefer:
+
+getFantasyWeek(..., weekNumber)
+publishFantasyWeek(..., weekNumber)
+getFantasyWeekResults(..., weekNumber)
+
+or existing generic equivalents.
+
+Do not perform a massive rename if already generic.
+
+==================================================
+31. FRONTEND ROUTING
+==================================================
+
+All routes should remain:
+
+/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/...
+
+No new screen folders for Week 2.
+
+Verify setup/play/settle/results all render correctly for 2.
+
+==================================================
+32. HUB DATA ENDPOINT
+==================================================
+
+Prefer adding/using a season-level weekly summary rather than firing arbitrary requests for Week 1, Week 2, Week 3 individually.
+
+Inspect current hub fetch architecture.
+
+Preferred response concept:
+
+weekly_competitions: [
+  {
+    week_number,
+    room_status,
+    card_status,
+    played_count,
+    eligible_count,
+    settlement_progress,
+    winners...
+  }
+]
+
+or:
+
+current_week
+past_weeks
+next_week_number
+
+Do NOT create N+1 client fetches as weeks accumulate.
+
+This is important.
+
+By Week 15, the hub should not make 15 separate weekly requests.
+
+If current API requires this, fix it now with a season-level summary endpoint or extend the existing league/season detail endpoint.
+
+==================================================
+33. PERFORMANCE RULE
+==================================================
+
+Hub request count should remain roughly constant as weeks accumulate.
+
+Do NOT:
+
+for week in 1..current:
+GET /weeks/:week
+
+from the client.
+
+One season-level request should provide enough metadata to render:
+
+- current week
+- past week history
+- next week
+
+Results/details can load on demand.
+
+==================================================
+34. SQL
+==================================================
+
+Prefer NO new SQL.
+
+Existing schema already supports arbitrary week_number.
+
+If a new DB constraint/index is genuinely needed:
+write migration and STOP.
+
+Do not automatically apply.
+
+==================================================
+35. PHASE 5.2 TEST SUITE
+==================================================
+
+Create/update Phase 5.2 tests.
+
+WEEK SEQUENCING
+
+- Week 1 finalized → Week 2 publish allowed
+- Week 1 unfinalized → Week 2 rejected
+- Week 3 rejected when Week 2 absent
+- duplicate Week 2 prevented/idempotent
+- arbitrary direct Week 20 creation rejected through normal API
+- technical route guard 1–25 preserved
+
+GENERALIZATION
+
+- setup renders Week 2
+- publish creates week_number=2
+- play works for Week 2
+- share link uses /weeks/2/
+- share copy says Week 2
+- reminder says Week 2
+- Copy Link Week 2 URL only
+
+IDENTITY
+
+- same season_member across Draft Day/Week1/Week2
+- same guest claim
+- no duplicate persistent identity
+
+ROSTER
+
+- late Week 1 member included Week 2
+- Week 2 open add works
+- Week 2 lock excludes later member
+
+SETTLEMENT
+
+- Week 2 correction works
+- finalization reliability works
+- results immutable
+
+STANDINGS
+
+Use fixture:
+
+Draft Day:
+Darius 45
+Mike 30
+
+Week 1:
+Darius 20
+Mike 40
+
+Week 2:
+Darius 35
+Mike 10
+
+Expected:
+Darius 100
+Mike 80
+
+Verify:
+- pending Week 3 excluded
+- season-scope excluded
+- weekly wins aggregate
+- competitions_played correct
+
+HISTORY
+
+- Week 1 results unchanged after Week 2
+- Draft Day unchanged
+- Past Swaygers metadata correct
+
+PERFORMANCE
+
+- hub does not make one client fetch per historical week
+- season-level summary response renders history
+
+==================================================
+36. FULL REGRESSION
+==================================================
+
+Run:
+
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage
+- Open Roster
+- Phase 4C
+- Phase 5
+- Phase 5.1
+- Phase 5.2
+- relevant classic Game Day settlement regression
+
+Return exact totals.
+
+==================================================
+37. MANUAL QA TARGET
+==================================================
+
+I should be able to manually:
+
+1. Open league with finalized Draft Day + Week 1.
+2. See:
+   - Season Standings
+   - Week 1 under Past Swaygers
+   - Set Up Week 2.
+3. Tap Set Up Week 2.
+4. Select questions.
+5. Publish.
+6. Hub now prominently shows Week 2 as Current Swayger.
+7. Share Week 2.
+8. Copy Week 2 link.
+9. Existing member follows link.
+10. No rejoin.
+11. Member makes picks.
+12. Participation count updates.
+13. Commissioner locks.
+14. Resolves.
+15. Intentionally changes one result.
+16. Finalizes.
+17. Week 2 becomes historical.
+18. Season Standings immediately update.
+19. Hub offers Set Up Week 3.
+20. Week 1 and Week 2 results remain independently viewable.
+
+Critical negative QA:
+
+21. Try creating Week 3 before Week 2 finalizes.
+22. Confirm blocked.
+23. Try creating duplicate Week 2.
+24. Confirm no duplicate room.
+25. Confirm hub did not become noticeably slower because another week exists.
+
+==================================================
+38. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- automatic week scheduling
+- automatic creation of all season weeks
+- NFL calendar integration
+- automatic kickoff locking
+- provider APIs
+- push notifications
+- automated email/SMS
+- Season Receipt settlement UI
+- playoffs
+- Week-specific payments
+- advanced analytics
+- commissioner custom week numbering
+- skip-week UI
+- rescheduling
+- season reset/renewal
+
+==================================================
+39. RETURN
+==================================================
+
+Return:
+
+1. Week-1 hardcoding audit
+2. current/next week algorithm
+3. sequencing rules implemented
+4. season-level weekly summary architecture
+5. hub performance/request-count design
+6. hub current-week UX
+7. Past Swaygers UX
+8. dynamic setup behavior
+9. Week 2 publish result
+10. member/guest continuity
+11. roster behavior across weeks
+12. dynamic share/reminder/Copy Link behavior
+13. Week 2 settlement/finalization
+14. Season Standings after Week 2
+15. historical stability
+16. files changed
+17. SQL required or not
+18. Phase 5.2 test result
+19. full regression totals
+20. bugs found/fixed
+21. exact manual QA sequence
+22. what remains before a production-ready full season
+
+Then STOP.
+
+Do not build automatic Week 3+ scheduling.
+
+Final status:
+
+PHASE 5.2 REPEATABLE SEASON READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

@@ -3365,6 +3365,44 @@ export function registerFantasyRoutes(app: Express) {
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
 
+      // ── Sequencing guard: week N requires week N-1 to exist and be finalized ─
+      // Skip if this week already exists — idempotent re-publish is always safe.
+      if (wn > 1) {
+        const { data: existingThisWeekRoom } = await supabase
+          .from("gameday_rooms")
+          .select("id")
+          .eq("league_season_id", seasonId)
+          .eq("competition_type", "weekly")
+          .eq("week_number", wn)
+          .is("archived_at", null)
+          .maybeSingle();
+
+        if (!existingThisWeekRoom) {
+          const { data: latestRoom } = await supabase
+            .from("gameday_rooms")
+            .select("week_number, status")
+            .eq("league_season_id", seasonId)
+            .eq("competition_type", "weekly")
+            .is("archived_at", null)
+            .order("week_number", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const maxExisting  = (latestRoom as any)?.week_number ?? 0;
+          const latestStatus = (latestRoom as any)?.status ?? null;
+
+          if (wn > maxExisting + 1) {
+            res.status(409).json({ error: `Week ${wn - 1} must be created first.` }); return;
+          }
+          if (maxExisting < wn - 1) {
+            res.status(409).json({ error: `Week ${wn - 1} must be created first.` }); return;
+          }
+          if (latestStatus !== "finalized") {
+            res.status(409).json({ error: `Finalize Week ${maxExisting} before creating Week ${wn}.` }); return;
+          }
+        }
+      }
+
       const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
       if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
         res.status(400).json({ error: "Select at least one question" });
@@ -3508,6 +3546,194 @@ export function registerFantasyRoutes(app: Express) {
         room_code:       roomCode,
         already_existed: rpcResult.already_existed ?? false,
         week_number:     wn,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary
+  // Returns all weekly rooms for a season in ONE request.
+  // Eliminates N+1 fetching as weeks accumulate.
+  // current_week = latest published week (with full participation data).
+  // past_weeks   = all finalized weeks before current (compact).
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase  = getServiceSupabase();
+      const identity  = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      // 1. All weekly rooms for this season (one query)
+      const { data: rooms } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, week_number, room_code, created_at")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "weekly")
+        .is("archived_at", null)
+        .order("week_number", { ascending: true });
+      const roomList = (rooms ?? []) as any[];
+
+      if (roomList.length === 0) {
+        res.json({
+          current_week:     null,
+          past_weeks:       [],
+          next_week_number: 1,
+          can_create_next:  true,
+        });
+        return;
+      }
+
+      // 2. All pick cards for those rooms (one query)
+      const roomIds = roomList.map((r) => r.id as string);
+      const { data: cards } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status, room_id")
+        .in("room_id", roomIds);
+      const cardByRoom: Record<string, any> = {};
+      for (const c of (cards ?? []) as any[]) cardByRoom[c.room_id] = c;
+
+      // 3. All props for those cards (one query) — only competition scope
+      const cardIds = Object.values(cardByRoom).map((c: any) => c.id as string);
+      const propCountsByCard: Record<string, { total: number; settled: number; ids: string[] }> = {};
+      if (cardIds.length > 0) {
+        const { data: props } = await supabase
+          .from("gameday_props")
+          .select("id, card_id, status, scoring_scope")
+          .in("card_id", cardIds);
+        for (const p of (props ?? []) as any[]) {
+          if (!propCountsByCard[p.card_id]) propCountsByCard[p.card_id] = { total: 0, settled: 0, ids: [] };
+          propCountsByCard[p.card_id].total++;
+          propCountsByCard[p.card_id].ids.push(p.id);
+          if (p.status === "settled") propCountsByCard[p.card_id].settled++;
+        }
+      }
+
+      // 4. All pick counts across all rooms (one query per scope, not per room)
+      const allPropIds = Object.values(propCountsByCard).flatMap((c) => c.ids);
+      const pickCountByProp: Record<string, number> = {};
+      if (allPropIds.length > 0) {
+        const { data: allPicks } = await supabase
+          .from("gameday_picks")
+          .select("prop_id")
+          .in("prop_id", allPropIds);
+        for (const pk of (allPicks ?? []) as any[]) {
+          pickCountByProp[pk.prop_id] = (pickCountByProp[pk.prop_id] ?? 0) + 1;
+        }
+      }
+
+      // 5. Resolve viewer (role + my_pick_count + commissioner gate)
+      const viewer        = await resolveViewer(supabase, identity, seasonId, leagueId).catch(() => null);
+      const isCommissioner = viewer && (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+
+      // 6. Season members (eligible for all weeks)
+      const { data: smRows } = await supabase
+        .from("fantasy_season_members")
+        .select("id, fantasy_league_members(display_name)")
+        .eq("league_season_id", seasonId)
+        .eq("is_active", true);
+      const smList        = (smRows ?? []) as any[];
+      const eligibleCount = smList.length;
+
+      // 7. Participation data for the latest (current) week
+      const latestRoom   = roomList[roomList.length - 1];
+      const latestCard   = cardByRoom[latestRoom.id];
+      const latestProps  = latestCard ? (propCountsByCard[latestCard.id] ?? { total: 0, settled: 0, ids: [] }) : { total: 0, settled: 0, ids: [] };
+      const latestPropIds = latestProps.ids;
+
+      const playedSmIds = new Set<string>();
+      let myPickCount   = 0;
+
+      if (latestPropIds.length > 0) {
+        const { data: latestParts } = await supabase
+          .from("gameday_participants")
+          .select("id, season_member_id")
+          .eq("room_id", latestRoom.id);
+        const latestPartList = (latestParts ?? []) as any[];
+
+        if (latestPartList.length > 0) {
+          const partIds  = latestPartList.map((p: any) => p.id as string);
+          const { data: latestPicks } = await supabase
+            .from("gameday_picks")
+            .select("participant_id")
+            .in("participant_id", partIds)
+            .in("prop_id", latestPropIds);
+          const playedPartIds = new Set(((latestPicks ?? []) as any[]).map((p: any) => p.participant_id as string));
+          for (const part of latestPartList) {
+            if (playedPartIds.has(part.id)) playedSmIds.add(part.season_member_id);
+          }
+        }
+
+        if (viewer) {
+          const { data: vPart } = await supabase
+            .from("gameday_participants")
+            .select("id")
+            .eq("room_id", latestRoom.id)
+            .eq("season_member_id", viewer.season_member_id)
+            .maybeSingle();
+          if (vPart) {
+            const { count } = await supabase
+              .from("gameday_picks")
+              .select("id", { count: "exact", head: true })
+              .in("prop_id", latestPropIds)
+              .eq("participant_id", (vPart as any).id);
+            myPickCount = count ?? 0;
+          }
+        }
+      }
+
+      // 8. Total pick_count for latest room (all prop picks)
+      const latestPickCount = latestPropIds.reduce((sum, id) => sum + (pickCountByProp[id] ?? 0), 0);
+
+      // 9. Build summary items
+      const buildItem = (room: any, isCurrent: boolean) => {
+        const card      = cardByRoom[room.id];
+        const cardStatus = card?.status ?? "closed";
+        const pc        = card ? (propCountsByCard[card.id] ?? { total: 0, settled: 0, ids: [] }) : { total: 0, settled: 0, ids: [] };
+        const allSettled = pc.total > 0 && pc.settled === pc.total;
+
+        const item: any = {
+          room_id:       room.id,
+          card_id:       card?.id ?? null,
+          room_code:     room.room_code ?? null,
+          room_status:   room.status,
+          card_status:   cardStatus,
+          week_number:   room.week_number,
+          prop_count:    pc.total,
+          settled_count: pc.settled,
+          all_settled:   allSettled,
+          pick_count:    pc.ids.reduce((s: number, id: string) => s + (pickCountByProp[id] ?? 0), 0),
+          created_at:    room.created_at,
+        };
+
+        if (isCurrent) {
+          item.my_pick_count   = myPickCount;
+          item.eligible_count  = eligibleCount;
+          item.played_count    = playedSmIds.size;
+          item.waiting_count   = eligibleCount - playedSmIds.size;
+          if (isCommissioner) {
+            item.participants_status = smList.map((sm: any) => ({
+              season_member_id: sm.id,
+              display_name:     (sm as any).fantasy_league_members?.display_name ?? null,
+              has_played:       playedSmIds.has(sm.id),
+            }));
+          }
+        }
+
+        return item;
+      };
+
+      const allItems = roomList.map((room, idx) => buildItem(room, idx === roomList.length - 1));
+      const currentWeek = allItems[allItems.length - 1];
+      const pastWeeks   = allItems.slice(0, -1); // everything before the latest
+
+      const canCreateNext = latestRoom.status === "finalized";
+      const nextWeekNumber = latestRoom.week_number + 1;
+
+      res.json({
+        current_week:     currentWeek,
+        past_weeks:       pastWeeks,
+        next_week_number: nextWeekNumber,
+        can_create_next:  canCreateNext,
       });
     }
   );

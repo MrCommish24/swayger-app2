@@ -41,6 +41,7 @@ import {
   unlockDraftDay,
   finalizeDraftDay,
   getWeekStatus,
+  getWeeklySummary,
   lockWeekly,
   unlockWeekly,
   finalizeWeekly,
@@ -52,6 +53,8 @@ import {
   FantasyParticipant,
   DraftDayStatus,
   WeeklyStatus,
+  WeeklySummaryResponse,
+  PastWeekSummary,
   SeasonStandings,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
@@ -409,9 +412,31 @@ function DraftDayCard({
   );
 }
 
+// ── PastWeekRow ───────────────────────────────────────────────────────────────
+// Compact row for a finalized past weekly competition in the Past Swaygers list.
+function PastWeekRow({
+  label,
+  onView,
+}: {
+  label: string;
+  onView: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.pastWeekRow} onPress={onView} activeOpacity={0.8}>
+      <Text style={styles.pastWeekIcon}>🏈</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pastWeekTitle}>{label}</Text>
+        <Text style={styles.pastWeekSub}>Final Results</Text>
+      </View>
+      <Text style={styles.pastWeekArrow}>View  ›</Text>
+    </TouchableOpacity>
+  );
+}
+
 // ── WeeklyCard ────────────────────────────────────────────────────────────────
-// Renders a single Week N section on the hub.
-// Phase 5.1: adds participation count, Played/Waiting list, Share Week, Share Reminder.
+// Renders the current weekly competition section on the hub.
+// Phase 5.1: participation count, Played/Waiting list, Share Week, Share Reminder.
+// Phase 5.2: fully dynamic weekNumber — no Week 1 hardcoding.
 interface WeeklyCardProps {
   weekNumber:          number;
   weekly:              WeeklyStatus | null | undefined; // undefined = not yet fetched
@@ -888,8 +913,8 @@ export default function LeagueHubScreen() {
   const [lockError, setLockError]               = useState<string | null>(null);
   const [finalizingDraftDay, setFinalizingDraftDay] = useState(false);
   const [finalizeError, setFinalizeError]           = useState<string | null>(null);
-  // ── Phase 5: Weekly Week 1 ──────────────────────────────────────────────────
-  const [weeklyWeek1, setWeeklyWeek1]           = useState<WeeklyStatus | null | undefined>(undefined);
+  // ── Phase 5.2: Weekly summary (all weeks — one request) ─────────────────────
+  const [weeklySummary, setWeeklySummary]       = useState<WeeklySummaryResponse | null | undefined>(undefined);
   const [lockingWeekly, setLockingWeekly]       = useState(false);
   const [unlockingWeekly, setUnlockingWeekly]   = useState(false);
   const [weeklyLockError, setWeeklyLockError]   = useState<string | null>(null);
@@ -909,18 +934,18 @@ export default function LeagueHubScreen() {
       setError(null);
       try {
         const auth = session ? { session } : { guestToken: guestToken! };
-        const [data, dd, wk1] = await Promise.all([
+        const [data, dd, ws] = await Promise.all([
           fantasyFetch<FantasySeasonDetail>(
             `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`,
             {},
             auth
           ),
           getDraftDay(leagueId, seasonId, auth).catch(() => null),
-          getWeekStatus(leagueId, seasonId, 1, auth).catch(() => null),
+          getWeeklySummary(leagueId, seasonId, auth).catch(() => null),
         ]);
         setDetail(data);
         setDraftDay(dd);
-        setWeeklyWeek1(wk1);
+        setWeeklySummary(ws);
       } catch (e: any) {
         setError(e.message ?? "Failed to load league");
       } finally {
@@ -1336,103 +1361,158 @@ export default function LeagueHubScreen() {
             }}
           />
 
-          {/* ── Week 1 Swayger Card ────────────────────────────────────── */}
-          <WeeklyCard
-            weekNumber={1}
-            weekly={weeklyWeek1}
-            isCommissioner={isCommissioner}
-            locking={lockingWeekly}
-            unlocking={unlockingWeekly}
-            finalizing={finalizingWeekly}
-            lockError={weeklyLockError}
-            finalizeError={weeklyFinalizeError}
-            myPickCount={weeklyWeek1?.my_pick_count ?? 0}
-            onSetup={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/setup` as any)}
-            onPlay={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/play` as any)}
-            onSettle={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/settle` as any)}
-            onViewResults={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/results` as any)}
-            onViewStandings={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
-            onLock={async () => {
-              if (!session || lockingWeekly) return;
-              setWeeklyLockError(null);
-              setLockingWeekly(true);
-              try {
-                await lockWeekly(leagueId, seasonId, 1, { session });
-                setWeeklyWeek1((prev) =>
-                  prev ? { ...prev, card_status: "locked" as const } : prev
-                );
-              } catch (e: any) {
-                setWeeklyLockError("Failed to lock. Please try again.");
-                console.error("[hub] lock weekly:", e.message);
-              } finally {
-                setLockingWeekly(false);
-              }
-            }}
-            onUnlock={async () => {
-              if (!session || unlockingWeekly) return;
-              setUnlockingWeekly(true);
-              try {
-                await unlockWeekly(leagueId, seasonId, 1, { session });
-                setWeeklyWeek1((prev) =>
-                  prev ? { ...prev, card_status: "open" as const } : prev
-                );
-              } catch (e: any) {
-                const msg = e.message?.includes("settlement")
-                  ? "Picks cannot be unlocked after settlement has started."
-                  : "Failed to unlock Week 1. Please try again.";
-                Alert.alert("Cannot Unlock", msg);
-                console.error("[hub] unlock weekly:", e.message);
-              } finally {
-                setUnlockingWeekly(false);
-              }
-            }}
-            onFinalize={async () => {
-              if (!session || finalizingWeekly) return;
-              setWeeklyFinalizeError(null);
-              setFinalizingWeekly(true);
-              try {
-                await finalizeWeekly(leagueId, seasonId, 1, { session });
-                fetchDetail(true);
-              } catch (e: any) {
-                setWeeklyFinalizeError(e.message?.includes("unsettled")
-                  ? "Some questions are not yet resolved."
-                  : "Failed to finalize. Please try again.");
-                console.error("[hub] finalize weekly:", e.message);
-              } finally {
-                setFinalizingWeekly(false);
-              }
-            }}
-            onShare={async () => {
-              const url  = buildWeekUrl(leagueId, seasonId, 1);
-              const hasDDFinalized = draftDay?.room_status === "finalized";
-              const message = hasDDFinalized
-                ? `Week 1 Swayger is live 🏈\n\nDraft Day is over. Now let's see who really knows this league.\n\nMake your picks before they lock:\n\n${url}`
-                : `Week 1 Swayger is live 🏈\n\nThink you know our league better than everyone else?\n\nMake your Week 1 picks before they lock.\n\n${url}`;
-              try {
-                await Share.share(Platform.OS === "ios" ? { message, url } : { message });
-              } catch {
-                // User dismissed share sheet — no-op
-              }
-            }}
-            onShareReminder={async () => {
-              const url     = buildWeekUrl(leagueId, seasonId, 1);
-              const waiting = weeklyWeek1?.waiting_count ?? 0;
-              const people  = waiting === 1 ? "person hasn't" : "people haven't";
-              const message = `Week 1 Swayger reminder 👀\n\n${waiting} ${people} made their picks.\n\nStill time to make your Week 1 picks:\n\n${url}`;
-              try {
-                await Share.share(Platform.OS === "ios" ? { message, url } : { message });
-              } catch {
-                // User dismissed — no-op
-              }
-            }}
-            onCopyLink={async () => {
-              const url = buildWeekUrl(leagueId, seasonId, 1);
-              await Clipboard.setStringAsync(url);
-            }}
-          />
+          {/* ── Current Swayger (dynamic weekNumber) ─────────────────────── */}
+          {weeklySummary !== undefined && (() => {
+            const cw  = weeklySummary?.current_week ?? null;
+            const wn  = cw?.week_number ?? 0;
+            return (
+              <>
+                {cw && (
+                  <>
+                    <Text style={[styles.sectionLabel, { marginTop: 4, marginBottom: 10 }]}>
+                      CURRENT SWAYGER
+                    </Text>
+                    <WeeklyCard
+                      weekNumber={wn}
+                      weekly={cw}
+                      isCommissioner={isCommissioner}
+                      locking={lockingWeekly}
+                      unlocking={unlockingWeekly}
+                      finalizing={finalizingWeekly}
+                      lockError={weeklyLockError}
+                      finalizeError={weeklyFinalizeError}
+                      myPickCount={cw.my_pick_count ?? 0}
+                      onSetup={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/setup` as any)}
+                      onPlay={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/play` as any)}
+                      onSettle={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/settle` as any)}
+                      onViewResults={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/results` as any)}
+                      onViewStandings={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
+                      onLock={async () => {
+                        if (!session || lockingWeekly) return;
+                        setWeeklyLockError(null);
+                        setLockingWeekly(true);
+                        try {
+                          await lockWeekly(leagueId, seasonId, wn, { session });
+                          setWeeklySummary((prev) => prev && prev.current_week ? {
+                            ...prev,
+                            current_week: { ...prev.current_week, card_status: "locked" as const },
+                          } : prev);
+                        } catch (e: any) {
+                          setWeeklyLockError("Failed to lock. Please try again.");
+                          console.error("[hub] lock weekly:", e.message);
+                        } finally {
+                          setLockingWeekly(false);
+                        }
+                      }}
+                      onUnlock={async () => {
+                        if (!session || unlockingWeekly) return;
+                        setUnlockingWeekly(true);
+                        try {
+                          await unlockWeekly(leagueId, seasonId, wn, { session });
+                          setWeeklySummary((prev) => prev && prev.current_week ? {
+                            ...prev,
+                            current_week: { ...prev.current_week, card_status: "open" as const },
+                          } : prev);
+                        } catch (e: any) {
+                          const msg = e.message?.includes("settlement")
+                            ? "Picks cannot be unlocked after settlement has started."
+                            : `Failed to unlock Week ${wn}. Please try again.`;
+                          Alert.alert("Cannot Unlock", msg);
+                          console.error("[hub] unlock weekly:", e.message);
+                        } finally {
+                          setUnlockingWeekly(false);
+                        }
+                      }}
+                      onFinalize={async () => {
+                        if (!session || finalizingWeekly) return;
+                        setWeeklyFinalizeError(null);
+                        setFinalizingWeekly(true);
+                        try {
+                          await finalizeWeekly(leagueId, seasonId, wn, { session });
+                          fetchDetail(true);
+                        } catch (e: any) {
+                          setWeeklyFinalizeError(e.message?.includes("unsettled")
+                            ? "Some questions are not yet resolved."
+                            : "Failed to finalize. Please try again.");
+                          console.error("[hub] finalize weekly:", e.message);
+                        } finally {
+                          setFinalizingWeekly(false);
+                        }
+                      }}
+                      onShare={async () => {
+                        const url = buildWeekUrl(leagueId, seasonId, wn);
+                        const hasDDFinalized = draftDay?.room_status === "finalized";
+                        const message = hasDDFinalized
+                          ? `Week ${wn} Swayger is live 🏈\n\nDraft Day is over. Now let's see who really knows this league.\n\nMake your picks before they lock:\n\n${url}`
+                          : `Week ${wn} Swayger is live 🏈\n\nThink you know our league better than everyone else?\n\nMake your Week ${wn} picks before they lock.\n\n${url}`;
+                        try {
+                          await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                        } catch { }
+                      }}
+                      onShareReminder={async () => {
+                        const url     = buildWeekUrl(leagueId, seasonId, wn);
+                        const waiting = cw.waiting_count ?? 0;
+                        const people  = waiting === 1 ? "person hasn't" : "people haven't";
+                        const message = `Week ${wn} Swayger reminder 👀\n\n${waiting} ${people} made their picks.\n\nStill time to make your Week ${wn} picks:\n\n${url}`;
+                        try {
+                          await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                        } catch { }
+                      }}
+                      onCopyLink={async () => {
+                        const url = buildWeekUrl(leagueId, seasonId, wn);
+                        await Clipboard.setStringAsync(url);
+                      }}
+                    />
+                  </>
+                )}
+
+                {/* Set Up Next Week — commissioner CTA when current week finalized */}
+                {weeklySummary?.can_create_next && isCommissioner && (
+                  <TouchableOpacity
+                    style={styles.setupNextWeekBtn}
+                    onPress={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${weeklySummary.next_week_number}/setup` as any)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.setupNextWeekIcon}>🏈</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.setupNextWeekTitle}>
+                        Set Up Week {weeklySummary.next_week_number}
+                      </Text>
+                      <Text style={styles.setupNextWeekSub}>
+                        Create your next weekly competition
+                      </Text>
+                    </View>
+                    <Text style={styles.inviteBtnArrow}>›</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Past Swaygers — finalized weekly history (compact) */}
+                {(weeklySummary?.past_weeks?.filter((w) => w.room_status === "finalized").length ?? 0) > 0 && (
+                  <>
+                    <Text style={[styles.sectionLabel, { marginTop: 16, marginBottom: 8 }]}>
+                      PAST SWAYGERS
+                    </Text>
+                    <View style={styles.pastWeekList}>
+                      {weeklySummary!.past_weeks
+                        .filter((w) => w.room_status === "finalized")
+                        .map((w) => (
+                          <PastWeekRow
+                            key={w.week_number}
+                            label={`Week ${w.week_number}`}
+                            onView={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${w.week_number}/results` as any)}
+                          />
+                        ))}
+                    </View>
+                  </>
+                )}
+              </>
+            );
+          })()}
 
           {/* ── Season Standings quick-access (once any competition finalized) ── */}
-          {(draftDay?.room_status === "finalized" || weeklyWeek1?.room_status === "finalized") && (
+          {(draftDay?.room_status === "finalized" ||
+            weeklySummary?.current_week?.room_status === "finalized" ||
+            (weeklySummary?.past_weeks?.length ?? 0) > 0) && (
             <TouchableOpacity
               style={styles.inviteBtn}
               onPress={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
@@ -1701,6 +1781,46 @@ const styles = StyleSheet.create({
   lockConfirmBody:  { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   lockConfirmButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
   lockErrorText: { fontSize: 12, color: C.danger, textAlign: "center", marginTop: 4 },
+
+  // Past Swaygers compact list (Phase 5.2)
+  pastWeekList: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  pastWeekRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  pastWeekIcon:  { fontSize: 20 },
+  pastWeekTitle: { fontSize: 15, fontWeight: "600", color: C.text },
+  pastWeekSub:   { fontSize: 12, color: C.textMuted, marginTop: 1 },
+  pastWeekArrow: { fontSize: 13, color: C.tint, fontWeight: "600" },
+
+  // Set Up Next Week CTA (Phase 5.2)
+  setupNextWeekBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#06091A",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.tint,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  setupNextWeekIcon:  { fontSize: 22 },
+  setupNextWeekTitle: { fontSize: 15, fontWeight: "700", color: C.text },
+  setupNextWeekSub:   { fontSize: 12, color: C.textMuted, marginTop: 2 },
 
   // Weekly participation list (Phase 5.1)
   weeklyPartToggle: {

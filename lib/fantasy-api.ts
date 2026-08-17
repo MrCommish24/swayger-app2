@@ -692,6 +692,45 @@ export interface WeeklyStatus {
   created_at: string;
 }
 
+/** Compact summary row for a finalized past week (no participation detail needed). */
+export interface PastWeekSummary {
+  week_number:   number;
+  room_id:       string;
+  card_id:       string | null;
+  room_status:   "draft" | "active" | "finalized";
+  card_status:   "closed" | "open" | "locked" | "settled";
+  prop_count:    number;
+  settled_count: number;
+  all_settled:   boolean;
+  pick_count:    number;
+  created_at:    string;
+}
+
+/** Season-level weekly summary — one request serves all weeks. */
+export interface WeeklySummaryResponse {
+  /** Latest published weekly room (with full participation data). null if no weeks published yet. */
+  current_week:     WeeklyStatus | null;
+  /** All finalized weekly rooms before the current week (compact — no participation detail). */
+  past_weeks:       PastWeekSummary[];
+  /** The week number the commissioner should create next. */
+  next_week_number: number;
+  /** True when the current week is finalized (previous week finalized gate satisfied). */
+  can_create_next:  boolean;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary
+export async function getWeeklySummary(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklySummaryResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weekly-summary`,
+    {},
+    auth
+  );
+}
+
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber
 export async function getWeekStatus(
   leagueId: string,
