@@ -1,0 +1,266 @@
+The Phase 5.2.3 recovery migration has now been applied successfully in Supabase.
+
+Before building application code, perform a POST-MIGRATION SECURITY VERIFICATION.
+
+Do not begin frontend/API implementation until this check is complete.
+
+==================================================
+1. VERIFY LIVE MIGRATION
+==================================================
+
+Confirm live:
+
+- fantasy_member_recovery_tokens table exists
+- token_hash is UNIQUE
+- expected foreign keys exist
+- status CHECK exists
+- expires_at exists
+- indexes exist
+- create_member_recovery_token RPC exists
+- redeem_member_recovery_token RPC exists
+- revoke_member_recovery_token RPC exists
+- RLS is enabled
+
+Return the exact live definitions/signatures.
+
+==================================================
+2. CRITICAL — AUDIT DIRECT TABLE ACCESS
+==================================================
+
+The migration currently uses a permissive:
+
+FOR ALL USING (true)
+
+RLS policy because other Fantasy tables use that pattern.
+
+Do NOT assume that is appropriate for a sensitive recovery-token table.
+
+Inspect actual PostgreSQL privileges for:
+
+fantasy_member_recovery_tokens
+
+for:
+
+- anon
+- authenticated
+- service_role
+
+Check:
+
+SELECT
+  has_table_privilege('anon', 'public.fantasy_member_recovery_tokens', 'SELECT'),
+  has_table_privilege('anon', 'public.fantasy_member_recovery_tokens', 'INSERT'),
+  has_table_privilege('anon', 'public.fantasy_member_recovery_tokens', 'UPDATE'),
+  has_table_privilege('anon', 'public.fantasy_member_recovery_tokens', 'DELETE');
+
+Repeat for authenticated and service_role.
+
+Also inspect ACLs / information_schema role grants.
+
+==================================================
+3. REQUIRED SECURITY OUTCOME
+==================================================
+
+Desired architecture:
+
+Normal clients must NOT be able to directly:
+
+- SELECT recovery token rows
+- enumerate member recovery requests
+- INSERT arbitrary recovery token records
+- UPDATE token status
+- mark tokens redeemed/revoked
+- DELETE token records
+
+All sensitive operations should occur through:
+
+- authorized server routes
+and/or
+- narrowly-scoped SECURITY DEFINER RPCs
+
+The fact that token_hash is not the raw token is NOT sufficient reason to permit direct table CRUD.
+
+==================================================
+4. IF ANON/AUTH DIRECT ACCESS IS CURRENTLY POSSIBLE
+==================================================
+
+If anon or authenticated can directly CRUD the table:
+
+STOP application implementation.
+
+Create a small corrective migration.
+
+Preferred direction:
+
+- keep RLS ENABLED
+- remove the permissive FOR ALL USING(true) policy from THIS recovery table
+- revoke direct table privileges from anon/authenticated where appropriate
+- retain only the minimum RPC EXECUTE privileges needed
+- preserve service-role/server access
+- do not weaken existing claim architecture
+
+Do NOT change every Fantasy table.
+
+This correction applies only to:
+
+fantasy_member_recovery_tokens
+
+because recovery authorization is security-sensitive.
+
+If direct access is already blocked by grants despite the permissive policy, prove that and leave it alone.
+
+==================================================
+5. AUDIT RPC EXECUTE PRIVILEGES
+==================================================
+
+For each new RPC determine exactly who can execute it.
+
+create_member_recovery_token:
+should NOT be callable anonymously.
+
+redeem_member_recovery_token:
+must not allow spoofing p_redeeming_user_id from an untrusted client.
+
+revoke_member_recovery_token:
+should be commissioner-controlled.
+
+Important:
+
+If any SECURITY DEFINER function accepts:
+
+p_redeeming_user_id
+
+or
+p_created_by_user_id
+
+from caller input,
+
+inspect whether the function independently verifies that identity against auth.uid() / trusted server context.
+
+A client must NOT be able to say:
+
+"I am user UUID X"
+
+merely by passing X as a parameter.
+
+If these RPCs are intended to be called ONLY by the service-role server:
+confirm public client roles do not have EXECUTE privilege.
+
+This is critical.
+
+==================================================
+6. COMMISSIONER AUTHORIZATION LOCATION
+==================================================
+
+Clarify where commissioner authorization occurs.
+
+If:
+
+server route verifies commissioner
+→ service-role calls RPC
+
+that is acceptable, provided the RPC cannot be safely bypassed directly by an untrusted client.
+
+If the RPC itself is public:
+it must independently enforce commissioner authority.
+
+Do not rely on UI authorization.
+
+==================================================
+7. RECOVERY REDEMPTION IDENTITY
+==================================================
+
+For redemption, verify the authenticated recipient cannot spoof another user.
+
+Preferred:
+
+- server validates Bearer JWT
+- derives actual user.id
+- service-role invokes RPC with that verified user ID
+
+OR:
+
+- RPC derives auth.uid() itself
+
+Do not trust arbitrary client-provided user UUID.
+
+==================================================
+8. TOKEN LOOKUP ENDPOINT
+==================================================
+
+The future unauthenticated:
+
+GET /api/fantasy/recover/:token
+
+may return enough context to display:
+
+- league name
+- member display name
+- team name
+- expiration
+
+That is acceptable because possession of the recovery URL is already required.
+
+But do NOT expose through that endpoint:
+
+- token_hash
+- claim row
+- guest token
+- user IDs
+- commissioner user ID
+- other members
+- historical picks
+
+Return minimum context only.
+
+==================================================
+9. VERIFY RECOVERY DOES NOT ALTER EXISTING DATA
+==================================================
+
+Before application implementation, confirm migration application itself:
+
+- created no recovery rows
+- changed no fantasy_member_claims rows
+- changed no league members
+- changed no season members
+- changed no teams
+- changed no picks
+- changed no standings
+- changed no roster revisions
+
+Expected recovery token row count immediately after migration:
+0
+
+unless a deliberate test row was created.
+
+==================================================
+10. RETURN SECURITY VERDICT FIRST
+==================================================
+
+Return:
+
+1. live schema verification
+2. live RPC signatures
+3. RLS policy
+4. anon table privileges
+5. authenticated table privileges
+6. service_role privileges
+7. RPC EXECUTE privileges
+8. whether any RPC trusts caller-supplied user identity
+9. commissioner authorization model
+10. whether direct PostgREST access is possible
+11. recovery table row count
+12. exact security verdict
+
+End with one of:
+
+SECURITY VERIFIED — PROCEED TO APPLICATION CODE
+
+or
+
+SECURITY CORRECTION MIGRATION REQUIRED
+
+If a correction migration is required:
+write it and STOP.
+
+Do not begin application code until I apply it.
