@@ -78,12 +78,30 @@ No stale state path exists. `onFinalize` on the hub also calls `fetchDetail(true
 - `app/fantasy/draft-day/[leagueId]/[seasonId]/settle.tsx` — commissioner resolution screen
 - `app/fantasy/draft-day/[leagueId]/[seasonId]/results.tsx` — member results screen
 
+## Result correction (Game Day parity — QA bug fix)
+
+Classic Game Day's `PATCH /props/:propId/settle` has NO guard for already-settled props.
+Calling it again with a different answer simply re-runs `settlePropCore` (new answer correct,
+old answer picks flipped) — no 409, no block.
+
+Fantasy originally blocked this with a 409. Fixed by removing the conflict block.
+New behavior before finalization:
+- Same answer → idempotent 200 (`idempotent: true, was_correction: false`)
+- Different answer → correction 200 (`idempotent: false, was_correction: true`)
+- After finalization → 409 (room_status=finalized guard, same as Game Day's 400)
+
+UI: settle.tsx PropCard has options always tappable (removed `disabled={isSettled}` and
+`!isSettled &&` guards). Non-selected options shown at 60% opacity with "✎ tap to change"
+hint. Optimistic update does NOT increment `settled_count` on corrections (checks
+`wasAlreadySettled` before incrementing).
+
 ## Tests
 
-`server/test-fantasy-phase4c.ts` — 96 assertions, all pass.
+`server/test-fantasy-phase4c.ts` — 111 assertions (added §37 with RC-1..RC-12), all pass.
 `server/test-fantasy-phase4c-run.ts` — self-bootstrapping runner (creates users, fixture, runs tests).
 Run via: `npm run test:fantasy:4c`
 
 Bugs found and fixed during verification:
 1. `card_status` became `'settled'` after season prop post-finalization settlement → fixed in settle route.
 2. Leaderboard count inflated when `GET /play` called with commissioner token → fixed in test.
+3. Pre-finalization result correction blocked with 409 → fixed: removed conflict block, added `was_correction` field.

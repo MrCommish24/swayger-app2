@@ -4,8 +4,12 @@
  * Phase 4C — Commissioner Draft Day Settlement Screen.
  *
  * Commissioner resolves each competition-scope prop by selecting the correct
- * answer. Season Receipts are shown as an informational "locked for later"
- * section — they are NOT settled here.
+ * answer. Results remain correctable until the commissioner taps "Finalize Draft
+ * Day" and confirms — mirroring the classic Game Day Room lifecycle where hosts
+ * can re-settle any prop before Finalize Standings.
+ *
+ * Season Receipts are shown as an informational "locked for later" section —
+ * they are NOT settled here.
  *
  * When all competition props are resolved, the commissioner can finalize the
  * Draft Day to seal the leaderboard and reveal results to all members.
@@ -52,7 +56,7 @@ export default function DraftDaySettleScreen() {
   // Per-prop settling state: propId → { settling: boolean, error: string | null }
   const [propState, setPropState] = useState<Record<string, { settling: boolean; error: string | null }>>({});
 
-  // Finalize inline confirm
+  // Finalize inline confirm (two-step, mirroring Game Day modal pattern)
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
   const [finalizing, setFinalizing]                 = useState(false);
   const [finalizeError, setFinalizeError]           = useState<string | null>(null);
@@ -78,25 +82,32 @@ export default function DraftDaySettleScreen() {
     if (!session || !leagueId || !seasonId) return;
     setPropState(prev => ({ ...prev, [propId]: { settling: true, error: null } }));
     try {
-      await settleDraftDayProp(leagueId, seasonId, propId, answerId, { session });
-      // Optimistic update: mark prop as settled with selected answer
+      const resp = await settleDraftDayProp(leagueId, seasonId, propId, answerId, { session });
+
+      // Optimistic update — mirrors Game Day: re-settlement just changes the
+      // correct_answer, settled_count doesn't increase on corrections.
       setState(prev => {
         if (!prev) return prev;
+        const wasAlreadySettled = prev.competition_props.find(p => p.id === propId)?.status === "settled";
+        const newSettledCount = wasAlreadySettled
+          ? prev.settled_count
+          : prev.settled_count + 1;
         return {
           ...prev,
           competition_props: prev.competition_props.map(p =>
             p.id === propId ? { ...p, status: "settled", correct_answer: answerId } : p
           ),
-          settled_count: prev.settled_count + 1,
-          all_settled: prev.settled_count + 1 === prev.total_competition_count,
+          settled_count: newSettledCount,
+          all_settled: newSettledCount === prev.total_competition_count,
         };
       });
+
+      // Refresh to get updated preview_leaderboard from server after any settlement
+      fetchSettlement(true);
+
       setPropState(prev => ({ ...prev, [propId]: { settling: false, error: null } }));
     } catch (e: any) {
-      const msg = e.message?.includes("already settled")
-        ? "This question is already resolved."
-        : e.message ?? "Failed to resolve. Please try again.";
-      setPropState(prev => ({ ...prev, [propId]: { settling: false, error: msg } }));
+      setPropState(prev => ({ ...prev, [propId]: { settling: false, error: e.message ?? "Failed to resolve. Please try again." } }));
       // Re-fetch to get true server state
       fetchSettlement(true);
     }
@@ -174,7 +185,7 @@ export default function DraftDaySettleScreen() {
       {/* Header */}
       <Text style={styles.screenTitle}>Resolve Draft Day</Text>
       <Text style={styles.screenSub}>
-        Select the correct answer for each Draft Day question.
+        Select the correct answer for each question. You can change a selection before finalizing.
       </Text>
 
       {/* Progress */}
@@ -223,7 +234,8 @@ export default function DraftDaySettleScreen() {
         <View style={styles.finalizeSection}>
           <Text style={styles.finalizeSectionTitle}>🎉 All questions resolved!</Text>
           <Text style={styles.finalizeSectionBody}>
-            Finalize to seal the leaderboard and let all league members see the Draft Day results.
+            Review your answers above. Once you finalize, results become read-only and all league
+            members will see the Draft Day leaderboard.
           </Text>
 
           {!confirmingFinalize && (
@@ -241,8 +253,8 @@ export default function DraftDaySettleScreen() {
             <View style={styles.finalizeConfirmBox}>
               <Text style={styles.finalizeConfirmTitle}>Finalize Draft Day?</Text>
               <Text style={styles.finalizeConfirmBody}>
-                This permanently seals the results. Members will see the leaderboard and your Draft Day champion.
-                Season Receipts will remain pending and settle later.
+                Results will become read-only and participants will see the final leaderboard.{"\n\n"}
+                Season Receipts will remain pending and settle later — they don't affect the Draft Day winner.
               </Text>
               <View style={styles.finalizeConfirmButtons}>
                 <TouchableOpacity
@@ -304,6 +316,11 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
         )}
       </View>
 
+      {/* "Tap to change" hint for settled props */}
+      {isSettled && !settling && (
+        <Text style={styles.changeHint}>✎ Tap any answer to change</Text>
+      )}
+
       {/* Loading overlay */}
       {settling && (
         <View style={styles.propSettling}>
@@ -312,21 +329,21 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
         </View>
       )}
 
-      {/* Answer options */}
+      {/* Answer options — always visible and tappable (mirroring Game Day re-settle behavior) */}
       {!settling && (
         <View style={styles.answerList}>
           {prop.answer_options.map((opt) => {
             const isCorrect = isSettled && prop.correct_answer === opt.id;
+            const isOtherSettled = isSettled && !isCorrect;
             return (
               <TouchableOpacity
                 key={opt.id}
                 style={[
                   styles.answerOption,
-                  isSettled && isCorrect && styles.answerOptionCorrect,
-                  isSettled && !isCorrect && styles.answerOptionDimmed,
+                  isCorrect && styles.answerOptionCorrect,
+                  isOtherSettled && styles.answerOptionOther,
                 ]}
-                onPress={() => !isSettled && onSelect(prop.id, opt.id)}
-                disabled={isSettled}
+                onPress={() => onSelect(prop.id, opt.id)}
                 activeOpacity={0.75}
               >
                 <View style={[
@@ -338,6 +355,7 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
                 <Text style={[
                   styles.answerLabel,
                   isCorrect && styles.answerLabelCorrect,
+                  isOtherSettled && styles.answerLabelOther,
                 ]}>
                   {opt.label}
                 </Text>
@@ -415,6 +433,12 @@ const styles = StyleSheet.create({
   },
   settledBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 
+  // "Tap to change" hint
+  changeHint: {
+    color: C.textMuted, fontSize: 11, fontStyle: "italic",
+    marginBottom: -4,
+  },
+
   propSettling: { flexDirection: "row", gap: 8, alignItems: "center", paddingVertical: 4 },
   propSettlingText: { color: C.textSecondary, fontSize: 14 },
 
@@ -427,7 +451,8 @@ const styles = StyleSheet.create({
   answerOptionCorrect: {
     backgroundColor: "#052E16", borderColor: "#22c55e",
   },
-  answerOptionDimmed: { opacity: 0.45 },
+  // Non-selected options on a settled prop — slightly dimmed but clearly interactive
+  answerOptionOther: { opacity: 0.6 },
   answerRadio: {
     width: 20, height: 20, borderRadius: 10,
     borderWidth: 2, borderColor: C.textMuted,
@@ -440,6 +465,7 @@ const styles = StyleSheet.create({
   },
   answerLabel: { flex: 1, color: C.text, fontSize: 14, lineHeight: 18 },
   answerLabelCorrect: { color: "#4ade80", fontWeight: "600" },
+  answerLabelOther: { color: C.textSecondary },
   correctMark: { color: "#4ade80", fontSize: 16, fontWeight: "700" },
 
   propErrorText: { color: "#f87171", fontSize: 12, marginTop: 4 },

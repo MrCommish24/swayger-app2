@@ -58,6 +58,20 @@
  *  §36  Regression smoke
  *   34.  GET /draft-day hub returns settled_competition_count field
  *   35.  GET /draft-day hub: settled_competition_count increments correctly
+ *
+ *  §37  Result correction (mirrors Game Day pre-finalize re-settle)
+ *   RC-1. Settled prop has correct initial answer
+ *   RC-2. Original answer ID is a string
+ *   RC-3. Re-settle with different answer → 200 OK
+ *   RC-4. ok = true on correction
+ *   RC-5. was_correction = true
+ *   RC-6. idempotent = false (not a no-op)
+ *   RC-7. Response echoes new correct_answer
+ *   RC-8. Server state reflects corrected answer
+ *   RC-9. Preview leaderboard still present after correction
+ *   RC-10. settled_count unchanged on correction (no double-count)
+ *   RC-11. Idempotent correction: re-sending same answer → idempotent:true
+ *   RC-12. A→B→A cycle proves full reversibility
  */
 
 import * as http from "http";
@@ -334,17 +348,96 @@ async function suite_settle_prop() {
   assert(r11.status === 200, "Idempotent re-settle → 200", r11.status);
   assert(r11.data?.idempotent === true, "idempotent = true on repeat call", r11.data);
 
-  // 12. Conflict: same prop + different answer → 409
+  // 12. Correction: same prop + different answer → 200 + was_correction:true (mirrors Game Day re-settle)
   const otherOptionId = firstCompProp?.answer_options?.[1]?.id ?? firstCompProp?.answer_options?.[0]?.id;
   if (otherOptionId && otherOptionId !== firstCompPropOptionId) {
     const r12 = await request("POST", settlePath,
       buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
       { prop_id: firstCompProp?.id, correct_answer: otherOptionId });
-    assert(r12.status === 409, "Different answer on settled prop → 409", { status: r12.status, data: r12.data });
-    assert(r12.data?.existing_correct_answer, "409 response includes existing_correct_answer", r12.data);
+    assert(r12.status === 200, "Different answer on settled prop → 200 (correction allowed before finalize)", { status: r12.status, data: r12.data });
+    assert(r12.data?.was_correction === true, "was_correction = true (changed existing result)", r12.data);
+    assert(r12.data?.idempotent === false, "idempotent = false on correction", r12.data);
+    // Restore original answer for subsequent tests
+    const rRestore = await request("POST", settlePath,
+      buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
+      { prop_id: firstCompProp?.id, correct_answer: firstCompPropOptionId });
+    assert(rRestore.status === 200, "Restore original answer → 200", { status: rRestore.status });
+    assert(rRestore.data?.was_correction === true, "Restore also has was_correction = true", rRestore.data);
   } else {
-    assert(true, "Skipped conflict test (prop has only 1 answer option)");
+    assert(true, "Skipped correction test (prop has only 1 answer option)");
+    assert(true, "Skipped correction restore (prop has only 1 answer option)");
+    assert(true, "Skipped was_correction check (prop has only 1 answer option)");
+    assert(true, "Skipped restore was_correction check (prop has only 1 answer option)");
   }
+}
+
+// ── §37  Result correction (full suite — before finalization) ─────────────────
+
+async function suite_result_correction() {
+  console.log("\n▸ §37 Result Correction (mirrors Game Day pre-finalize re-settle)");
+
+  // Retrieve current state — first comp prop was settled (and restored) in suite_settle_prop.
+  const { data: sData } = await request("GET", settlementPath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  const corrProp = (sData?.competition_props ?? []).find((p: any) => p.status === "settled") as any;
+  if (!corrProp) {
+    console.log("  ℹ  No settled prop found — skipping correction suite");
+    for (let i = 0; i < 12; i++) assert(true, "Skipped (no settled prop)");
+    return;
+  }
+  const originalAnswerId  = corrProp.correct_answer as string;
+  const altAnswer         = (corrProp.answer_options as any[]).find((o: any) => o.id !== originalAnswerId);
+
+  if (!altAnswer) {
+    console.log("  ℹ  Prop has only one answer option — correction not possible; skipping");
+    for (let i = 0; i < 12; i++) assert(true, "Skipped (only one answer option)");
+    return;
+  }
+
+  // RC-1: Verify initial state
+  assert(corrProp.status === "settled", "RC-1. Prop is settled with original answer", corrProp.status);
+  assert(typeof originalAnswerId === "string", "RC-2. Original answer ID is a string", originalAnswerId);
+
+  // RC-3: Re-settle with different answer (correction)
+  const rCorr = await request("POST", settlePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
+    { prop_id: corrProp.id, correct_answer: altAnswer.id });
+  assert(rCorr.status === 200, "RC-3. Correction → 200 OK", { status: rCorr.status, data: rCorr.data });
+  assert(rCorr.data?.ok === true, "RC-4. ok = true", rCorr.data);
+  assert(rCorr.data?.was_correction === true, "RC-5. was_correction = true", rCorr.data);
+  assert(rCorr.data?.idempotent === false, "RC-6. idempotent = false (not a no-op)", rCorr.data);
+  assert(rCorr.data?.correct_answer === altAnswer.id, "RC-7. Response echoes new correct_answer", rCorr.data);
+
+  // RC-8: Verify server state reflects the new answer
+  const { data: sData2 } = await request("GET", settlementPath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  const corrProp2 = (sData2?.competition_props ?? []).find((p: any) => p.id === corrProp.id) as any;
+  assert(corrProp2?.correct_answer === altAnswer.id, "RC-8. Server state shows corrected answer B", {
+    expected: altAnswer.id, got: corrProp2?.correct_answer });
+
+  // RC-9: Preview leaderboard is still present and recalculated
+  assert(Array.isArray(sData2?.preview_leaderboard), "RC-9. Preview leaderboard still present after correction", sData2);
+
+  // RC-10: settled_count unchanged (correction doesn't change the count)
+  assert(
+    sData2?.settled_count === sData?.settled_count,
+    "RC-10. settled_count unchanged after correction",
+    { before: sData?.settled_count, after: sData2?.settled_count }
+  );
+
+  // RC-11: Idempotent correction: re-sending same corrected answer → idempotent:true
+  const rIdem = await request("POST", settlePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
+    { prop_id: corrProp.id, correct_answer: altAnswer.id });
+  assert(rIdem.status === 200 && rIdem.data?.idempotent === true,
+    "RC-11. Re-sending corrected answer → idempotent:true", rIdem.data);
+
+  // RC-12: Restore original answer (A → B → A cycle proves full reversibility)
+  const rRestore = await request("POST", settlePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
+    { prop_id: corrProp.id, correct_answer: originalAnswerId });
+  assert(rRestore.status === 200 && rRestore.data?.was_correction === true,
+    "RC-12. Restore original answer → 200 + was_correction:true (A→B→A cycle complete)", rRestore.data);
 }
 
 async function suite_season_prop_scope() {
@@ -682,6 +775,7 @@ async function suite_regression_hub() {
   await suite_auth_guards();
   await suite_settlement_state();
   await suite_settle_prop();
+  await suite_result_correction();  // ← must run before finalize (correction only works pre-finalize)
   await suite_season_prop_scope();
   await suite_finalize();           // ← sets room to finalized; irreversible in fixture
 

@@ -552,7 +552,7 @@ export async function settleDraftDayProp(
   propId: string,
   correctAnswer: string,
   auth: Parameters<typeof fantasyFetch>[2]
-): Promise<{ ok: boolean; idempotent: boolean; prop_id: string; correct_answer: string; scoring_scope: string; card_auto_settled: boolean }> {
+): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; scoring_scope: string; card_auto_settled: boolean }> {
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/settle`,
     {

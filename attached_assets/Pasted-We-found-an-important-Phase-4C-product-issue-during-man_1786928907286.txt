@@ -1,0 +1,367 @@
+We found an important Phase 4C product issue during manual QA.
+
+CURRENT PROBLEM
+
+On the Fantasy Draft Day Resolve screen, once the commissioner selects a correct answer for a prop, that result is effectively immutable.
+
+That is not acceptable.
+
+Commissioners make mistakes. Before we change Fantasy, I want you to inspect the EXISTING Swayger Game Day Room implementation and tell us exactly how result correction, finalization, and archive work today.
+
+Do not assume that Finalize Standings or Archive is irreversible until you inspect the actual code.
+
+==================================================
+PART 1 — INSPECT EXISTING GAME DAY ROOM RESOLUTION
+==================================================
+
+Inspect the current Game Day Room implementation end-to-end.
+
+Find and trace:
+
+- host result entry / prop settlement
+- changing an already-entered result
+- settlement helpers
+- settlePropCore / equivalent
+- per-room settlement endpoints
+- global settlement interaction if relevant
+- card status changes
+- room status changes
+- Finalize Standings
+- archive behavior
+- any unlock / reopen / correction behavior
+- final leaderboard/result rendering
+
+Return the ACTUAL current lifecycle, not what you think it should be.
+
+Specifically answer:
+
+1. When a host resolves one Game Day prop, can they change that result before Finalize Standings?
+2. If yes, what endpoint/helper allows it?
+3. If no, where exactly is immutability enforced?
+4. What does Finalize Standings actually change in the database?
+5. After Finalize Standings, can results still be corrected?
+6. Is there an explicit Unlock/Reopen action?
+7. What does Archive actually change?
+8. Is Archive reversible?
+9. Is Finalize Standings reversible?
+10. Which exact state is the true irreversible historical boundary today, if any?
+11. Are archived rooms simply hidden from normal views, or does archive lock data too?
+12. Does classic Game Day distinguish:
+   - result entered
+   - result locked
+   - room finalized
+   - room archived
+   or are some of those collapsed into the same state?
+
+Include exact:
+- files
+- functions
+- route names
+- status fields
+- status values
+- UI labels
+
+Do not make any Fantasy code changes until this inspection is complete.
+
+==================================================
+PART 2 — FIX THE FANTASY DRAFT DAY CONCERN
+==================================================
+
+After inspecting Game Day Rooms, implement the Fantasy Draft Day result flow using the existing Game Day Room lifecycle wherever it makes sense.
+
+The product requirement is:
+
+A commissioner must be able to correct a result-entry mistake before the Draft Day results reach the existing permanent/final boundary.
+
+Do NOT make an individual answer tap permanently irreversible.
+
+==================================================
+A. SEPARATE MEMBER PICK LOCK FROM RESULT ENTRY
+==================================================
+
+There are two different concepts:
+
+1. LOCK PICKS
+   - freezes member selections
+
+2. RESULT RESOLUTION
+   - commissioner records what actually happened
+
+Do not treat a commissioner selecting one correct answer as equivalent to permanently finalizing the competition.
+
+Member picks must remain locked while commissioner results are being edited.
+
+==================================================
+B. RESULT ENTRY MUST BE CORRECTABLE
+==================================================
+
+On the Fantasy Resolve Draft Day screen:
+
+Before the existing Game Day-equivalent final/permanent boundary:
+
+- commissioner can select answer A
+- commissioner can later change it to answer B
+- current selected result visibly moves to B
+- provisional/entered result persists across navigation
+- preview standings recalculate
+- no 409 merely because a result was previously entered
+- unanswered competition props remain unresolved
+
+Example:
+
+Who drafted the first QB?
+
+Commissioner accidentally selects:
+Mike
+
+Then realizes:
+Darius
+
+They should simply be able to select Darius before final results are locked/finalized.
+
+==================================================
+C. MIRROR GAME DAY CONFIRMATION FLOW
+==================================================
+
+Once you determine the actual Game Day Room flow, reuse its confirmation pattern.
+
+If Game Day currently has:
+
+resolve props
+→ review
+→ Finalize Standings
+→ archive
+
+then Fantasy should mirror that unless season-receipt requirements force a minimal difference.
+
+If Game Day has an explicit result lock/unlock state, reuse that.
+
+If Game Day does NOT have a separate result-lock state, do NOT invent one automatically.
+
+The goal is parity with Game Day behavior, not a brand-new lifecycle.
+
+==================================================
+D. DOUBLE CONFIRMATION BEFORE THE PERMANENT STEP
+==================================================
+
+Regardless of exact naming, the commissioner must get a deliberate double-confirmation before the step that makes Draft Day competition results official/permanent.
+
+First confirmation should clearly explain:
+
+- results are about to become official
+- commissioner should review answers
+- member picks remain locked
+- whether corrections remain possible afterward depends on the actual existing Game Day lifecycle
+
+Use the same interaction style as Game Day if one exists.
+
+Do not falsely say "you can still unlock" unless the code actually supports it.
+
+Do not falsely say "this cannot be undone" unless that is actually true.
+
+==================================================
+E. SEASON RECEIPTS MUST REMAIN SEPARATE
+==================================================
+
+Preserve the Phase 4C invariant:
+
+- competition-scope Draft Day props determine Draft Day winner
+- season-scope props remain pending for later
+- later season-receipt settlement must not alter the historical Draft Day winner
+
+Do not let a correction to competition results accidentally affect season-receipt lifecycle.
+
+==================================================
+F. SCORING
+==================================================
+
+While results are still editable under the Game Day-equivalent pre-final state:
+
+- commissioner preview leaderboard should recalculate when a result changes
+- weighted scoring remains SUM(prop.point_value)
+- scoring_scope='competition' only
+
+Do not expose provisional standings to normal members unless Game Day already does that.
+
+==================================================
+G. FINAL/PERMANENT BOUNDARY
+==================================================
+
+After you inspect Game Day, define Fantasy’s permanent boundary using the actual existing product behavior.
+
+Possible examples:
+
+- Finalize Standings is permanent
+- Archive is permanent
+- Finalize is reversible but Archive is permanent
+- neither is technically irreversible and archive is only visibility state
+
+Do not assume.
+
+Then make Fantasy Draft Day consistent with that behavior wherever possible.
+
+==================================================
+H. IF ARCHIVE IS ONLY A VISIBILITY STATE
+==================================================
+
+If you discover that Game Day Archive merely hides completed rooms and does not enforce result immutability:
+
+report that explicitly.
+
+Do not use Archive as a fake locking mechanism.
+
+In that case, identify the real mechanism that protects historical results.
+
+==================================================
+I. API BEHAVIOR
+==================================================
+
+Inspect the current Fantasy routes:
+
+- GET /draft-day/settlement
+- POST /draft-day/settle
+- POST /draft-day/finalize
+- GET /draft-day/results
+
+Modify only what is needed.
+
+The key fix is:
+
+before the Game Day-equivalent permanent boundary,
+a commissioner can change a previously-entered competition result.
+
+After the permanent boundary,
+preserve whatever immutability Game Day currently enforces.
+
+Do not globally weaken classic Game Day settlement semantics.
+
+==================================================
+J. AUTHORIZATION
+==================================================
+
+Only Fantasy commissioner/co-commissioner may:
+
+- enter results
+- change results
+- finalize/lock results
+- reopen/unlock if Game Day supports such an action
+
+Members and guests cannot.
+
+==================================================
+K. TESTS
+==================================================
+
+Add tests for the actual lifecycle you discover.
+
+At minimum:
+
+RESULT CORRECTION
+- enter answer A
+- change to answer B before permanent boundary
+- answer B becomes authoritative
+- preview score changes
+- no conflict
+
+NAVIGATION
+- enter result
+- leave screen
+- return
+- selection remains
+- can still correct if lifecycle allows
+
+FINAL CONFIRMATION
+- permanent/final step uses explicit confirmation
+- double-confirm behavior exists in UI
+
+AFTER FINAL/PERMANENT BOUNDARY
+- verify result correction behavior matches classic Game Day exactly
+- if correction rejected, test rejection
+- if reopen supported, test reopen + correction + refinalize
+
+MEMBER PICKS
+- remain locked throughout result correction
+- result correction does not modify picks
+
+SEASON RECEIPTS
+- remain pending
+- later season settlement still works
+- later season settlement still does not change Draft Day leaderboard/winner
+
+REGRESSION
+Run:
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage League
+- Open Roster
+- Phase 4C
+- classic Game Day settlement/finalization regressions
+
+==================================================
+L. IMPORTANT — DO NOT OVERBUILD
+==================================================
+
+Do NOT build:
+
+- Week 1
+- weekly Fantasy
+- Season Receipt commissioner UI
+- new audit-history system
+- new archive framework
+- new generic settlement engine
+- new result-lock state unless the existing Game Day lifecycle genuinely requires it
+
+This is a focused correction to make Fantasy resolution behave like Swayger already behaves.
+
+==================================================
+RETURN
+==================================================
+
+Return in this order:
+
+1. ACTUAL GAME DAY ROOM LIFECYCLE
+   - result entry
+   - result correction
+   - finalize
+   - unlock/reopen if any
+   - archive
+   - irreversible boundary
+
+2. EXACT FILES/FUNCTIONS/ROUTES THAT PROVE IT
+
+3. CURRENT FANTASY DIFFERENCE
+   - why Fantasy makes each result immutable today
+
+4. PROPOSED MINIMAL FIX
+
+5. WHETHER SQL IS REQUIRED
+
+6. API CHANGES
+
+7. UX CHANGES
+
+8. TESTS ADDED/UPDATED
+
+9. FULL REGRESSION TOTALS
+
+10. MANUAL QA STEPS
+
+If SQL is required:
+write the migration but STOP before applying it.
+
+If a major architectural conflict is found:
+STOP and report it before coding around it.
+
+Final status:
+
+PHASE 4C RESULT CORRECTION READY FOR QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

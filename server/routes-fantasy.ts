@@ -2780,20 +2780,6 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      // Idempotency / conflict check
-      if ((prop as any).status === "settled") {
-        const existing = (prop as any).correct_answer as string;
-        if (existing === correct_answer) {
-          res.json({ ok: true, idempotent: true, prop_id, correct_answer });
-          return;
-        }
-        res.status(409).json({
-          error: "This prop is already settled with a different answer. Changing a settled answer is not supported.",
-          existing_correct_answer: existing,
-        });
-        return;
-      }
-
       // Validate correct_answer is a published option ID
       const opts: Array<{ id: string }> = Array.isArray((prop as any).answer_options)
         ? (prop as any).answer_options
@@ -2807,6 +2793,17 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
+      // Idempotency: same answer on already-settled prop → no-op
+      const wasAlreadySettled = (prop as any).status === "settled";
+      if (wasAlreadySettled && (prop as any).correct_answer === correct_answer) {
+        res.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+        return;
+      }
+
+      // Mirroring classic Game Day: re-settlement before finalization is allowed.
+      // The same PATCH /props/:propId/settle endpoint in classic Game Day has no conflict
+      // guard for already-settled props — it simply re-runs settlePropCore which flips
+      // the scoring for all existing picks. Fantasy mirrors this behavior.
       const result = await settlePropCore(supabase, {
         propId:       prop_id,
         cardId:       (card as any).id,
@@ -2836,6 +2833,7 @@ export function registerFantasyRoutes(app: Express) {
       res.json({
         ok:               true,
         idempotent:       false,
+        was_correction:   wasAlreadySettled,  // true = changed existing result (mirrors Game Day re-settle)
         prop_id,
         correct_answer,
         scoring_scope:    (prop as any).scoring_scope,
