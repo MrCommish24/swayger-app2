@@ -33,7 +33,7 @@
 
 import type { Express, Request, Response } from "express";
 import { createClient } from "@supabase/supabase-js";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { settlePropCore } from "./gameday-settle-helper";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
@@ -4497,6 +4497,313 @@ export function registerFantasyRoutes(app: Express) {
         finalized_competitions,
         standings,
       });
+    }
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PHASE 5.2.3 — COMMISSIONER-ASSISTED MEMBER RECOVERY
+  // Allows a commissioner to generate a single-use 24-hour recovery link for
+  // a guest-claimed member who has lost access to their device/browser storage.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token
+  // Commissioner generates a single-use recovery link for a GUEST-claimed member.
+  // Returns raw_token ONCE — never stored in DB, never logged.
+  // Atomically revokes any prior pending token for the same member.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, memberId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      // 1. Verify target member exists in this league (active)
+      const { data: targetMember } = await supabase
+        .from("fantasy_league_members")
+        .select("id, display_name")
+        .eq("id", memberId)
+        .eq("league_id", leagueId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!targetMember) {
+        res.status(404).json({ error: "Member not found in this league" });
+        return;
+      }
+
+      // 2. Check current active claim — must be a GUEST claim
+      const { data: activeClaim } = await supabase
+        .from("fantasy_member_claims")
+        .select("user_id, guest_token")
+        .eq("league_member_id", memberId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!activeClaim) {
+        res.status(400).json({
+          error: "This member has not yet claimed their seat. Use the normal invite flow instead.",
+          code: "unclaimed",
+        });
+        return;
+      }
+
+      if (activeClaim.user_id !== null) {
+        res.status(400).json({
+          error: "This member already has a Swayger account linked. They should sign in to recover access.",
+          code: "already_account_claimed",
+        });
+        return;
+      }
+
+      // 3. Resolve team name for response context (best-effort, non-blocking)
+      let teamName: string | null = null;
+      const { data: seasonMember } = await supabase
+        .from("fantasy_season_members")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("league_member_id", memberId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (seasonMember) {
+        const { data: teamMgr } = await supabase
+          .from("fantasy_team_managers")
+          .select("fantasy_teams(team_name)")
+          .eq("season_member_id", (seasonMember as any).id)
+          .eq("is_active", true)
+          .maybeSingle();
+        teamName = (teamMgr as any)?.fantasy_teams?.team_name ?? null;
+      }
+
+      // 4. Generate 256-bit cryptographically secure token
+      //    Only the SHA-256 hash is stored — the raw token is returned once and discarded.
+      const rawToken  = randomBytes(32).toString("hex"); // 64-char hex
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      // 5. Atomically revoke any prior pending token + create new one via SECURITY DEFINER RPC
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "create_member_recovery_token",
+        {
+          p_league_id:          leagueId,
+          p_season_id:          seasonId,
+          p_league_member_id:   memberId,
+          p_created_by_user_id: commissioner.userId,
+          p_token_hash:         tokenHash,
+          p_expires_at:         expiresAt,
+        }
+      );
+
+      if (rpcError) {
+        const msg = rpcError.message ?? "";
+        if (msg.includes("not_guest_claimed")) {
+          res.status(400).json({
+            error: "This member no longer has a guest claim. Recovery is not available.",
+            code: msg,
+          });
+          return;
+        }
+        console.error("[fantasy/recovery] create_member_recovery_token RPC error:", msg);
+        res.status(500).json({ error: "Failed to create recovery token" });
+        return;
+      }
+
+      console.log(
+        `[fantasy/recovery] Token created: member=${memberId.slice(0, 8)}… ` +
+        `commissioner=${commissioner.userId.slice(0, 8)}… expires=${expiresAt}`
+        // raw_token intentionally NOT logged
+      );
+
+      // Return raw token ONCE — the client constructs the full recovery URL.
+      res.json({
+        raw_token:    rawToken,
+        expires_at:   expiresAt,
+        display_name: (targetMember as any).display_name,
+        team_name:    teamName,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/recover/:token
+  // Public — no auth required. Returns display context for the recovery landing page.
+  // Deliberately exposes NO internal IDs, no hash, no claim data, no commissioner info.
+  // Identifies the token by SHA-256(raw_token); status reflects effective state.
+  app.get(
+    "/api/fantasy/recover/:token",
+    async (req: Request, res: Response) => {
+      const { token } = req.params;
+      if (!token?.trim()) {
+        res.status(400).json({ error: "Token required" });
+        return;
+      }
+
+      const tokenHash = createHash("sha256").update(token.trim()).digest("hex");
+      const supabase  = getServiceSupabase();
+
+      const { data: tokenRecord } = await supabase
+        .from("fantasy_member_recovery_tokens")
+        .select("status, expires_at, league_id, league_season_id, league_member_id")
+        .eq("token_hash", tokenHash)
+        .maybeSingle();
+
+      if (!tokenRecord) {
+        res.status(404).json({ error: "Recovery link not found or invalid", code: "not_found" });
+        return;
+      }
+
+      const rec = tokenRecord as any;
+
+      // Classify pending-but-past-expiry as "expired" for the client
+      const effectiveStatus =
+        rec.status === "pending" && new Date() > new Date(rec.expires_at)
+          ? "expired"
+          : rec.status;
+
+      // Fetch display context in parallel
+      const [memberResult, leagueResult] = await Promise.all([
+        supabase
+          .from("fantasy_league_members")
+          .select("display_name")
+          .eq("id", rec.league_member_id)
+          .maybeSingle(),
+        supabase
+          .from("fantasy_leagues")
+          .select("league_name")
+          .eq("id", rec.league_id)
+          .maybeSingle(),
+      ]);
+
+      let teamName: string | null = null;
+      if (rec.league_season_id) {
+        const { data: sm } = await supabase
+          .from("fantasy_season_members")
+          .select("id")
+          .eq("league_season_id", rec.league_season_id)
+          .eq("league_member_id", rec.league_member_id)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (sm) {
+          const { data: tmgr } = await supabase
+            .from("fantasy_team_managers")
+            .select("fantasy_teams(team_name)")
+            .eq("season_member_id", (sm as any).id)
+            .eq("is_active", true)
+            .maybeSingle();
+          teamName = (tmgr as any)?.fantasy_teams?.team_name ?? null;
+        }
+      }
+
+      // Expose ONLY display fields — no IDs, no hash, no internal references
+      res.json({
+        status:       effectiveStatus,
+        display_name: (memberResult.data as any)?.display_name ?? null,
+        team_name:    teamName,
+        league_name:  (leagueResult.data as any)?.league_name ?? null,
+        expires_at:   rec.expires_at,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/recover/:token
+  // Authenticated redemption. Bearer JWT required.
+  // User identity comes from the verified JWT — the client cannot spoof p_redeeming_user_id.
+  app.post(
+    "/api/fantasy/recover/:token",
+    async (req: Request, res: Response) => {
+      const { token } = req.params;
+      if (!token?.trim()) {
+        res.status(400).json({ error: "Token required" });
+        return;
+      }
+
+      // requireFantasyAuth verifies the Bearer JWT and returns the authenticated userId
+      const userId = requireFantasyAuth(req, res);
+      if (!userId) return;
+
+      const tokenHash = createHash("sha256").update(token.trim()).digest("hex");
+      const supabase  = getServiceSupabase();
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "redeem_member_recovery_token",
+        {
+          p_token_hash:        tokenHash,
+          p_redeeming_user_id: userId, // verified from JWT — cannot be spoofed
+        }
+      );
+
+      if (rpcError) {
+        const msg = rpcError.message ?? "";
+        if (msg.includes("token_not_found"))
+          return void res.status(404).json({ error: "Recovery link not found or invalid", code: "not_found" });
+        if (msg.includes("token_not_pending:redeemed"))
+          return void res.status(410).json({ error: "This recovery link has already been used.", code: "already_redeemed" });
+        if (msg.includes("token_not_pending:revoked"))
+          return void res.status(410).json({ error: "This recovery link has been revoked. Ask your commissioner to generate a new one.", code: "revoked" });
+        if (msg.includes("token_expired"))
+          return void res.status(410).json({ error: "This recovery link has expired. Ask your commissioner to generate a new one.", code: "expired" });
+        if (msg.includes("no_active_claim"))
+          return void res.status(409).json({ error: "This seat no longer has an active guest claim.", code: "no_active_claim" });
+        if (msg.includes("already_account_claimed"))
+          return void res.status(409).json({ error: "This seat is already linked to a Swayger account.", code: "already_account_claimed" });
+        if (msg.includes("wrong_account_already_member"))
+          return void res.status(409).json({
+            error: "This Swayger account is already connected to another member in this league. Sign in with a different account.",
+            code: "wrong_account_already_member",
+          });
+        console.error("[fantasy/recovery] redeem_member_recovery_token RPC error:", msg);
+        return void res.status(500).json({ error: "Failed to redeem recovery token" });
+      }
+
+      const result = rpcResult as any;
+      console.log(
+        `[fantasy/recovery] Redeemed: member=${String(result.league_member_id).slice(0, 8)}… ` +
+        `user=${userId.slice(0, 8)}… idempotent=${result.already_redeemed_by_you ?? false}`
+      );
+
+      res.json({
+        redeemed:                result.redeemed               ?? false,
+        already_redeemed_by_you: result.already_redeemed_by_you ?? false,
+        league_member_id:        result.league_member_id,
+        display_name:            result.display_name,
+        team_name:               result.team_name,
+        league_name:             result.league_name,
+        league_id:               result.league_id,
+        season_id:               result.season_id,
+      });
+    }
+  );
+
+  // ── DELETE /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token
+  // Commissioner revokes any pending recovery token for the specified member.
+  app.delete(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, memberId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "revoke_member_recovery_token",
+        { p_league_member_id: memberId }
+      );
+
+      if (rpcError) {
+        console.error("[fantasy/recovery] revoke_member_recovery_token RPC error:", rpcError.message);
+        res.status(500).json({ error: "Failed to revoke recovery token" });
+        return;
+      }
+
+      const result = rpcResult as any;
+      console.log(
+        `[fantasy/recovery] Revoked: member=${memberId.slice(0, 8)}… ` +
+        `count=${result?.revoked_count ?? 0} by=${commissioner.userId.slice(0, 8)}…`
+      );
+
+      res.json({ revoked: true, revoked_count: result?.revoked_count ?? 0 });
     }
   );
 }

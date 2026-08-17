@@ -19,6 +19,7 @@ import {
   View,
   Text,
   ScrollView,
+  Share,
   TouchableOpacity,
   TextInput,
   StyleSheet,
@@ -27,6 +28,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import * as Linking from "expo-linking";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -36,12 +39,24 @@ import {
   fantasyFetch,
   updateMember,
   updateLeagueName,
+  createMemberRecoveryToken,
+  revokeMemberRecoveryToken,
+  type RecoveryTokenCreateResult,
   FantasyParticipant,
   FantasySeasonDetail,
   DraftDayStatus,
   getDraftDay,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+
+// ── Recovery URL helper ────────────────────────────────────────────────────────
+
+function buildRecoveryUrl(rawToken: string): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/fantasy/recover/${rawToken}`;
+  }
+  return Linking.createURL(`fantasy/recover/${rawToken}`);
+}
 
 // ── Idempotency helpers ────────────────────────────────────────────────────────
 
@@ -114,6 +129,14 @@ export default function ManageLeagueScreen() {
   const [leagueNameInput,   setLeagueNameInput]   = useState("");
   const [leagueNameSaving,  setLeagueNameSaving]  = useState(false);
   const [leagueNameError,   setLeagueNameError]   = useState<string | null>(null);
+
+  // ── Recovery token state ──────────────────────────────────────────────────────
+  const [recoveryTarget,  setRecoveryTarget]  = useState<FantasyParticipant | null>(null);
+  const [recoveryStep,    setRecoveryStep]    = useState<"confirm" | "result">("confirm");
+  const [recoveryResult,  setRecoveryResult]  = useState<RecoveryTokenCreateResult | null>(null);
+  const [recoverySaving,  setRecoverySaving]  = useState(false);
+  const [recoveryError,   setRecoveryError]   = useState<string | null>(null);
+  const [recoveryCopied,  setRecoveryCopied]  = useState(false);
 
   // ── Add member state ─────────────────────────────────────────────────────────
   const [showAdd, setShowAdd] = useState(false);
@@ -236,6 +259,67 @@ export default function ManageLeagueScreen() {
     } finally {
       setLeagueNameSaving(false);
     }
+  };
+
+  // ── Recovery token handlers ───────────────────────────────────────────────────
+
+  const openRecovery = (p: FantasyParticipant) => {
+    setRecoveryTarget(p);
+    setRecoveryStep("confirm");
+    setRecoveryResult(null);
+    setRecoveryError(null);
+    setRecoveryCopied(false);
+  };
+
+  const closeRecovery = () => {
+    setRecoveryTarget(null);
+    setRecoveryStep("confirm");
+    setRecoveryResult(null);
+    setRecoveryError(null);
+    setRecoveryCopied(false);
+  };
+
+  const handleCreateRecoveryToken = async () => {
+    if (!session || !recoveryTarget) return;
+    if (!recoveryTarget.league_member_id) return;
+    setRecoverySaving(true);
+    setRecoveryError(null);
+    try {
+      const result = await createMemberRecoveryToken(
+        leagueId,
+        seasonId,
+        recoveryTarget.league_member_id,
+        { session }
+      );
+      setRecoveryResult(result);
+      setRecoveryStep("result");
+    } catch (e: any) {
+      setRecoveryError(e.message ?? "Failed to create recovery link");
+    } finally {
+      setRecoverySaving(false);
+    }
+  };
+
+  const handleCopyRecoveryLink = async () => {
+    if (!recoveryResult) return;
+    const url = buildRecoveryUrl(recoveryResult.raw_token);
+    try {
+      await Clipboard.setStringAsync(url);
+      setRecoveryCopied(true);
+      setTimeout(() => setRecoveryCopied(false), 3000);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const handleShareRecoveryLink = async () => {
+    if (!recoveryResult) return;
+    const url = buildRecoveryUrl(recoveryResult.raw_token);
+    const name = recoveryTarget?.display_name ?? "your league member";
+    try {
+      await Share.share({
+        message: `${name}, here's your one-time Swayger Fantasy recovery link:\n\n${url}\n\nThis link expires in 24 hours and can only be used once.`,
+        url,
+      });
+    } catch { /* user cancelled */ }
   };
 
   // ── Add member handlers ───────────────────────────────────────────────────────
@@ -491,6 +575,16 @@ export default function ManageLeagueScreen() {
               {p.is_claimed === false && (
                 <Text style={styles.unclaimedBadge}>Not yet claimed</Text>
               )}
+              {/* Recovery link — only for guest-claimed members (Phase 5.2.3) */}
+              {p.claim_type === "guest" && (
+                <TouchableOpacity
+                  style={styles.recoverBtn}
+                  onPress={() => openRecovery(p)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.recoverBtnText}>Help Recover Access</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <TouchableOpacity
               style={styles.editBtn}
@@ -603,6 +697,126 @@ export default function ManageLeagueScreen() {
           )}
         </View>
       )}
+
+      {/* ── Recovery modal (Phase 5.2.3) ─────────────────────────────────── */}
+      <Modal
+        visible={recoveryTarget !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={closeRecovery}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.modalHandle} />
+
+            {recoveryStep === "confirm" ? (
+              <>
+                <Text style={styles.modalTitle}>Help Recover Access</Text>
+                <Text style={styles.modalSubtitle}>
+                  This creates a one-time link that lets{" "}
+                  <Text style={{ fontWeight: "700", color: C.text }}>
+                    {recoveryTarget?.display_name ?? "this member"}
+                  </Text>{" "}
+                  sign in to Swayger and restore their Fantasy seat.
+                  Their team, picks, and standings stay intact.
+                </Text>
+
+                <View style={styles.recoverWarningCard}>
+                  <Text style={styles.recoverWarningText}>
+                    ⚠️  Send this link directly to {recoveryTarget?.display_name ?? "the member"}.
+                    Do not share it publicly — anyone with the link can claim this seat.
+                  </Text>
+                </View>
+
+                <View style={styles.recoverInfoRow}>
+                  <Text style={styles.recoverInfoItem}>Valid for 24 hours</Text>
+                  <Text style={styles.recoverInfoDot}>·</Text>
+                  <Text style={styles.recoverInfoItem}>Single use</Text>
+                  <Text style={styles.recoverInfoDot}>·</Text>
+                  <Text style={styles.recoverInfoItem}>Revocable</Text>
+                </View>
+
+                {recoveryError && (
+                  <Text style={styles.fieldError}>{recoveryError}</Text>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.btn, { marginTop: 20 }, recoverySaving && styles.btnDisabled]}
+                  onPress={handleCreateRecoveryToken}
+                  disabled={recoverySaving}
+                >
+                  {recoverySaving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.btnText}>Create Recovery Link</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnSecondary, { marginTop: 10 }]}
+                  onPress={closeRecovery}
+                  disabled={recoverySaving}
+                >
+                  <Text style={[styles.btnText, { color: C.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* Step 2 — result */
+              <>
+                <Text style={styles.modalTitle}>Link Ready 🔗</Text>
+                <Text style={styles.modalSubtitle}>
+                  Send this directly to{" "}
+                  <Text style={{ fontWeight: "700", color: C.text }}>
+                    {recoveryTarget?.display_name ?? "the member"}
+                  </Text>
+                  . It expires in 24 hours and can only be used once.
+                </Text>
+
+                {/* URL display */}
+                <View style={styles.urlBox}>
+                  <Text style={styles.urlText} selectable numberOfLines={2}>
+                    {recoveryResult
+                      ? buildRecoveryUrl(recoveryResult.raw_token)
+                      : "—"}
+                  </Text>
+                </View>
+
+                <View style={styles.recoverWarningCard}>
+                  <Text style={styles.recoverWarningText}>
+                    🔒  Do not post in the group chat. Send directly to{" "}
+                    {recoveryTarget?.display_name ?? "the member"} only.
+                  </Text>
+                </View>
+
+                <View style={styles.addFormBtns}>
+                  <TouchableOpacity
+                    style={[styles.btn, { flex: 1 }]}
+                    onPress={handleCopyRecoveryLink}
+                  >
+                    <Text style={styles.btnText}>
+                      {recoveryCopied ? "✓ Copied!" : "Copy Link"}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                    onPress={handleShareRecoveryLink}
+                  >
+                    <Text style={[styles.btnText, { color: C.textSecondary }]}>Share</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnSecondary, { marginTop: 10 }]}
+                  onPress={closeRecovery}
+                >
+                  <Text style={[styles.btnText, { color: C.textSecondary }]}>Done</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* ── Edit modal ───────────────────────────────────────────────────── */}
       <Modal
@@ -790,6 +1004,41 @@ const styles = StyleSheet.create({
   btnSecondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.border },
   btnDisabled: { opacity: 0.5 },
   btnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
+  // Recovery (Phase 5.2.3)
+  recoverBtn: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#B8860B",
+    backgroundColor: "#1A1200",
+  },
+  recoverBtnText: {
+    fontSize: 11, fontWeight: "700" as const, color: "#B8860B",
+  },
+  recoverWarningCard: {
+    backgroundColor: "#1a120a",
+    borderWidth: 1, borderColor: "#B8860B",
+    borderRadius: 10, padding: 12,
+    marginTop: 14, marginBottom: 8,
+  },
+  recoverWarningText: { color: "#B8860B", fontSize: 12, lineHeight: 18 },
+  recoverInfoRow: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4,
+  },
+  recoverInfoItem: { color: C.textMuted, fontSize: 12 },
+  recoverInfoDot: { color: C.border, fontSize: 12 },
+  urlBox: {
+    backgroundColor: "#0d0d0d",
+    borderRadius: 8, borderWidth: 1, borderColor: C.border,
+    padding: 12, width: "100%", marginBottom: 8,
+  },
+  urlText: {
+    color: C.tint, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
 
   // Modal
   modalOverlay: {

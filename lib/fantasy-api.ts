@@ -998,6 +998,97 @@ export async function getSeasonStandings(
   );
 }
 
+// ── Phase 5.2.3 — Commissioner-Assisted Member Recovery ───────────────────────
+
+/** Returned once by the server when a recovery link is created — never stored raw. */
+export interface RecoveryTokenCreateResult {
+  raw_token:    string;
+  expires_at:   string;
+  display_name: string | null;
+  team_name:    string | null;
+}
+
+/** Display context returned by the public GET /api/fantasy/recover/:token endpoint. */
+export interface RecoveryTokenInfo {
+  status:       "pending" | "expired" | "redeemed" | "revoked";
+  display_name: string | null;
+  team_name:    string | null;
+  league_name:  string | null;
+  expires_at:   string;
+}
+
+/** Returned after a successful (or idempotent) redemption. */
+export interface RecoveryRedemptionResult {
+  redeemed:                boolean;
+  already_redeemed_by_you: boolean;
+  league_member_id:        string;
+  display_name:            string | null;
+  team_name:               string | null;
+  league_name:             string | null;
+  league_id:               string;
+  season_id:               string | null;
+}
+
+/**
+ * Commissioner creates a single-use 24-hour recovery link for a guest-claimed member.
+ * The returned raw_token is issued ONCE — the client must construct the recovery URL
+ * and hand it to the member out-of-band.
+ */
+export async function createMemberRecoveryToken(
+  leagueId: string,
+  seasonId: string,
+  memberId: string,
+  auth: { session: Session }
+): Promise<RecoveryTokenCreateResult> {
+  return fantasyFetch<RecoveryTokenCreateResult>(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/members/${memberId}/recovery-token`,
+    { method: "POST" },
+    auth
+  );
+}
+
+/**
+ * Public endpoint — no auth.  Returns display context for the recovery landing page.
+ * Throws on 404 (token not found / invalid link).
+ */
+export async function getMemberRecoveryInfo(rawToken: string): Promise<RecoveryTokenInfo> {
+  return fantasyFetch<RecoveryTokenInfo>(
+    `/api/fantasy/recover/${encodeURIComponent(rawToken)}`,
+    {},
+    {}
+  );
+}
+
+/**
+ * Authenticated redemption.  Caller's identity comes from the Bearer JWT — cannot be spoofed.
+ */
+export async function redeemMemberRecoveryToken(
+  rawToken: string,
+  auth: { session: Session }
+): Promise<RecoveryRedemptionResult> {
+  return fantasyFetch<RecoveryRedemptionResult>(
+    `/api/fantasy/recover/${encodeURIComponent(rawToken)}`,
+    { method: "POST" },
+    auth
+  );
+}
+
+/**
+ * Commissioner revokes any pending recovery token for this member.
+ */
+export async function revokeMemberRecoveryToken(
+  leagueId: string,
+  seasonId: string,
+  memberId: string,
+  auth: { session: Session }
+): Promise<{ revoked: boolean; revoked_count: number }> {
+  return fantasyFetch<{ revoked: boolean; revoked_count: number }>(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/members/${memberId}/recovery-token`,
+    { method: "DELETE" },
+    auth
+  );
+}
+
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/claim
 export interface ClaimSeatPayload {
   league_member_id: string;
