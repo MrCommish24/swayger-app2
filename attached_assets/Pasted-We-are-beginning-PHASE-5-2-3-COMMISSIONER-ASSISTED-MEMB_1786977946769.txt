@@ -1,0 +1,1249 @@
+We are beginning:
+
+# PHASE 5.2.3 — COMMISSIONER-ASSISTED MEMBER RECOVERY
+
+Phase 5.2.2 is fully verified.
+
+Current regression baseline:
+
+TOTAL: 969
+PASSED: 954
+FAILED: 0
+SKIPPED: 15 expected flag-gated tests
+
+All 13 identity/continuity invariants are green, including:
+
+- guest → account upgrade preserves the same persistent league member
+- same season_member_id preserved
+- fantasy team relationship preserved
+- no duplicate active claim
+- Draft Day picks preserved
+- weekly picks preserved
+- Season Standings unchanged
+- Week N auth return lands on exact originating route
+- same-device guest return works
+- lost-token/non-member recovery UX works
+- weekly share / Copy Link / reminder works
+- Week 2+ sequencing works
+- Draft Day and weekly settlement/finalization remain clean
+
+We have one remaining identity limitation worth fixing now.
+
+==================================================
+1. REAL USER PROBLEM
+==================================================
+
+A Fantasy member originally joins as a guest.
+
+Example:
+
+Rob
+Team: Grim
+
+That creates a persistent Fantasy identity with:
+
+- fantasy_league_member
+- fantasy_season_member
+- fantasy_team relationship
+- historical Draft Day picks
+- weekly picks
+- standings history
+- active fantasy_member_claim tied to a guest_token stored on the original browser/device
+
+Later Rob:
+
+- loses the device
+- clears browser storage
+- used incognito/private browsing
+- otherwise loses the original guest token
+
+The database still knows Rob's seat is claimed.
+
+But Rob can no longer prove ownership because the only credential was the lost guest token.
+
+Rob contacts the commissioner:
+
+"How do I get back into Swayger?"
+
+Today the commissioner has no safe recovery mechanism.
+
+We need:
+
+# SINGLE-USE COMMISSIONER RECOVERY LINK
+
+The commissioner authorizes recovery of Rob's EXISTING Fantasy identity.
+
+Rob receives a private recovery link.
+
+Rob MUST authenticate/create a Swayger account.
+
+After successful authenticated redemption:
+
+that account takes ownership of Rob's existing Fantasy member claim.
+
+Everything else remains the same.
+
+==================================================
+2. SECURITY PRINCIPLE — NON-NEGOTIABLE
+==================================================
+
+The recovery URL itself is NOT authentication.
+
+It only authorizes:
+
+"This specific Fantasy member identity is permitted to be recovered."
+
+It must NOT mean:
+
+"The person holding this URL is automatically Rob."
+
+The person opening the recovery link MUST:
+
+- Sign In
+or
+- Create Account / complete normal authentication
+
+before ownership is transferred.
+
+Do NOT allow anonymous recovery redemption.
+
+==================================================
+3. THIS IS RECOVERY, NOT REPLACEMENT
+==================================================
+
+Recovery must preserve the SAME:
+
+- fantasy_league_member.id
+- fantasy_season_member.id
+- fantasy_team relationship
+- gameday_participant history
+- Draft Day picks
+- weekly picks
+- Draft Day results
+- weekly results
+- Season Standings attribution
+- competition participation history
+
+Do NOT:
+
+- delete Rob
+- free Rob's seat
+- recreate Rob
+- create another season_member
+- create another fantasy team
+- move historical picks to a new identity
+- reset competition participation
+- trigger open-roster behavior
+
+Only identity ownership changes.
+
+==================================================
+4. FIRST STEP — INSPECT CURRENT CLAIM ARCHITECTURE
+==================================================
+
+Before writing SQL, inspect:
+
+- fantasy_member_claims schema
+- active-claim uniqueness constraints
+- guest claim creation
+- authenticated claim creation
+- guest → authenticated upgrade RPC/code
+- claim conflict behavior
+- claim upgrade atomicity
+- commissioner authorization middleware
+- auth returnUrl handling
+- Manage League claim-type display
+
+Determine exactly whether the existing guest→account upgrade transaction can be reused for recovery redemption.
+
+Prefer reusing the existing identity-transfer mechanism instead of writing a second independent transfer path.
+
+==================================================
+5. EXPLICIT 5.2.2 INVARIANT GATE
+==================================================
+
+Before designing the migration, map the proposed recovery flow against every currently-tested 5.2.2 identity invariant.
+
+Recovery MUST preserve:
+
+1. same persistent fantasy_league_member
+2. same fantasy_season_member
+3. same fantasy_team relationship
+4. exactly one active claim
+5. all Draft Day picks
+6. all weekly picks
+7. Season Standings totals
+8. historical participant records
+9. competition eligibility
+10. results history
+11. weekly wins / competitions_played derivation
+12. no roster_revision changes
+13. no duplicate claim/member/team
+
+Explicitly explain how each remains invariant.
+
+Do NOT proceed with a schema design that requires rewriting historical ownership records or creates a second active identity.
+
+==================================================
+6. RECOVERY TOKEN MODEL
+==================================================
+
+We likely need a durable server-side recovery record.
+
+Preferred conceptual table:
+
+fantasy_member_recovery_tokens
+
+or similarly precise naming.
+
+Recommended fields:
+
+id UUID PRIMARY KEY
+
+league_id UUID NOT NULL
+league_season_id UUID if useful for authorization/context
+league_member_id UUID NOT NULL
+
+created_by_user_id UUID NOT NULL
+
+token_hash TEXT NOT NULL UNIQUE
+
+status TEXT NOT NULL
+allowed values conceptually:
+
+pending
+redeemed
+revoked
+expired
+
+created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+expires_at TIMESTAMPTZ NOT NULL
+
+redeemed_at TIMESTAMPTZ
+redeemed_by_user_id UUID
+
+revoked_at TIMESTAMPTZ
+
+Optional:
+created_for_claim_type
+or limited audit metadata if useful
+
+Do NOT store the raw recovery token.
+
+==================================================
+7. TOKEN GENERATION
+==================================================
+
+Generate a cryptographically secure opaque token.
+
+Use at least:
+
+128 bits of entropy
+
+Prefer:
+
+256 bits
+
+Do NOT use:
+
+Math.random()
+sequential IDs
+member UUID as token
+league UUID as token
+predictable strings
+
+Store only:
+
+SHA-256(raw_token)
+
+The raw token should exist only long enough to construct the recovery URL returned to the commissioner.
+
+==================================================
+8. TOKEN LIFETIME
+==================================================
+
+V1 recommendation:
+
+24-hour expiration
+
+If the codebase already has a security convention for temporary credentials, reuse it.
+
+Expired token:
+cannot redeem.
+
+Commissioner may generate a new link.
+
+Do not create permanent recovery links.
+
+==================================================
+9. SINGLE USE
+==================================================
+
+Token must become unusable immediately after successful redemption.
+
+First successful redemption:
+
+- validate
+- transfer claim
+- status = redeemed
+- redeemed_at set
+- redeemed_by_user_id set
+
+Second independent attempt:
+
+reject as already used.
+
+Transfer + redemption must be atomic.
+
+==================================================
+10. ONE ACTIVE RECOVERY TOKEN PER MEMBER
+==================================================
+
+Preferred V1:
+
+When commissioner creates a new recovery link for Rob:
+
+- revoke any existing pending recovery token for Rob
+- create one new pending token
+
+Do this transactionally.
+
+This prevents several valid recovery URLs circulating simultaneously.
+
+==================================================
+11. COMMISSIONER AUTHORIZATION
+==================================================
+
+Only:
+
+commissioner
+or
+co_commissioner
+
+for the relevant Fantasy season may generate a recovery link.
+
+Regular member:
+403
+
+Guest:
+403
+
+Unrelated authenticated user:
+403
+
+Do not rely only on league.created_by.
+
+Use established Fantasy commissioner authority.
+
+==================================================
+12. WHICH MEMBERS CAN USE RECOVERY?
+==================================================
+
+Primary valid target:
+
+Claimed as Guest · device-only access
+
+If target is:
+
+Claimed with account
+
+do NOT generate recovery link.
+
+Return guidance such as:
+
+"This member already has an account-linked claim. They should sign in to recover access."
+
+If target is:
+
+Not yet claimed
+
+do NOT generate recovery link.
+
+Normal join/claim flow already solves that case.
+
+So:
+
+unclaimed
+→ normal invite/join
+
+guest claimed
+→ Help Recover Access available
+
+account claimed
+→ Sign In guidance
+
+==================================================
+13. MANAGE LEAGUE UX
+==================================================
+
+For commissioner, on a guest-claimed member:
+
+Rob
+Grim
+Guest · this device only
+
+Add a secondary action:
+
+Help Recover Access
+
+Do NOT call it:
+
+Release Seat
+Reset Member
+Transfer Member
+Override Claim
+
+Tap:
+
+Help Recover Access
+
+Show:
+
+Recover Rob's Swayger access?
+
+Use this only if Rob no longer has access to the browser or device where they originally joined.
+
+We'll create a one-time recovery link. Rob will need to sign in or create a Swayger account before the seat is recovered.
+
+Rob's team, picks, results, and standings will stay intact.
+
+Actions:
+
+Cancel
+
+Create Recovery Link
+
+==================================================
+14. RECOVERY LINK RESULT
+==================================================
+
+After creation:
+
+Rob's recovery link is ready
+
+This link:
+
+- expires in 24 hours
+- can only be used once
+- should be sent directly to Rob
+
+Actions:
+
+Share Recovery Link
+Copy Link
+
+Add explicit warning:
+
+Send this directly to Rob. Do not post it in the league group chat.
+
+Use native share sheet where already supported.
+
+Copy Link:
+URL only.
+
+==================================================
+15. RECOVERY URL FORMAT
+==================================================
+
+Use a dedicated route.
+
+Conceptually:
+
+/fantasy/recover/<opaqueRawToken>
+
+Do NOT include visible:
+
+- league_member_id
+- season_member_id
+- guest_token
+- user_id
+- fantasy_team_id
+
+The opaque recovery token is the only recovery credential in the URL.
+
+Server resolves the context from the token hash.
+
+==================================================
+16. RAW TOKEN HANDLING
+==================================================
+
+Treat raw recovery token as sensitive.
+
+Prefer:
+
+- returned once at creation
+- not persisted raw in DB
+- not exposed in normal Manage League API afterward
+- not logged if avoidable
+- not included in analytics payloads
+- not returned to regular members
+
+If commissioner needs another link later:
+generate a new token, revoking the prior pending one.
+
+==================================================
+17. RECOVERY LANDING PAGE — PRE-AUTH
+==================================================
+
+Example:
+
+RECOVER LEAGUE ACCESS
+
+Burnham Fantasy League
+
+Rob
+Grim
+
+Your commissioner created this one-time link to restore access to your Swayger Fantasy league.
+
+To protect your league history, sign in or create a Swayger account to continue.
+
+[ Sign In / Continue ]
+
+Optional:
+
+This recovery link expires in 18 hours.
+
+Do NOT expose internal IDs.
+
+Do NOT transfer ownership yet.
+
+==================================================
+18. AUTH RETURN
+==================================================
+
+This must reuse the auth-return behavior just hardened in Phase 5.2.2.
+
+Flow:
+
+/fantasy/recover/<token>
+
+→ Sign In/Create Account
+
+→ preserve exact recovery URL as pending auth redirect
+
+→ auth callback
+
+→ return to SAME recovery URL
+
+→ authenticated redemption occurs
+
+Do NOT lose the recovery token during auth.
+
+Do NOT route to generic home.
+
+==================================================
+19. REDEMPTION TRANSACTION
+==================================================
+
+After authentication, atomically verify:
+
+- token exists
+- hash matches
+- status = pending
+- current time < expires_at
+- member exists
+- league exists
+- target member currently has an active guest claim
+- target member does NOT already have an account claim
+- authenticated user is valid
+- authenticated user is not already another member of this same Fantasy league
+- uniqueness constraints will remain valid
+
+Then transfer claim ownership using the existing guest→authenticated claim semantics.
+
+Desired invariant after completion:
+
+one persistent member
++
+one season member
++
+same fantasy team
++
+exactly one active account-linked claim
+
+==================================================
+20. DO NOT REUSE RECOVERY AS ACCOUNT-TO-ACCOUNT TRANSFER
+==================================================
+
+If the member already has an account-linked claim:
+
+recovery is not available.
+
+If the recipient account is already tied to another member:
+
+recovery fails.
+
+Do not support:
+
+- Mike becoming Rob
+- account-to-account transfers
+- seat swapping
+- history merging
+
+Those are out of scope.
+
+==================================================
+21. WRONG ACCOUNT CONFLICT
+==================================================
+
+Example:
+
+Mike is already a member of Burnham Fantasy League.
+
+Mike opens Rob's recovery URL while signed into Mike's account.
+
+Expected:
+
+safe conflict
+
+"This Swayger account is already connected to another member in this league."
+
+Rob remains unchanged.
+
+Mike remains unchanged.
+
+Prefer keeping the token pending after this failed attempt.
+
+Do not burn a valid recovery token because the wrong authenticated account opened it.
+
+==================================================
+22. OLD GUEST TOKEN INVALIDATION
+==================================================
+
+Critical security requirement.
+
+After Rob successfully recovers into an authenticated account:
+
+the OLD guest token must no longer authorize access as Rob.
+
+This prevents:
+
+old device/browser
+→ continuing to impersonate recovered Rob
+
+Verify explicitly.
+
+If the existing guest→account upgrade mechanism already invalidates/transfers the guest claim safely:
+reuse it.
+
+Do not maintain dual ownership.
+
+==================================================
+23. ACTIVE COMPETITION BEHAVIOR
+==================================================
+
+Recovery may occur while Week N is:
+
+OPEN
+LOCKED
+FINALIZED
+
+It must NOT change competition state.
+
+OPEN example:
+
+Rob already has Week 2 picks.
+
+Recovery succeeds.
+
+Expected:
+
+- same Week 2 participant
+- same picks
+- Rob can continue editing while open
+- no new gameday_participant
+- no roster_revision increment
+- no answer universe change
+
+LOCKED:
+
+same picks remain read-only.
+
+FINALIZED:
+
+same results/history visible.
+
+Recovery is identity restoration only.
+
+==================================================
+24. SEASON STANDINGS
+==================================================
+
+Before recovery:
+
+Rob = 85 points
+
+After recovery:
+
+Rob = 85 points
+
+No:
+
+- new standings row
+- point reset
+- duplicated Rob
+- weekly-win change
+- competitions_played change
+
+Test this explicitly.
+
+==================================================
+25. HISTORICAL INVARIANT SNAPSHOT TEST
+==================================================
+
+Before recovery, capture:
+
+league_member_id
+season_member_id
+fantasy_team_id
+Draft Day pick IDs/count
+Week 1 pick IDs/count
+Week 2 pick IDs/count
+Season Standings points
+weekly_wins
+competitions_played
+gameday_participant IDs
+
+After recovery:
+
+all values must be identical except claim ownership fields.
+
+This should be one of the central Phase 5.2.3 tests.
+
+==================================================
+26. NO ROSTER SIDE EFFECTS
+==================================================
+
+Recovery must NOT invoke the add-member lifecycle.
+
+Verify:
+
+- roster_revision unchanged
+- answer_universe_revision unchanged
+- answer_options unchanged
+- eligible_count unchanged
+- played_count unchanged
+- waiting_count unchanged
+
+No open-roster behavior should trigger.
+
+==================================================
+27. SUCCESS SCREEN
+==================================================
+
+After successful redemption:
+
+You're back in
+
+Rob · Grim
+
+Burnham Fantasy League
+
+Your league history and picks are still here.
+
+Preferred CTA:
+
+Go to Current Swayger
+
+if there is an active weekly competition.
+
+Fallback:
+
+Go to League
+
+If week context is known/preserved, direct to it.
+
+Do not force another join step.
+
+==================================================
+28. MANAGE LEAGUE AFTER RECOVERY
+==================================================
+
+After commissioner refresh:
+
+Rob
+Grim
+Claimed with account
+
+Recovery action disappears.
+
+No guest-device warning remains for Rob.
+
+==================================================
+29. REVOCATION
+==================================================
+
+At minimum:
+
+creating a new recovery link revokes any previous pending link.
+
+If lightweight, allow commissioner:
+
+Revoke Recovery Link
+
+while pending.
+
+Do not build a full recovery-management dashboard.
+
+==================================================
+30. AUDITABILITY
+==================================================
+
+Keep durable enough records to answer:
+
+- which commissioner authorized recovery
+- which member was recovered
+- when token was created
+- when it expired/revoked/redeemed
+- which authenticated user redeemed it
+
+No audit UI required.
+
+The recovery-token record itself may be enough for V1.
+
+==================================================
+31. DO NOT LET COMMISSIONER CHOOSE THE USER ACCOUNT
+==================================================
+
+Commissioner does NOT enter:
+
+- email
+- username
+- account ID
+- phone number
+
+Commissioner authorizes recovery of Rob.
+
+Rob proves ownership of the target Swayger account through normal authentication.
+
+This avoids commissioner assignment mistakes.
+
+==================================================
+32. IDEMPOTENCY / LOST RESPONSE
+==================================================
+
+Recovery is a high-impact operation.
+
+Scenario:
+
+server successfully redeems token
+client loses response
+client retries
+
+Expected:
+
+if SAME authenticated user retries:
+
+return safe success such as:
+
+already_redeemed_by_you: true
+
+Do not corrupt data.
+
+If DIFFERENT authenticated user retries:
+reject.
+
+Design this deliberately.
+
+==================================================
+33. DATABASE / MIGRATION
+==================================================
+
+This almost certainly requires SQL.
+
+FIRST:
+
+inspect current claim schema and guest→account upgrade implementation.
+
+Then create ONE focused migration.
+
+Likely includes:
+
+- fantasy_member_recovery_tokens table
+- indexes
+- constraints
+- secure create/redeem/revoke RPCs if appropriate
+- grants/RLS consistent with current architecture
+
+Prefer SECURITY DEFINER RPCs for sensitive operations if that matches existing Fantasy claim architecture.
+
+Do NOT weaken RLS.
+
+Do NOT apply migration automatically.
+
+STOP at SQL checkpoint.
+
+==================================================
+34. MIGRATION SAFETY
+==================================================
+
+Migration must NOT:
+
+- update existing fantasy members
+- rewrite claims
+- modify historical picks
+- alter standings records
+- delete business data
+- reset guest tokens
+- create recovery links for existing users automatically
+
+It should be additive infrastructure only.
+
+==================================================
+35. TOKEN TESTS
+==================================================
+
+After implementation test:
+
+- raw token never stored
+- token hash stored
+- tokens unique
+- invalid token rejected
+- expired token rejected
+- revoked token rejected
+- redeemed token rejected for another user
+- same-user retry safe
+- new link revokes old pending link
+- one pending link/member maximum
+
+==================================================
+36. AUTHORIZATION TESTS
+==================================================
+
+Commissioner:
+can generate
+
+Co-commissioner:
+can generate
+
+Regular member:
+403
+
+Guest:
+403
+
+Unrelated user:
+403
+
+Guest-claimed target:
+allowed
+
+Account-claimed target:
+rejected / sign-in guidance
+
+Unclaimed target:
+rejected / normal claim guidance
+
+==================================================
+37. RECOVERY FIXTURE
+==================================================
+
+Build a fixture:
+
+Rob:
+
+league_member_id = X
+season_member_id = Y
+fantasy_team_id = Z
+
+active guest claim = G
+
+has:
+
+- Draft Day picks
+- Week 1 picks
+- Week 2 picks
+- finalized competition history
+- Season Standings points
+
+Commissioner creates recovery token.
+
+Rob signs into new account A.
+
+Redeem.
+
+Verify:
+
+same X
+same Y
+same Z
+
+claim now belongs to A
+
+old guest credential rejected
+
+exactly one active claim
+
+all picks unchanged
+
+all scores unchanged
+
+standings unchanged
+
+==================================================
+38. WRONG-ACCOUNT TEST
+==================================================
+
+Mike account already owns Mike's Fantasy seat.
+
+Mike opens Rob recovery token.
+
+Expected:
+
+409 / safe conflict
+
+Rob untouched
+Mike untouched
+token remains pending
+
+==================================================
+39. ACTIVE-WEEK TEST
+==================================================
+
+Recover Rob while Week 2 open.
+
+Verify:
+
+- same participant
+- same saved picks
+- no roster revision
+- no eligibility change
+- Rob continues playing as authenticated account
+
+Then test locked/finalized states.
+
+==================================================
+40. 5.2.2 REGRESSION INVARIANTS — REQUIRED AGAIN
+==================================================
+
+After 5.2.3 implementation, rerun explicit assertions for all Phase 5.2.2 identity invariants.
+
+Recovery must not regress:
+
+- guest→account upgrade
+- same-member continuity
+- auth return URL
+- same-device guest flow
+- lost-token messaging
+- weekly sharing
+- Week 2+ sequencing
+- settlement/finalization
+- Season Standings
+
+Also specifically verify:
+
+the new recovery redemption path and the existing ordinary guest→account upgrade path both end in the SAME valid identity shape.
+
+No parallel claim semantics.
+
+==================================================
+41. FRONTEND MANUAL QA
+==================================================
+
+COMMISSIONER:
+
+1. Open Manage League.
+2. Find:
+   Rob — Guest · this device only.
+3. Tap Help Recover Access.
+4. Read explanation.
+5. Create recovery link.
+6. Confirm:
+   - 24-hour expiration
+   - single-use
+   - send privately
+7. Copy link.
+
+LOST-DEVICE MEMBER:
+
+8. Open recovery link in clean browser.
+9. See:
+   Burnham Fantasy League
+   Rob · Grim
+10. Cannot recover anonymously.
+11. Tap Sign In/Create Account.
+12. Authenticate.
+13. Return to exact recovery page.
+14. Redeem.
+15. See:
+   You're back in.
+16. Enter league/current Week.
+17. Verify historical picks and standings.
+
+COMMISSIONER AFTER:
+
+18. Refresh Manage League.
+19. Rob now says:
+   Claimed with account.
+
+OLD GUEST DEVICE:
+
+20. If original guest browser still exists, reload.
+21. Confirm old guest token no longer authenticates as Rob.
+
+WRONG ACCOUNT:
+
+22. Generate a recovery token in a test fixture.
+23. Open it while signed into another existing league member's account.
+24. Confirm recovery is rejected without changing either member.
+
+==================================================
+42. FULL REGRESSION
+==================================================
+
+Current baseline before 5.2.3:
+
+TOTAL: 969
+PASSED: 954
+FAILED: 0
+SKIPPED: 15 expected flag-gated
+
+After implementation run:
+
+- Phase 2
+- Phase 3
+- Phase 3B
+- Phase 4A
+- Phase 4B + Manage League
+- Open Roster
+- Phase 4C
+- Phase 5
+- Phase 5.1
+- Phase 5.2
+- Phase 5.2.1
+- Phase 5.2.2
+- Phase 5.2.3
+- classic Game Day settlement regression
+- relevant Playwright auth-return tests
+- new recovery Playwright test if lightweight
+
+Return exact:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+Do not change old expectations merely to get green.
+
+==================================================
+43. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- account-to-account transfer
+- commissioner seat release
+- commissioner seat reassignment
+- email-based recovery
+- SMS recovery
+- recovery codes
+- commissioner-selected account/email
+- member deletion
+- history merging
+- global support/admin recovery
+- notifications
+- Week 3 work
+- provider integrations
+- automatic schedule logic
+
+==================================================
+44. IMPLEMENTATION ORDER — IMPORTANT
+==================================================
+
+FIRST RESPONSE / CHECKPOINT:
+
+Before app implementation:
+
+1. inspect fantasy_member_claims
+2. inspect guest→auth upgrade RPC/code
+3. map all 5.2.2 invariants
+4. design exact recovery transaction
+5. design token lifecycle
+6. identify SQL/schema needed
+7. write migration
+8. review security conflicts
+9. STOP
+
+Return:
+
+1. current claim architecture
+2. how existing guest→auth upgrade works
+3. 5.2.2 invariant mapping
+4. proposed recovery schema
+5. token generation/hash/expiry design
+6. exact redemption transaction
+7. old guest invalidation behavior
+8. wrong-account conflict behavior
+9. idempotent retry behavior
+10. exact migration file
+11. migration safety analysis
+12. risks / unresolved questions
+
+Final checkpoint status:
+
+SQL APPLICATION REQUIRED
+
+I will apply the migration manually.
+
+Do NOT continue to application code until I explicitly confirm the SQL has been applied.
+
+==================================================
+45. AFTER I CONFIRM SQL IS LIVE
+==================================================
+
+Then proceed with:
+
+- commissioner recovery-generation API
+- token validation API
+- authenticated redemption API
+- optional revoke API
+- Manage League UI
+- recovery landing screen
+- auth-return handling
+- success routing
+- tests
+- full regression
+
+==================================================
+46. FINAL RETURN AFTER IMPLEMENTATION
+==================================================
+
+Return:
+
+1. recovery architecture
+2. security model
+3. commissioner authorization
+4. token storage/hash/expiry
+5. single-use behavior
+6. claim-transfer behavior
+7. old guest invalidation
+8. identity/history preservation
+9. 5.2.2 invariant verification
+10. active-week behavior
+11. wrong-account conflict handling
+12. retry/idempotency behavior
+13. files changed
+14. migration verification
+15. recovery test results
+16. full regression totals
+17. bugs found/fixed
+18. exact manual QA steps
+19. remaining known limitations
+
+Then STOP.
+
+Do not begin another roadmap phase.
+
+Final status:
+
+MEMBER RECOVERY READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
