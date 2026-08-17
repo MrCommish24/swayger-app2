@@ -82,7 +82,26 @@ COMMENT ON COLUMN fantasy_member_recovery_tokens.token_hash IS
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. Indexes
+-- 2. Row Level Security
+--
+-- Matches the pattern used by every other Fantasy table in this schema:
+-- RLS enabled + fully permissive policy.  Real access control is enforced by:
+--   • SECURITY DEFINER RPCs (create / redeem / revoke)
+--   • Server routes using the service-role key (bypasses RLS entirely)
+-- No direct client access to this table is expected or permitted.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE fantasy_member_recovery_tokens ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "fantasy_member_recovery_tokens_all"
+  ON fantasy_member_recovery_tokens
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. Indexes
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- Primary lookup path: GET + POST /api/fantasy/recover/:token
