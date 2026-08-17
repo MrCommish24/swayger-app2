@@ -676,31 +676,25 @@ async function runOpenRosterTests() {
   );
   assert(allEligible, "§F-6 all eligible (no Draft Day)");
 
-  // §F-7: Verify weekly card roster_revision behavior matches single-add.
+  // §F-7: Verify weekly card roster_revision increments after bulk-add.
   //
-  // The server's member-add path (both single and batch) only passes p_room_id
-  // to the RPC for Draft Day rooms — not weekly rooms.  This is intentional:
-  // weekly answer_options are snapshotted at publish time; new members added
-  // after publish are visible in the NEXT weekly Swayger.
-  //
-  // Therefore: roster_revision on a weekly pick card does NOT increment when
-  // a member is bulk-added.  This is the correct behavior — batch-add matches
-  // the existing single-add architecture for weekly rooms.
+  // Product rule: OPEN card → roster expands + roster_revision increments.
+  // This applies to BOTH Draft Day and weekly Swaygers.
+  // The server calls _appendMemberToWeeklyCards for each newly created member,
+  // which increments roster_revision once per card per member add.
+  // 3 members added → roster_revision should be ≥ rosterRevisionBefore + 3.
   const { data: cardAfter } = await supa
     .from("gameday_pick_cards")
     .select("id, roster_revision")
     .eq("id", playRes.data.card_id)
     .maybeSingle();
   const rosterRevisionAfter = (cardAfter as any)?.roster_revision ?? 0;
-  // Correct: batch-add matches single-add — weekly roster_revision stays the same
-  assert(rosterRevisionAfter === rosterRevisionBefore,
-    "§F-7 weekly roster_revision unchanged (batch-add matches single-add for weekly rooms)");
+  assert(rosterRevisionAfter > rosterRevisionBefore,
+    "§F-7 weekly roster_revision incremented after bulk-add (open-roster rule)");
 
-  // §F-8: answer_options are snapshotted at weekly publish time.
-  // New bulk-added members do NOT appear in the current week's answer_options
-  // (same as single-add) — they appear in the next weekly Swayger published
-  // after they are added.  Verify batch-add does NOT alter the current week's
-  // answer_options (parity with single-add).
+  // §F-8: New members appear in answer_options for open weekly cards.
+  // The _appendMemberToWeeklyCards helper appends new entries to roster-target
+  // props atomically; answer_options count should grow.
   const playAfter = await api("GET",
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/1/play`,
     commToken
@@ -711,9 +705,8 @@ async function runOpenRosterTests() {
   );
   if (rosterPropBefore && rosterPropAfter && answerCountBefore !== null) {
     const answerCountAfter = rosterPropAfter.answer_options?.length ?? 0;
-    // Correct: weekly answer_options are unchanged (batch-add matches single-add)
-    assert(answerCountAfter === answerCountBefore,
-      "§F-8 weekly answer_options unchanged after bulk add (batch-add matches single-add)");
+    assert(answerCountAfter > answerCountBefore,
+      "§F-8 weekly answer_options expanded after bulk-add (new members appear in open card)");
   } else {
     console.log("  §F-8 skipped — no roster-type prop in this template set");
     passed++; // count as pass

@@ -41,6 +41,20 @@ Per-row key: `${batch_key}:${rowIndex}` — same commissioner + batch_key + rowI
 
 Tab → Pipe → Comma. Comma uses first-comma semantics (everything after the first comma is the team name) so team names can contain commas.
 
+## Weekly open-roster fix (open-roster parity)
+
+`_appendMemberToWeeklyCards()` in `server/routes-fantasy.ts` — called by BOTH single-add and batch-add after a fresh create (not replay, not already_exists). It:
+1. Finds all non-archived weekly rooms for the season
+2. Finds OPEN (status=open, phase=weekly) pick cards for those rooms
+3. For each prop with `answer_target_type IN (season_member, fantasy_team)`, appends the new member (with idempotency guard: skips if member already present by `id`)
+4. Increments `roster_revision` once per card if anything was actually appended
+
+Batch uses sequential `for...of` (not `Promise.all`) to avoid race condition on `roster_revision`.
+
+**Why not extend the RPC?** `add_fantasy_season_participant_v2` hardcodes `WHERE room_id = p_room_id AND phase = 'draft_day'`. Fixing it requires a Supabase SQL migration applied by the project owner. The server-layer implementation is immediately deployable and produces identical semantics.
+
+**Why:** Product rule is OPEN → roster expands + roster_revision increments, for BOTH Draft Day and weekly. The original implementation only covered Draft Day.
+
 ## Files
 
 - `lib/bulk-import-parser.ts` — parser (shared by screen + tests)

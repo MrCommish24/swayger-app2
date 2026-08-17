@@ -69,6 +69,113 @@ function getServiceSupabase() {
   return createClient(url, key);
 }
 
+/**
+ * _appendMemberToWeeklyCards
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Open-roster expansion for weekly Swaygers.
+ *
+ * Product rule: PUBLISH defines questions; LOCK defines contestants/answers.
+ * When a new member is added to a season whose weekly card is OPEN, that
+ * member's team/name must be appended to all roster-target answer_options on
+ * the open card, and roster_revision must be incremented — exactly as it is for
+ * the Draft Day card (handled inside add_fantasy_season_participant_v2).
+ *
+ * Why JS-layer instead of extending the RPC?
+ *   • add_fantasy_season_participant_v2 hardcodes `phase = 'draft_day'` when
+ *     looking up the card from p_room_id.  Weekly cards have `phase = 'weekly'`
+ *     so even passing the weekly room_id would be a no-op.
+ *   • Fixing the RPC requires a Supabase SQL migration applied by the project
+ *     owner; this server-layer implementation is immediately deployable and
+ *     produces identical semantics.
+ *   • Idempotency is preserved via an `id`-based existence check before each
+ *     JSONB append, so retries do not duplicate entries.
+ *   • Race condition on roster_revision (fetch-then-update) is acceptable at
+ *     pilot scale (commissioner adds members sequentially, not concurrently).
+ *
+ * Call this after a successful new-member create (not replay, not already_exists)
+ * for both the single-add and batch-add paths.
+ */
+async function _appendMemberToWeeklyCards(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  seasonId:        string,
+  seasonMemberId:  string,
+  teamId:          string,
+  displayName:     string,
+  teamName:        string
+): Promise<void> {
+  try {
+    // Find all non-archived weekly rooms for this season
+    const { data: weeklyRooms, error: roomErr } = await supabase
+      .from("gameday_rooms")
+      .select("id")
+      .eq("league_season_id", seasonId)
+      .eq("competition_type", "weekly")
+      .eq("experience_type", "fantasy")
+      .is("archived_at", null);
+
+    if (roomErr || !weeklyRooms || weeklyRooms.length === 0) return;
+
+    const roomIds = (weeklyRooms as any[]).map((r: any) => r.id as string);
+
+    // Find OPEN weekly pick cards for those rooms
+    const { data: openCards, error: cardErr } = await supabase
+      .from("gameday_pick_cards")
+      .select("id, roster_revision")
+      .in("room_id", roomIds)
+      .eq("phase", "weekly")
+      .eq("status", "open");
+
+    if (cardErr || !openCards || openCards.length === 0) return;
+
+    for (const card of openCards as any[]) {
+      const cardId         = card.id as string;
+      const rosterRevision = (card.roster_revision as number) ?? 0;
+
+      // Fetch roster-target props for this card
+      const { data: props } = await supabase
+        .from("gameday_props")
+        .select("id, answer_target_type, answer_options")
+        .eq("card_id", cardId)
+        .in("answer_target_type", ["season_member", "fantasy_team"]);
+
+      if (!props || (props as any[]).length === 0) continue;
+
+      let anyAppended = false;
+
+      for (const prop of props as any[]) {
+        const opts: any[]   = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+        const isSmProp      = prop.answer_target_type === "season_member";
+        const memberId      = isSmProp ? seasonMemberId : teamId;
+
+        // Idempotency guard: skip if this member is already in the options
+        if (opts.some((o: any) => o.id === memberId)) continue;
+
+        const newOpt = isSmProp
+          ? { id: seasonMemberId, label: displayName.trim(), type: "season_member" }
+          : { id: teamId,         label: teamName.trim(),    type: "fantasy_team"  };
+
+        const { error: updateErr } = await supabase
+          .from("gameday_props")
+          .update({ answer_options: [...opts, newOpt] })
+          .eq("id", prop.id as string);
+
+        if (!updateErr) anyAppended = true;
+      }
+
+      // Increment roster_revision exactly once per card per new-member-add
+      if (anyAppended) {
+        await supabase
+          .from("gameday_pick_cards")
+          .update({ roster_revision: rosterRevision + 1 })
+          .eq("id", cardId);
+      }
+    }
+  } catch (err: any) {
+    // Best-effort — do not propagate; the member was already created successfully.
+    console.error("[fantasy] _appendMemberToWeeklyCards error (non-fatal):", err?.message ?? err);
+  }
+}
+
 /** Fast JWT decode — no signature verification. */
 function decodeJwtPayload(token: string): { sub?: string } | null {
   try {
@@ -599,6 +706,20 @@ export function registerFantasyRoutes(app: Express) {
         `[fantasy] Participant added: season=${seasonId.slice(0, 8)}… member=${result.league_member_id?.slice(0, 8)}… team=${result.team_id?.slice(0, 8)}… eligible=${result.draft_day_eligible} already_exists=${result.already_exists}`
       );
 
+      // Open-roster expansion for weekly Swaygers.
+      // Only for fresh creates — replays and already-existing members are skipped.
+      // The RPC handles Draft Day cards; this call handles open weekly cards.
+      if (!result.already_exists) {
+        await _appendMemberToWeeklyCards(
+          supabase,
+          seasonId,
+          result.season_member_id,
+          result.team_id,
+          display_name.trim(),
+          team_name.trim()
+        );
+      }
+
       res.status(result.already_exists ? 200 : 201).json(result);
     }
   );
@@ -814,9 +935,27 @@ export function registerFantasyRoutes(app: Express) {
         }
       }
 
+      // Open-roster expansion for weekly Swaygers — run sequentially for all
+      // newly created members (not replays, not errors).  Sequential (not
+      // Promise.all) so each call reads the current roster_revision after the
+      // prior increment rather than all racing on the same initial value.
+      const newlyCreatedResults = results.filter((r) => r.status === "created");
+      for (const r of newlyCreatedResults) {
+        if (r.season_member_id && r.fantasy_team_id) {
+          await _appendMemberToWeeklyCards(
+            supabase,
+            seasonId,
+            r.season_member_id,
+            r.fantasy_team_id,
+            r.display_name,
+            r.team_name
+          );
+        }
+      }
+
       console.log(
         `[fantasy] Batch import: season=${seasonId.slice(0, 8)}… ` +
-        `created=${created_count} replayed=${replayed_count} failed=${failed_count}`
+        `created=${created_count} replayed=${replayed_count} failed=${failed_count} weekly_updated=${newlyCreatedResults.length}`
       );
 
       // Return 200 (mixed or full success) or 400 (everything failed + nothing was ever created)

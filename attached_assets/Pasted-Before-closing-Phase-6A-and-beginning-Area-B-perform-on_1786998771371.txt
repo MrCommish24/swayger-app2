@@ -1,0 +1,215 @@
+Before closing Phase 6A and beginning Area B, perform one focused OPEN-ROSTER PARITY verification.
+
+Do NOT make changes until you determine the actual current behavior.
+
+==================================================
+CONTEXT
+==================================================
+
+The Phase 6A report states:
+
+"weekly answer_options are snapshotted at publish time, so new bulk-added members don't appear in the current week's answer_options. They appear from the next weekly Swayger onward. Only Draft Day cards get the live snapshot update."
+
+This appears inconsistent with the previously implemented Fantasy Open Roster lifecycle.
+
+The established product rule was:
+
+PUBLISH DEFINES QUESTIONS.
+LOCK DEFINES CONTESTANTS / ANSWERS.
+
+For an OPEN Fantasy competition, adding a league member was intended to:
+
+- make the new member eligible for the current open competition
+- append the member/team to applicable roster-target answer universes
+- increment roster_revision
+- preserve existing picks
+- flag stale roster-target picks when appropriate
+- allow reconfirmation against the new answer universe
+
+Once LOCKED, newly added members join the league but are excluded from the current competition.
+
+==================================================
+1. INSPECT ACTUAL CURRENT IMPLEMENTATION
+==================================================
+
+Inspect:
+
+- single-member Add Member route
+- add_fantasy_season_participant_idempotent RPC
+- any open-roster helper/RPC
+- roster_revision handling
+- published weekly card answer_options
+- published Draft Day card answer_options
+- bulk endpoint
+- Phase 6A §F tests
+- existing test-fantasy-open-roster.ts
+
+Determine whether weekly open-roster expansion is currently implemented and whether the Phase 6A batch path is invoking it.
+
+==================================================
+2. RUN A REAL WEEKLY OPEN-ROSTER FIXTURE
+==================================================
+
+Create/use a test league:
+
+Members initially:
+Darius
+Mike
+Chris
+
+Publish Week 3 while OPEN.
+
+Confirm roster-target answer_options contain those three teams.
+
+Then use NORMAL SINGLE ADD MEMBER to add:
+
+Rob / Grim
+
+while Week 3 remains OPEN.
+
+Immediately inspect:
+
+- fantasy_season_members
+- fantasy_team_managers
+- Week 3 card roster_revision
+- Week 3 roster-target answer_options
+- Rob's current Week 3 eligibility
+- stale_pick behavior for a preexisting roster-target pick
+
+Return exact observed values.
+
+==================================================
+3. TEST BULK ADD SEPARATELY
+==================================================
+
+Reset/use equivalent fixture.
+
+Publish an OPEN weekly Swayger with initial roster.
+
+Use the new BULK endpoint to add:
+
+Rob / Grim
+
+Inspect the exact same values:
+
+- card roster_revision
+- answer_options
+- eligibility
+- stale-pick behavior
+
+==================================================
+4. EXPECTED PARITY
+==================================================
+
+Bulk Add Member should behave IDENTICALLY to normal Add Member.
+
+There must not be:
+
+single add:
+current open weekly roster expands
+
+bulk add:
+current open weekly roster does not expand
+
+or vice versa.
+
+Both creation methods must invoke the same open-roster lifecycle semantics.
+
+==================================================
+5. VERIFY LOCKED BEHAVIOR
+==================================================
+
+Also verify:
+
+If Week 3 is LOCKED:
+
+Add Rob via single Add Member
+and via Bulk Add Member
+
+Expected:
+
+- Rob joins persistent league/season roster
+- Rob is NOT added to the locked Week 3 answer universe
+- no current Week 3 eligibility
+- no roster revision caused by including Rob in that locked competition
+- Rob becomes available beginning with the next Swayger
+
+==================================================
+6. CHECK HISTORICAL OPEN-ROSTER TESTS
+==================================================
+
+Run:
+
+test-fantasy-open-roster.ts
+
+Do not merely report pass/fail.
+
+Identify the exact tests that assert weekly behavior versus Draft Day behavior.
+
+If the tests only cover Draft Day or fail to cover weekly cards, say so explicitly.
+
+==================================================
+7. DECISION
+==================================================
+
+If the original open-roster product behavior is still implemented for single-add but Bulk Add bypasses it:
+
+fix Bulk Add to reuse the same open-roster behavior.
+
+If BOTH single-add and bulk-add currently fail to expand an OPEN weekly answer universe:
+
+treat that as a regression from the previously approved open-roster design.
+
+Diagnose the regression before changing code.
+
+If the previously approved behavior was intentionally changed later:
+identify exactly where/when in code and tests that happened and why.
+
+Do not redefine the product rule silently.
+
+==================================================
+8. REQUIRED PRODUCT RULE
+==================================================
+
+Unless there is a strong architectural reason proving otherwise, preserve:
+
+OPEN:
+new member can participate in current competition and roster-target universe expands.
+
+LOCKED:
+new member joins league but not current competition.
+
+This should apply consistently to Draft Day and Weekly Swaygers wherever their lifecycle supports open roster.
+
+==================================================
+9. RETURN
+==================================================
+
+Return:
+
+# PHASE 6A OPEN-ROSTER PARITY CHECK
+
+1. Current single-add behavior
+2. Current bulk-add behavior
+3. Draft Day behavior
+4. Weekly behavior
+5. roster_revision behavior
+6. answer_options behavior
+7. eligibility behavior
+8. stale-pick behavior
+9. relevant existing tests
+10. whether a regression exists
+11. whether code changes are required
+12. tests after any correction
+
+Then STOP.
+
+Do not begin Area B yet.
+
+Final status:
+
+PHASE 6A VERIFIED — READY FOR AREA B
+
+or
+
+OPEN-ROSTER CORRECTION REQUIRED
