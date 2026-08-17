@@ -16,3 +16,4 @@
 - [Gameday Fantasy Phase 5.2.2](gameday-fantasy-phase522-nav.md) — guest upgrade nudge (join screen + hub banner), MY TEAM fix, Playwright E2E setup (Nix Chromium, AsyncStorage gotchas, profile row required), 39/39 server + 3/3 E2E.
 - [Gameday Fantasy Phase 5.2.3](gameday-fantasy-phase523-nav.md) — commissioner recovery link: token model, service-role table access quirk, claim/upgrade body requirements, §I/§F ordering trap, commissioner-only claim_type, 73/73 tests.
 - [Gameday Fantasy Phase 5.3](gameday-fantasy-phase53-nav.md) — commissioner weekly workflow: template_prop_id lineage (no SQL needed), last-week-templates endpoint, default preselection, Use Last Week UI, NEXT UP hub section, getCommissionerNextAction helper, 53/53 tests.
+- [Gameday Fantasy Phase 6A](gameday-fantasy-phase6a.md) — bulk import: replay needs pre-check query (not already_exists); weekly rooms never get p_room_id (only Draft Day); tab→pipe→comma parser; 103/103 tests.

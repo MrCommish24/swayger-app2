@@ -603,6 +603,235 @@ export function registerFantasyRoutes(app: Express) {
     }
   );
 
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch ──
+  //
+  // Bulk member import.  Each member row is processed independently via the
+  // same add_fantasy_season_participant_idempotent RPC as the single-add path.
+  //
+  // Idempotency: caller supplies a batch_key UUID.  Per-row keys are derived as
+  //   `${batch_key}:${rowIndex}`
+  // so an exact retry replays every row's result without creating duplicates.
+  // If a row's payload changes, the underlying RPC returns IDEMPOTENCY_KEY_REUSED_
+  // WITH_DIFFERENT_REQUEST (409) — the client should generate a fresh batch_key.
+  //
+  // Auth: commissioner or co-commissioner only.
+  // Body: { batch_key: string (UUID), members: [{ display_name, team_name }] }
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requireFantasyCommissioner(
+        req, res, supabase, leagueId, seasonId
+      );
+      if (!commissioner) return;
+
+      const { batch_key, members } = req.body as {
+        batch_key?: string;
+        members?: unknown[];
+      };
+
+      // ── batch_key validation ──────────────────────────────────────────────
+      if (!batch_key?.trim()) {
+        res.status(400).json({ error: "batch_key is required" });
+        return;
+      }
+      const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRx.test(batch_key.trim())) {
+        res.status(400).json({ error: "batch_key must be a valid UUID" });
+        return;
+      }
+
+      // ── members array validation ──────────────────────────────────────────
+      if (!Array.isArray(members) || members.length === 0) {
+        res.status(400).json({ error: "members must be a non-empty array" });
+        return;
+      }
+
+      // Pre-validate ALL rows before creating anything — fail fast on bad input
+      const validationErrors: { index: number; field: string; error: string }[] = [];
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i] as { display_name?: string; team_name?: string };
+        if (!m?.display_name?.trim()) {
+          validationErrors.push({ index: i, field: "display_name", error: "display_name is required" });
+        }
+        if (!m?.team_name?.trim()) {
+          validationErrors.push({ index: i, field: "team_name", error: "team_name is required" });
+        }
+      }
+      if (validationErrors.length > 0) {
+        res.status(400).json({
+          error:             "Batch validation failed — fix all rows before submitting",
+          validation_errors: validationErrors,
+        });
+        return;
+      }
+
+      // ── season ownership check ────────────────────────────────────────────
+      const { data: seasonCheck } = await supabase
+        .from("fantasy_league_seasons")
+        .select("league_id")
+        .eq("id", seasonId)
+        .maybeSingle();
+
+      if (!seasonCheck || (seasonCheck as any).league_id !== leagueId) {
+        res.status(400).json({ error: "Season does not belong to this league" });
+        return;
+      }
+
+      // ── Draft Day eligibility — same logic as single-add ──────────────────
+      const { data: ddRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      let eligible           = true;
+      let roomIdForSnapshot: string | null = null;
+
+      if (ddRoom) {
+        const ddRoomId = (ddRoom as any).id as string;
+        const { data: ddCard } = await supabase
+          .from("gameday_pick_cards")
+          .select("id, status")
+          .eq("room_id", ddRoomId)
+          .eq("phase", "draft_day")
+          .maybeSingle();
+
+        if (ddCard) {
+          const cs = (ddCard as any).status as string;
+          if (cs === "locked" || cs === "settled") {
+            eligible = false;
+          } else if (cs === "open") {
+            eligible          = true;
+            roomIdForSnapshot = ddRoomId;
+          }
+        }
+      }
+
+      // ── Process rows independently — partial failure is allowed ───────────
+      type RowResult = {
+        index:            number;
+        status:           "created" | "replayed" | "failed";
+        display_name:     string;
+        team_name:        string;
+        league_member_id: string | null;
+        season_member_id: string | null;
+        fantasy_team_id:  string | null;
+        draft_day_eligible: boolean | null;
+        error:            string | null;
+      };
+
+      const results: RowResult[] = [];
+      let created_count  = 0;
+      let replayed_count = 0;
+      let failed_count   = 0;
+
+      const bk = batch_key.trim();
+
+      // ── Bulk replay-detection: one query for all row keys ─────────────────
+      // Because the RPC returns the original result_json unchanged on replay
+      // (already_exists stays false for fresh creates), we cannot rely on
+      // already_exists to distinguish "first creation" from "replay of create".
+      // Instead, check which per-row idempotency keys already exist in
+      // fantasy_participant_operations before calling the RPC.
+      const allRowKeys = members.map((_, i) => `${bk}:${i}`);
+      const { data: existingOps } = await supabase
+        .from("fantasy_participant_operations")
+        .select("idempotency_key")
+        .eq("operator_user_id", commissioner.userId)
+        .in("idempotency_key", allRowKeys);
+
+      const alreadyRecordedKeys = new Set(
+        ((existingOps ?? []) as any[]).map((op: any) => op.idempotency_key as string)
+      );
+
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i] as { display_name: string; team_name: string };
+        const displayName    = m.display_name.trim();
+        const teamName       = m.team_name.trim();
+        const idempotencyKey = `${bk}:${i}`;
+        const isReplay       = alreadyRecordedKeys.has(idempotencyKey);
+        const requestHash    = _computeAddMemberHash(
+          leagueId, seasonId, commissioner.userId, displayName, teamName
+        );
+
+        const { data, error } = await supabase.rpc(
+          "add_fantasy_season_participant_idempotent",
+          {
+            p_league_id:          leagueId,
+            p_league_season_id:   seasonId,
+            p_display_name:       displayName,
+            p_team_name:          teamName,
+            p_draft_day_eligible: eligible,
+            p_room_id:            roomIdForSnapshot,
+            p_idempotency_key:    idempotencyKey,
+            p_operator_user_id:   commissioner.userId,
+            p_request_hash:       requestHash,
+          }
+        );
+
+        if (error) {
+          let msg = "Failed to add member";
+          if (error.message.includes("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")) {
+            msg = "Row was previously submitted with different content — generate a new import batch to change this row.";
+          } else if (
+            error.message.includes("not found") ||
+            error.message.includes("does not belong") ||
+            error.message.includes("cannot be empty")
+          ) {
+            msg = error.message;
+          }
+          results.push({
+            index: i, status: "failed",
+            display_name: displayName, team_name: teamName,
+            league_member_id: null, season_member_id: null,
+            fantasy_team_id: null, draft_day_eligible: null,
+            error: msg,
+          });
+          failed_count++;
+        } else {
+          const r = data as any;
+          // isReplay: key existed before this batch request (detected via pre-check).
+          // r.already_exists: member existed before the original operation (not a replay signal).
+          const status: "created" | "replayed" =
+            isReplay ? "replayed" : "created";
+          if (status === "created") created_count++;
+          else                      replayed_count++;
+          results.push({
+            index: i, status,
+            display_name: displayName, team_name: teamName,
+            league_member_id: r.league_member_id ?? null,
+            season_member_id: r.season_member_id ?? null,
+            fantasy_team_id:  r.team_id ?? null,
+            draft_day_eligible: r.draft_day_eligible ?? null,
+            error: null,
+          });
+        }
+      }
+
+      console.log(
+        `[fantasy] Batch import: season=${seasonId.slice(0, 8)}… ` +
+        `created=${created_count} replayed=${replayed_count} failed=${failed_count}`
+      );
+
+      // Return 200 (mixed or full success) or 400 (everything failed + nothing was ever created)
+      const httpStatus =
+        failed_count > 0 && created_count === 0 && replayed_count === 0 ? 400 : 200;
+
+      res.status(httpStatus).json({
+        results,
+        created_count,
+        replayed_count,
+        failed_count,
+      });
+    }
+  );
+
   // ── PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId
   //
   // Atomic rename: updates display_name + team_name for one season member and

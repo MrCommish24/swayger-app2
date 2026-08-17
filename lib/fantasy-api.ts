@@ -192,6 +192,49 @@ export interface FantasyPendingUpgrade {
   league_member_id: string;
 }
 
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch
+//
+// Bulk import.  batch_key must be a UUID; per-row idempotency keys are derived
+// as `${batch_key}:${rowIndex}`.  Rows are processed independently — partial
+// failure is returned in the results array without rolling back successes.
+export interface BatchMemberInput {
+  display_name: string;
+  team_name:    string;
+}
+
+export interface BatchMemberResult {
+  index:              number;
+  status:             "created" | "replayed" | "failed";
+  display_name:       string;
+  team_name:          string;
+  league_member_id:   string | null;
+  season_member_id:   string | null;
+  fantasy_team_id:    string | null;
+  draft_day_eligible: boolean | null;
+  error:              string | null;
+}
+
+export interface BatchImportResponse {
+  results:        BatchMemberResult[];
+  created_count:  number;
+  replayed_count: number;
+  failed_count:   number;
+}
+
+export async function batchImportParticipants(
+  leagueId: string,
+  seasonId: string,
+  batchKey: string,
+  members:  BatchMemberInput[],
+  auth: { session?: Session | null; guestToken?: string | null }
+): Promise<BatchImportResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants/batch`,
+    { method: "POST", body: JSON.stringify({ batch_key: batchKey, members }) },
+    auth
+  );
+}
+
 // PATCH /api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId
 export interface UpdateMemberPayload {
   display_name: string;

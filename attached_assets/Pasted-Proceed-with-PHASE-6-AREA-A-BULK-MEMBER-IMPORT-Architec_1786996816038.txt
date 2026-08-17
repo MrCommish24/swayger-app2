@@ -1,0 +1,704 @@
+Proceed with:
+
+# PHASE 6 — AREA A
+## BULK MEMBER IMPORT
+
+Architecture audit is approved.
+
+Important:
+- No SQL is required.
+- Reuse the existing `add_fantasy_season_participant_idempotent` RPC.
+- Do not create a parallel member/team creation path.
+- Preserve all existing identity and Draft Day eligibility behavior.
+
+==================================================
+1. BUILD SCOPE
+==================================================
+
+Implement only Area A in this pass:
+
+BULK MEMBER / TEAM IMPORT
+
+Do not begin:
+
+- large-roster selector
+- pick reveal
+- weekly rewards
+- archive
+- QR
+- Sleeper/Yahoo
+
+until Area A is complete and tested.
+
+==================================================
+2. BACKEND
+==================================================
+
+Add:
+
+POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch
+
+Request:
+
+{
+  "batch_key": "<uuid>",
+  "members": [
+    {
+      "display_name": "Darius",
+      "team_name": "The Monstars"
+    }
+  ]
+}
+
+Use the same commissioner authorization as the current single-member add route.
+
+Validate:
+
+- batch_key required
+- valid UUID
+- members must be a non-empty array
+- display_name required
+- team_name required
+- trim whitespace
+- reject entirely invalid batch before creating anything
+
+==================================================
+3. IDEMPOTENCY
+==================================================
+
+For each row derive:
+
+`${batch_key}:${rowIndex}`
+
+Use that deterministic value as the idempotency key passed into the existing:
+
+add_fantasy_season_participant_idempotent
+
+RPC.
+
+Do not reimplement identity creation in JavaScript.
+
+Retrying the exact same batch must not duplicate:
+
+- fantasy_league_members
+- fantasy_season_members
+- fantasy_teams
+- fantasy_team_managers
+
+Return replayed results cleanly.
+
+==================================================
+4. IMPORTANT — REQUEST HASH SAFETY
+==================================================
+
+Because the underlying idempotency infrastructure rejects reuse of a key with a changed payload:
+
+verify that:
+
+same batch_key + same rowIndex + same payload
+→ replay success
+
+same batch_key + same rowIndex + changed member/team
+→ conflict / changed-payload error
+
+Do not hide this.
+
+Client should generate a NEW batch_key when the commissioner materially edits the batch after a submitted attempt.
+
+==================================================
+5. PARTIAL FAILURE MODEL
+==================================================
+
+Once batch validation passes:
+
+process rows independently.
+
+Return:
+
+{
+  "results": [
+    {
+      "index": 0,
+      "status": "created" | "replayed" | "failed",
+      "display_name": "...",
+      "team_name": "...",
+      "league_member_id": "...",
+      "season_member_id": "...",
+      "fantasy_team_id": "...",
+      "error": null
+    }
+  ],
+  "created_count": 0,
+  "replayed_count": 0,
+  "failed_count": 0
+}
+
+Do not roll back successful rows because one unrelated row fails after processing starts.
+
+The client must know exactly which rows succeeded and failed.
+
+==================================================
+6. DRAFT DAY ELIGIBILITY
+==================================================
+
+Reuse the exact same eligibility logic as the existing single-member add endpoint.
+
+Verify:
+
+Draft Day not yet locked/published as applicable
+→ imported member receives current expected eligibility
+
+Draft Day already beyond eligibility boundary
+→ imported member joins league but is excluded from that Draft Day competition
+
+Do not invent new eligibility rules for bulk imports.
+
+==================================================
+7. FRONTEND ENTRY POINT
+==================================================
+
+In Manage League, keep the existing:
+
+Add Member
+
+and add:
+
+Paste League Roster
+
+or:
+
+Import Members
+
+Preferred wording:
+
+PASTE LEAGUE ROSTER
+
+Paste member names and fantasy team names from a spreadsheet, text, email, or fantasy app.
+
+==================================================
+8. PASTE INPUT
+==================================================
+
+Provide a multiline text area.
+
+Example placeholder:
+
+Darius, The Monstars
+Mike, Sunday Scaries
+Chris, Fourth & Long
+Rob, Grim
+
+Primary CTA:
+
+Review Import
+
+Do not create members directly from the paste screen.
+
+==================================================
+9. PARSER
+==================================================
+
+Implement deterministic client-side parsing.
+
+For each non-empty line:
+
+1. if TAB exists:
+   split on first tab
+
+2. else if `|` exists:
+   split on first pipe
+
+3. else if comma exists:
+   split on first comma
+
+4. else:
+   row is incomplete / invalid
+
+Trim both fields.
+
+Do not split team names on additional commas after the first delimiter if avoidable.
+
+Example:
+
+Darius, The Monstars, LLC
+
+should interpret:
+
+display_name = Darius
+team_name = The Monstars, LLC
+
+if using first-delimiter semantics.
+
+Ignore blank lines.
+
+==================================================
+10. REVIEW IMPORT SCREEN
+==================================================
+
+After parse show:
+
+REVIEW IMPORT
+
+12 members ready to add
+
+Each row should have editable fields:
+
+Member
+[ Darius ]
+
+Fantasy Team
+[ The Monstars ]
+
+Allow corrections before submission.
+
+Do not make commissioner return to the raw paste text to fix a typo.
+
+==================================================
+11. ROW VALIDATION
+==================================================
+
+Flag inline:
+
+- missing member name
+- missing team name
+
+Invalid rows cannot be submitted.
+
+Example:
+
+Rob
+Team name required
+
+Display total:
+
+10 ready
+2 need attention
+
+Primary CTA disabled until required validation is resolved or invalid rows are explicitly removed/skipped.
+
+==================================================
+12. DUPLICATES WITHIN PASTE
+==================================================
+
+Detect obvious case-insensitive duplicates:
+
+same display_name
+
+same team_name
+
+Example:
+
+Darius / The Monstars
+DARIUS / Monstars 2
+
+Flag:
+
+Possible duplicate member name
+
+Do NOT merge automatically.
+
+Allow commissioner to:
+
+- edit
+- remove row
+- keep if deliberate
+
+Do not silently block legitimate duplicate first names if the commissioner explicitly chooses to keep them.
+
+==================================================
+13. DUPLICATES AGAINST EXISTING LEAGUE
+==================================================
+
+Compare against current league data.
+
+Flag:
+
+Possible existing member:
+Mike
+
+Possible existing team:
+Sunday Scaries
+
+Do not overwrite.
+
+Do not automatically link to the existing member.
+
+Commissioner may:
+
+- remove the row
+- correct it
+
+If they intentionally submit a duplicate that existing server rules reject, show the server failure cleanly.
+
+==================================================
+14. COMMISSIONER DUPLICATE
+==================================================
+
+If the commissioner already has:
+
+Darius / The Monstars
+
+and that row appears in pasted data:
+
+flag it prominently.
+
+Suggested:
+
+Already in league
+
+Recommended action:
+Remove
+
+Do not create a second commissioner identity.
+
+==================================================
+15. REMOVE ROW
+==================================================
+
+Each review row should support:
+
+Remove
+
+Use a lightweight icon/action.
+
+Do not require another confirmation modal just to remove an unsaved import row.
+
+==================================================
+16. BATCH KEY LIFECYCLE
+==================================================
+
+Generate a UUID when the reviewable import batch is created.
+
+Keep that same batch_key while:
+
+- reviewing
+- submitting
+- retrying unchanged failed request
+
+If the commissioner changes a row AFTER a submission attempt:
+
+generate a fresh batch_key before resubmission.
+
+This is important because underlying request hashes are tied to idempotency keys.
+
+Implement this deliberately.
+
+==================================================
+17. SUBMISSION UX
+==================================================
+
+CTA:
+
+Add 12 Members
+
+During submission:
+
+Adding members...
+
+Disable duplicate taps.
+
+After response:
+
+10 members added
+2 need attention
+
+For successful rows:
+show success or remove them from pending list.
+
+For failed rows:
+keep them visible with exact actionable message.
+
+Do not force commissioner to repaste the whole roster.
+
+==================================================
+18. FULL SUCCESS UX
+==================================================
+
+If all rows succeed:
+
+12 members added
+
+Return to Manage League.
+
+Immediately refresh:
+
+- member list
+- team list
+- claim status
+
+New members should show as unclaimed.
+
+==================================================
+19. MIXED SUCCESS UX
+==================================================
+
+Example:
+
+11 added
+1 failed
+
+Failed row:
+
+Rob
+Grim
+
+Could not add:
+Team name already exists
+
+[ Edit ]
+
+Keep batch UX recoverable.
+
+Do not duplicate the 11 successes when retrying the remaining row.
+
+Prefer moving remaining failed rows into a fresh batch on edit/retry if needed.
+
+==================================================
+20. MEMBER COUNT
+==================================================
+
+Test realistic league sizes.
+
+At minimum:
+
+4
+10
+12
+15
+16
+
+No UI or backend assumption should cap normal fantasy leagues below 16.
+
+Do not add an arbitrary 10-member limit.
+
+==================================================
+21. LONG NAMES
+==================================================
+
+Test:
+
+Christopher Alexander
+The Extremely Questionable Decision Makers
+
+Review UI should remain readable.
+
+Use wrapping rather than truncating critical text wherever practical.
+
+==================================================
+22. PARSER TESTS
+==================================================
+
+Add tests for:
+
+comma:
+Darius, The Monstars
+
+pipe:
+Darius | The Monstars
+
+tab:
+Darius<TAB>The Monstars
+
+multiple spaces around delimiter
+
+blank lines
+
+Windows line endings
+
+team name containing an additional comma
+
+only one field
+
+empty member
+
+empty team
+
+duplicate row
+
+duplicate member name
+
+duplicate team name
+
+==================================================
+23. API TESTS
+==================================================
+
+Test:
+
+commissioner can batch add
+
+regular member 403
+
+guest 403
+
+unrelated user 403
+
+empty members 400
+
+missing batch_key 400
+
+invalid batch_key 400
+
+invalid row rejects batch validation
+
+10-member import
+
+15-member import
+
+16-member import
+
+==================================================
+24. IDEMPOTENCY TESTS
+==================================================
+
+Critical tests:
+
+First submission:
+15 created
+
+Exact retry:
+0 duplicates
+same IDs returned / replayed
+
+Retry after simulated response loss:
+same outcome
+
+Same batch key with changed row payload:
+conflict
+
+Fresh batch key with changed corrected row:
+allowed
+
+==================================================
+25. EXISTING IDENTITY INVARIANTS
+==================================================
+
+For every imported member verify creation still produces exactly:
+
+- one fantasy_league_member
+- one fantasy_season_member
+- one fantasy_team
+- one fantasy_team_manager relationship
+
+No claim until member accepts/joins.
+
+Do not create:
+
+gameday_participant
+
+during league import alone unless existing architecture explicitly does so.
+
+==================================================
+26. OPEN ROSTER INVARIANT
+==================================================
+
+If a current weekly Swayger is open:
+
+bulk add should behave exactly like manual Add Member.
+
+Verify any existing open-roster behavior:
+
+- eligibility
+- answer universe updates
+- roster_revision
+- stale pick behavior
+
+is triggered through the existing member-add architecture.
+
+Do not bypass those semantics by directly inserting records.
+
+==================================================
+27. MANUAL QA
+==================================================
+
+Return exact steps for:
+
+1. Open Manage League.
+2. Tap Paste League Roster.
+3. Paste 15 rows.
+4. Review.
+5. Correct one typo.
+6. Remove one duplicate.
+7. Add remaining members.
+8. Verify list.
+9. Retry exact same request scenario.
+10. Verify no duplicates.
+11. Add one new member while weekly competition is open.
+12. Verify current open-roster behavior remains correct.
+
+==================================================
+28. TEST FILE
+==================================================
+
+Create Phase 6 tests in:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+Start sections:
+
+§A Bulk parser
+§B Bulk validation
+§C Bulk authorization
+§D Bulk idempotency
+§E Bulk identity preservation
+§F Bulk open-roster behavior
+
+Do not add placeholder tests for Areas B–E yet.
+
+We'll extend the same Phase 6 suite as the sprint continues.
+
+==================================================
+29. REGRESSION
+==================================================
+
+After Area A implementation run:
+
+- new Area A Phase 6 tests
+- Phase 4B + Manage League
+- Open Roster
+- Phase 5.2 / 5.3 where relevant
+- identity/claim suites
+
+If inexpensive, run full maintained Fantasy regression.
+
+Return exact:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+==================================================
+30. RETURN
+==================================================
+
+Return:
+
+# PHASE 6A — BULK MEMBER IMPORT REPORT
+
+1. Backend architecture
+2. Batch idempotency behavior
+3. Parser behavior
+4. Review UX
+5. Duplicate detection
+6. Partial-failure behavior
+7. Commissioner duplicate behavior
+8. Draft Day/open-roster behavior
+9. Files changed
+10. New tests
+11. Regression results
+12. Bugs found/fixed
+13. Exact manual QA
+14. Known limitations
+
+Then STOP.
+
+Do not begin Area B automatically.
+
+Final status:
+
+PHASE 6A BULK IMPORT READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

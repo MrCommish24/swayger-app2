@@ -597,11 +597,22 @@ export default function ManageLeagueScreen() {
         ))}
       </View>
 
-      {/* ── Add Member ───────────────────────────────────────────────────── */}
+      {/* ── Add Member / Paste Roster ────────────────────────────────────── */}
       {!showAdd ? (
-        <TouchableOpacity style={styles.addBtn} onPress={openAdd} activeOpacity={0.8}>
-          <Text style={styles.addBtnText}>+ Add Member</Text>
-        </TouchableOpacity>
+        <View style={styles.addActions}>
+          <TouchableOpacity style={styles.addBtn} onPress={openAdd} activeOpacity={0.8}>
+            <Text style={styles.addBtnText}>+ Add Member</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.pasteBtn}
+            onPress={() =>
+              router.push(`/fantasy/bulk-import/${leagueId}/${seasonId}` as any)
+            }
+            activeOpacity={0.8}
+          >
+            <Text style={styles.pasteBtnText}>📋 Paste League Roster</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <View style={styles.addCard}>
           <Text style={styles.addTitle}>Add Member</Text>
@@ -950,14 +961,24 @@ const styles = StyleSheet.create({
   },
   editBtnText: { fontSize: 13, fontWeight: "600", color: C.tint },
 
+  addActions: { gap: 10, marginBottom: 24 },
+
   addBtn: {
     backgroundColor: C.surface,
     borderWidth: 1, borderColor: C.tint,
     borderStyle: "dashed",
     borderRadius: 12, padding: 16,
-    alignItems: "center", marginBottom: 24,
+    alignItems: "center",
   },
   addBtnText: { color: C.tint, fontSize: 15, fontWeight: "700" },
+
+  pasteBtn: {
+    backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.border,
+    borderRadius: 12, padding: 14,
+    alignItems: "center",
+  },
+  pasteBtnText: { color: C.textSecondary, fontSize: 14, fontWeight: "600" },
 
   addCard: {
     backgroundColor: C.surface,
