@@ -1,0 +1,1079 @@
+We are beginning the next major Swayger Fantasy phase.
+
+# PHASE 5 — SWAYGER FANTASY SEASON
+
+Phase 4C Draft Day is complete enough to move forward.
+
+Product naming:
+
+- Swayger = umbrella product
+- Swayger 1v1 = head-to-head Swaygers
+- Swayger Game Day = live event / Game Day Rooms
+- Swayger Fantasy = fantasy-league engagement layer
+  - Draft Day
+  - Fantasy Season
+
+Customer-facing recurring competitions should be called:
+
+Week 1 Swayger
+Week 2 Swayger
+Week 3 Swayger
+etc.
+
+The goal of this phase is NOT to build the whole season.
+
+The goal is:
+
+Draft Day
+→ Week 1 Swayger
+→ Week 1 Winner
+→ cumulative Fantasy Season Standings
+
+This is our first retention-loop test.
+
+==================================================
+1. PRODUCT PRINCIPLE
+==================================================
+
+Swayger Fantasy does NOT replace ESPN, Yahoo, Sleeper, etc.
+
+Those products handle:
+- rosters
+- lineups
+- waivers
+- fantasy scoring
+- league matchup administration
+
+Swayger is the engagement/prediction layer on top of the existing fantasy league.
+
+The recurring question is:
+
+“Who knows this league best?”
+
+Draft Day gets the league into Swayger.
+
+Fantasy Season gives them another competition every week.
+
+==================================================
+2. FIRST PHASE 5 SCOPE
+==================================================
+
+Build ONLY:
+
+1. Week 1 Swayger creation
+2. reuse of existing Fantasy league members
+3. member Week 1 picks
+4. Week 1 pick locking
+5. commissioner Week 1 resolution
+6. result correction before finalization
+7. Week 1 finalization
+8. Week 1 winner
+9. cumulative Fantasy Season standings
+
+Do NOT build the entire season scheduler yet.
+
+Do NOT build all 18 NFL weeks automatically.
+
+We need one weekly competition working end-to-end first.
+
+==================================================
+3. DESIGN THE SEASON, BUILD WEEK 1
+==================================================
+
+Architect the feature so additional weeks can be added later without rework.
+
+But only expose Week 1 in the first implementation.
+
+Use:
+
+competition_type = 'weekly'
+
+Existing Draft Day uses:
+
+competition_type = 'draft_day'
+
+A weekly competition must belong to:
+
+fantasy_league
+→ fantasy_league_season
+→ gameday_room
+
+Do not create a parallel weekly competition system.
+
+Reuse the Game Day/Fantasy room engine.
+
+==================================================
+4. WEEK NUMBER
+==================================================
+
+Inspect whether the current schema already has a clean field capable of representing:
+
+week_number = 1
+
+or equivalent competition sequencing.
+
+If not, recommend the smallest additive schema change.
+
+Potentially:
+
+fantasy_week_number INTEGER
+
+or a generalized:
+
+competition_number INTEGER
+
+But inspect first.
+
+Do NOT add a field until you confirm existing metadata cannot represent it cleanly.
+
+We will eventually need:
+
+Week 1
+Week 2
+...
+Playoffs
+Championship
+
+Design accordingly without overbuilding.
+
+==================================================
+5. WEEK 1 COMMISSIONER FLOW
+==================================================
+
+On Fantasy League Hub, after Draft Day exists/finalizes, commissioner should see:
+
+FANTASY SEASON
+
+Week 1 Swayger
+Not set up
+
+[ Set Up Week 1 ]
+
+Flow:
+
+Set Up Week 1
+→ Choose Questions
+→ Review
+→ Publish
+
+Keep this similar to Draft Day setup wherever possible.
+
+Do not create another wizard architecture unnecessarily.
+
+==================================================
+6. WEEKLY QUESTION TYPES
+==================================================
+
+Week 1 questions should be about the FANTASY LEAGUE, not generic NFL trivia.
+
+Examples:
+
+- Which team scores the most fantasy points this week?
+- Which team scores the fewest fantasy points this week?
+- Which matchup has the largest margin of victory?
+- Which team has the highest-scoring player?
+- Which manager wins by the smallest margin?
+- Will anyone score 150+ points?
+- Which team has the biggest bench regret?
+  ONLY include subjective-style questions if we have an objective settlement definition.
+
+Avoid subjective questions in V1.
+
+We need objectively resolvable questions.
+
+==================================================
+7. ANSWER TARGETS
+==================================================
+
+Reuse structured stable answer IDs.
+
+For questions targeting a fantasy team:
+
+{
+  id: fantasy_team_id,
+  label: team_name,
+  type: "fantasy_team"
+}
+
+For questions targeting a manager/member:
+
+{
+  id: season_member_id,
+  label: display_name,
+  type: "season_member"
+}
+
+For yes/no:
+
+stable IDs.
+
+For no-one:
+
+{
+  id: "no_one",
+  label: "No one",
+  type: "static"
+}
+
+Do NOT save display labels as authoritative answer IDs.
+
+==================================================
+8. WEEKLY PROP LIBRARY
+==================================================
+
+Inspect gameday_prop_library.
+
+Add Fantasy weekly templates using the existing library architecture.
+
+Each template should define:
+
+- experience_type = fantasy
+- competition_type = weekly
+- scoring_scope = competition
+- answer_target_type
+- point_value
+- supports_no_one if relevant
+- sport compatibility
+
+Start with a SMALL high-quality NFL template set.
+
+Recommended V1:
+
+1. Highest-scoring fantasy team
+2. Lowest-scoring fantasy team
+3. Largest margin of victory
+4. Closest matchup winner / smallest winning margin
+5. Highest-scoring player belongs to which fantasy team
+6. Any team score 150+? yes/no
+7. Any matchup decided by <5 points? yes/no
+
+Before implementing #3-5, confirm they can be objectively settled from commissioner knowledge without external provider integration.
+
+We are NOT importing ESPN/Sleeper/Yahoo data yet.
+
+Commissioner resolves manually.
+
+==================================================
+9. MEMBER REUSE — CRITICAL
+==================================================
+
+Existing Fantasy league members must NOT:
+
+- reclaim a seat
+- receive a new invite
+- create a new league identity
+- join a new room manually
+
+Week 1 belongs to their existing Fantasy season.
+
+When an existing claimed member opens the league:
+
+their identity should resolve automatically.
+
+When they open Week 1:
+
+ensureFantasyParticipant should create/reuse the weekly gameday_participant using:
+
+season_member_id
+fantasy_team_id
+
+Do not recreate persistent league members.
+
+This is the key retention UX.
+
+==================================================
+10. GUEST CONTINUITY
+==================================================
+
+Guests who joined the Fantasy league during Draft Day must remain recognized in Week 1.
+
+Existing:
+
+fantasy_member_claims
+guest_token
+
+should resolve the same persistent league member / season member.
+
+Guest opens Week 1:
+→ already knows who they are
+→ can make picks
+
+No new claim flow.
+
+No new guest token.
+
+==================================================
+11. WEEK 1 PICKS
+==================================================
+
+Reuse Draft Day play architecture where possible.
+
+Week 1 member screen:
+
+WEEK 1 SWAYGER
+
+Make Your Picks
+
+[Question cards]
+
+Auto-save picks.
+
+Allow:
+- partial picks
+- changing picks while open
+- same stable-answer validation
+
+When locked:
+- read-only
+
+Do not introduce Game Day pregame/halftime/4Q phases.
+
+Weekly Fantasy should be one simple competition card.
+
+==================================================
+12. PICK DEADLINE / LOCKING
+==================================================
+
+For V1:
+
+commissioner manually locks Week 1 picks.
+
+Do NOT build automated Sunday kickoff scheduling yet.
+
+Hub:
+
+Week 1 Swayger
+Picks Open
+
+Commissioner:
+[ Lock Picks ]
+
+Members:
+[ Make My Picks ]
+or
+[ View / Update Picks ]
+
+After lock:
+
+Picks Locked
+
+Member:
+[ View My Picks ]
+
+Commissioner:
+[ Resolve Week 1 ]
+
+Later we can add automatic deadlines.
+
+Not now.
+
+==================================================
+13. OPEN ROSTER BEHAVIOR
+==================================================
+
+Reuse the Draft Day open-roster philosophy carefully.
+
+But distinguish Fantasy league roster from weekly competition roster.
+
+If a new league member is added while Week 1 picks are open:
+
+preferred:
+- eligible for Week 1
+- appended to relevant answer universes
+- existing roster-target picks flagged for review using existing roster_revision infrastructure
+
+If added after Week 1 picks lock:
+
+- added to Fantasy league
+- excluded from current Week 1
+- eligible beginning next competition
+
+Reuse existing:
+roster_revision
+answer_universe_revision
+stale_pick_prop_ids
+
+Do NOT build another revision system.
+
+==================================================
+14. WEEK 1 RESULT RESOLUTION
+==================================================
+
+Reuse the corrected Phase 4C lifecycle exactly.
+
+Commissioner:
+
+Lock Picks
+→ Resolve Week 1
+→ may change resolved answers freely
+→ Finalize Week 1
+→ results read-only
+
+Before finalize:
+result A can become B.
+
+After finalize:
+competition result corrections blocked.
+
+No unlock/reopen after finalization unless classic Game Day supports it.
+
+We already established classic Game Day behavior:
+finalization is the irreversible competition-results boundary.
+
+Reuse it.
+
+==================================================
+15. FINALIZATION CONFIRMATION
+==================================================
+
+Reuse the fixed finalization UX:
+
+- first tap opens confirmation
+- second explicit confirm finalizes
+- immediate loading state
+- single-flight protection
+- server endpoint idempotent
+- already_finalized treated as success
+- deterministic navigation afterward
+
+Do not recreate the double-submit bug.
+
+==================================================
+16. WEEK 1 RESULTS
+==================================================
+
+Member-facing:
+
+WEEK 1 SWAYGER RESULTS
+
+🏆 WEEK 1 CHAMPION
+
+Darius
+The Monstars
+45 pts
+
+Leaderboard:
+
+1. Darius — The Monstars — 45
+2. Mike — Sunday Scaries — 30
+3. Chris — Fourth & Long — 20
+
+YOUR PICKS
+
+Question
+Your pick
+Correct answer
+Points earned
+
+Same privacy rule:
+do not expose everyone else's individual picks unless explicitly intended.
+
+==================================================
+17. FANTASY SEASON STANDINGS
+==================================================
+
+This is the major new capability.
+
+Create derived cumulative standings for the Fantasy season.
+
+DO NOT create a mutable running score balance unless absolutely necessary.
+
+Preferred calculation:
+
+SUM finalized Fantasy competition points for the season.
+
+For each season member:
+
+Draft Day competition points
++
+Week 1 finalized weekly points
++
+future Week 2...
++
+future weekly competitions
+
+Do NOT count unresolved competitions.
+
+Do NOT count season-scope Season Receipt picks until they are actually settled and we explicitly define their role in season standings.
+
+==================================================
+18. DRAFT DAY COUNTS AS WEEK 0
+==================================================
+
+Product decision:
+
+Draft Day competition points DO count toward Fantasy Season standings.
+
+Conceptually:
+
+Draft Day = Week 0
+
+Example:
+
+Draft Day:
+Darius 45
+Mike 30
+
+Week 1:
+Darius 20
+Mike 40
+
+Season standings:
+
+1. Darius — 65
+2. Mike — 70
+
+Mike moves into first after Week 1.
+
+This continuity is intentional.
+
+Do not alter the historical Draft Day leaderboard.
+
+Season standings are a separate derived view.
+
+==================================================
+19. SEASON RECEIPTS
+==================================================
+
+Season Receipts remain separate.
+
+For Phase 5:
+
+- existing Draft Day season-scope picks remain pending
+- they are NOT included in Week 1
+- they are NOT included in season standings while pending
+- do NOT build their commissioner settlement UI now
+
+Do not accidentally include scoring_scope='season' merely because it belongs to the same Draft Day room.
+
+==================================================
+20. SEASON STANDINGS CALCULATION
+==================================================
+
+Preferred leaderboard row:
+
+- season_member_id
+- display_name
+- fantasy_team_id
+- team_name
+- competitions_played
+- total_points
+- weekly_wins
+- draft_day_points
+- weekly_points
+
+Potential UI:
+
+SEASON STANDINGS
+
+1. Mike — Sunday Scaries — 70 pts
+2. Darius — The Monstars — 65 pts
+3. Chris — Fourth & Long — 35 pts
+
+Optional secondary info:
+
+Draft Day: 30
+Week 1: 40
+
+Do NOT overcomplicate the leaderboard.
+
+==================================================
+21. COMPETITIONS PLAYED
+==================================================
+
+Define this deliberately.
+
+A competition counts as “played” when:
+
+member submitted at least one competition-scope pick.
+
+Do NOT count someone merely because:
+- they are a league member
+- they opened the play screen
+- a gameday_participant row exists
+
+We already discovered that participant-row existence alone can create phantom zero-score entries.
+
+Season standings should be based on actual participation.
+
+==================================================
+22. WEEKLY WINS
+==================================================
+
+Track as DERIVED data if possible.
+
+A weekly win = participant is top-ranked/co-top-ranked in a finalized weekly competition.
+
+Draft Day championship should NOT count as a “weekly win.”
+
+Potentially expose:
+
+Wins: 2
+
+But if implementation complexity is significant, this can be deferred.
+
+Do not create mutable counters merely for convenience.
+
+==================================================
+23. TIES
+==================================================
+
+Same rules as Draft Day:
+
+- equal points = tied rank
+- co-winners allowed
+- no arbitrary tiebreaker
+
+Season standings:
+
+T-1
+T-1
+3
+
+No tiebreaker system in this phase.
+
+==================================================
+24. HUB DESIGN
+==================================================
+
+Fantasy League Hub should begin becoming the season home.
+
+Suggested structure:
+
+LEAGUE HEADER
+Food Pyramid
+2026 Fantasy Football
+
+SEASON STANDINGS
+Top 3 preview
+[ View Standings ]
+
+DRAFT DAY
+🏆 Darius — 45 pts
+[ View Results ]
+
+FANTASY SEASON
+
+Week 1 Swayger
+Picks Open
+[ Make My Picks ]
+
+or commissioner:
+[ Manage Week 1 ]
+[ Lock Picks ]
+
+Do not add a huge chronological feed yet.
+
+Week 1 only.
+
+==================================================
+25. COMMISSIONER SETUP UX
+==================================================
+
+Preferred reuse of Draft Day setup components.
+
+Set Up Week 1:
+
+Step 1:
+Choose Questions
+
+Step 2:
+Review Week 1
+
+Step 3:
+Publish
+
+Question cap:
+recommend 5–8.
+
+We want this to feel quick.
+
+Commissioner should not spend 20 minutes setting up every week.
+
+==================================================
+26. REWARD
+==================================================
+
+Weekly reward remains display-only.
+
+If Fantasy season has a weekly reward default:
+use it.
+
+If current schema already supports room-specific reward override:
+allow it only if existing UX makes this easy.
+
+Do NOT build payouts/payment tracking.
+
+==================================================
+27. FUTURE AUTOMATION — DESIGN ONLY
+==================================================
+
+Future versions may allow:
+
+- automatically create next week's Swayger
+- automatically open picks
+- Sunday kickoff lock
+- provider/stat API settlement
+- push notification reminders
+
+Do NOT build them now.
+
+Avoid architecture that makes them impossible.
+
+==================================================
+28. API DESIGN
+==================================================
+
+Inspect existing Fantasy Draft Day routes first.
+
+Prefer generalized Fantasy competition helpers where practical.
+
+Do NOT blindly duplicate:
+
+/draft-day/play
+/draft-day/settle
+/draft-day/results
+
+into giant weekly copies if shared helpers can be extracted safely.
+
+Potential conceptual routes:
+
+/fantasy/.../weeks/1
+/fantasy/.../weeks/1/play
+/fantasy/.../weeks/1/settlement
+/fantasy/.../weeks/1/results
+
+But follow existing route conventions.
+
+Do not over-generalize prematurely.
+
+==================================================
+29. COMPETITION IDENTITY
+==================================================
+
+There must never be two accidental Week 1 competitions for the same Fantasy season.
+
+Need durable uniqueness / idempotent create behavior.
+
+Conceptually unique:
+
+league_season_id
++
+competition_type='weekly'
++
+week_number=1
+
+Inspect schema before deciding constraint.
+
+If SQL required:
+write migration
+STOP for manual application.
+
+==================================================
+30. SEASON STANDINGS API
+==================================================
+
+Create member-safe endpoint, conceptually:
+
+GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/standings
+
+Return:
+
+- league
+- season
+- standings
+- finalized competitions summary
+
+Season standings should derive only from authoritative finalized competition records.
+
+Do not expose admin-only details.
+
+Guests with valid league claim may view standings.
+
+==================================================
+31. WEEKLY RESULTS API
+==================================================
+
+Use Draft Day results behavior as model.
+
+Return after finalization:
+
+- weekly winner(s)
+- leaderboard
+- viewer's picks
+- correct answers
+- points earned
+- reward display if configured
+
+Before finalization:
+members should not see partial results.
+
+Commissioner may preview during resolution.
+
+==================================================
+32. CLASSIC GAME DAY MUST REMAIN UNAFFECTED
+==================================================
+
+Fantasy weekly competitions should reuse infrastructure without changing:
+
+- classic Game Day UI
+- classic Game Day phases
+- classic Game Day settlement rules
+- 1v1 behavior
+
+Regression test them.
+
+==================================================
+33. ARCHITECTURE INSPECTION FIRST
+==================================================
+
+Before coding:
+
+1. inspect existing Draft Day endpoints/helpers
+2. identify which logic is generic enough for weekly competitions
+3. inspect room/card schemas for week identity
+4. inspect prop library support
+5. inspect standings/scoring helpers
+6. inspect open-roster revision reuse
+7. inspect guest/member participant creation
+8. determine SQL requirements
+
+Do NOT code around an architectural conflict.
+
+If significant SQL is needed:
+return migration checkpoint first.
+
+==================================================
+34. TESTS — WEEK 1 CREATION
+==================================================
+
+Test:
+
+- commissioner can create Week 1
+- member cannot create
+- guest cannot create
+- duplicate Week 1 creation prevented/idempotent
+- correct league season association
+- competition_type='weekly'
+- week number correct
+- props published
+- answer options use stable IDs
+- question caps enforced
+
+==================================================
+35. TESTS — IDENTITY
+==================================================
+
+Test:
+
+- existing authenticated league member opens Week 1 without claim
+- existing guest opens Week 1 with same guest token
+- same season_member_id reused
+- no duplicate persistent league member
+- no duplicate seat claim
+- weekly gameday participant created idempotently
+
+==================================================
+36. TESTS — PICKS
+==================================================
+
+Test:
+
+- member saves Week 1 pick
+- changes pick while open
+- partial picks allowed
+- fabricated answer rejected
+- no_one works
+- lock prevents edits
+- viewer cannot see correct_answer before finalization
+
+==================================================
+37. TESTS — OPEN ROSTER
+==================================================
+
+Test:
+
+- new member while Week 1 open becomes eligible
+- relevant answer options expand
+- roster_revision increments
+- existing roster-target picks become stale
+- reconfirm clears stale
+- add after lock excluded from Week 1
+- next competition eligibility preserved
+
+==================================================
+38. TESTS — SETTLEMENT
+==================================================
+
+Test:
+
+- commissioner settles
+- commissioner corrects result before finalize
+- same-answer settlement idempotent
+- member/guest cannot settle
+- open picks cannot be settled
+- weighted point_value works
+- finalize is single-flight safe
+- repeat finalize idempotent
+- post-finalize result correction rejected
+
+==================================================
+39. TESTS — WEEK 1 RESULTS
+==================================================
+
+Test:
+
+- winner correct
+- ties correct
+- partial participation
+- zero-point participant behavior
+- viewer's picks only
+- correct answers revealed after finalize
+- reward display safe
+- guest results access
+
+==================================================
+40. TESTS — SEASON STANDINGS
+==================================================
+
+Critical fixtures:
+
+Draft Day:
+Darius = 45
+Mike = 30
+
+Week 1:
+Darius = 20
+Mike = 40
+
+Expected season totals:
+
+Darius = 65
+Mike = 70
+
+Verify:
+
+- Draft Day competition points included
+- Week 1 finalized points included
+- pending competitions excluded
+- season-scope props excluded
+- participant with no picks excluded
+- ties handled
+- guest member included normally
+- standings stable across reload
+
+Use deliberately non-10 point values.
+
+==================================================
+41. HISTORICAL STABILITY
+==================================================
+
+Verify:
+
+- Draft Day winner does not change
+- Week 1 winner does not change after finalization
+- season standings aggregate both
+- future Week 2 addition can extend standings without rewriting prior competitions
+
+No mutable score overwrites.
+
+==================================================
+42. MANUAL QA TARGET
+==================================================
+
+After Phase 5, I should be able to:
+
+COMMISSIONER
+
+1. Open existing Fantasy League.
+2. See Draft Day results.
+3. See Fantasy Season section.
+4. Tap Set Up Week 1.
+5. Choose 5–8 questions.
+6. Publish.
+7. Existing members immediately have Week 1 available.
+8. Make my own picks.
+9. Lock picks.
+10. Resolve Week 1.
+11. Correct a mistaken result before finalizing.
+12. Finalize.
+13. See Week 1 champion.
+14. See updated Season Standings.
+
+MEMBER
+
+1. Open existing league.
+2. No new claim/join step.
+3. See Week 1 Swayger.
+4. Make picks.
+5. View picks after lock.
+6. See Week 1 results after finalize.
+7. See Season Standings.
+
+GUEST
+
+Same experience using existing guest claim.
+
+==================================================
+43. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- Week 2 UI
+- automatic season scheduling
+- NFL API/stat provider
+- ESPN/Sleeper/Yahoo import
+- automatic lock times
+- notifications
+- payments/payouts
+- season receipt settlement UI
+- playoff architecture beyond ensuring week identity is extensible
+- commissioner member removal
+- social sharing
+- season champion payout
+- advanced tiebreakers
+
+==================================================
+44. RETURN
+==================================================
+
+Return:
+
+1. architecture inspection
+2. reusable Draft Day components/helpers
+3. schema gaps
+4. SQL required or not
+5. week identity design
+6. weekly prop-library design
+7. API design
+8. commissioner setup UX
+9. member/guest continuity
+10. open-roster reuse
+11. weekly settlement/finalization reuse
+12. Week 1 results
+13. Season Standings calculation
+14. Draft Day Week 0 behavior
+15. files changed
+16. tests added
+17. exact regression totals
+18. bugs found/fixed
+19. manual QA sequence
+20. what remains before Week 2
+
+If SQL is required:
+write the migration and STOP.
+
+Do NOT automatically apply migrations.
+
+Final status:
+
+PHASE 5 READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
