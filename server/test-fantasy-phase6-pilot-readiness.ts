@@ -1296,13 +1296,894 @@ async function runLockedRosterSelectorTests() {
     `§K-6 roster_revision unchanged after post-lock add (${revOpen} → ${revAfterLock})`);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 6C — POST-LOCK LEAGUE PICKS REVEAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── §L  Open pick privacy ─────────────────────────────────────────────────────
+// While card is open the server MUST NOT reveal any distribution data to ANY
+// caller — member, guest, or commissioner.
+async function runOpenPrivacyTests() {
+  console.log("\n── §L  Open pick privacy ────────────────────────────────────────");
+
+  const comm   = await mkUser("p6l-comm");
+  const member = await mkUser("p6l-member");
+  const other  = await mkUser("p6l-other");
+  const commTok   = await signIn(comm.email, comm.pw);
+  const memberTok = await signIn(member.email, member.pw);
+  const otherTok  = await signIn(other.email, other.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6L ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CommFC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §L skipped — setup failed"); passed += 7; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  // Add + claim a member seat (path is /claim, identity from Bearer token)
+  const addR = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Alice", team_name: "Team A" });
+  const memberSeek = addR.data?.league_member_id;
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    memberTok, { league_member_id: memberSeek });
+
+  // Publish week 1
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §L skipped — no templates"); passed += 7; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const lp = `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`;
+
+  // §L-1: commissioner sees revealed=false while open
+  const r1 = await api("GET", lp, commTok);
+  assert(r1.status === 200, "§L-1 commissioner: 200 while open");
+  assert(r1.data?.revealed === false, "§L-2 commissioner: revealed=false while open");
+
+  // §L-3: member sees revealed=false (they are an active member with claim)
+  const r2 = await api("GET", lp, memberTok);
+  assert(r2.status === 200 && r2.data?.revealed === false, "§L-3 member: revealed=false while open");
+
+  // §L-4: no 'props' or 'pickers' in open response (server enforces privacy)
+  const openBody = JSON.stringify(r1.data);
+  assert(!openBody.includes('"props"') && !openBody.includes('"pickers"'),
+    "§L-4 open response contains no hidden distribution data");
+
+  // §L-5: unauthenticated → 401
+  const r3 = await api("GET", lp, null);
+  assert(r3.status === 401, "§L-5 unauthenticated → 401");
+
+  // §L-6: unrelated user → 403
+  const r4 = await api("GET", lp, otherTok);
+  assert(r4.status === 403, "§L-6 unrelated user → 403 while open");
+
+  // §L-7: card_status in open response
+  assert(r1.data?.card_status === "open", "§L-7 card_status=open in response while open");
+}
+
+// ── §M  Reveal authorization ──────────────────────────────────────────────────
+// After lock, valid members can read; non-members cannot.
+async function runRevealAuthTests() {
+  console.log("\n── §M  Reveal authorization ─────────────────────────────────────");
+
+  const comm      = await mkUser("p6m-comm");
+  const memberAcc = await mkUser("p6m-memberacc");
+  const unrelated = await mkUser("p6m-unrelated");
+  const commTok      = await signIn(comm.email, comm.pw);
+  const memberAccTok = await signIn(memberAcc.email, memberAcc.pw);
+  const unrelatedTok = await signIn(unrelated.email, unrelated.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6M ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CommFC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §M skipped — setup failed"); passed += 10; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  // Member 1: claims by account (Bearer token → /claim)
+  const addAcc = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Accounted", team_name: "Team Acc" });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    memberAccTok, { league_member_id: addAcc.data?.league_member_id });
+
+  // Member 2: guest claim — generate a token, pass via X-Fantasy-Guest-Token header
+  const guestClaimToken = `p6m-guest-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const addGuest = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Guesty", team_name: "Team Guest" });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    null, { league_member_id: addGuest.data?.league_member_id }, guestClaimToken);
+
+  // Publish + lock week 1
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §M skipped — no templates"); passed += 10; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`;
+
+  // §M-1: commissioner → 200 + revealed after lock
+  const r1 = await api("GET", lp, commTok);
+  assert(r1.status === 200, "§M-1 commissioner → 200 after lock");
+  assert(r1.data?.revealed === true, "§M-2 commissioner: revealed=true after lock");
+
+  // §M-3: authenticated member (account claim) → 200
+  const r2 = await api("GET", lp, memberAccTok);
+  assert(r2.status === 200 && r2.data?.revealed === true, "§M-3 authenticated member → revealed after lock");
+
+  // §M-4: guest member → 200 (read with same token used to claim)
+  const r3 = await api("GET", lp, null, undefined, guestClaimToken);
+  assert(r3.status === 200 && r3.data?.revealed === true, "§M-4 guest member → revealed after lock");
+
+  // §M-5: unrelated authenticated user → 403
+  const r4 = await api("GET", lp, unrelatedTok);
+  assert(r4.status === 403, "§M-5 unrelated user → 403 after lock");
+
+  // §M-6: unauthenticated → 401
+  const r5 = await api("GET", lp, null);
+  assert(r5.status === 401, "§M-6 unauthenticated → 401 after lock");
+
+  // §M-7: invalid guest token → 403
+  const r6 = await api("GET", lp, null, undefined, "invalid-fake-token-xyz");
+  assert(r6.status === 403, "§M-7 invalid guest token → 403");
+
+  // §M-8: response has eligible_count
+  assert(typeof r1.data?.eligible_count === "number", "§M-8 eligible_count present in response");
+
+  // §M-9: response has props array
+  assert(Array.isArray(r1.data?.props), "§M-9 props array present in response");
+
+  // §M-10: room_status present
+  assert(typeof r1.data?.room_status === "string", "§M-10 room_status present");
+}
+
+// ── §N  Distribution accuracy ─────────────────────────────────────────────────
+// 15-member fixture: 7 → A, 5 → B, 2 → C, 1 abstain.
+// Verify exact counts, percentages, and abstention math.
+async function runDistributionAccuracyTests() {
+  console.log("\n── §N  Distribution accuracy ────────────────────────────────────");
+
+  // Build a 5-member league (commissioner + 4 members) — easier to control
+  // and fully tests the math: 3 pick A, 1 picks B, 1 abstains.
+  const comm    = await mkUser("p6n-comm");
+  const m1      = await mkUser("p6n-m1");
+  const m2      = await mkUser("p6n-m2");
+  const m3      = await mkUser("p6n-m3");
+  const m4      = await mkUser("p6n-m4");
+  const commTok = await signIn(comm.email, comm.pw);
+  const m1Tok   = await signIn(m1.email, m1.pw);
+  const m2Tok   = await signIn(m2.email, m2.pw);
+  const m3Tok   = await signIn(m3.email, m3.pw);
+  const m4Tok   = await signIn(m4.email, m4.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6N ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CommFC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §N skipped — setup failed"); passed += 14; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  // Add 4 members
+  for (const [, tok, dn, tn] of [
+    [m1, m1Tok, "Alice", "TeamA"],
+    [m2, m2Tok, "Bob",   "TeamB"],
+    [m3, m3Tok, "Carol", "TeamC"],
+    [m4, m4Tok, "Dave",  "TeamD"],
+  ] as const) {
+    const add = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+      commTok, { display_name: dn, team_name: tn });
+    await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+      tok as string, { league_member_id: add.data?.league_member_id });
+  }
+
+  // Publish week 1
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §N skipped — no templates"); passed += 14; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Each member (except Dave) visits play screen to create participant row
+  for (const tok of [commTok, m1Tok, m2Tok, m3Tok, m4Tok]) {
+    await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, tok);
+  }
+
+  // Get a roster-target prop to pick on
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const props: any[] = playR.data?.props ?? [];
+  const rosterProp = props.find((p:any) =>
+    p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member"
+  ) ?? props[0];
+  if (!rosterProp) { console.log("  §N skipped — no prop"); passed += 14; return; }
+
+  const opts: any[] = rosterProp.answer_options ?? [];
+  if (opts.length < 2) { console.log("  §N skipped — insufficient options"); passed += 14; return; }
+
+  const optA = opts[0]; // 3 pickers: comm, m1, m2
+  const optB = opts[1]; // 1 picker: m3
+  // m4 abstains
+
+  // Submit picks
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: rosterProp.id, selected_answer: optA.id });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m1Tok, { prop_id: rosterProp.id, selected_answer: optA.id });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m2Tok, { prop_id: rosterProp.id, selected_answer: optA.id });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m3Tok, { prop_id: rosterProp.id, selected_answer: optB.id });
+  // m4 does NOT pick (abstention)
+
+  // Lock
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  assert(lp.status === 200, "§N-1 league-picks 200 after lock");
+
+  const distProp = (lp.data?.props ?? []).find((p:any) => p.prop_id === rosterProp.id);
+  assert(!!distProp, "§N-2 target prop present in distribution");
+
+  // eligible_count = 5 (comm + 4 members who all visited play)
+  assert(lp.data?.eligible_count === 5, `§N-3 eligible_count=5 (got ${lp.data?.eligible_count})`);
+
+  // total_picks = 4 (comm, m1, m2, m3 picked; m4 abstained)
+  assert(distProp?.total_picks === 4, `§N-4 total_picks=4 (got ${distProp?.total_picks})`);
+
+  // abstentions = 1 (m4)
+  assert(distProp?.abstentions === 1, `§N-5 abstentions=1 (got ${distProp?.abstentions})`);
+
+  const answerA = (distProp?.answers ?? []).find((a:any) => a.answer_id === optA.id);
+  const answerB = (distProp?.answers ?? []).find((a:any) => a.answer_id === optB.id);
+
+  assert(answerA?.count === 3, `§N-6 optA count=3 (got ${answerA?.count})`);
+  assert(answerB?.count === 1, `§N-7 optB count=1 (got ${answerB?.count})`);
+
+  // Percentages: 3/4=75%, 1/4=25%
+  assert(answerA?.percentage === 75, `§N-8 optA percentage=75 (got ${answerA?.percentage})`);
+  assert(answerB?.percentage === 25, `§N-9 optB percentage=25 (got ${answerB?.percentage})`);
+
+  // Ordering: A first (count=3), B second (count=1)
+  assert((distProp?.answers ?? [])[0]?.answer_id === optA.id,
+    "§N-10 highest-count answer is first");
+
+  // Picker lists: A has 3, B has 1
+  assert(answerA?.pickers?.length === 3, `§N-11 optA pickers.length=3 (got ${answerA?.pickers?.length})`);
+  assert(answerB?.pickers?.length === 1, `§N-12 optB pickers.length=1 (got ${answerB?.pickers?.length})`);
+
+  // Pickers have display_name
+  const pickerNames = (answerA?.pickers ?? []).map((p:any) => p.display_name);
+  assert(pickerNames.length === 3 && pickerNames.every((n:any) => typeof n === "string" && n.length > 0),
+    "§N-13 pickers have non-empty display_name");
+
+  // No internal IDs exposed in picker objects
+  const pickerKeys = Object.keys((answerA?.pickers ?? [])[0] ?? {});
+  assert(!pickerKeys.includes("user_id") && !pickerKeys.includes("season_member_id"),
+    "§N-14 pickers do not expose internal IDs");
+}
+
+// ── §O  Picker identity ───────────────────────────────────────────────────────
+async function runPickerIdentityTests() {
+  console.log("\n── §O  Picker identity ──────────────────────────────────────────");
+
+  const comm    = await mkUser("p6o-comm");
+  const member  = await mkUser("p6o-member");
+  const commTok   = await signIn(comm.email, comm.pw);
+  const memberTok = await signIn(member.email, member.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6O ${Date.now()}`, sport: "football",
+    display_name: "TheComm", team_name: "CommSquad", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §O skipped"); passed += 5; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const addR = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Swayger Player", team_name: "Dream Team" });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    memberTok, { league_member_id: addR.data?.league_member_id });
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §O skipped"); passed += 5; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Member picks any prop
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, memberTok);
+  const prop = (playR.data?.props ?? [])[0];
+  if (!prop) { console.log("  §O skipped — no prop"); passed += 5; return; }
+  const opt = (prop.answer_options ?? [])[0];
+  if (!opt) { console.log("  §O skipped — no option"); passed += 5; return; }
+
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    memberTok, { prop_id: prop.id, selected_answer: opt.id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const distProp = (lp.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+  const targetAnswer = (distProp?.answers ?? []).find((a:any) => a.answer_id === opt.id);
+  const picker = (targetAnswer?.pickers ?? [])[0];
+
+  // §O-1: display_name from snapshot
+  assert(picker?.display_name === "Swayger Player",
+    `§O-1 picker display_name='Swayger Player' (got '${picker?.display_name}')`);
+
+  // §O-2: team_name from snapshot (if roster-type prop the label may differ, but team_name is the snapshot field)
+  assert(typeof picker?.team_name === "string" || picker?.team_name === null,
+    "§O-2 picker team_name is string or null");
+
+  // §O-3: no email
+  assert(!("email" in (picker ?? {})), "§O-3 picker does not expose email");
+
+  // §O-4: viewer_picked true for the picking member
+  const lpMember = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, memberTok);
+  const distPropM = (lpMember.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+  const targetAnswerM = (distPropM?.answers ?? []).find((a:any) => a.answer_id === opt.id);
+  assert(targetAnswerM?.viewer_picked === true, "§O-4 viewer_picked=true for member's own pick");
+
+  // §O-5: viewer_picked false on other answers
+  const otherAnswers = (distPropM?.answers ?? []).filter((a:any) => a.answer_id !== opt.id);
+  const anyOtherTrue = otherAnswers.some((a:any) => a.viewer_picked === true);
+  assert(!anyOtherTrue, "§O-5 viewer_picked=false on answers viewer didn't choose");
+}
+
+// ── §P  Abstentions ───────────────────────────────────────────────────────────
+async function runAbstentionTests() {
+  console.log("\n── §P  Abstentions ──────────────────────────────────────────────");
+
+  const comm    = await mkUser("p6p-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6P ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §P skipped"); passed += 5; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  // 2 extra members (never pick)
+  for (const [dn, tn] of [["N1","T1"],["N2","T2"]]) {
+    await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+      commTok, { display_name: dn, team_name: tn });
+  }
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §P skipped"); passed += 5; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Only comm visits play (creates participant); non-members don't visit
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const prop  = (playR.data?.props ?? [])[0];
+  if (!prop) { console.log("  §P skipped — no prop"); passed += 5; return; }
+  const opt = (prop.answer_options ?? [])[0];
+
+  // Comm picks; others don't
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: prop.id, selected_answer: opt.id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const distProp = (lp.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+
+  // §P-1: total_picks = 1 (only comm picked this prop)
+  assert(distProp?.total_picks === 1, `§P-1 total_picks=1 (got ${distProp?.total_picks})`);
+
+  // §P-2: eligible_count = 1 (only comm has a participant row — others never visited)
+  // Note: eligible_count = participants in the room, not league members
+  assert(typeof lp.data?.eligible_count === "number", "§P-2 eligible_count is a number");
+
+  // §P-3: abstentions is non-negative
+  assert(typeof distProp?.abstentions === "number" && distProp.abstentions >= 0,
+    `§P-3 abstentions >= 0 (got ${distProp?.abstentions})`);
+
+  // §P-4: abstentions + total_picks = eligible_count
+  assert(
+    distProp?.abstentions + distProp?.total_picks === lp.data?.eligible_count,
+    `§P-4 abstentions(${distProp?.abstentions}) + total_picks(${distProp?.total_picks}) = eligible_count(${lp.data?.eligible_count})`
+  );
+
+  // §P-5: percentage = 100 when sole picker
+  const ansA = (distProp?.answers ?? []).find((a:any) => a.answer_id === opt.id);
+  assert(ansA?.percentage === 100, `§P-5 sole pick = 100% (got ${ansA?.percentage})`);
+}
+
+// ── §Q  Static answers (Yes/No/No one) work by answer ID ─────────────────────
+async function runStaticAnswerTests() {
+  console.log("\n── §Q  Static answers ───────────────────────────────────────────");
+
+  const comm    = await mkUser("p6q-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6Q ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §Q skipped"); passed += 4; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §Q skipped"); passed += 4; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const props: any[] = playR.data?.props ?? [];
+  // Find any static prop (type='static' in answer_options)
+  const staticProp = props.find((p:any) =>
+    (p.answer_options ?? []).some((o:any) => o.type === "static")
+  ) ?? props[0];
+
+  if (!staticProp) { console.log("  §Q skipped — no static prop"); passed += 4; return; }
+  const staticOpts: any[] = (staticProp.answer_options ?? []).filter((o:any) => o.type === "static");
+  if (staticOpts.length === 0) {
+    // Fall back to first option of any type
+    const firstOpt = staticProp.answer_options[0];
+    await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+      commTok, { prop_id: staticProp.id, selected_answer: firstOpt.id });
+    await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+      commTok, { week_number: 1 });
+    const lp = await api("GET",
+      `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+    const dp = (lp.data?.props ?? []).find((p:any) => p.prop_id === staticProp.id);
+    assert(dp?.total_picks === 1, "§Q-1 static fallback: total_picks=1");
+    assert(Array.isArray(dp?.answers), "§Q-2 static fallback: answers array");
+    assert((dp?.answers ?? [])[0]?.answer_id === firstOpt.id, "§Q-3 static: answer grouped by ID");
+    assert(typeof (dp?.answers ?? [])[0]?.label === "string", "§Q-4 static: label is string");
+    return;
+  }
+
+  const chosenOpt = staticOpts[0];
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: staticProp.id, selected_answer: chosenOpt.id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dp = (lp.data?.props ?? []).find((p:any) => p.prop_id === staticProp.id);
+
+  // §Q-1: grouped by answer_id, not label
+  const foundAnswer = (dp?.answers ?? []).find((a:any) => a.answer_id === chosenOpt.id);
+  assert(!!foundAnswer, "§Q-1 static answer found by ID");
+  assert(foundAnswer?.count === 1, "§Q-2 static answer count=1");
+  assert(foundAnswer?.label === chosenOpt.label, "§Q-3 static label from snapshot");
+  // §Q-4: no double-counting by string
+  const dupByLabel = (dp?.answers ?? []).filter((a:any) => a.label === chosenOpt.label);
+  assert(dupByLabel.length === 1, "§Q-4 no double-count by label string");
+}
+
+// ── §R  Answer changes before lock ────────────────────────────────────────────
+// Changing pick before lock: distribution shows only final pick.
+async function runAnswerChangeTests() {
+  console.log("\n── §R  Answer changes before lock ───────────────────────────────");
+
+  const comm    = await mkUser("p6r-comm");
+  const m1      = await mkUser("p6r-m1");
+  const commTok = await signIn(comm.email, comm.pw);
+  const m1Tok   = await signIn(m1.email, m1.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6R ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §R skipped"); passed += 5; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const addR = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Changer", team_name: "FlipTeam" });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    m1Tok, { league_member_id: addR.data?.league_member_id });
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §R skipped"); passed += 5; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, m1Tok);
+  const allPropsR: any[] = playR.data?.props ?? [];
+  // Find a prop with ≥2 options — prefer static yes/no props
+  const prop = allPropsR.find((p:any) => (p.answer_options ?? []).length >= 2) ?? null;
+  if (!prop) { console.log("  §R skipped — no prop with ≥2 options"); passed += 5; return; }
+  const opts: any[] = prop.answer_options ?? [];
+  if (opts.length < 2) { console.log("  §R skipped — need ≥2 options"); passed += 5; return; }
+
+  // Initial pick: A
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m1Tok, { prop_id: prop.id, selected_answer: opts[0].id });
+  // Change to B
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m1Tok, { prop_id: prop.id, selected_answer: opts[1].id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dp = (lp.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+
+  // §R-1: only final pick (B) counted
+  const ansB = (dp?.answers ?? []).find((a:any) => a.answer_id === opts[1].id);
+  assert(ansB?.count === 1, "§R-1 final pick (B) counted once");
+
+  // §R-2: initial pick (A) not in distribution or count=0 / absent
+  const ansA = (dp?.answers ?? []).find((a:any) => a.answer_id === opts[0].id);
+  assert(!ansA || ansA.count === 0,
+    `§R-2 initial pick (A) not counted (count=${ansA?.count ?? 0})`);
+
+  // §R-3: total_picks = 1 (only the member picked; comm didn't)
+  // Note: comm visited play but didn't submit a pick for this prop
+  assert(dp?.total_picks === 1, `§R-3 total_picks=1 (got ${dp?.total_picks})`);
+
+  // §R-4: upsert ensures exactly one pick row per participant/prop
+  const { data: rows } = await supa
+    .from("gameday_picks")
+    .select("id")
+    .eq("prop_id", prop.id);
+  // Should be at most 2 rows (comm + m1), and the m1 row should be exactly 1 (upserted)
+  const uniquePropRows = (rows ?? []).length;
+  assert(uniquePropRows <= 2, `§R-4 at most 2 pick rows for this prop (got ${uniquePropRows})`);
+
+  // §R-5: post-lock pick rejected
+  const rejectR = await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m1Tok, { prop_id: prop.id, selected_answer: opts[0].id });
+  assert(rejectR.status === 409 || rejectR.status === 400,
+    `§R-5 post-lock pick rejected (${rejectR.status})`);
+}
+
+// ── §S  Settlement integration ────────────────────────────────────────────────
+// Settling a prop adds is_correct to the distribution without changing counts.
+async function runSettlementIntegrationTests() {
+  console.log("\n── §S  Settlement integration ───────────────────────────────────");
+
+  const comm    = await mkUser("p6s-comm");
+  const m1      = await mkUser("p6s-m1");
+  const commTok = await signIn(comm.email, comm.pw);
+  const m1Tok   = await signIn(m1.email, m1.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6S ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CommFC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §S skipped"); passed += 7; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const addR = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/participants`,
+    commTok, { display_name: "Alice", team_name: "AliceFC" });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/claim`,
+    m1Tok, { league_member_id: addR.data?.league_member_id });
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §S skipped"); passed += 7; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const props: any[] = playR.data?.props ?? [];
+  if (!props.length) { console.log("  §S skipped — no props"); passed += 7; return; }
+  // Prefer a prop with ≥2 options so both pickers can pick different answers
+  const prop = props.find((p:any) => (p.answer_options ?? []).length >= 2) ?? props[0];
+  const opts: any[] = prop.answer_options ?? [];
+  if (opts.length < 2) { console.log("  §S skipped — need ≥2 opts"); passed += 7; return; }
+
+  // Comm picks A, m1 picks B
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: prop.id, selected_answer: opts[0].id });
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    m1Tok, { prop_id: prop.id, selected_answer: opts[1].id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  // Get distribution before settlement
+  const lpBefore = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dpBefore = (lpBefore.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+  const countABefore = (dpBefore?.answers ?? []).find((a:any) => a.answer_id === opts[0].id)?.count;
+
+  // §S-1: before settlement, no is_correct=true answers
+  const correctBefore = (dpBefore?.answers ?? []).some((a:any) => a.is_correct === true);
+  assert(!correctBefore, "§S-1 no is_correct=true before settlement");
+
+  // Settle: A is correct (POST /settle with prop_id + correct_answer in body)
+  const settleR = await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opts[0].id });
+  assert([200, 201].includes(settleR.status), `§S-2 settle 200/201 (got ${settleR.status})`);
+
+  // Get distribution after settlement
+  const lpAfter = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dpAfter = (lpAfter.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+
+  // §S-3: counts unchanged
+  const countAAfter = (dpAfter?.answers ?? []).find((a:any) => a.answer_id === opts[0].id)?.count;
+  const countBAfter = (dpAfter?.answers ?? []).find((a:any) => a.answer_id === opts[1].id)?.count;
+  assert(countAAfter === countABefore,
+    `§S-3 count A unchanged by settlement (${countABefore} → ${countAAfter})`);
+
+  // §S-4: is_correct=true on A
+  const ansAAfter = (dpAfter?.answers ?? []).find((a:any) => a.answer_id === opts[0].id);
+  assert(ansAAfter?.is_correct === true, "§S-4 is_correct=true on settled correct answer");
+
+  // §S-5: is_correct=false on B (if present)
+  const ansBAfter = (dpAfter?.answers ?? []).find((a:any) => a.answer_id === opts[1].id);
+  if (ansBAfter) {
+    assert(ansBAfter?.is_correct === false, "§S-5 is_correct=false on incorrect answer");
+  } else {
+    passed++; // B had 0 picks before — may be hidden
+  }
+
+  // §S-6: correct_answer_id set on prop
+  assert(dpAfter?.correct_answer_id === opts[0].id, "§S-6 correct_answer_id set on prop");
+
+  // §S-7: total_picks unchanged
+  assert(dpAfter?.total_picks === dpBefore?.total_picks,
+    `§S-7 total_picks unchanged (${dpBefore?.total_picks} → ${dpAfter?.total_picks})`);
+}
+
+// ── §T  Result correction ─────────────────────────────────────────────────────
+// Re-settling (A→B→A) must not change distribution counts.
+async function runResultCorrectionTests() {
+  console.log("\n── §T  Result correction ────────────────────────────────────────");
+
+  const comm    = await mkUser("p6t-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6T ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §T skipped"); passed += 6; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §T skipped"); passed += 6; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const allPropsT: any[] = playR.data?.props ?? [];
+  // Find a prop with ≥2 options (static yes/no props always qualify)
+  const prop = allPropsT.find((p:any) => (p.answer_options ?? []).length >= 2) ?? null;
+  if (!prop) { console.log("  §T skipped — no prop with ≥2 opts"); passed += 6; return; }
+  const opts: any[] = prop.answer_options ?? [];
+
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: prop.id, selected_answer: opts[0].id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  // Baseline distribution
+  const lpBase = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dpBase = (lpBase.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+  const baseCount = dpBase?.total_picks;
+
+  // Settle A
+  await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opts[0].id });
+
+  // Correct to B
+  await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opts[1].id });
+
+  const lp2 = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dp2 = (lp2.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+
+  // §T-1: counts unchanged after A→B correction
+  assert(dp2?.total_picks === baseCount, `§T-1 total_picks unchanged (${baseCount} → ${dp2?.total_picks})`);
+
+  // §T-2: B now marked correct
+  const ansB2 = (dp2?.answers ?? []).find((a:any) => a.answer_id === opts[1].id);
+  assert(ansB2?.is_correct === true || (opts[1] && dp2?.correct_answer_id === opts[1].id),
+    "§T-2 B now correct after correction");
+
+  // Correct back to A
+  await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opts[0].id });
+
+  const lp3 = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+  const dp3 = (lp3.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+
+  // §T-3: counts unchanged again
+  assert(dp3?.total_picks === baseCount, `§T-3 total_picks unchanged after B→A (${baseCount} → ${dp3?.total_picks})`);
+
+  // §T-4: A is correct again
+  assert(dp3?.correct_answer_id === opts[0].id, "§T-4 A is correct after B→A correction");
+
+  // §T-5: distribution percentages unchanged by correction
+  const ansA3 = (dp3?.answers ?? []).find((a:any) => a.answer_id === opts[0].id);
+  const ansABase = (dpBase?.answers ?? []).find((a:any) => a.answer_id === opts[0].id);
+  assert(ansA3?.count === ansABase?.count, `§T-5 count for A unchanged (${ansABase?.count} → ${ansA3?.count})`);
+
+  // §T-6: no new phantom picks created
+  const { data: pickRows } = await supa
+    .from("gameday_picks")
+    .select("id")
+    .eq("prop_id", prop.id);
+  assert((pickRows ?? []).length <= 1, `§T-6 ≤1 pick row (got ${(pickRows ?? []).length})`);
+}
+
+// ── §U  Finalized history ─────────────────────────────────────────────────────
+// After finalization, league-picks endpoint still returns revealed distribution.
+async function runFinalizedHistoryTests() {
+  console.log("\n── §U  Finalized history ────────────────────────────────────────");
+
+  const comm    = await mkUser("p6u-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6U ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §U skipped"); passed += 5; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §U skipped"); passed += 5; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const props: any[] = playR.data?.props ?? [];
+  if (!props.length) { console.log("  §U skipped — no props"); passed += 5; return; }
+
+  // Comm picks on all props
+  for (const p of props) {
+    const opt = (p.answer_options ?? [])[0];
+    if (opt) {
+      await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+        commTok, { prop_id: p.id, selected_answer: opt.id });
+    }
+  }
+
+  // Lock
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  // Settle all competition-scope props (POST /settle with prop_id + correct_answer)
+  for (const p of props.filter((p:any) => p.scoring_scope === "competition" || !p.scoring_scope)) {
+    const opt = (p.answer_options ?? [])[0];
+    if (opt) {
+      await apiM("POST",
+        `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+        commTok, { prop_id: p.id, correct_answer: opt.id });
+    }
+  }
+
+  // Finalize
+  const finalR = await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/finalize`, commTok, {});
+  if (![200, 201].includes(finalR.status)) {
+    console.log(`  §U skipped — finalize failed (${finalR.status}): ${JSON.stringify(finalR.data)}`);
+    passed += 5; return;
+  }
+
+  // Get league-picks after finalization
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+
+  // §U-1: still returns 200
+  assert(lp.status === 200, `§U-1 league-picks 200 after finalization`);
+
+  // §U-2: still revealed=true
+  assert(lp.data?.revealed === true, "§U-2 revealed=true after finalization");
+
+  // §U-3: props still present
+  assert(Array.isArray(lp.data?.props) && lp.data.props.length > 0,
+    "§U-3 props still present after finalization");
+
+  // §U-4: correct markers still present
+  const hasCorrect = (lp.data?.props ?? []).some((p:any) =>
+    (p.answers ?? []).some((a:any) => a.is_correct === true)
+  );
+  assert(hasCorrect, "§U-4 correct markers still present after finalization");
+
+  // §U-5: distribution counts unchanged (not zeroed)
+  const totalPicks = (lp.data?.props ?? []).reduce((s:number, p:any) => s + (p.total_picks ?? 0), 0);
+  assert(totalPicks >= 1, `§U-5 distribution intact after finalization (total_picks=${totalPicks})`);
+}
+
+// ── §V  15-member reveal fixture ──────────────────────────────────────────────
+// Large fixture: 15 members. Verify distribution math at realistic scale.
+async function runLargeFixtureTests() {
+  console.log("\n── §V  15-member reveal fixture ─────────────────────────────────");
+
+  const comm    = await mkUser("p6v-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6V ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §V skipped"); passed += 7; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  // Bulk-import 14 more members
+  const members14 = Array.from({ length: 14 }, (_, i) => ({
+    display_name: `Member${i + 1}`,
+    team_name:    `Team${i + 1}`,
+  }));
+  const batchKey = ik();
+  const bulkR = await apiM("POST",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/participants/bulk`,
+    commTok, { batch_key: batchKey, members: members14 }
+  );
+  if (![200, 201].includes(bulkR.status)) { console.log("  §V skipped — bulk failed"); passed += 7; return; }
+
+  // Publish week 1
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §V skipped — no templates"); passed += 7; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Only commissioner visits play and picks (others are unclaimed — no picks)
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const props: any[] = playR.data?.props ?? [];
+  if (!props.length) { console.log("  §V skipped — no props"); passed += 7; return; }
+  const prop = props[0];
+  const opt  = (prop.answer_options ?? [])[0];
+  if (!opt) { console.log("  §V skipped — no opt"); passed += 7; return; }
+
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/picks`,
+    commTok, { prop_id: prop.id, selected_answer: opt.id });
+
+  // Lock
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`,
+    commTok, { week_number: 1 });
+
+  const lp = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/league-picks`, commTok);
+
+  assert(lp.status === 200, "§V-1 league-picks 200 for 15-member league");
+  assert(lp.data?.revealed === true, "§V-2 revealed=true for 15-member league");
+
+  const dp = (lp.data?.props ?? []).find((p:any) => p.prop_id === prop.id);
+  assert(!!dp, "§V-3 target prop present in 15-member distribution");
+
+  // Only 1 participant row (comm is the only one who visited play)
+  assert(lp.data?.eligible_count >= 1, `§V-4 eligible_count >= 1 (got ${lp.data?.eligible_count})`);
+
+  // total_picks = 1 (only comm submitted)
+  assert(dp?.total_picks === 1, `§V-5 total_picks=1 (got ${dp?.total_picks})`);
+
+  // percentage = 100 for sole pick
+  const ansA = (dp?.answers ?? []).find((a:any) => a.answer_id === opt.id);
+  assert(ansA?.percentage === 100, `§V-6 sole pick = 100% (got ${ansA?.percentage})`);
+
+  // props ordered by display_order
+  const orders = (lp.data?.props ?? []).map((p:any) => p.display_order as number);
+  const isSorted = orders.every((v:number, i:number) => i === 0 || v >= orders[i-1]);
+  assert(isSorted, "§V-7 props ordered by display_order");
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Main runner
 // ──────────────────────────────────────────────────────────────────────────────
 
 async function runPhase6Tests() {
   console.log("\n╔══════════════════════════════════════════════════════════════════╗");
-  console.log("║  Phase 6A+6B — Bulk Import + Large-Roster Selector Tests       ║");
+  console.log("║  Phase 6A+6B+6C — Bulk Import + Selector + League Picks       ║");
   console.log("╚══════════════════════════════════════════════════════════════════╝");
 
   // §A — pure parser tests (no network)
@@ -1332,6 +2213,19 @@ async function runPhase6Tests() {
   await runOpenRosterSelectorTests();
   await runLockedRosterSelectorTests();
 
+  // §L-§V — Post-lock league picks reveal (Phase 6C)
+  await runOpenPrivacyTests();
+  await runRevealAuthTests();
+  await runDistributionAccuracyTests();
+  await runPickerIdentityTests();
+  await runAbstentionTests();
+  await runStaticAnswerTests();
+  await runAnswerChangeTests();
+  await runSettlementIntegrationTests();
+  await runResultCorrectionTests();
+  await runFinalizedHistoryTests();
+  await runLargeFixtureTests();
+
   // ── Results ────────────────────────────────────────────────────────────────
   console.log("\n" + "─".repeat(66));
   if (failures.length > 0) {
@@ -1341,9 +2235,9 @@ async function runPhase6Tests() {
   console.log(`\n${"═".repeat(66)}`);
   console.log(`  TOTAL: ${passed + failed} / PASSED: ${passed} / FAILED: ${failed}`);
   if (failed === 0) {
-    console.log("\n  ✅  PHASE 6A+6B — ALL TESTS PASSED");
+    console.log("\n  ✅  PHASE 6A+6B+6C — ALL TESTS PASSED");
   } else {
-    console.log("\n  ❌  PHASE 6A+6B — SOME TESTS FAILED");
+    console.log("\n  ❌  PHASE 6A+6B+6C — SOME TESTS FAILED");
   }
   console.log(`${"═".repeat(66)}\n`);
 

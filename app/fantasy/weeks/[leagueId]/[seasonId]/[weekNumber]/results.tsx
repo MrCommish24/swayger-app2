@@ -211,6 +211,17 @@ export default function WeeklyResultsScreen() {
         </>
       )}
 
+      {/* League Picks link — available on all finalized weeks (§33/§34) */}
+      <TouchableOpacity
+        style={styles.leaguePicksLink}
+        onPress={() =>
+          router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks` as any)
+        }
+        activeOpacity={0.8}
+      >
+        <Text style={styles.leaguePicksLinkText}>🗳  View League Picks →</Text>
+      </TouchableOpacity>
+
       {/* Season Standings link */}
       <TouchableOpacity
         style={styles.standingsLink}
@@ -289,6 +300,13 @@ const styles = StyleSheet.create({
   lbRight:  { alignItems: "flex-end" },
   lbPoints: { fontSize: 14, fontWeight: "700", color: C.tint },
   lbCorrect:{ fontSize: 11, color: C.textMuted },
+
+  leaguePicksLink: {
+    backgroundColor: "#0A0F1E", borderRadius: 12,
+    borderWidth: 1.5, borderColor: C.tint,
+    padding: 16, alignItems: "center", marginBottom: 12,
+  },
+  leaguePicksLinkText: { fontSize: 15, fontWeight: "700", color: C.tint },
 
   standingsLink: {
     backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.tint,

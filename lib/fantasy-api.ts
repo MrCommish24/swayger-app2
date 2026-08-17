@@ -1063,6 +1063,90 @@ export async function getSeasonStandings(
   );
 }
 
+// ── Phase 6C — Post-Lock League Picks Reveal ─────────────────────────────────
+
+/** One picker's identity (snapshot-quality; immutable at participant creation) */
+export interface LeaguePicksPicker {
+  display_name: string;
+  team_name:    string | null;
+}
+
+/** Distribution for a single answer option */
+export interface LeaguePicksAnswer {
+  answer_id:    string;
+  label:        string;
+  count:        number;
+  /** e.g. 50 (not 50.0) or 35.7 — one decimal max */
+  percentage:   number;
+  /** null = prop not yet settled */
+  is_correct:   boolean | null;
+  /** true when the viewing member chose this answer */
+  viewer_picked: boolean;
+  pickers:      LeaguePicksPicker[];
+}
+
+/** Distribution for a single competition prop */
+export interface LeaguePicksProp {
+  prop_id:            string;
+  question:           string;
+  answer_target_type: string;
+  display_order:      number;
+  scoring_scope:      string;
+  point_value:        number;
+  total_picks:        number;
+  /** eligible_count - total_picks */
+  abstentions:        number;
+  /** null until commissioner settles */
+  correct_answer_id:  string | null;
+  answers:            LeaguePicksAnswer[];
+}
+
+/** Revealed distribution response (card locked/settled/finalized) */
+export interface LeaguePicksRevealed {
+  revealed:              true;
+  card_status:           string;
+  room_status:           string;
+  week_number?:          number;
+  eligible_count:        number;
+  viewer_participant_id: string | null;
+  props:                 LeaguePicksProp[];
+}
+
+/** Pre-lock response — no pick data returned by the server */
+export interface LeaguePicksHidden {
+  revealed:    false;
+  card_status: "open";
+}
+
+export type LeaguePicksResponse = LeaguePicksRevealed | LeaguePicksHidden;
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/league-picks
+export async function getWeeklyLeaguePicks(
+  leagueId:   string,
+  seasonId:   string,
+  weekNumber: number,
+  auth:       Parameters<typeof fantasyFetch>[2]
+): Promise<LeaguePicksResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/league-picks`,
+    {},
+    auth
+  );
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/league-picks
+export async function getDraftDayLeaguePicks(
+  leagueId: string,
+  seasonId: string,
+  auth:     Parameters<typeof fantasyFetch>[2]
+): Promise<LeaguePicksResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/league-picks`,
+    {},
+    auth
+  );
+}
+
 // ── Phase 5.2.3 — Commissioner-Assisted Member Recovery ───────────────────────
 
 /** Returned once by the server when a recovery link is created — never stored raw. */

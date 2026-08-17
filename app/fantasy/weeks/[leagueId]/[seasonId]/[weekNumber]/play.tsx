@@ -248,11 +248,27 @@ export default function WeeklyPlayScreen() {
       )}
 
       {isLocked && !isFinalized && (
-        <View style={styles.lockedBanner}>
-          <Text style={styles.lockedBannerText}>
-            🔒 Picks are locked. Your selections are final.
-          </Text>
-        </View>
+        <>
+          <View style={styles.lockedBanner}>
+            <Text style={styles.lockedBannerText}>
+              🔒 Picks are locked. Your selections are final.
+            </Text>
+          </View>
+
+          {/* League Picks CTA — visible immediately after lock */}
+          <TouchableOpacity
+            style={styles.leaguePicksBtn}
+            onPress={() =>
+              router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks` as any)
+            }
+            activeOpacity={0.85}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.leaguePicksBtnTitle}>The receipts are in.</Text>
+              <Text style={styles.leaguePicksBtnSub}>See what your league picked →</Text>
+            </View>
+          </TouchableOpacity>
+        </>
       )}
 
       {/* Stale pick banner */}
@@ -336,6 +352,14 @@ const styles = StyleSheet.create({
     padding: 12, marginBottom: 16,
   },
   lockedBannerText: { fontSize: 13, color: C.accentGold, fontWeight: "600", textAlign: "center" },
+  leaguePicksBtn: {
+    backgroundColor: "#0A0F1E", borderRadius: 10,
+    borderWidth: 1.5, borderColor: C.tint,
+    padding: 14, marginBottom: 16,
+    flexDirection: "row", alignItems: "center", gap: 8,
+  },
+  leaguePicksBtnTitle: { fontSize: 14, fontWeight: "700", color: C.tint },
+  leaguePicksBtnSub:   { fontSize: 12, color: C.textMuted, marginTop: 2 },
   staleBanner: {
     backgroundColor: "#1F1500", borderRadius: 10, borderWidth: 1, borderColor: "#F59E0B",
     padding: 12, marginBottom: 16, gap: 4,

@@ -233,6 +233,17 @@ export default function DraftDayResultsScreen() {
         </>
       )}
 
+      {/* League Picks link — available on finalized Draft Day (§33) */}
+      <TouchableOpacity
+        style={styles.leaguePicksLink}
+        onPress={() =>
+          router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/league-picks` as any)
+        }
+        activeOpacity={0.8}
+      >
+        <Text style={styles.leaguePicksLinkText}>🗳  View League Picks →</Text>
+      </TouchableOpacity>
+
       {/* Season Receipts pending */}
       {season_props_pending_count > 0 && (
         <View style={styles.seasonPendingCard}>
@@ -403,6 +414,13 @@ const styles = StyleSheet.create({
   },
   seasonPendingBadgeText: { color: "#818CF8", fontSize: 12, fontWeight: "600" },
   seasonPendingBody: { color: C.textSecondary, fontSize: 13, lineHeight: 19 },
+
+  leaguePicksLink: {
+    backgroundColor: "#0A0F1E", borderRadius: 12,
+    borderWidth: 1.5, borderColor: C.tint,
+    padding: 16, alignItems: "center" as const, marginBottom: 12,
+  },
+  leaguePicksLinkText: { fontSize: 15, fontWeight: "700" as const, color: C.tint },
 
   // Buttons
   btn: {

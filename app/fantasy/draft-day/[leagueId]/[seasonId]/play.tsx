@@ -392,10 +392,23 @@ export default function DraftDayPlayScreen() {
         <Text style={styles.title}>Draft Day Swayger</Text>
 
         {isLocked ? (
-          <View style={styles.lockedBanner}>
-            <Text style={styles.lockedBannerIcon}>🔒  PICKS LOCKED</Text>
-            <Text style={styles.lockedBannerSub}>Your predictions are in.</Text>
-          </View>
+          <>
+            <View style={styles.lockedBanner}>
+              <Text style={styles.lockedBannerIcon}>🔒  PICKS LOCKED</Text>
+              <Text style={styles.lockedBannerSub}>Your predictions are in.</Text>
+            </View>
+            {/* League Picks CTA — visible immediately after Draft Day locks */}
+            <TouchableOpacity
+              style={styles.leaguePicksBtn}
+              onPress={() =>
+                router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/league-picks` as any)
+              }
+              activeOpacity={0.85}
+            >
+              <Text style={styles.leaguePicksBtnTitle}>The receipts are in.</Text>
+              <Text style={styles.leaguePicksBtnSub}>See what your league picked →</Text>
+            </TouchableOpacity>
+          </>
         ) : (
           <View style={styles.progressBlock}>
             {/* Progress bar */}
@@ -505,6 +518,14 @@ const styles = StyleSheet.create({
   },
   lockedBannerIcon: { fontSize: 15, fontWeight: "800", color: C.accentGold },
   lockedBannerSub:  { fontSize: 13, color: C.textSecondary },
+  leaguePicksBtn: {
+    backgroundColor: "#0A0F1E", borderRadius: 10,
+    borderWidth: 1.5, borderColor: C.tint,
+    padding: 14, marginTop: 10,
+    alignItems: "center" as const, gap: 4,
+  },
+  leaguePicksBtnTitle: { fontSize: 14, fontWeight: "700" as const, color: C.tint },
+  leaguePicksBtnSub:   { fontSize: 12, color: C.textMuted },
 
   progressBlock: { gap: 6, marginTop: 4 },
   progressBarOuter: {

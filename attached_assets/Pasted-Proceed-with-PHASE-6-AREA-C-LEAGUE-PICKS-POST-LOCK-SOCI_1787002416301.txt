@@ -1,0 +1,1266 @@
+Proceed with:
+
+# PHASE 6 — AREA C
+## LEAGUE PICKS — POST-LOCK SOCIAL REVEAL
+
+Phase 6A and 6B are complete and verified.
+
+Current state:
+
+- bulk member import works
+- open weekly roster expansion works
+- single/bulk add parity works
+- large-roster selector works for Weekly + Draft Day
+- pick autosave remains unchanged
+- weekly locking / settlement / finalization are working
+- answer IDs are stable
+- participant identity/history is stable
+
+Area C is a high-value product feature.
+
+Do NOT treat this as merely another results table.
+
+The product principle is:
+
+# PICKS ARE PRIVATE WHILE OPEN.
+# ONCE PICKS LOCK, THE RECEIPTS ARE IN.
+
+After locking, league members should be able to see:
+
+- what the league picked
+- how many people chose each answer
+- percentages
+- who made each pick
+
+without waiting for results to be settled.
+
+==================================================
+1. IMPLEMENT ONLY AREA C
+==================================================
+
+Build:
+
+A. secure post-lock distribution API
+B. aggregate League Picks UI
+C. individual picker reveal
+D. correct-answer integration after settlement
+E. Weekly + Draft Day evaluation/reuse if clean
+
+Do NOT begin:
+
+- weekly rewards
+- archive
+- QR
+- provider imports
+- stale-pick redesign
+
+Stop when Area C is complete.
+
+==================================================
+2. PRIVACY RULE — NON-NEGOTIABLE
+==================================================
+
+While picks are OPEN:
+
+A member must NOT be able to see:
+
+- another member's answer
+- answer counts
+- answer percentages
+- picker names
+- partial distribution
+- "most popular" answer
+
+This applies to:
+
+- regular authenticated member
+- guest member
+- commissioner
+- co-commissioner
+
+Commissioner participation-status data such as:
+
+"8 / 12 have played"
+
+may continue to exist.
+
+But commissioner must NOT see WHAT they picked before lock.
+
+No privileged commissioner preview.
+
+==================================================
+3. REVEAL BOUNDARY
+==================================================
+
+Use the existing card lifecycle.
+
+OPEN
+→ private
+
+LOCKED
+→ reveal
+
+SETTLED
+→ reveal + result information
+
+FINALIZED
+→ reveal + final result information
+
+Do NOT introduce:
+
+revealed
+published_picks
+pick_visibility
+
+or another persisted state.
+
+Lock is the reveal boundary.
+
+==================================================
+4. LOCK MEANS NO STRATEGIC INFLUENCE
+==================================================
+
+The purpose of the lock boundary is:
+
+Nobody can change their pick after seeing everyone else's picks.
+
+Verify server behavior:
+
+- once card is locked, save/change pick is rejected
+- reveal endpoint becomes available
+- no race condition allows reveal while writes remain accepted
+
+Use existing lock semantics.
+
+Do not duplicate lock logic.
+
+==================================================
+5. AUDIT CURRENT DATA BEFORE CODING
+==================================================
+
+Inspect:
+
+- gameday_picks
+- gameday_participants
+- gameday_props
+- published answer_options
+- participant display/team snapshots
+- current weekly play GET
+- current Draft Day play GET
+- settlement/result responses
+- resolveViewer
+- room/card authorization
+- guest authorization
+
+Confirm exactly which snapshot fields can provide:
+
+- picker display name
+- picker fantasy team name
+- selected answer label
+
+Prefer historical competition snapshots over mutable current records.
+
+Document the choice.
+
+No SQL expected.
+
+If a critical display snapshot is impossible without schema:
+report it before adding schema.
+
+==================================================
+6. NEW API
+==================================================
+
+Preferred Weekly endpoint:
+
+GET
+/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/picks
+
+or another precise `/league-picks` naming if cleaner.
+
+Do not conflict with the existing viewer's own pick APIs.
+
+Response while open:
+
+{
+  "revealed": false,
+  "card_status": "open"
+}
+
+Do NOT include hidden pick data in a response merely because frontend chooses not to display it.
+
+The server must enforce privacy.
+
+==================================================
+7. AUTHORIZATION
+==================================================
+
+Caller must be a valid member of this Fantasy league/season through existing identity resolution.
+
+Allowed after lock:
+
+- authenticated claimed member
+- valid guest claimed member
+- commissioner who is also valid league participant
+
+Not allowed:
+
+- random authenticated Swayger user
+- anonymous non-member
+- user with Week URL but no league membership
+- lost-token guest who cannot authenticate their claim
+
+Return appropriate 403.
+
+Do not make League Picks public.
+
+==================================================
+8. ONE EFFICIENT RESPONSE
+==================================================
+
+Return all relevant competition props and distributions in ONE request.
+
+Conceptually:
+
+{
+  "revealed": true,
+  "card_status": "locked",
+  "eligible_count": 15,
+  "props": [
+    {
+      "prop_id": "...",
+      "question": "...",
+      "answer_target_type": "fantasy_team",
+      "total_picks": 14,
+      "abstentions": 1,
+      "correct_answer_id": null,
+      "answers": [
+        {
+          "answer_id": "...",
+          "label": "The Monstars",
+          "count": 7,
+          "percentage": 50,
+          "is_correct": null,
+          "pickers": [
+            {
+              "display_name": "Darius",
+              "team_name": "The Monstars"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Exact response may vary, but keep it predictable.
+
+No N+1 API calls.
+
+==================================================
+9. DISTRIBUTION MATH
+==================================================
+
+Denominator:
+
+NUMBER OF VALID SUBMITTED PICKS FOR THIS PROP
+
+NOT:
+
+- eligible member count
+- league size
+- participants who answered another prop
+
+Example:
+
+15 eligible members.
+
+14 answered Prop A.
+
+7 Team A
+5 Team B
+2 Team C
+
+Expected:
+
+Team A:
+7 / 14 = 50.0%
+
+Team B:
+5 / 14 = 35.7%
+
+Team C:
+2 / 14 = 14.3%
+
+Abstentions:
+1
+
+==================================================
+10. ROUNDING
+==================================================
+
+Use sensible customer-facing percentages.
+
+Recommended:
+
+whole percentage when exact/clean:
+
+50%
+
+Otherwise:
+
+35.7%
+
+Do not show:
+
+35.714285714285715%
+
+Ensure displayed percentages may sum to 99.9/100.1 because of rounding without attempting misleading correction.
+
+==================================================
+11. ZERO-PICK OPTIONS
+==================================================
+
+Default League Picks display should prioritize answers that were actually picked.
+
+Preferred:
+
+hide answers where count = 0
+
+unless needed to show the correct answer after settlement.
+
+Important:
+
+If correct answer received ZERO picks, once settled we SHOULD show it:
+
+Correct Answer
+Team X
+0 picks
+
+because that is socially interesting and necessary for result comprehension.
+
+Before settlement, zero-count options may remain hidden.
+
+==================================================
+12. ABSTENTIONS
+==================================================
+
+If:
+
+15 eligible
+14 answered
+
+show:
+
+14 picks
+1 did not pick
+
+or similar.
+
+Do NOT treat abstention as:
+
+"No one"
+
+"No one" is an actual selected answer only for templates supporting that static choice.
+
+==================================================
+13. STABLE GROUPING
+==================================================
+
+Aggregate using stable:
+
+selected_answer / answer ID
+
+NOT label text.
+
+Do not group:
+
+"The Monstars"
+
+by string.
+
+Labels may change.
+
+Answer identity is canonical.
+
+==================================================
+14. ANSWER LABEL SOURCE
+==================================================
+
+Use the published answer_options snapshot to resolve:
+
+answer_id → label
+
+Do not use current fantasy team names as the aggregation key.
+
+For display, snapshot label is preferred.
+
+This means historical League Picks remain intelligible after team/member rename.
+
+==================================================
+15. PICKER IDENTITY SOURCE
+==================================================
+
+Determine best existing historical identity source.
+
+Prefer `gameday_participants` snapshots:
+
+- display_name_snapshot
+- fantasy_team_name_snapshot
+
+or equivalent existing fields.
+
+If both snapshot fields exist:
+use them.
+
+If only current member names are available:
+use current names but document the limitation.
+
+Do not expose:
+
+- auth user IDs
+- guest tokens
+- season_member IDs
+- email
+- internal IDs
+
+to the client unless internally required.
+
+==================================================
+16. DUPLICATE / INVALID PICKS
+==================================================
+
+Existing pick architecture should enforce one current saved answer per participant/prop.
+
+Verify.
+
+Distribution should not accidentally count:
+
+- superseded answer changes
+- duplicate rows
+- invalid answer IDs
+- stale historical versions
+
+Use the canonical current pick semantics already used for scoring.
+
+==================================================
+17. STALE WEEKLY PICK NOTE
+==================================================
+
+Known limitation:
+
+Weekly cards now maintain roster_revision after open-roster additions, but weekly does not currently expose Draft Day-style stale_pick_prop_ids.
+
+Do NOT solve that in Area C.
+
+However:
+
+When building distributions, count the canonical saved pick exactly once.
+
+Do not drop a valid earlier pick merely because roster_revision advanced unless existing scoring semantics already reject it.
+
+Document behavior.
+
+==================================================
+18. UI LOCATION
+==================================================
+
+After lock, the member's Week play/result experience should expose:
+
+LEAGUE PICKS
+
+or:
+
+THE RECEIPTS ARE IN
+
+Recommended hierarchy:
+
+PICKS ARE LOCKED
+
+The receipts are in.
+
+See what your league picked.
+
+[ View League Picks ]
+
+Do not overwhelm the locked question cards by immediately expanding every picker list.
+
+==================================================
+19. DEFAULT LEAGUE PICKS VIEW
+==================================================
+
+For each question:
+
+WHO SCORES THE MOST THIS WEEK?
+
+14 picks
+
+The Monstars          7 picks   50%
+██████████████
+
+Sunday Scaries        5 picks   35.7%
+██████████
+
+Grim                   2 picks   14.3%
+████
+
+Use a clean distribution treatment.
+
+Do not need literal progress bars if current design language suggests another treatment.
+
+The hierarchy matters more:
+
+Answer
+Count
+Percentage
+
+==================================================
+20. DO NOT OVERBUILD CHARTS
+==================================================
+
+Do not add:
+
+- pie charts
+- animated graphs
+- analytics libraries
+- complicated visualization dependencies
+
+Simple rows/bars are enough.
+
+This is social context, not business intelligence.
+
+==================================================
+21. INDIVIDUAL PICKERS
+==================================================
+
+Do NOT display all 15 names under every answer by default.
+
+Preferred:
+
+The Monstars
+7 picks · 50%
+
+[ See 7 picks ]
+
+Tap:
+
+Darius
+Mike
+Rob
+Chris
+Mally
+Andre
+Jordan
+
+Could be:
+
+- expandable area
+- modal/bottom sheet
+- lightweight drill-in
+
+Choose the simplest polished option.
+
+==================================================
+22. PICKER DISPLAY
+==================================================
+
+Preferred individual display:
+
+Darius
+The Monstars
+
+or, if team label is redundant in that grouping:
+
+Darius
+
+Do not make a row confusing such as:
+
+Darius — The Monstars
+
+when they are viewing people who chose The Monstars and that label is already obvious.
+
+Use product judgment.
+
+==================================================
+23. YOUR PICK
+==================================================
+
+Highlight the current viewer's own answer if useful.
+
+Example:
+
+The Monstars
+7 picks · 50%
+YOUR PICK
+
+This can make the screen easier to understand.
+
+Do not create a separate API request — viewer identity should already be known.
+
+If straightforward, include:
+
+viewer_picked: true
+
+or derive from existing `my_picks`.
+
+==================================================
+24. AFTER SETTLEMENT
+==================================================
+
+Once correct answer exists:
+
+The Monstars
+7 picks · 50%
+✓ CORRECT
+
+Sunday Scaries
+5 picks · 35.7%
+
+Do not change counts or percentages.
+
+Settlement only changes:
+
+correctness
+scoring
+
+not historical selections.
+
+==================================================
+25. RESULT CORRECTION
+==================================================
+
+Critical existing behavior:
+
+Before room finalization commissioner may correct:
+
+A → B → A
+
+League Picks distribution MUST remain unchanged.
+
+Only:
+
+is_correct
+
+markers change.
+
+Test:
+
+Set A correct
+→ distribution unchanged
+
+Correct to B
+→ distribution unchanged
+
+Correct to A
+→ distribution unchanged
+
+Finalize
+→ distribution unchanged
+
+==================================================
+26. ALL WRONG SOCIAL MOMENT
+==================================================
+
+If zero people chose the correct answer:
+
+show it clearly.
+
+Example:
+
+Correct Answer
+Team Chaos
+0 picks
+
+Nobody had it.
+
+Keep language tasteful.
+
+This is an excellent Swayger social moment.
+
+Do not alter scoring.
+
+==================================================
+27. UNANIMOUS PICK
+==================================================
+
+If everyone who answered chose the same answer:
+
+show:
+
+12 / 12 picks
+100%
+
+Potential:
+
+Everybody had the same idea.
+
+Do not need special product copy if it complicates logic.
+
+Math must be correct.
+
+==================================================
+28. TIED POPULARITY
+==================================================
+
+5 choose A
+5 choose B
+
+Show both equally.
+
+Do not invent:
+
+Top Pick
+
+unless count genuinely exceeds others.
+
+==================================================
+29. ORDERING
+==================================================
+
+Preferred answer distribution order:
+
+1. count descending
+2. published option order as deterministic tie-break
+
+After settlement:
+
+do NOT reorder just to force correct answer first unless UX clearly benefits.
+
+If correct answer has zero picks and would otherwise be hidden:
+append/show it distinctly.
+
+Document chosen rule.
+
+==================================================
+30. PROP ORDER
+==================================================
+
+Preserve published prop display order.
+
+Do not reorder questions by:
+
+popularity
+correctness
+points
+
+==================================================
+31. LOCKED BUT UNSETTLED
+==================================================
+
+This is the core experience to prove.
+
+Week locks.
+
+ZERO results settled.
+
+Member immediately opens League Picks.
+
+Expected:
+
+full distribution visible
+picker lists visible
+no correct markers
+
+This should work before commissioner does anything else.
+
+==================================================
+32. PARTIALLY SETTLED
+==================================================
+
+If 2 / 5 questions settled:
+
+League Picks shows:
+
+correct marker on those 2
+
+no marker on remaining 3
+
+Distribution available for all 5.
+
+==================================================
+33. FINALIZED
+==================================================
+
+After finalization:
+
+League Picks remains permanently viewable with historical results.
+
+Do not remove the social reveal from Past Swaygers.
+
+If Past Swayger result screen already has an obvious location:
+link/section it there.
+
+==================================================
+34. WEEKLY HISTORY
+==================================================
+
+From:
+
+Past Swaygers → Week 2 → View
+
+member should be able to see:
+
+results
+and
+League Picks
+
+without needing the original live play flow.
+
+Reuse the same distribution endpoint/state.
+
+==================================================
+35. DRAFT DAY
+==================================================
+
+Evaluate whether the same League Picks behavior can be safely reused for Draft Day.
+
+This would be valuable:
+
+Draft Day locks
+→ immediately see who picked whom
+
+Because Draft Day is effectively Week 0.
+
+Preferred:
+reuse same component/aggregation helper if architecture is clean.
+
+Do not duplicate a separate Draft Day distribution engine.
+
+If integrating Draft Day materially expands scope:
+build shared backend helper + Weekly first and report Draft Day as follow-up.
+
+Make a deliberate choice.
+
+==================================================
+36. COMPETITION SCOPE ONLY
+==================================================
+
+League Picks should focus on:
+
+competition-scope props
+
+for weekly competition reveal.
+
+Do NOT accidentally mix pending:
+
+season-scope receipts
+
+into a weekly competition result view unless they belong in that UI.
+
+Draft Day may contain both competition and season-scope props.
+
+For Draft Day:
+carefully preserve the distinction.
+
+Do not reveal/settle season Receipts incorrectly.
+
+==================================================
+37. SECURITY TESTS — OPEN
+==================================================
+
+While card open:
+
+authenticated member:
+revealed=false
+
+guest member:
+revealed=false
+
+commissioner:
+revealed=false
+
+co-commissioner:
+revealed=false if applicable
+
+Direct endpoint call:
+does NOT leak `picks` in response
+
+Verify serialized response contains no hidden distribution object.
+
+==================================================
+38. SECURITY TESTS — NON-MEMBER
+==================================================
+
+After lock:
+
+authenticated unrelated user:
+403
+
+anonymous:
+401/403 according to established pattern
+
+invalid guest token:
+403
+
+valid Week URL alone:
+not sufficient
+
+valid league member:
+200
+
+valid guest member:
+200
+
+==================================================
+39. DISTRIBUTION FIXTURE
+==================================================
+
+Use a real 15-member Phase 6 fixture.
+
+For one prop:
+
+7 choose A
+5 choose B
+2 choose C
+1 abstains
+
+Verify exactly:
+
+total_picks = 14
+abstentions = 1
+
+A = 7, 50.0%
+B = 5, ~35.7%
+C = 2, ~14.3%
+
+Picker lists contain exactly:
+
+7
+5
+2
+
+unique participants.
+
+==================================================
+40. MULTI-PROP FIXTURE
+==================================================
+
+Use at least 5 weekly questions.
+
+Members should make different choices across props.
+
+Verify aggregation does not leak/count picks across prop_id boundaries.
+
+==================================================
+41. ANSWER CHANGE BEFORE LOCK
+==================================================
+
+Darius initially picks A.
+
+Changes to B while open.
+
+Lock.
+
+Expected distribution:
+Darius counted ONLY under B.
+
+No trace/count under A.
+
+League Picks is current submitted selection, not pick-change history.
+
+==================================================
+42. MEMBER WHO PICKS SOME QUESTIONS
+==================================================
+
+Member answers:
+
+Prop 1
+Prop 2
+
+but not:
+Prop 3–5
+
+Expected:
+
+They count in denominator for Props 1–2 only.
+
+They are an abstention for Props 3–5.
+
+Do not use participant-level "played" as denominator.
+
+==================================================
+43. NO PICKS
+==================================================
+
+Lock a prop/card where no valid picks exist.
+
+UI should show:
+
+No picks were made for this question.
+
+not:
+
+0%
+
+across 15 answers.
+
+Handle gracefully.
+
+==================================================
+44. STATIC ANSWERS
+==================================================
+
+For:
+
+Yes
+No
+No one
+
+distribution works exactly like roster IDs.
+
+No special string counting.
+
+Use answer IDs.
+
+==================================================
+45. CORRECT ANSWER MATCHING
+==================================================
+
+Use the actual stored correct-answer identity.
+
+Do not compare labels.
+
+If existing correct_answer representation differs by prop type:
+normalize using the established settlement helper/semantics.
+
+Do not introduce an alternative result parser.
+
+==================================================
+46. API PERFORMANCE
+==================================================
+
+No request per question.
+
+No request per answer.
+
+No request per picker.
+
+One distribution response for the competition.
+
+Service-role queries may use a few bulk queries internally:
+
+room/card
+props
+picks/participants
+
+but complexity must remain constant relative to prop count, not N+1.
+
+==================================================
+47. SHARED COMPONENT
+==================================================
+
+Preferred:
+
+components/fantasy/LeaguePicks.tsx
+
+or similar.
+
+Responsibilities:
+
+- question distribution
+- answer rows
+- count/percentage
+- correct state
+- expand picker names
+
+Do not make component fetch data if keeping fetching at screen level is cleaner.
+
+Keep UI reusable for:
+
+locked live Week
+final results
+historical Week
+
+==================================================
+48. COPY
+==================================================
+
+Keep Swayger personality restrained.
+
+Suggested:
+
+PICKS ARE LOCKED
+
+The receipts are in.
+
+See how your league picked.
+
+Section:
+
+LEAGUE PICKS
+
+Avoid excessive:
+
+🔥
+😂
+trash talk
+mocking language
+
+The league itself will provide that.
+
+==================================================
+49. MANUAL QA
+==================================================
+
+Return exact flow:
+
+1. Open 10–15-member weekly Swayger.
+2. Have multiple members make picks.
+3. While open, verify no League Picks visible.
+4. Attempt direct reveal endpoint while open.
+5. Confirm no data leakage.
+6. Change one member's pick.
+7. Leave one question unanswered.
+8. Lock.
+9. Immediately open League Picks.
+10. Verify counts.
+11. Verify percentages.
+12. Verify abstention count.
+13. Expand an answer.
+14. Verify exact picker names.
+15. Verify viewer's own pick if highlighted.
+16. Settle one prop.
+17. Verify correct marker.
+18. Correct result.
+19. Verify distribution unchanged.
+20. Settle remaining props.
+21. Finalize.
+22. Reopen from Past Swaygers.
+23. Verify League Picks still visible.
+24. Test unrelated account cannot view.
+25. Test valid guest can view.
+
+==================================================
+50. TEST FILE
+==================================================
+
+Extend:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+Continue sections:
+
+§L Open pick privacy
+§M Reveal authorization
+§N Distribution accuracy
+§O Picker identity
+§P Abstentions
+§Q Static answers
+§R Answer changes
+§S Settlement integration
+§T Result correction
+§U Finalized history
+§V 15-member reveal fixture
+
+Add frontend/component tests only where meaningful.
+
+Do not claim server tests validate pixel rendering.
+
+==================================================
+51. REGRESSION
+==================================================
+
+After Area C:
+
+run:
+
+- full Phase 6 suite
+- Phase 4C settlement
+- Phase 5 weekly
+- Open Roster
+- identity/recovery
+- Game Day settlement if shared helpers touched
+- Draft Day if integrated
+
+If inexpensive:
+full maintained Fantasy regression.
+
+Return exact:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+==================================================
+52. DO NOT TOUCH
+==================================================
+
+Do NOT change:
+
+- pick save semantics
+- open roster
+- roster_revision
+- answer universe construction
+- guest claims
+- recovery
+- scoring formula
+- settlement lifecycle
+- finalization
+- standings
+
+unless testing exposes an actual bug.
+
+==================================================
+53. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- weekly rewards
+- archive
+- QR invite
+- Sleeper/Yahoo
+- stale-pick warning
+- comments
+- reactions
+- trash-talk feed
+- notifications
+- screenshots/share-image generation
+- popularity analytics
+- public League Picks
+- commissioner early reveal
+
+==================================================
+54. RETURN
+==================================================
+
+Return:
+
+# PHASE 6C — LEAGUE PICKS REPORT
+
+1. Privacy boundary
+2. Authorization model
+3. Reveal endpoint
+4. Distribution architecture
+5. Stable answer grouping
+6. Picker identity source
+7. Percentage/abstention calculation
+8. League Picks UX
+9. Individual picker reveal
+10. Viewer-own-pick behavior
+11. Locked/unsettled behavior
+12. Settlement integration
+13. Result correction behavior
+14. Historical/finalized behavior
+15. Draft Day reuse decision
+16. Files changed
+17. Phase 6 tests
+18. Regression totals
+19. 15-member fixture results
+20. Security tests
+21. Bugs found/fixed
+22. Known limitations
+23. Exact manual QA
+
+Then STOP.
+
+Do not begin Area D.
+
+Final status:
+
+PHASE 6C LEAGUE PICKS READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

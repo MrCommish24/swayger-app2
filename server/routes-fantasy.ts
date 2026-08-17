@@ -3476,6 +3476,181 @@ export function registerFantasyRoutes(app: Express) {
     return { ok: true, room, card };
   }
 
+  // ── Internal: post-lock league picks distribution builder ───────────────────
+  // Aggregates picks across all participants for a locked/settled/finalized card.
+  //
+  // Privacy: callers MUST verify card_status !== 'open' before invoking.
+  //
+  // scopeFilter: when 'competition', only competition-scope props are included
+  // (used for Draft Day to exclude season-scope receipts per §36).
+  //
+  // Distribution math (§9):
+  //   denominator = picks submitted for THIS prop (not eligible_count)
+  //   abstentions = eligible_count - picks submitted for this prop
+  //
+  // Answer ordering (§29): count desc, then published option index as tie-break.
+  // Zero-count answers are hidden UNLESS the prop is settled AND it is the
+  // correct answer (§11 — "nobody had it" is socially interesting after settle).
+  //
+  // Stable grouping (§13): answer_id is the canonical key, not label text.
+  // Answer labels (§14): resolved from the published answer_options snapshot.
+  // Picker identity (§15): display_name + team_name from gameday_participants
+  //   (immutable at participant creation — snapshot-equivalent behavior).
+  async function _buildLeaguePicks(
+    supabase: ReturnType<typeof getServiceSupabase>,
+    roomId: string,
+    cardId: string,
+    cardStatus: string,
+    viewerSeasonMemberId: string | null,
+    scopeFilter?: "competition"
+  ): Promise<{
+    eligible_count: number;
+    viewer_participant_id: string | null;
+    props: any[];
+  }> {
+    // 1. All participants in this room (snapshot-quality: immutable at insert)
+    const { data: rawParticipants } = await supabase
+      .from("gameday_participants")
+      .select("id, display_name, team_name, season_member_id")
+      .eq("room_id", roomId);
+
+    const participantList = (rawParticipants ?? []) as any[];
+    const eligibleCount   = participantList.length;
+
+    // Participant lookup + find viewer
+    const participantMap = new Map<string, { display_name: string; team_name: string | null }>();
+    let viewerParticipantId: string | null = null;
+    for (const p of participantList) {
+      participantMap.set(p.id as string, {
+        display_name: (p.display_name as string) ?? "Unknown",
+        team_name:    (p.team_name as string | null) ?? null,
+      });
+      if (viewerSeasonMemberId && p.season_member_id === viewerSeasonMemberId) {
+        viewerParticipantId = p.id as string;
+      }
+    }
+
+    // 2. Props for this card (include correct_answer — this is the reveal endpoint)
+    let propQuery = supabase
+      .from("gameday_props")
+      .select("id, question, answer_options, answer_target_type, correct_answer, display_order, scoring_scope, point_value")
+      .eq("card_id", cardId)
+      .order("display_order", { ascending: true });
+    if (scopeFilter) propQuery = (propQuery as any).eq("scoring_scope", scopeFilter);
+
+    const { data: rawProps } = await propQuery;
+    const propList = (rawProps ?? []) as any[];
+
+    if (propList.length === 0) {
+      return { eligible_count: eligibleCount, viewer_participant_id: viewerParticipantId, props: [] };
+    }
+
+    const propIds = propList.map((p: any) => p.id as string);
+
+    // 3. All picks for these props (one bulk query — no N+1)
+    const { data: rawPicks } = await supabase
+      .from("gameday_picks")
+      .select("prop_id, participant_id, selected_answer")
+      .in("prop_id", propIds);
+
+    const pickList = (rawPicks ?? []) as any[];
+
+    // Group: prop_id → answer_id → participant_id[]
+    const picksByProp = new Map<string, Map<string, string[]>>();
+    for (const pick of pickList) {
+      const propId        = pick.prop_id       as string;
+      const answerId      = pick.selected_answer as string;
+      const participantId = pick.participant_id  as string;
+      if (!picksByProp.has(propId)) picksByProp.set(propId, new Map());
+      const byAnswer = picksByProp.get(propId)!;
+      if (!byAnswer.has(answerId)) byAnswer.set(answerId, []);
+      byAnswer.get(answerId)!.push(participantId);
+    }
+
+    // 4. Build per-prop distribution
+    const responseProps = propList.map((prop: any) => {
+      const propId       = prop.id           as string;
+      const correctId    = (prop.correct_answer as string | null) ?? null;
+      const isPropSettled = correctId !== null;
+      const opts: Array<{ id: string; label: string; type?: string }> =
+        Array.isArray(prop.answer_options) ? prop.answer_options : [];
+
+      const picksByAnswer = picksByProp.get(propId) ?? new Map<string, string[]>();
+      const validIds      = new Set(opts.map((o) => o.id));
+
+      // Count only picks for published option IDs (§16: no stale/invalid picks)
+      let totalPicks = 0;
+      for (const [aid, pickers] of picksByAnswer.entries()) {
+        if (validIds.has(aid)) totalPicks += pickers.length;
+      }
+      const abstentions = eligibleCount - totalPicks;
+
+      // Build per-answer rows with published-option index for tie-break
+      const answerRows = opts.map((opt, idx) => {
+        const pickers = picksByAnswer.get(opt.id) ?? [];
+        return { _idx: idx, answer_id: opt.id, label: opt.label, pickers };
+      });
+
+      // Sort: count desc, then published index asc as tie-break (§29)
+      answerRows.sort((a, b) =>
+        b.pickers.length !== a.pickers.length
+          ? b.pickers.length - a.pickers.length
+          : a._idx - b._idx
+      );
+
+      // Filter zero-count answers (§11): hide unless settled correct answer
+      const filtered = answerRows.filter((a) => {
+        if (a.pickers.length > 0) return true;
+        if (isPropSettled && a.answer_id === correctId) return true;
+        return false;
+      });
+
+      // Build final answer distribution
+      const answers = filtered.map((a) => {
+        const count = a.pickers.length;
+        // Percentage rounded to one decimal max; integer when exact (§10)
+        const percentage = totalPicks > 0
+          ? Math.round((count / totalPicks) * 1000) / 10
+          : 0;
+        const isCorrect  = correctId !== null ? a.answer_id === correctId : null;
+        const viewerPicked = viewerParticipantId !== null && a.pickers.includes(viewerParticipantId);
+
+        const pickerDetails = a.pickers.map((pid: string) => {
+          const p = participantMap.get(pid);
+          return {
+            display_name: p?.display_name ?? "Unknown",
+            team_name:    p?.team_name    ?? null,
+          };
+        });
+
+        return {
+          answer_id:    a.answer_id,
+          label:        a.label,
+          count,
+          percentage,
+          is_correct:   isCorrect,
+          viewer_picked: viewerPicked,
+          pickers:      pickerDetails,
+        };
+      });
+
+      return {
+        prop_id:            propId,
+        question:           prop.question           as string,
+        answer_target_type: prop.answer_target_type  as string,
+        display_order:      prop.display_order        as number,
+        scoring_scope:      prop.scoring_scope        as string,
+        point_value:        prop.point_value           as number,
+        total_picks:        totalPicks,
+        abstentions,
+        correct_answer_id:  correctId,
+        answers,
+      };
+    });
+
+    return { eligible_count: eligibleCount, viewer_participant_id: viewerParticipantId, props: responseProps };
+  }
+
   // ── Internal: season standings aggregation ───────────────────────────────────
   // Derives cumulative Fantasy Season standings from all FINALIZED fantasy
   // competitions (Draft Day + weekly) for a given season.
@@ -4546,6 +4721,132 @@ export function registerFantasyRoutes(app: Express) {
         my_pick_count:       Object.keys(myPicks).length,
         total_props:         publishedProps.length,
         league_name:         leagueName,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/league-picks
+  // Post-lock social reveal: returns full pick distribution for this competition.
+  // Privacy rule (§2): while card is open, returns { revealed: false } with NO pick data.
+  // Auth: any valid league member (authenticated or guest with active claim).
+  // Eligible after lock: claimed member, claimed guest, commissioner.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/league-picks",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res.status(400).json({ error: "weekNumber must be a positive integer" }); return;
+      }
+
+      const supabase = getServiceSupabase();
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" }); return;
+      }
+
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "You are not a member of this league for this season." }); return;
+      }
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+      const cardStatus = (card as any).status as string;
+
+      // Privacy boundary: no distribution data while card is open
+      if (cardStatus === "open") {
+        res.json({ revealed: false, card_status: cardStatus });
+        return;
+      }
+
+      // Weekly cards contain only competition-scope props — no filter needed (§36)
+      const distribution = await _buildLeaguePicks(
+        supabase,
+        (room as any).id,
+        (card as any).id,
+        cardStatus,
+        viewer.season_member_id
+      );
+
+      res.json({
+        revealed:     true,
+        card_status:  cardStatus,
+        room_status:  (room as any).status,
+        week_number:  wn,
+        ...distribution,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/league-picks
+  // Post-lock social reveal for Draft Day competition picks.
+  // Restricted to competition-scope props only (§36: excludes Season Receipts).
+  // Same privacy boundary and auth pattern as weekly league-picks.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/league-picks",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" }); return;
+      }
+
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "You are not a member of this league for this season." }); return;
+      }
+
+      // Find Draft Day room for this season
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, room_code")
+        .eq("league_season_id", seasonId)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "draft_day")
+        .maybeSingle();
+
+      if (!room) {
+        res.status(404).json({ error: "No Draft Day competition found for this season." }); return;
+      }
+
+      // Find the Draft Day pick card
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .eq("phase", "draft_day")
+        .maybeSingle();
+
+      if (!card) {
+        res.status(404).json({ error: "Draft Day card not found." }); return;
+      }
+
+      const cardStatus = (card as any).status as string;
+
+      // Privacy boundary
+      if (cardStatus === "open") {
+        res.json({ revealed: false, card_status: cardStatus });
+        return;
+      }
+
+      // §36: competition-scope only — season receipts are excluded from this view
+      const distribution = await _buildLeaguePicks(
+        supabase,
+        (room as any).id,
+        (card as any).id,
+        cardStatus,
+        viewer.season_member_id,
+        "competition"
+      );
+
+      res.json({
+        revealed:    true,
+        card_status: cardStatus,
+        room_status: (room as any).status,
+        ...distribution,
       });
     }
   );
