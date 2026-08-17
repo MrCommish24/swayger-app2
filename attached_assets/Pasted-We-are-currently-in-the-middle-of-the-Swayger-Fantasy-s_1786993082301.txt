@@ -1,0 +1,72 @@
+We are currently in the middle of the Swayger Fantasy season-long build. Do not interrupt that build or begin implementing new Game Day history UI.
+
+Before we continue, perform a narrowly scoped architecture review to make sure the current system will support participant Game Day history later without requiring a major data-model rewrite.
+
+We have identified a future product requirement:
+
+A normal Swayger user should eventually be able to see Game Day Rooms they previously participated in, reopen finalized results and leaderboards, review their own picks, and regenerate/share a receipt after the room is over.
+
+This same principle may become important for Swayger Fantasy as recurring weekly Swaygers are introduced.
+
+Do not build this feature now.
+
+Inspect the current Game Day and Fantasy architecture and answer:
+
+1. After a Game Day Room is finalized or archived, are the room, cards, props, picks, participant identities, leaderboard inputs, and settlement results permanently retained and queryable?
+
+2. Can we reliably determine:
+
+   * Which finalized Game Day Rooms a signed-in user participated in?
+   * What picks that user made?
+   * Their final score and rank?
+   * The final room leaderboard?
+
+3. How is guest Game Day participation identified today?
+
+   * Is there a durable guest identifier?
+   * Can guest participation later be associated with a signed-in account?
+   * Would our existing Fantasy guest/member claim architecture provide a useful pattern, or should these remain separate?
+
+4. Does room archival change availability of any data required to reconstruct:
+
+   * Final results
+   * Individual picks
+   * Leaderboard
+   * Shareable receipt
+
+5. Is the existing final standings / receipt output generated only temporarily, or can it be regenerated from persisted data at any later date?
+
+6. Inspect the Swayger Fantasy season-long architecture currently being built.
+
+   * Will weekly Fantasy Swaygers reuse any existing Game Day room/card/prop/pick infrastructure?
+   * If so, does the current identity and history model support a member looking back at prior weekly Swaygers?
+   * Are there any decisions we are about to make in Fantasy that would make historical participation difficult later?
+
+7. Identify any small, low-risk architectural safeguard we should implement NOW while the Fantasy build is underway.
+
+Examples might include preserving a participant-user association, retaining finalized records, adding a durable identity field, or avoiding destructive archive behavior.
+
+Only recommend an immediate change if failing to make it now would create meaningful migration or data-loss risk later.
+
+8. Separately identify what can safely wait until after the Swayger Fantasy season-long MVP is complete.
+
+Do not implement:
+
+* My Game Day History UI
+* Recent Game Days UI
+* Historical receipt UI
+* New navigation
+* Lifetime Game Day statistics
+* Search/filtering
+* Any unrelated UX changes
+
+Return a short report with:
+
+A. Current state
+B. Can participant history be reconstructed today? Yes / Partially / No
+C. Any data-loss or architecture risk
+D. Minimal safeguard needed now, if any
+E. What should wait until after Fantasy
+F. Recommendation: continue Fantasy unchanged, make a small safeguard first, or stop because a foundational issue exists
+
+Do not make code or schema changes without approval.
