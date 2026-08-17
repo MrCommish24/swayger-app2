@@ -1,0 +1,850 @@
+We found an important missing user journey in Swayger Fantasy Season.
+
+# PHASE 5.1 — FANTASY SEASON RE-ENGAGEMENT
+
+Current state:
+
+- Draft Day works
+- Week 1 Swayger works
+- existing authenticated members return without reclaiming seats
+- existing guest claims persist on the same browser/device
+- Week 1 play, settlement, results, and Season Standings exist
+- Phase 5 test suite is green
+
+The missing piece is:
+
+HOW DOES THE COMMISSIONER GET PEOPLE TO COME BACK?
+
+Scenario:
+
+A member participates in Draft Day.
+
+Draft Day ends.
+
+They do not win.
+
+They forget about Swayger.
+
+A few weeks/days later the commissioner creates Week 1 and says:
+
+“Don’t forget, we’re doing weekly Swaygers.”
+
+Right now Swayger handles the member correctly once they return, but we have not built the re-engagement loop that gets them back.
+
+This phase should solve that.
+
+==================================================
+1. PRODUCT PRINCIPLE
+==================================================
+
+DO NOT treat Week 1 as a new invitation.
+
+The person is already a member of the Swayger Fantasy league.
+
+The mental model should be:
+
+DRAFT DAY:
+“Join our Swayger Fantasy league.”
+
+WEEK 1:
+“Week 1 Swayger is live. Make your picks.”
+
+WEEK 2:
+“Week 2 Swayger is live. Make your picks.”
+
+etc.
+
+Do not make users rejoin, reclaim a seat, or repeat onboarding every week.
+
+==================================================
+2. V1 RE-ENGAGEMENT STRATEGY
+==================================================
+
+Do NOT build automated email, SMS, push notifications, Twilio, or scheduled reminders yet.
+
+For V1, the commissioner manually shares a direct Week Swayger link into the communication channel the league already uses:
+
+- iMessage
+- SMS
+- WhatsApp
+- Discord
+- GroupMe
+- Slack
+- Facebook Messenger
+- email
+- etc.
+
+Swayger should make this extremely easy.
+
+The core feature is:
+
+[ 📣 Share Week 1 ]
+
+==================================================
+3. SHARE WEEK 1 CTA
+==================================================
+
+After Week 1 is published, add a clear commissioner CTA on the WeeklyCard:
+
+📣 Share Week 1
+
+This should exist while Week 1 is open.
+
+Do not call it:
+
+Invite Members
+
+because these users already belong to the league.
+
+Use language such as:
+
+Share Week 1
+
+or
+
+Share Week 1 Swayger
+
+==================================================
+4. DIRECT WEEK 1 LINK
+==================================================
+
+The shared link should send users as directly as possible to Week 1.
+
+Preferred destination:
+
+Week 1 play screen for the existing Fantasy league/season/week.
+
+Use the existing route architecture.
+
+The shared URL must include enough information to identify:
+
+- league
+- season
+- week
+
+Do NOT encode member identity into the URL.
+
+Identity continues to resolve through:
+
+- authenticated user claim
+- existing guest token
+
+Do not create a new weekly invitation token.
+
+==================================================
+5. RETURNING AUTHENTICATED MEMBER JOURNEY
+==================================================
+
+Expected:
+
+Commissioner shares Week 1 link.
+
+Existing authenticated member taps link.
+
+Swayger resolves their existing Fantasy membership.
+
+They land directly at:
+
+WEEK 1 SWAYGER
+Make Your Picks
+
+No:
+
+- join screen
+- seat selection
+- team selection
+- create league
+- re-invite
+- “Who are you?” prompt
+
+If they are signed out but previously had an authenticated claim:
+
+follow existing auth behavior.
+
+Do not invent a new identity system in this phase.
+
+==================================================
+6. RETURNING GUEST JOURNEY
+==================================================
+
+Existing guest on the SAME browser/device:
+
+Commissioner shares Week 1 link.
+
+Guest opens it.
+
+Existing durable Fantasy guest token resolves their claim.
+
+They go directly to Week 1.
+
+No new guest token.
+
+No new seat claim.
+
+No duplicate league member.
+
+==================================================
+7. GUEST CROSS-DEVICE EDGE CASE
+==================================================
+
+Inspect current behavior for:
+
+Guest joined Draft Day on Device A
+→ opens Week 1 link on Device B
+
+Do NOT overbuild recovery in this phase.
+
+But return exact current behavior.
+
+If the guest cannot be recognized on Device B:
+
+- do not silently create another league member
+- do not duplicate their seat
+- show a safe recovery path if one already exists
+
+If no safe recovery flow exists, report this clearly as a known limitation.
+
+Do not build account linking/recovery unless required to prevent duplicate identity.
+
+==================================================
+8. SHARE COPY
+==================================================
+
+Use generated share text.
+
+Preferred V1 copy:
+
+Week 1 Swayger is live 🏈
+
+Think you know our league better than everyone else?
+
+Make your Week 1 picks before they lock.
+
+[LINK]
+
+Keep it short enough for a group chat.
+
+If Season Standings exist, a second version may use:
+
+Week 1 Swayger is live 🏈
+
+Draft Day is over. Now let’s see who really knows this league.
+
+Make your picks before they lock:
+
+[LINK]
+
+Do not overcomplicate copy customization.
+
+==================================================
+9. NATIVE SHARE SHEET
+==================================================
+
+If React Native / Expo already supports the native Share API cleanly:
+
+Use the native share sheet.
+
+Commissioner taps:
+
+Share Week 1
+
+→ operating-system share sheet opens with the generated text + direct link.
+
+This naturally supports:
+
+- Messages
+- WhatsApp
+- Discord
+- email
+- copy
+- etc.
+
+If web requires a separate implementation:
+
+use Web Share API when available.
+
+Fallback:
+Copy Link / Copy Message.
+
+Do not add integrations with each messaging platform individually.
+
+==================================================
+10. COPY LINK / COPY MESSAGE FALLBACK
+==================================================
+
+If native share is unavailable, offer:
+
+Copy Week 1 Link
+
+and preferably:
+
+Copy Message
+
+Provide success feedback:
+
+Copied!
+
+Do not leave commissioner wondering whether anything happened.
+
+==================================================
+11. PARTICIPATION COUNT
+==================================================
+
+The commissioner should be able to see how many people have participated in the current week.
+
+WeeklyCard commissioner view:
+
+Week 1 Swayger
+Picks Open
+
+6 of 10 have played
+
+[ Manage Week 1 ]
+[ Lock Picks ]
+[ 📣 Share Week 1 ]
+
+Definition of “have played”:
+
+submitted at least one competition-scope Week 1 pick.
+
+Do NOT count:
+
+- league members merely existing
+- gameday_participants rows
+- people who only opened the screen
+
+We already established this rule for Season Standings.
+
+Use the same participation definition.
+
+==================================================
+12. WHO HAS / HAS NOT PLAYED
+==================================================
+
+If easy with existing data, give commissioner a lightweight view:
+
+6 of 10 have played
+
+Tap/view:
+
+PLAYED
+✓ Darius
+✓ Mike
+✓ Chris
+
+WAITING
+○ Rob
+○ House
+○ Mal
+○ ...
+
+This is useful because the commissioner knows who needs a nudge.
+
+Do NOT build direct individual messaging.
+
+Do NOT expose this list to regular members unless there is already a reason to.
+
+Commissioner only.
+
+==================================================
+13. SHARE REMINDER
+==================================================
+
+Add:
+
+[ 🔔 Share Reminder ]
+
+when:
+
+- Week is open
+- at least one eligible member has not played
+
+Generated text:
+
+Week 1 Swayger reminder 👀
+
+4 people still haven’t made their picks.
+
+Picks lock soon:
+
+[LINK]
+
+Avoid naming individual non-participants in the public share message.
+
+The commissioner can see who is missing privately.
+
+==================================================
+14. DO NOT AUTOMATICALLY SAY “LOCKS SOON”
+==================================================
+
+Current V1 uses manual commissioner locking.
+
+Therefore we may not have a real lock deadline.
+
+Do not claim:
+
+“Picks lock tonight at 7 PM”
+
+unless a real lock time exists.
+
+Safer generic copy:
+
+“Make your picks before they lock.”
+
+For reminder:
+
+“Still time to make your Week 1 picks.”
+
+If the product has a real configured deadline field, inspect and use it.
+
+Do not invent one.
+
+==================================================
+15. WEEKLYCARD UX
+==================================================
+
+Preferred commissioner open-state layout:
+
+WEEK 1 SWAYGER
+
+Picks Open
+
+6 of 10 have played
+
+[ Make / View My Picks ]
+
+Commissioner actions:
+
+[ 📣 Share Week 1 ]
+[ 🔔 Share Reminder ]   ← only if members still missing
+[ Manage Week 1 ]
+[ Lock Picks ]
+
+Do not overwhelm the card.
+
+Use secondary/overflow treatment if necessary.
+
+Member view should NOT get commissioner Share Reminder/participation admin controls.
+
+==================================================
+16. AFTER PICKS LOCK
+==================================================
+
+Once Week 1 is locked:
+
+Do not show:
+
+Share Week 1
+Share Reminder
+
+The acquisition window is over.
+
+Commissioner gets:
+
+Resolve Week 1
+
+Members:
+View My Picks
+
+==================================================
+17. AFTER FINALIZATION
+==================================================
+
+Once finalized:
+
+Share actions should shift conceptually toward results, but do NOT build results sharing in this phase.
+
+For now:
+
+View Week 1 Results
+
+No Week 1 invitation/reminder CTA.
+
+==================================================
+18. HUB RE-ENGAGEMENT POSITIONING
+==================================================
+
+Fantasy League Hub should communicate continuity.
+
+Suggested:
+
+FANTASY SEASON
+
+Week 1 Swayger
+Picks Open
+
+6 of 10 played
+
+[ Make My Picks ]
+
+Commissioner:
+[ Share Week 1 ]
+
+This should feel like the current active league event.
+
+Do not make members hunt through multiple screens to discover it.
+
+==================================================
+19. WEEK LINK ROUTING
+==================================================
+
+Test all relevant entry conditions.
+
+A. Authenticated existing member:
+shared link → Week 1 play
+
+B. Existing guest on same device:
+shared link → Week 1 play
+
+C. Commissioner:
+shared link → Week 1 play as their own member identity
+
+D. User is valid league member but Week is locked:
+link → read-only Week 1 picks
+
+E. Week finalized:
+link → Week 1 Results, or clear finalized state with View Results CTA
+
+Do not land someone on a dead-end “cannot play” page if a better destination exists.
+
+==================================================
+20. NON-MEMBER OPENS WEEK LINK
+==================================================
+
+This needs deliberate behavior.
+
+Scenario:
+
+someone forwards the Week 1 link to a person who is NOT already in the Fantasy league.
+
+Do not automatically create a new league member.
+
+Preferred:
+
+show the existing Fantasy join/claim experience for that league/season IF the league still allows joining.
+
+But be careful:
+
+if Week 1 is already locked, a new member may join the persistent league but should not become eligible for the current week.
+
+Reuse existing open-roster rules.
+
+Do not invent a separate weekly invitation flow.
+
+==================================================
+21. DIRECT LINK SECURITY
+==================================================
+
+The link itself is not authorization.
+
+Server must continue verifying:
+
+- league/season
+- valid Fantasy membership/claim
+- current weekly eligibility
+
+Do not expose protected weekly data just because someone knows the URL.
+
+==================================================
+22. PARTICIPATION API
+==================================================
+
+Inspect current weekly hub endpoint.
+
+Prefer extending it rather than creating a new endpoint if clean.
+
+Commissioner weekly hub response may include:
+
+eligible_count
+played_count
+waiting_count
+
+and optionally commissioner-only:
+
+participants_status: [
+  {
+    season_member_id,
+    display_name,
+    fantasy_team_id,
+    team_name,
+    has_played
+  }
+]
+
+Do not return private member picks.
+
+Only participation status.
+
+==================================================
+23. PLAYED DEFINITION TEST
+==================================================
+
+Critical:
+
+League has 10 eligible members.
+
+- 2 never open Week 1
+- 2 open Week 1 but make no picks
+- 6 save at least one pick
+
+Expected:
+
+played_count = 6
+waiting_count = 4
+eligible_count = 10
+
+Opening the screen alone does not count.
+
+==================================================
+24. OPEN-ROSTER INTERACTION
+==================================================
+
+If commissioner adds a new member while Week 1 is open:
+
+eligible_count should update.
+
+Example:
+
+6/10 played
+→ new member joins
+→ 6/11 played
+
+If they make a pick:
+→ 7/11
+
+If new member is added after lock:
+they are NOT eligible for current Week 1 and should NOT increase Week 1 eligible_count.
+
+Use current `draft_day_eligible` / weekly eligibility behavior correctly.
+
+If the existing field name is Draft-Day-specific and makes this awkward, inspect before changing schema.
+
+Do not create SQL unless necessary.
+
+==================================================
+25. COMMISSIONER DOES NOT HAVE TO RESHARE JOIN LINK
+==================================================
+
+This is a product requirement.
+
+Once the person is a Fantasy league member:
+
+future weekly shares use the WEEK link.
+
+Not:
+
+original Fantasy join link.
+
+Do not make the commissioner find old invite links.
+
+==================================================
+26. WEEK 2 FUTURE REUSE
+==================================================
+
+Build share functionality from:
+
+leagueId
+seasonId
+weekNumber
+
+Do NOT hardcode "Week 1" into routing/helper logic.
+
+UI may currently expose Week 1 only.
+
+Share helper should already work for any week number.
+
+This lets Week 2+ reuse it later.
+
+==================================================
+27. ANALYTICS / EVENT LOGGING
+==================================================
+
+Do not introduce a major analytics system.
+
+If existing event logging exists, optionally track:
+
+weekly_share_opened
+weekly_share_invoked
+weekly_reminder_invoked
+
+But do not block this phase on analytics.
+
+==================================================
+28. TESTS
+==================================================
+
+Add Phase 5.1 tests.
+
+SHARE LINK
+- correct league ID
+- correct season ID
+- correct week number
+- no member identity embedded
+- works generically for weekNumber
+
+RETURNING AUTH MEMBER
+- shared link resolves existing member
+- no new claim/member/team
+- play loads
+
+RETURNING GUEST
+- same-device guest token resolves
+- no new claim
+- no duplicate identity
+- play loads
+
+NON-MEMBER
+- link does not bypass membership rules
+- safe join/claim behavior
+- locked week does not make late joiner eligible
+
+PARTICIPATION
+- saved pick counts as played
+- screen open/no pick does not count
+- eligible_count correct
+- waiting_count correct
+- open-roster addition updates denominator
+- locked late member excluded
+
+SHARE UX
+- share message contains Week number + link
+- reminder copy generated only while open
+- no reminder CTA if everyone played
+- no share/reminder CTA after lock
+
+ROUTING
+- open week → play
+- locked week → view picks
+- finalized week → results
+- no dead-end routing
+
+AUTHORIZATION
+- participation list commissioner-only
+- no picks exposed
+
+==================================================
+29. MANUAL QA TARGET
+==================================================
+
+After this phase I should be able to do:
+
+COMMISSIONER
+
+1. Publish Week 1.
+2. Hub says:
+   3 of 8 have played.
+3. Tap Share Week 1.
+4. Native share sheet opens with:
+   - correct copy
+   - direct Week 1 URL.
+5. Send it to group chat.
+6. Returning member taps it.
+7. Member lands directly in Week 1.
+8. Member makes one pick.
+9. Commissioner refreshes hub:
+   4 of 8 have played.
+10. Tap participation count:
+    see Played / Waiting list.
+11. Tap Share Reminder.
+12. Copy/share reminder to group.
+13. Once all 8 play:
+    hub says 8 of 8.
+14. Share Reminder disappears.
+15. Lock picks.
+16. Share Week 1 / Reminder actions disappear.
+
+RETURNING MEMBER
+
+1. Played Draft Day previously.
+2. Receives Week 1 link.
+3. Taps it.
+4. No rejoin.
+5. No seat selection.
+6. No team selection.
+7. Lands directly on Week 1 picks.
+
+RETURNING GUEST
+
+Same behavior on same device/browser.
+
+==================================================
+30. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- automated SMS
+- Twilio
+- automated email
+- push notifications
+- scheduled reminders
+- weekly auto-generation
+- Week 2 UI
+- direct messages to individual members
+- contact-list access
+- notification preferences
+- cross-device guest account recovery
+- deep analytics system
+- results social sharing
+
+==================================================
+31. IMPLEMENTATION ORDER
+==================================================
+
+Before coding:
+
+1. inspect current Fantasy join link / route behavior
+2. inspect weekly play deep-link behavior
+3. inspect guest claim persistence
+4. inspect weekly hub state response
+5. inspect how weekly eligibility is currently represented
+6. determine whether any SQL is actually required
+
+Prefer no SQL.
+
+If SQL is required:
+write migration and STOP for manual application.
+
+Otherwise proceed.
+
+==================================================
+32. RETURN
+==================================================
+
+Return:
+
+1. current re-engagement journey before this phase
+2. direct Week link design
+3. auth-member return behavior
+4. guest return behavior
+5. cross-device guest limitation
+6. non-member forwarded-link behavior
+7. participation-count implementation
+8. Played / Waiting commissioner view
+9. Share Week UX
+10. Share Reminder UX
+11. routing behavior by week status
+12. open-roster interaction
+13. files changed
+14. SQL required or not
+15. test results
+16. full regression totals
+17. bugs found/fixed
+18. exact manual QA steps
+19. what remains before Week 2
+
+Then STOP.
+
+Do not begin Week 2.
+
+Final status:
+
+PHASE 5.1 RE-ENGAGEMENT READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

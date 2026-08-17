@@ -46,11 +46,12 @@ export default function WeeklyPlayScreen() {
 
   const wn = parseInt(weekNumber ?? "1", 10);
 
-  const [state, setState]       = useState<WeeklyPlayState | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
+  const [state, setState]           = useState<WeeklyPlayState | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [errorIsNonMember, setErrorIsNonMember] = useState(false);
   // propId → currently selected answerId (optimistic)
-  const [picks, setPicks]       = useState<Record<string, string>>({});
+  const [picks, setPicks]           = useState<Record<string, string>>({});
   // propId → "saving" | "saved" | "error"
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
 
@@ -65,8 +66,13 @@ export default function WeeklyPlayScreen() {
       const data = await getWeeklyPlay(leagueId, seasonId, wn, auth);
       setState(data);
       setPicks(data.my_picks ?? {});
+      setErrorIsNonMember(false);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load Week picks");
+      const msg: string = e.message ?? "Failed to load Week picks";
+      const isNonMember = msg.toLowerCase().includes("not a member") ||
+                          msg.toLowerCase().includes("unauthorized");
+      setError(msg);
+      setErrorIsNonMember(isNonMember);
     } finally {
       setLoading(false);
     }
@@ -111,6 +117,29 @@ export default function WeeklyPlayScreen() {
   }
 
   if (error) {
+    // Non-member: show join CTA instead of generic retry
+    if (errorIsNonMember) {
+      return (
+        <View style={[styles.center, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
+          <Text style={[styles.errorText, { fontSize: 32, marginBottom: 8 }]}>🏈</Text>
+          <Text style={[styles.errorText, { marginBottom: 8, fontWeight: "700", fontSize: 17 }]}>
+            You're not part of this league
+          </Text>
+          <Text style={[styles.errorText, { color: "#999", fontSize: 14, textAlign: "center", marginBottom: 24 }]}>
+            You need to join this fantasy league before you can make picks.
+          </Text>
+          <TouchableOpacity
+            style={[styles.btn, { marginBottom: 12 }]}
+            onPress={() => router.replace(`/fantasy/join/${leagueId}/${seasonId}` as any)}
+          >
+            <Text style={styles.btnText}>Join This League</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.linkText}>← Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>{error}</Text>
@@ -126,7 +155,8 @@ export default function WeeklyPlayScreen() {
 
   if (!state) return null;
 
-  const isLocked  = state.card_status === "locked" || state.card_status === "settled";
+  const isFinalized = state.room_status === "finalized";
+  const isLocked    = state.card_status === "locked" || state.card_status === "settled";
   const pickedCount = Object.keys(picks).length;
   const total       = state.props.length;
   const staleSet    = new Set(state.stale_pick_prop_ids ?? []);
@@ -159,7 +189,22 @@ export default function WeeklyPlayScreen() {
         )}
       </View>
 
-      {isLocked && (
+      {/* Finalized banner — results ready */}
+      {isFinalized && (
+        <TouchableOpacity
+          style={styles.finalizedBanner}
+          onPress={() => router.replace(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/results` as any)}
+          activeOpacity={0.85}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.finalizedBannerTitle}>🏆 Results are in!</Text>
+            <Text style={styles.finalizedBannerSub}>Tap to see how everyone did</Text>
+          </View>
+          <Text style={{ color: "#FCD34D", fontSize: 18 }}>›</Text>
+        </TouchableOpacity>
+      )}
+
+      {isLocked && !isFinalized && (
         <View style={styles.lockedBanner}>
           <Text style={styles.lockedBannerText}>
             🔒 Picks are locked. Your selections are final.
@@ -250,6 +295,12 @@ const styles = StyleSheet.create({
   progressRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
   progressText: { fontSize: 13, color: C.textMuted },
   allDoneText:  { fontSize: 13, color: "#22c55e", fontWeight: "700" },
+  finalizedBanner: {
+    backgroundColor: "#1A1200", borderRadius: 10, borderWidth: 1, borderColor: "#FCD34D",
+    padding: 14, marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 8,
+  },
+  finalizedBannerTitle: { fontSize: 15, fontWeight: "700", color: "#FCD34D" },
+  finalizedBannerSub:   { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
   lockedBanner: {
     backgroundColor: "#1A1500", borderRadius: 10, borderWidth: 1, borderColor: C.accentGold,
     padding: 12, marginBottom: 16,

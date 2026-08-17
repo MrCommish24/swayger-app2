@@ -10,3 +10,4 @@
 - [Gameday Fantasy Open Roster](gameday-fantasy-open-roster.md) — open-card adds always eligible; roster_revision + answer_universe_revision columns; stale-pick detection; PATCH /leagues/:leagueId rename; Migration 002 required.
 - [Gameday Fantasy Phase 4C](gameday-fantasy-phase4c-nav.md) — finalization = room_status='finalized' (NOT card='settled'); SUM(point_value) scoring; settle route supports season props post-finalization; queue exclusion via experience_type.
 - [Gameday Fantasy Phase 5](gameday-fantasy-phase5-nav.md) — weekly competition routes, hub WeeklyCard, auto-settle card quirk (accept 'settled'+'locked'), 91/91 tests.
+- [Gameday Fantasy Phase 5.1](gameday-fantasy-phase51-nav.md) — re-engagement share loop: participation data in hub endpoint, commissioner participants_status, Share/Reminder CTAs, finalized banner in play screen, non-member 403 join CTA, 48/48 tests.

@@ -410,26 +410,28 @@ function DraftDayCard({
 
 // ── WeeklyCard ────────────────────────────────────────────────────────────────
 // Renders a single Week N section on the hub.
-// Lifecycle mirrors DraftDayCard but has no season-scope props section.
-// Commissioner-only: Set Up / Lock / Unlock / Settle / Finalize.
+// Phase 5.1: adds participation count, Played/Waiting list, Share Week, Share Reminder.
 interface WeeklyCardProps {
-  weekNumber:       number;
-  weekly:           WeeklyStatus | null | undefined; // undefined = not yet fetched
-  isCommissioner:   boolean;
-  locking:          boolean;
-  unlocking:        boolean;
-  finalizing:       boolean;
-  lockError:        string | null;
-  finalizeError:    string | null;
-  myPickCount:      number;
-  onSetup:          () => void;
-  onPlay:           () => void;
-  onLock:           () => void;
-  onUnlock:         () => void;
-  onSettle:         () => void;
-  onFinalize:       () => void;
-  onViewResults:    () => void;
-  onViewStandings:  () => void;
+  weekNumber:          number;
+  weekly:              WeeklyStatus | null | undefined; // undefined = not yet fetched
+  isCommissioner:      boolean;
+  locking:             boolean;
+  unlocking:           boolean;
+  finalizing:          boolean;
+  lockError:           string | null;
+  finalizeError:       string | null;
+  myPickCount:         number;
+  onSetup:             () => void;
+  onPlay:              () => void;
+  onLock:              () => void;
+  onUnlock:            () => void;
+  onSettle:            () => void;
+  onFinalize:          () => void;
+  onViewResults:       () => void;
+  onViewStandings:     () => void;
+  // Phase 5.1
+  onShare:             () => void;
+  onShareReminder:     () => void;
 }
 
 function WeeklyCard({
@@ -450,9 +452,12 @@ function WeeklyCard({
   onFinalize,
   onViewResults,
   onViewStandings,
+  onShare,
+  onShareReminder,
 }: WeeklyCardProps) {
-  const [confirmLock, setConfirmLock]         = React.useState(false);
-  const [confirmFinalize, setConfirmFinalize] = React.useState(false);
+  const [confirmLock, setConfirmLock]           = React.useState(false);
+  const [confirmFinalize, setConfirmFinalize]   = React.useState(false);
+  const [showParticipants, setShowParticipants] = React.useState(false);
 
   React.useEffect(() => { if (weekly?.card_status === "locked") setConfirmLock(false); }, [weekly?.card_status]);
   React.useEffect(() => { if (weekly?.room_status === "finalized") setConfirmFinalize(false); }, [weekly?.room_status]);
@@ -555,7 +560,72 @@ function WeeklyCard({
           <Text style={styles.draftDayCountNum}>{totalCount}</Text>
           <Text style={styles.draftDayCountLabel}>Week {weekNumber}{"\n"}Questions</Text>
         </View>
+        {/* Participation stat — visible to all when published */}
+        {(weekly?.eligible_count ?? 0) > 0 && (
+          <View style={[styles.draftDayCount, { flex: 1 }]}>
+            <Text style={styles.draftDayCountNum}>
+              {weekly?.played_count ?? 0}
+              <Text style={[styles.draftDayCountLabel, { fontSize: 14 }]}> / {weekly?.eligible_count ?? 0}</Text>
+            </Text>
+            <Text style={styles.draftDayCountLabel}>Have{"\n"}Played</Text>
+          </View>
+        )}
       </View>
+
+      {/* Commissioner: Played / Waiting member list (expandable) */}
+      {isCommissioner && (weekly?.participants_status?.length ?? 0) > 0 && (
+        <View style={{ marginBottom: 4 }}>
+          <TouchableOpacity
+            style={styles.weeklyPartToggle}
+            onPress={() => setShowParticipants((s) => !s)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.weeklyPartToggleText}>
+              {weekly!.played_count} played · {weekly!.waiting_count} waiting
+            </Text>
+            <Text style={styles.weeklyPartToggleArrow}>{showParticipants ? "▲" : "▼"}</Text>
+          </TouchableOpacity>
+
+          {showParticipants && (
+            <View style={styles.weeklyPartList}>
+              {/* Played */}
+              {(weekly!.participants_status ?? []).filter((p) => p.has_played).length > 0 && (
+                <View>
+                  <Text style={styles.weeklyPartSectionHeader}>
+                    PLAYED ({(weekly!.participants_status ?? []).filter((p) => p.has_played).length})
+                  </Text>
+                  {(weekly!.participants_status ?? [])
+                    .filter((p) => p.has_played)
+                    .map((p) => (
+                      <View key={p.season_member_id} style={styles.weeklyPartItem}>
+                        <Text style={styles.weeklyPartItemCheck}>✓</Text>
+                        <Text style={styles.weeklyPartItemName}>{p.display_name ?? "Member"}</Text>
+                      </View>
+                    ))}
+                </View>
+              )}
+              {/* Waiting */}
+              {(weekly!.participants_status ?? []).filter((p) => !p.has_played).length > 0 && (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={styles.weeklyPartSectionHeader}>
+                    NOT PLAYED YET ({(weekly!.participants_status ?? []).filter((p) => !p.has_played).length})
+                  </Text>
+                  {(weekly!.participants_status ?? [])
+                    .filter((p) => !p.has_played)
+                    .map((p) => (
+                      <View key={p.season_member_id} style={styles.weeklyPartItem}>
+                        <Text style={styles.weeklyPartItemWait}>○</Text>
+                        <Text style={[styles.weeklyPartItemName, { color: C.textSecondary }]}>
+                          {p.display_name ?? "Member"}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Actions */}
       <View style={styles.draftDayActions}>
@@ -579,6 +649,30 @@ function WeeklyCard({
         {/* Commissioner controls */}
         {isCommissioner && (
           <View style={{ gap: 8 }}>
+            {/* Share CTAs — visible while picks are OPEN */}
+            {!isLocked && (
+              <View style={{ gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.weeklyShareBtn}
+                  onPress={onShare}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.weeklyShareBtnText}>📣  Share Week {weekNumber}</Text>
+                </TouchableOpacity>
+                {(weekly?.waiting_count ?? 0) > 0 && (
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary]}
+                    onPress={onShareReminder}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnText, { color: C.tint }]}>
+                      🔔  Share Reminder ({weekly?.waiting_count} waiting)
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             {/* Lock Picks (when open) */}
             {!isLocked && (
               <View style={styles.draftDayActionRow}>
@@ -722,6 +816,17 @@ const STATUS_COLOR: Record<string, string> = {
 
 function buildInviteUrl(leagueId: string, seasonId: string): string {
   const path = `/fantasy/join/${leagueId}/${seasonId}`;
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}${path}`;
+  }
+  const domain = process.env.EXPO_PUBLIC_DOMAIN ?? "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+/** Direct link to the weekly pick screen. Used for commissioner re-engagement sharing. */
+function buildWeekUrl(leagueId: string, seasonId: string, weekNumber: number): string {
+  const path = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play`;
   if (Platform.OS === "web" && typeof window !== "undefined") {
     return `${window.location.origin}${path}`;
   }
@@ -1265,6 +1370,29 @@ export default function LeagueHubScreen() {
                 setFinalizingWeekly(false);
               }
             }}
+            onShare={async () => {
+              const url  = buildWeekUrl(leagueId, seasonId, 1);
+              const hasDDFinalized = draftDay?.room_status === "finalized";
+              const message = hasDDFinalized
+                ? `Week 1 Swayger is live 🏈\n\nDraft Day is over. Now let's see who really knows this league.\n\nMake your picks before they lock:\n\n${url}`
+                : `Week 1 Swayger is live 🏈\n\nThink you know our league better than everyone else?\n\nMake your Week 1 picks before they lock.\n\n${url}`;
+              try {
+                await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+              } catch {
+                // User dismissed share sheet — no-op
+              }
+            }}
+            onShareReminder={async () => {
+              const url     = buildWeekUrl(leagueId, seasonId, 1);
+              const waiting = weeklyWeek1?.waiting_count ?? 0;
+              const people  = waiting === 1 ? "person hasn't" : "people haven't";
+              const message = `Week 1 Swayger reminder 👀\n\n${waiting} ${people} made their picks.\n\nStill time to make your Week 1 picks:\n\n${url}`;
+              try {
+                await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+              } catch {
+                // User dismissed — no-op
+              }
+            }}
           />
 
           {/* ── Season Standings quick-access (once any competition finalized) ── */}
@@ -1537,6 +1665,54 @@ const styles = StyleSheet.create({
   lockConfirmBody:  { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   lockConfirmButtons: { flexDirection: "row", gap: 8, marginTop: 4 },
   lockErrorText: { fontSize: 12, color: C.danger, textAlign: "center", marginTop: 4 },
+
+  // Weekly participation list (Phase 5.1)
+  weeklyPartToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: C.background,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+  },
+  weeklyPartToggleText: { fontSize: 13, color: C.textSecondary, fontWeight: "500" },
+  weeklyPartToggleArrow: { fontSize: 11, color: C.textMuted },
+  weeklyPartList: {
+    backgroundColor: C.background,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 6,
+    gap: 2,
+  },
+  weeklyPartSectionHeader: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.textMuted,
+    letterSpacing: 0.7,
+    marginBottom: 6,
+  },
+  weeklyPartItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 4,
+  },
+  weeklyPartItemCheck: { fontSize: 14, color: "#22c55e", fontWeight: "700", width: 16 },
+  weeklyPartItemWait:  { fontSize: 14, color: C.textMuted, width: 16 },
+  weeklyPartItemName:  { fontSize: 13, color: C.text },
+
+  // Weekly share buttons (Phase 5.1)
+  weeklyShareBtn: {
+    backgroundColor: "#0E7490",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    alignSelf: "stretch",
+  },
+  weeklyShareBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 
   // Shared
   btn: {

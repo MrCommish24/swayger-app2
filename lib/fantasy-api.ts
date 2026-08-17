@@ -666,6 +666,12 @@ export async function publishWeekly(
 }
 
 /** Hub state for a weekly competition. Null when not yet published. */
+export interface WeeklyParticipantStatus {
+  season_member_id: string;
+  display_name: string | null;
+  has_played: boolean;
+}
+
 export interface WeeklyStatus {
   room_id: string;
   card_id: string;
@@ -678,6 +684,11 @@ export interface WeeklyStatus {
   all_settled: boolean;
   pick_count: number;
   my_pick_count: number;
+  // Phase 5.1: participation data
+  eligible_count: number;
+  played_count: number;
+  waiting_count: number;
+  participants_status?: WeeklyParticipantStatus[]; // commissioner-only
   created_at: string;
 }
 
@@ -742,6 +753,7 @@ export interface WeeklyPlayState {
   room_id: string;
   card_id: string;
   room_code: string | null;
+  room_status: "draft" | "active" | "finalized";
   card_status: "open" | "locked" | "settled";
   week_number: number;
   roster_revision: number;
@@ -752,6 +764,24 @@ export interface WeeklyPlayState {
   my_pick_count: number;
   total_props: number;
   league_name?: string | null;
+}
+
+/** Build a direct shareable URL to the weekly pick screen */
+export function buildWeekUrl(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  domainOverride?: string
+): string {
+  const path = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play`;
+  // Web
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  // Native: use injected env var (set by expo start script to REPLIT_DEV_DOMAIN, prod uses www.swayger.app)
+  const domain = domainOverride ?? (typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "");
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
 }
 
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/play

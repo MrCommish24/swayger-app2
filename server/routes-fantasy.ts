@@ -3566,28 +3566,80 @@ export function registerFantasyRoutes(app: Express) {
         } catch { pickCount = 0; }
       }
 
+      // ── Resolve viewer once — used for myPickCount + commissioner check ──────
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId).catch(() => null);
+      const isCallerCommissioner = viewer &&
+        (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+
       let myPickCount = 0;
-      try {
-        if ((identity.userId || identity.guestToken) && propIds.length > 0) {
-          const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
-          if (viewerData) {
-            const { data: vPart } = await supabase
-              .from("gameday_participants")
-              .select("id")
-              .eq("room_id", (room as any).id)
-              .eq("season_member_id", viewerData.season_member_id)
-              .maybeSingle();
-            if (vPart) {
-              const { count } = await supabase
-                .from("gameday_picks")
-                .select("id", { count: "exact", head: true })
-                .in("prop_id", propIds)
-                .eq("participant_id", (vPart as any).id);
-              myPickCount = count ?? 0;
-            }
+      if (viewer && propIds.length > 0) {
+        try {
+          const { data: vPart } = await supabase
+            .from("gameday_participants")
+            .select("id")
+            .eq("room_id", (room as any).id)
+            .eq("season_member_id", viewer.season_member_id)
+            .maybeSingle();
+          if (vPart) {
+            const { count } = await supabase
+              .from("gameday_picks")
+              .select("id", { count: "exact", head: true })
+              .in("prop_id", propIds)
+              .eq("participant_id", (vPart as any).id);
+            myPickCount = count ?? 0;
+          }
+        } catch { myPickCount = 0; }
+      }
+
+      // ── Participation data ─────────────────────────────────────────────────────
+      // eligible = all active season members (commissioner sees per-member status)
+      const { data: smRows } = await supabase
+        .from("fantasy_season_members")
+        .select("id, fantasy_league_members(display_name)")
+        .eq("league_season_id", seasonId)
+        .eq("is_active", true);
+      const smList        = (smRows ?? []) as any[];
+      const eligibleCount = smList.length;
+
+      // played = distinct season_member_ids with ≥1 competition pick in this room
+      const compPropIds = propList.map((p: any) => p.id as string);
+      const playedSmIds = new Set<string>();
+
+      if (compPropIds.length > 0 && smList.length > 0) {
+        const { data: parts } = await supabase
+          .from("gameday_participants")
+          .select("id, season_member_id")
+          .eq("room_id", (room as any).id);
+        const partList = (parts ?? []) as any[];
+
+        if (partList.length > 0) {
+          const partIds = partList.map((p: any) => p.id as string);
+          const { data: picksRows } = await supabase
+            .from("gameday_picks")
+            .select("participant_id")
+            .in("participant_id", partIds)
+            .in("prop_id", compPropIds);
+          const playedPartIds = new Set(
+            ((picksRows ?? []) as any[]).map((p: any) => p.participant_id as string)
+          );
+          for (const part of partList) {
+            if (playedPartIds.has(part.id)) playedSmIds.add(part.season_member_id);
           }
         }
-      } catch { myPickCount = 0; }
+      }
+
+      const playedCount  = playedSmIds.size;
+      const waitingCount = eligibleCount - playedCount;
+
+      // Commissioner-only: per-member participation breakdown
+      let participantsStatus: any[] | undefined;
+      if (isCallerCommissioner) {
+        participantsStatus = smList.map((sm: any) => ({
+          season_member_id: sm.id,
+          display_name:     (sm as any).fantasy_league_members?.display_name ?? null,
+          has_played:       playedSmIds.has(sm.id),
+        }));
+      }
 
       res.json({
         room_id:       (room as any).id,
@@ -3601,6 +3653,10 @@ export function registerFantasyRoutes(app: Express) {
         all_settled:   propList.length > 0 && settledCount === propList.length,
         pick_count:    pickCount,
         my_pick_count: myPickCount,
+        eligible_count: eligibleCount,
+        played_count:  playedCount,
+        waiting_count: waitingCount,
+        ...(participantsStatus !== undefined && { participants_status: participantsStatus }),
         created_at:    (room as any).created_at,
       });
     }
@@ -3771,6 +3827,7 @@ export function registerFantasyRoutes(app: Express) {
         room_id:             roomId,
         card_id:             (card as any).id,
         room_code:           (room as any).room_code ?? null,
+        room_status:         (room as any).status,
         card_status:         cardStatus,
         week_number:         wn,
         roster_revision:     cardRosterRevision,
