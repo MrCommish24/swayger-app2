@@ -39,12 +39,19 @@ import {
   lockDraftDay,
   unlockDraftDay,
   finalizeDraftDay,
+  getWeekStatus,
+  lockWeekly,
+  unlockWeekly,
+  finalizeWeekly,
+  getSeasonStandings,
   FANTASY_PENDING_UPGRADE_KEY,
   FantasyPendingUpgrade,
   FANTASY_SPORTS,
   FantasySeasonDetail,
   FantasyParticipant,
   DraftDayStatus,
+  WeeklyStatus,
+  SeasonStandings,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
@@ -401,6 +408,301 @@ function DraftDayCard({
   );
 }
 
+// ── WeeklyCard ────────────────────────────────────────────────────────────────
+// Renders a single Week N section on the hub.
+// Lifecycle mirrors DraftDayCard but has no season-scope props section.
+// Commissioner-only: Set Up / Lock / Unlock / Settle / Finalize.
+interface WeeklyCardProps {
+  weekNumber:       number;
+  weekly:           WeeklyStatus | null | undefined; // undefined = not yet fetched
+  isCommissioner:   boolean;
+  locking:          boolean;
+  unlocking:        boolean;
+  finalizing:       boolean;
+  lockError:        string | null;
+  finalizeError:    string | null;
+  myPickCount:      number;
+  onSetup:          () => void;
+  onPlay:           () => void;
+  onLock:           () => void;
+  onUnlock:         () => void;
+  onSettle:         () => void;
+  onFinalize:       () => void;
+  onViewResults:    () => void;
+  onViewStandings:  () => void;
+}
+
+function WeeklyCard({
+  weekNumber,
+  weekly,
+  isCommissioner,
+  locking,
+  unlocking,
+  finalizing,
+  lockError,
+  finalizeError,
+  myPickCount,
+  onSetup,
+  onPlay,
+  onLock,
+  onUnlock,
+  onSettle,
+  onFinalize,
+  onViewResults,
+  onViewStandings,
+}: WeeklyCardProps) {
+  const [confirmLock, setConfirmLock]         = React.useState(false);
+  const [confirmFinalize, setConfirmFinalize] = React.useState(false);
+
+  React.useEffect(() => { if (weekly?.card_status === "locked") setConfirmLock(false); }, [weekly?.card_status]);
+  React.useEffect(() => { if (weekly?.room_status === "finalized") setConfirmFinalize(false); }, [weekly?.room_status]);
+
+  if (weekly === undefined) return null;
+
+  const isFinalized  = weekly?.room_status === "finalized";
+  const isLocked     = !isFinalized && weekly?.card_status === "locked";
+  const isPublished  = !!weekly;
+
+  const settledCount  = weekly?.settled_count ?? 0;
+  const totalCount    = weekly?.prop_count ?? 0;
+  const allSettled    = totalCount > 0 && settledCount === totalCount;
+
+  // ── Not yet published ───────────────────────────────────────────────────────
+  if (!isPublished) {
+    return (
+      <View style={styles.draftDayCard}>
+        <View style={styles.draftDayHeader}>
+          <Text style={styles.draftDayIcon}>🏈</Text>
+          <View style={styles.draftDayHeaderText}>
+            <Text style={styles.draftDayLabel}>UPCOMING</Text>
+            <Text style={styles.draftDayTitle}>Week {weekNumber} Swayger</Text>
+          </View>
+        </View>
+        {isCommissioner ? (
+          <TouchableOpacity style={styles.btn} onPress={onSetup} activeOpacity={0.8}>
+            <Text style={styles.btnText}>Set Up Week {weekNumber}</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.draftDayComingSoon}>
+            Your commissioner is setting up Week {weekNumber} questions. Check back soon!
+          </Text>
+        )}
+      </View>
+    );
+  }
+
+  // ── Finalized ───────────────────────────────────────────────────────────────
+  if (isFinalized) {
+    return (
+      <View style={[styles.draftDayCard, styles.draftDayCardLocked]}>
+        <View style={styles.draftDayHeader}>
+          <Text style={styles.draftDayIcon}>🏆</Text>
+          <View style={styles.draftDayHeaderText}>
+            <Text style={styles.draftDayLabel}>WEEK {weekNumber} SWAYGER</Text>
+            <Text style={styles.draftDayTitle}>Results Ready</Text>
+          </View>
+          <View style={[styles.draftDayStatusBadge, { borderColor: C.accentGold }]}>
+            <View style={[styles.draftDayStatusDot, { backgroundColor: C.accentGold }]} />
+            <Text style={[styles.draftDayStatusText, { color: C.accentGold }]}>FINAL</Text>
+          </View>
+        </View>
+        <View style={styles.draftDayActions}>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: "#B45309" }]}
+            onPress={onViewResults}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.btnText}>🏆  View Week {weekNumber} Results</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnSecondary]}
+            onPress={onViewStandings}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.btnText, { color: C.tint }]}>📊  Season Standings</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Open or Locked ──────────────────────────────────────────────────────────
+  const statusColor = isLocked ? C.accentGold : "#22c55e";
+  const statusLabel = isLocked ? "LOCKED" : "OPEN";
+  const cardTitle   = isLocked ? "Picks Locked" : `Week ${weekNumber} Ready`;
+
+  return (
+    <View style={[
+      styles.draftDayCard,
+      isLocked ? styles.draftDayCardLocked : styles.draftDayCardActive,
+    ]}>
+      {/* Header */}
+      <View style={styles.draftDayHeader}>
+        <Text style={styles.draftDayIcon}>{isLocked ? "🔒" : "🏈"}</Text>
+        <View style={styles.draftDayHeaderText}>
+          <Text style={styles.draftDayLabel}>WEEK {weekNumber} SWAYGER</Text>
+          <Text style={styles.draftDayTitle}>{cardTitle}</Text>
+        </View>
+        <View style={[styles.draftDayStatusBadge, { borderColor: statusColor }]}>
+          <View style={[styles.draftDayStatusDot, { backgroundColor: statusColor }]} />
+          <Text style={[styles.draftDayStatusText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      {/* Prop count */}
+      <View style={styles.draftDayCounts}>
+        <View style={styles.draftDayCount}>
+          <Text style={styles.draftDayCountNum}>{totalCount}</Text>
+          <Text style={styles.draftDayCountLabel}>Week {weekNumber}{"\n"}Questions</Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.draftDayActions}>
+        {/* Member CTA */}
+        {isLocked ? (
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: "#1A1500", borderWidth: 1, borderColor: C.accentGold }]}
+            onPress={onPlay}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.btnText, { color: C.accentGold }]}>👁  View My Picks</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.btn} onPress={onPlay} activeOpacity={0.8}>
+            <Text style={styles.btnText}>
+              {myPickCount > 0 ? "✏️  View / Update My Picks" : "🏈  Make My Picks"}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Commissioner controls */}
+        {isCommissioner && (
+          <View style={{ gap: 8 }}>
+            {/* Lock Picks (when open) */}
+            {!isLocked && (
+              <View style={styles.draftDayActionRow}>
+                {!confirmLock && (
+                  <TouchableOpacity
+                    style={[styles.btn, { flex: 1, backgroundColor: "#5B21B6" }, locking && { opacity: 0.5 }]}
+                    onPress={() => setConfirmLock(true)}
+                    disabled={locking}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>🔒  Lock Picks</Text>
+                  </TouchableOpacity>
+                )}
+                {confirmLock && (
+                  <View style={styles.lockConfirmBox}>
+                    <Text style={styles.lockConfirmTitle}>Lock Week {weekNumber} picks?</Text>
+                    <Text style={styles.lockConfirmBody}>
+                      Members won't be able to change picks until you unlock.
+                    </Text>
+                    <View style={styles.lockConfirmButtons}>
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                        onPress={() => setConfirmLock(false)}
+                        disabled={locking}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.btn, { flex: 1, backgroundColor: "#5B21B6" }, locking && { opacity: 0.5 }]}
+                        onPress={onLock}
+                        disabled={locking}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>{locking ? "Locking…" : "🔒  Lock Picks"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {lockError && <Text style={styles.lockErrorText}>{lockError}</Text>}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Settlement CTAs (when locked) */}
+            {isLocked && (
+              <View style={{ gap: 8 }}>
+                {settledCount > 0 && !allSettled && (
+                  <Text style={styles.settlementProgress}>
+                    ⚖️  {settledCount} / {totalCount} questions resolved
+                  </Text>
+                )}
+
+                {!allSettled && (
+                  <TouchableOpacity
+                    style={[styles.btn, { backgroundColor: "#1D4ED8" }]}
+                    onPress={onSettle}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>
+                      {settledCount === 0 ? "⚖️  Resolve Week " + weekNumber : "⚖️  Continue Resolving"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {allSettled && !confirmFinalize && (
+                  <TouchableOpacity
+                    style={[styles.btn, { backgroundColor: "#16a34a" }, finalizing && { opacity: 0.5 }]}
+                    onPress={() => setConfirmFinalize(true)}
+                    disabled={finalizing}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.btnText}>🏆  Finalize Week {weekNumber}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {allSettled && confirmFinalize && (
+                  <View style={styles.lockConfirmBox}>
+                    <Text style={styles.lockConfirmTitle}>Finalize Week {weekNumber}?</Text>
+                    <Text style={styles.lockConfirmBody}>
+                      This permanently reveals results to all members.
+                    </Text>
+                    <View style={styles.lockConfirmButtons}>
+                      <TouchableOpacity
+                        style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                        onPress={() => setConfirmFinalize(false)}
+                        disabled={finalizing}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.btn, { flex: 1, backgroundColor: "#16a34a" }, finalizing && { opacity: 0.5 }]}
+                        onPress={onFinalize}
+                        disabled={finalizing}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.btnText}>{finalizing ? "Finalizing…" : "🏆  Finalize"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {finalizeError && <Text style={styles.lockErrorText}>{finalizeError}</Text>}
+                  </View>
+                )}
+
+                {settledCount === 0 && (
+                  <TouchableOpacity
+                    style={[styles.btn, styles.btnSecondary, unlocking && { opacity: 0.5 }]}
+                    onPress={onUnlock}
+                    disabled={unlocking}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.btnText, { color: C.tint }]}>
+                      {unlocking ? "Unlocking…" : "🔓  Unlock Picks"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const SPORT_EMOJI: Record<string, string> = Object.fromEntries(
   FANTASY_SPORTS.map((s) => [s.value, s.emoji])
 );
@@ -449,6 +751,13 @@ export default function LeagueHubScreen() {
   const [lockError, setLockError]               = useState<string | null>(null);
   const [finalizingDraftDay, setFinalizingDraftDay] = useState(false);
   const [finalizeError, setFinalizeError]           = useState<string | null>(null);
+  // ── Phase 5: Weekly Week 1 ──────────────────────────────────────────────────
+  const [weeklyWeek1, setWeeklyWeek1]           = useState<WeeklyStatus | null | undefined>(undefined);
+  const [lockingWeekly, setLockingWeekly]       = useState(false);
+  const [unlockingWeekly, setUnlockingWeekly]   = useState(false);
+  const [weeklyLockError, setWeeklyLockError]   = useState<string | null>(null);
+  const [finalizingWeekly, setFinalizingWeekly] = useState(false);
+  const [weeklyFinalizeError, setWeeklyFinalizeError] = useState<string | null>(null);
   // Track initial mount so useFocusEffect doesn't double-fetch on first render
   const initialFocusRef = useRef(true);
 
@@ -463,16 +772,18 @@ export default function LeagueHubScreen() {
       setError(null);
       try {
         const auth = session ? { session } : { guestToken: guestToken! };
-        const [data, dd] = await Promise.all([
+        const [data, dd, wk1] = await Promise.all([
           fantasyFetch<FantasySeasonDetail>(
             `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`,
             {},
             auth
           ),
           getDraftDay(leagueId, seasonId, auth).catch(() => null),
+          getWeekStatus(leagueId, seasonId, 1, auth).catch(() => null),
         ]);
         setDetail(data);
         setDraftDay(dd);
+        setWeeklyWeek1(wk1);
       } catch (e: any) {
         setError(e.message ?? "Failed to load league");
       } finally {
@@ -887,6 +1198,90 @@ export default function LeagueHubScreen() {
               }
             }}
           />
+
+          {/* ── Week 1 Swayger Card ────────────────────────────────────── */}
+          <WeeklyCard
+            weekNumber={1}
+            weekly={weeklyWeek1}
+            isCommissioner={isCommissioner}
+            locking={lockingWeekly}
+            unlocking={unlockingWeekly}
+            finalizing={finalizingWeekly}
+            lockError={weeklyLockError}
+            finalizeError={weeklyFinalizeError}
+            myPickCount={weeklyWeek1?.my_pick_count ?? 0}
+            onSetup={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/setup` as any)}
+            onPlay={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/play` as any)}
+            onSettle={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/settle` as any)}
+            onViewResults={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/1/results` as any)}
+            onViewStandings={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
+            onLock={async () => {
+              if (!session || lockingWeekly) return;
+              setWeeklyLockError(null);
+              setLockingWeekly(true);
+              try {
+                await lockWeekly(leagueId, seasonId, 1, { session });
+                setWeeklyWeek1((prev) =>
+                  prev ? { ...prev, card_status: "locked" as const } : prev
+                );
+              } catch (e: any) {
+                setWeeklyLockError("Failed to lock. Please try again.");
+                console.error("[hub] lock weekly:", e.message);
+              } finally {
+                setLockingWeekly(false);
+              }
+            }}
+            onUnlock={async () => {
+              if (!session || unlockingWeekly) return;
+              setUnlockingWeekly(true);
+              try {
+                await unlockWeekly(leagueId, seasonId, 1, { session });
+                setWeeklyWeek1((prev) =>
+                  prev ? { ...prev, card_status: "open" as const } : prev
+                );
+              } catch (e: any) {
+                const msg = e.message?.includes("settlement")
+                  ? "Picks cannot be unlocked after settlement has started."
+                  : "Failed to unlock Week 1. Please try again.";
+                Alert.alert("Cannot Unlock", msg);
+                console.error("[hub] unlock weekly:", e.message);
+              } finally {
+                setUnlockingWeekly(false);
+              }
+            }}
+            onFinalize={async () => {
+              if (!session || finalizingWeekly) return;
+              setWeeklyFinalizeError(null);
+              setFinalizingWeekly(true);
+              try {
+                await finalizeWeekly(leagueId, seasonId, 1, { session });
+                fetchDetail(true);
+              } catch (e: any) {
+                setWeeklyFinalizeError(e.message?.includes("unsettled")
+                  ? "Some questions are not yet resolved."
+                  : "Failed to finalize. Please try again.");
+                console.error("[hub] finalize weekly:", e.message);
+              } finally {
+                setFinalizingWeekly(false);
+              }
+            }}
+          />
+
+          {/* ── Season Standings quick-access (once any competition finalized) ── */}
+          {(draftDay?.room_status === "finalized" || weeklyWeek1?.room_status === "finalized") && (
+            <TouchableOpacity
+              style={styles.inviteBtn}
+              onPress={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.inviteBtnIcon}>📊</Text>
+              <View style={styles.inviteBtnText}>
+                <Text style={styles.inviteBtnTitle}>Season Standings</Text>
+                <Text style={styles.inviteBtnSub}>Cumulative leaderboard across all competitions</Text>
+              </View>
+              <Text style={styles.inviteBtnArrow}>›</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Guest: back to Swayger home */}
           {isGuest && (

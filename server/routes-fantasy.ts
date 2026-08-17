@@ -3062,4 +3062,1145 @@ export function registerFantasyRoutes(app: Express) {
       });
     }
   );
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  Phase 5 — Fantasy Weekly Competitions & Season Standings              ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  // ── Internal: weekly room + card lookup ──────────────────────────────────────
+  async function _getWeeklyRoomAndCard(
+    supabase: ReturnType<typeof getServiceSupabase>,
+    seasonId: string,
+    weekNumber: number
+  ): Promise<{ ok: true; room: any; card: any } | { ok: false; status: number; body: object }> {
+    const { data: room } = await supabase
+      .from("gameday_rooms")
+      .select("id, status, week_number, room_code, created_at")
+      .eq("league_season_id", seasonId)
+      .eq("competition_type", "weekly")
+      .eq("week_number", weekNumber)
+      .eq("experience_type", "fantasy")
+      .is("archived_at", null)
+      .maybeSingle();
+    if (!room)
+      return { ok: false, status: 404, body: { error: `No published Week ${weekNumber} competition found for this season` } };
+    const { data: card } = await supabase
+      .from("gameday_pick_cards")
+      .select("id, status, roster_revision")
+      .eq("room_id", (room as any).id)
+      .order("created_at", { ascending: true })
+      .maybeSingle();
+    if (!card)
+      return { ok: false, status: 404, body: { error: `Week ${weekNumber} pick card not found` } };
+    return { ok: true, room, card };
+  }
+
+  // ── Internal: season standings aggregation ───────────────────────────────────
+  // Derives cumulative Fantasy Season standings from all FINALIZED fantasy
+  // competitions (Draft Day + weekly) for a given season.
+  //
+  // Scoring: SUM(point_value) for is_correct=true competition-scope picks only.
+  // Season-scope props (Season Receipts) are explicitly excluded.
+  //
+  // competitions_played: count of rooms where member submitted ≥ 1 comp pick.
+  // Participant-row existence alone does NOT count (prevents phantom entries).
+  //
+  // weekly_wins: count of finalized WEEKLY rooms where member's score equals
+  // the room's top score. Draft Day does NOT count as a weekly win.
+  async function _buildSeasonStandings(
+    supabase: ReturnType<typeof getServiceSupabase>,
+    seasonId: string
+  ): Promise<{ standings: any[]; finalized_competitions: any[] }> {
+    // 1. All finalized fantasy rooms for this season
+    const { data: rooms } = await supabase
+      .from("gameday_rooms")
+      .select("id, competition_type, week_number, status")
+      .eq("league_season_id", seasonId)
+      .eq("experience_type", "fantasy")
+      .eq("status", "finalized")
+      .is("archived_at", null)
+      .order("created_at", { ascending: true });
+
+    const roomList = (rooms ?? []) as any[];
+    if (!roomList.length) return { standings: [], finalized_competitions: [] };
+
+    const roomIds = roomList.map((r: any) => r.id as string);
+
+    // 2. Cards for all finalized rooms
+    const { data: cards } = await supabase
+      .from("gameday_pick_cards")
+      .select("id, room_id")
+      .in("room_id", roomIds);
+
+    const cardByRoom: Record<string, string> = {};
+    const roomByCard: Record<string, string> = {};
+    for (const c of (cards ?? []) as any[]) {
+      cardByRoom[(c as any).room_id] = (c as any).id;
+      roomByCard[(c as any).id]      = (c as any).room_id;
+    }
+    const cardIds = Object.values(cardByRoom);
+
+    // 3. All competition-scope props for those cards
+    let propList: any[] = [];
+    if (cardIds.length > 0) {
+      const { data: compPropsRaw } = await supabase
+        .from("gameday_props")
+        .select("id, card_id, point_value")
+        .in("card_id", cardIds)
+        .eq("scoring_scope", "competition");
+      propList = (compPropsRaw ?? []) as any[];
+    }
+
+    const propMap: Record<string, { cardId: string; pointValue: number }> = {};
+    for (const p of propList)
+      propMap[(p as any).id] = { cardId: (p as any).card_id, pointValue: (p as any).point_value ?? 0 };
+    const allPropIds = propList.map((p: any) => p.id as string);
+
+    // 4. Season members + display names
+    const { data: smRaw } = await supabase
+      .from("fantasy_season_members")
+      .select("id, fantasy_league_members(display_name)")
+      .eq("league_season_id", seasonId)
+      .eq("is_active", true);
+
+    const smList = (smRaw ?? []) as any[];
+    const smIds  = smList.map((sm: any) => sm.id as string);
+
+    // 5. Teams for season members
+    const teamMap: Record<string, { id: string; name: string | null }> = {};
+    if (smIds.length > 0) {
+      const { data: mgrs } = await supabase
+        .from("fantasy_team_managers")
+        .select("season_member_id, fantasy_teams(id, team_name)")
+        .in("season_member_id", smIds)
+        .eq("is_active", true);
+      for (const m of (mgrs ?? []) as any[]) {
+        const team = (m as any).fantasy_teams;
+        if (team) teamMap[(m as any).season_member_id] = { id: team.id, name: team.team_name ?? null };
+      }
+    }
+
+    // 6. All participants for finalized rooms (with season_member_id)
+    const { data: partsRaw } = await supabase
+      .from("gameday_participants")
+      .select("id, room_id, season_member_id")
+      .in("room_id", roomIds)
+      .not("season_member_id", "is", null);
+
+    const partList  = (partsRaw ?? []) as any[];
+    const partIds   = partList.map((p: any) => p.id as string);
+    const partByRoomAndSm: Record<string, string> = {};
+    for (const p of partList)
+      partByRoomAndSm[`${(p as any).room_id}:${(p as any).season_member_id}`] = (p as any).id;
+
+    // 7. All picks on competition props for these participants
+    let allPicks: any[] = [];
+    if (partIds.length > 0 && allPropIds.length > 0) {
+      const { data: picksRaw } = await supabase
+        .from("gameday_picks")
+        .select("participant_id, prop_id, is_correct")
+        .in("prop_id", allPropIds)
+        .in("participant_id", partIds);
+      allPicks = (picksRaw ?? []) as any[];
+    }
+
+    // Build per-room per-participant stats
+    const roomStats: Record<string, Record<string, { points: number; pickCount: number }>> = {};
+    for (const r of roomList) roomStats[(r as any).id] = {};
+
+    for (const pick of allPicks) {
+      const propInfo = propMap[(pick as any).prop_id];
+      if (!propInfo) continue;
+      const rId = roomByCard[propInfo.cardId];
+      if (!rId || !roomStats[rId]) continue;
+      const pId = (pick as any).participant_id as string;
+      if (!roomStats[rId][pId]) roomStats[rId][pId] = { points: 0, pickCount: 0 };
+      roomStats[rId][pId].pickCount++;
+      if ((pick as any).is_correct === true) roomStats[rId][pId].points += propInfo.pointValue;
+    }
+
+    // Max points per weekly room (for weekly_wins)
+    const weeklyMaxPts: Record<string, number> = {};
+    for (const r of roomList) {
+      if ((r as any).competition_type !== "weekly") continue;
+      let mx = 0;
+      for (const ps of Object.values(roomStats[(r as any).id])) {
+        if (ps.pickCount > 0 && ps.points > mx) mx = ps.points;
+      }
+      weeklyMaxPts[(r as any).id] = mx;
+    }
+
+    // Aggregate per season member
+    type SmEntry = {
+      season_member_id: string;
+      display_name: string | null;
+      fantasy_team_id: string | null;
+      team_name: string | null;
+      total_points: number;
+      draft_day_points: number;
+      weekly_points: number;
+      competitions_played: number;
+      weekly_wins: number;
+    };
+    const smStatsMap: Record<string, SmEntry> = {};
+    for (const sm of smList) {
+      smStatsMap[(sm as any).id] = {
+        season_member_id:    (sm as any).id,
+        display_name:        (sm as any).fantasy_league_members?.display_name ?? null,
+        fantasy_team_id:     teamMap[(sm as any).id]?.id ?? null,
+        team_name:           teamMap[(sm as any).id]?.name ?? null,
+        total_points:        0,
+        draft_day_points:    0,
+        weekly_points:       0,
+        competitions_played: 0,
+        weekly_wins:         0,
+      };
+    }
+
+    for (const r of roomList) {
+      const rid    = (r as any).id as string;
+      const rStats = roomStats[rid];
+      const ctype  = (r as any).competition_type as string;
+
+      for (const sm of smList) {
+        const smId  = (sm as any).id as string;
+        const pId   = partByRoomAndSm[`${rid}:${smId}`];
+        if (!pId) continue;
+        const ps = rStats[pId];
+        if (!ps || ps.pickCount === 0) continue; // opened but no picks → not "played"
+
+        const entry = smStatsMap[smId];
+        if (!entry) continue;
+
+        entry.total_points += ps.points;
+        entry.competitions_played++;
+        if (ctype === "draft_day")   entry.draft_day_points += ps.points;
+        else if (ctype === "weekly") entry.weekly_points    += ps.points;
+
+        // Weekly wins (Draft Day excluded)
+        if (ctype === "weekly") {
+          const mx = weeklyMaxPts[rid] ?? 0;
+          if (mx > 0 && ps.points === mx) entry.weekly_wins++;
+        }
+      }
+    }
+
+    // Only include members who played at least one competition
+    const active = Object.values(smStatsMap).filter(s => s.competitions_played > 0);
+    active.sort((a, b) => b.total_points - a.total_points);
+
+    const standings = active.map(s => {
+      const rank     = active.filter(x => x.total_points > s.total_points).length + 1;
+      const tieCount = active.filter(x => x.total_points === s.total_points).length;
+      return { ...s, rank, rank_label: tieCount > 1 ? `T-${rank}` : String(rank) };
+    });
+
+    const finalized_competitions = roomList.map((r: any) => ({
+      room_id:          r.id,
+      competition_type: r.competition_type,
+      week_number:      r.week_number ?? null,
+      label: r.competition_type === "draft_day" ? "Draft Day"
+           : r.competition_type === "weekly"    ? `Week ${r.week_number}`
+           : r.competition_type,
+    }));
+
+    return { standings, finalized_competitions };
+  }
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/templates
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/templates",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase = getServiceSupabase();
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("fantasy_leagues(sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) { res.status(404).json({ error: "Season not found" }); return; }
+
+      const sport = (season as any).fantasy_leagues?.sport ?? "football";
+
+      const { data: templates, error: tmplErr } = await supabase
+        .from("gameday_prop_library")
+        .select("id, question, point_value, answer_target_type, settlement_window, is_default, display_order, supports_no_one")
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "weekly")
+        .eq("sport", sport)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (tmplErr) {
+        console.error("[fantasy/weekly] templates error:", tmplErr.message);
+        res.status(500).json({ error: "Failed to fetch weekly templates" });
+        return;
+      }
+
+      res.json({
+        sport,
+        week_number: wn,
+        // Weekly props are all competition-scope
+        templates: (templates ?? []).map((t: any) => ({ ...t, scoring_scope: "competition" })),
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res.status(400).json({ error: "Select at least one question" });
+        return;
+      }
+      const MAX_WEEKLY_QUESTIONS = 8;
+      if (selected_prop_ids.length > MAX_WEEKLY_QUESTIONS) {
+        res.status(400).json({
+          error: `Too many questions. Maximum is ${MAX_WEEKLY_QUESTIONS}.`,
+          max: MAX_WEEKLY_QUESTIONS,
+          selected: selected_prop_ids.length,
+        });
+        return;
+      }
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, season_year, fantasy_leagues(id, league_name, sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) { res.status(404).json({ error: "Season not found" }); return; }
+
+      const league     = (season as any).fantasy_leagues as any;
+      const sport      = league.sport as string;
+      const leagueName = league.league_name as string;
+      const roomName   = `${leagueName} — Week ${wn} Swayger`;
+
+      // Fetch selected templates (weekly only, active)
+      const { data: templates, error: tmplErr } = await supabase
+        .from("gameday_prop_library")
+        .select("id, question, point_value, answer_target_type, answer_options, supports_no_one")
+        .in("id", selected_prop_ids)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "weekly")
+        .eq("sport", sport)
+        .eq("is_active", true);
+
+      if (tmplErr || !templates?.length) {
+        res.status(400).json({ error: "No valid weekly templates found for selection" });
+        return;
+      }
+
+      // Answer-options snapshot: fetch current season members + teams
+      const [{ data: smRaw }, { data: teamsRaw }] = await Promise.all([
+        supabase
+          .from("fantasy_season_members")
+          .select("id, fantasy_league_members(display_name)")
+          .eq("league_season_id", seasonId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("fantasy_teams")
+          .select("id, team_name")
+          .eq("league_season_id", seasonId),
+      ]);
+
+      const memberList = ((smRaw ?? []) as any[]).map((sm: any) => ({
+        id: sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+      }));
+      const teamList = (teamsRaw ?? []) as Array<{ id: string; team_name: string | null }>;
+
+      // Build props payload preserving selection order
+      const propsPayload = (templates as any[]).map((tmpl, i) => ({
+        library_id:         tmpl.id,
+        question:           tmpl.question,
+        answer_options:     buildAnswerOptions(
+          tmpl.answer_target_type,
+          memberList,
+          teamList,
+          tmpl.answer_options,
+          tmpl.supports_no_one ?? false
+        ),
+        scoring_scope:      "competition", // weekly always competition-scope
+        point_value:        tmpl.point_value,
+        answer_target_type: tmpl.answer_target_type ?? null,
+        display_order:      i,
+      }));
+
+      let roomCode: string | null = null;
+      try { roomCode = await generateFantasyRoomCode(supabase); } catch { /* skip */ }
+
+      // Application-level idempotency check before RPC
+      const { data: existingRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "weekly")
+        .eq("week_number", wn)
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (existingRoom) {
+        const { data: existingCard } = await supabase
+          .from("gameday_pick_cards")
+          .select("id")
+          .eq("room_id", (existingRoom as any).id)
+          .maybeSingle();
+        console.log(`[fantasy/weekly] Week ${wn} already exists (idempotent)`);
+        res.status(200).json({
+          room_id: (existingRoom as any).id,
+          card_id: (existingCard as any)?.id ?? null,
+          room_code: null,
+          already_existed: true,
+          week_number: wn,
+        });
+        return;
+      }
+
+      // Atomic create via publish_fantasy_weekly RPC
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("publish_fantasy_weekly", {
+        p_league_season_id: seasonId,
+        p_week_number:      wn,
+        p_room_name:        roomName,
+        p_sport:            sport,
+        p_room_code:        roomCode,
+        p_host_user_id:     commissioner.userId,
+        p_props:            propsPayload,
+      });
+
+      if (rpcError || !rpcResult) {
+        console.error(`[fantasy/weekly] publish_fantasy_weekly RPC error:`, rpcError?.message);
+        if (rpcError?.message?.includes("unique") || rpcError?.message?.includes("idx_gameday_rooms_weekly")) {
+          res.status(409).json({ error: `Week ${wn} already exists for this season`, already_existed: true });
+          return;
+        }
+        res.status(500).json({ error: `Failed to publish Week ${wn} competition` });
+        return;
+      }
+
+      console.log(
+        `[fantasy/weekly] Week ${wn} published: season=${seasonId.slice(0, 8)}… ` +
+        `room=${String(rpcResult.room_id).slice(0, 8)}… props=${propsPayload.length}`
+      );
+
+      res.status(201).json({
+        room_id:         rpcResult.room_id,
+        card_id:         rpcResult.card_id,
+        room_code:       roomCode,
+        already_existed: rpcResult.already_existed ?? false,
+        week_number:     wn,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber
+  // Hub state for a weekly competition. Does NOT create participants.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase = getServiceSupabase();
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, room_code, created_at")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "weekly")
+        .eq("week_number", wn)
+        .eq("experience_type", "fantasy")
+        .is("archived_at", null)
+        .maybeSingle();
+
+      if (!room) { res.json(null); return; }
+
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, status")
+        .eq("room_id", (room as any).id)
+        .maybeSingle();
+
+      if (!card) { res.json(null); return; }
+
+      const { data: props } = await supabase
+        .from("gameday_props")
+        .select("id, scoring_scope, status")
+        .eq("card_id", (card as any).id);
+
+      const propList     = ((props ?? []) as any[]).filter((p: any) => p.scoring_scope === "competition");
+      const propIds      = ((props ?? []) as any[]).map((p: any) => p.id as string);
+      const settledCount = propList.filter((p: any) => p.status === "settled").length;
+
+      let pickCount = 0;
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase
+            .from("gameday_picks")
+            .select("id", { count: "exact", head: true })
+            .in("prop_id", propIds);
+          pickCount = count ?? 0;
+        } catch { pickCount = 0; }
+      }
+
+      let myPickCount = 0;
+      try {
+        if ((identity.userId || identity.guestToken) && propIds.length > 0) {
+          const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
+          if (viewerData) {
+            const { data: vPart } = await supabase
+              .from("gameday_participants")
+              .select("id")
+              .eq("room_id", (room as any).id)
+              .eq("season_member_id", viewerData.season_member_id)
+              .maybeSingle();
+            if (vPart) {
+              const { count } = await supabase
+                .from("gameday_picks")
+                .select("id", { count: "exact", head: true })
+                .in("prop_id", propIds)
+                .eq("participant_id", (vPart as any).id);
+              myPickCount = count ?? 0;
+            }
+          }
+        }
+      } catch { myPickCount = 0; }
+
+      res.json({
+        room_id:       (room as any).id,
+        card_id:       (card as any).id,
+        room_code:     (room as any).room_code ?? null,
+        room_status:   (room as any).status,
+        card_status:   (card as any).status,
+        week_number:   wn,
+        prop_count:    propList.length,
+        settled_count: settledCount,
+        all_settled:   propList.length > 0 && settledCount === propList.length,
+        pick_count:    pickCount,
+        my_pick_count: myPickCount,
+        created_at:    (room as any).created_at,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/lock
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/lock",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { card } = rc;
+
+      const cs = (card as any).status as string;
+      if (cs === "locked" || cs === "settled") { res.json({ card_status: cs, already_locked: true }); return; }
+
+      const { error } = await supabase
+        .from("gameday_pick_cards")
+        .update({ status: "locked", updated_at: new Date().toISOString() })
+        .eq("id", (card as any).id);
+
+      if (error) {
+        console.error(`[fantasy/weekly] Week ${wn} lock error:`, error.message);
+        res.status(500).json({ error: `Failed to lock Week ${wn}` });
+        return;
+      }
+      console.log(`[fantasy/weekly] Week ${wn} locked by ${commissioner.userId.slice(0, 8)}…`);
+      res.json({ card_status: "locked", already_locked: false });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/unlock
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/unlock",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { card } = rc;
+
+      const cs = (card as any).status as string;
+      if (cs === "settled") {
+        res.status(409).json({ error: "Cannot unlock a finalized competition", card_status: cs });
+        return;
+      }
+
+      const { count: settledCnt } = await supabase
+        .from("gameday_props")
+        .select("id", { count: "exact", head: true })
+        .eq("card_id", (card as any).id)
+        .eq("status", "settled");
+
+      if ((settledCnt ?? 0) > 0) {
+        res.status(409).json({ error: "Cannot unlock after settlement has started", settled_props: settledCnt });
+        return;
+      }
+
+      if (cs === "open" || cs === "closed") { res.json({ card_status: cs, already_unlocked: true }); return; }
+
+      const { error } = await supabase
+        .from("gameday_pick_cards")
+        .update({ status: "open", updated_at: new Date().toISOString() })
+        .eq("id", (card as any).id);
+
+      if (error) {
+        console.error(`[fantasy/weekly] Week ${wn} unlock error:`, error.message);
+        res.status(500).json({ error: `Failed to unlock Week ${wn}` });
+        return;
+      }
+      res.json({ card_status: "open", already_unlocked: false });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/play
+  // Creates participant (idempotent). Returns props + my picks.
+  // All current season members are eligible — no draft_day_eligible guard.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/play",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase = getServiceSupabase();
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) { res.status(403).json({ error: "You are not a member of this league for this season." }); return; }
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      const roomId             = (room as any).id as string;
+      const cardStatus         = (card as any).status as string;
+      const cardRosterRevision = (card as any).roster_revision ?? 0;
+
+      // Create/reuse participant (first write endpoint)
+      const { participant_id: participantId } = await ensureFantasyParticipant(supabase, roomId, viewer);
+
+      // Fetch props (no correct_answer)
+      const { data: rawProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
+        .eq("card_id", (card as any).id)
+        .order("display_order", { ascending: true });
+
+      const publishedProps = ((rawProps ?? []) as any[]).map((p: any) => ({
+        id:                 p.id as string,
+        question:           p.question as string,
+        scoring_scope:      p.scoring_scope as string,
+        point_value:        p.point_value as number,
+        answer_target_type: p.answer_target_type as string,
+        answer_options:     Array.isArray(p.answer_options) ? p.answer_options : [],
+        display_order:      p.display_order as number,
+      }));
+
+      const propIds = publishedProps.map((p) => p.id);
+      const rosterTargetPropIds = new Set(
+        publishedProps
+          .filter((p) => p.answer_target_type === "season_member" || p.answer_target_type === "fantasy_team")
+          .map((p) => p.id)
+      );
+
+      let rawPicks: any[] = [];
+      if (propIds.length > 0) {
+        const { data: rp } = await supabase
+          .from("gameday_picks")
+          .select("prop_id, selected_answer, answer_universe_revision")
+          .in("prop_id", propIds)
+          .eq("participant_id", participantId);
+        rawPicks = (rp ?? []) as any[];
+      }
+
+      const myPicks: Record<string, string> = {};
+      const stalePropIds: string[]          = [];
+      for (const pick of rawPicks) {
+        const propId  = (pick as any).prop_id as string;
+        const pickRev = (pick as any).answer_universe_revision ?? 0;
+        myPicks[propId] = (pick as any).selected_answer as string;
+        if (rosterTargetPropIds.has(propId) && pickRev < cardRosterRevision) stalePropIds.push(propId);
+      }
+
+      const { data: seasonRow } = await supabase
+        .from("fantasy_league_seasons")
+        .select("fantasy_leagues(league_name)")
+        .eq("id", seasonId)
+        .maybeSingle();
+      const leagueName = (seasonRow as any)?.fantasy_leagues?.league_name ?? null;
+
+      res.json({
+        room_id:             roomId,
+        card_id:             (card as any).id,
+        room_code:           (room as any).room_code ?? null,
+        card_status:         cardStatus,
+        week_number:         wn,
+        roster_revision:     cardRosterRevision,
+        stale_pick_prop_ids: stalePropIds,
+        participant_id:      participantId,
+        props:               publishedProps,
+        my_picks:            myPicks,
+        my_pick_count:       Object.keys(myPicks).length,
+        total_props:         publishedProps.length,
+        league_name:         leagueName,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/picks
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/picks",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase = getServiceSupabase();
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { prop_id, selected_answer } = req.body ?? {};
+      if (!prop_id || typeof prop_id !== "string") { res.status(400).json({ error: "prop_id is required" }); return; }
+      if (!selected_answer || typeof selected_answer !== "string") { res.status(400).json({ error: "selected_answer is required" }); return; }
+
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) { res.status(403).json({ error: "You are not a member of this league for this season." }); return; }
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      const cardRosterRevision = (card as any).roster_revision ?? 0;
+
+      if ((card as any).status !== "open") {
+        res.status(409).json({ error: "Picks are locked. No more changes accepted.", card_status: (card as any).status });
+        return;
+      }
+
+      const { data: prop } = await supabase
+        .from("gameday_props")
+        .select("id, answer_options")
+        .eq("id", prop_id)
+        .eq("card_id", (card as any).id)
+        .maybeSingle();
+      if (!prop) { res.status(400).json({ error: `Prop not found on this Week ${wn} card.` }); return; }
+
+      const validIds = new Set(
+        (Array.isArray((prop as any).answer_options) ? (prop as any).answer_options : []).map((o: any) => o.id)
+      );
+      if (!validIds.has(selected_answer)) {
+        res.status(400).json({
+          error: "Invalid answer. selected_answer must match a published answer option ID.",
+          valid_answer_ids: Array.from(validIds),
+        });
+        return;
+      }
+
+      const { participant_id: participantId } = await ensureFantasyParticipant(supabase, (room as any).id, viewer);
+
+      const { data: upserted, error: upsertErr } = await supabase
+        .from("gameday_picks")
+        .upsert({
+          prop_id,
+          participant_id:           participantId,
+          selected_answer,
+          submitted_at:             new Date().toISOString(),
+          answer_universe_revision: cardRosterRevision,
+        }, { onConflict: "prop_id,participant_id" })
+        .select("id, prop_id, selected_answer")
+        .single();
+
+      if (upsertErr) {
+        console.error(`[fantasy/weekly] Week ${wn} pick upsert error:`, upsertErr.message);
+        res.status(500).json({ error: "Failed to save pick. Please try again." });
+        return;
+      }
+
+      res.json({
+        pick_id:         (upserted as any).id,
+        prop_id:         (upserted as any).prop_id,
+        selected_answer: (upserted as any).selected_answer,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settlement
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settlement",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      const { data: allProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .order("display_order", { ascending: true });
+
+      const propList     = (allProps ?? []) as any[];
+      const settledCount = propList.filter((p: any) => p.status === "settled").length;
+
+      const previewLeaderboard = settledCount > 0
+        ? await _buildLeaderboard(supabase, (room as any).id, propList)
+        : [];
+
+      res.json({
+        room_id:                 (room as any).id,
+        card_id:                 (card as any).id,
+        card_status:             (card as any).status,
+        room_status:             (room as any).status,
+        week_number:             wn,
+        competition_props:       propList.map((p: any) => ({
+          id:             p.id,
+          question:       p.question,
+          display_order:  p.display_order,
+          point_value:    p.point_value,
+          scoring_scope:  p.scoring_scope,
+          status:         p.status,
+          correct_answer: p.correct_answer ?? null,
+          answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
+        })),
+        settled_count:           settledCount,
+        total_competition_count: propList.length,
+        all_settled:             propList.length > 0 && settledCount === propList.length,
+        preview_leaderboard:     previewLeaderboard,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settle
+  // Mirrors Phase 4C Draft Day settle: allows result correction before finalization.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settle",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const { prop_id, correct_answer } = req.body as { prop_id?: string; correct_answer?: string };
+      if (!prop_id)        { res.status(400).json({ error: "prop_id is required" }); return; }
+      if (!correct_answer) { res.status(400).json({ error: "correct_answer is required" }); return; }
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      // Card auto-settles to "settled" once all props are resolved; allow re-settle for corrections.
+      if (!["locked", "settled"].includes((card as any).status)) {
+        res.status(409).json({ error: "Week picks must be locked before settling results", card_status: (card as any).status });
+        return;
+      }
+
+      if ((room as any).status === "finalized") {
+        res.status(409).json({ error: "Week results are finalized and cannot be changed.", room_status: "finalized" });
+        return;
+      }
+
+      const { data: prop } = await supabase
+        .from("gameday_props")
+        .select("id, card_id, scoring_scope, status, correct_answer, answer_options")
+        .eq("id", prop_id)
+        .eq("card_id", (card as any).id)
+        .maybeSingle();
+      if (!prop) { res.status(404).json({ error: "Prop not found on this Week competition card" }); return; }
+
+      const opts     = Array.isArray((prop as any).answer_options) ? (prop as any).answer_options : [];
+      const validIds = new Set(opts.map((o: any) => o.id as string));
+      if (!validIds.has(correct_answer)) {
+        res.status(400).json({ error: "correct_answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
+        return;
+      }
+
+      const wasAlreadySettled = (prop as any).status === "settled";
+      if (wasAlreadySettled && (prop as any).correct_answer === correct_answer) {
+        res.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+        return;
+      }
+
+      const result = await settlePropCore(supabase, {
+        propId:        prop_id,
+        cardId:        (card as any).id,
+        correctAnswer: correct_answer,
+      });
+
+      console.log(
+        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}… week=${wn} answer=${correct_answer} ` +
+        `correction=${wasAlreadySettled} by=${commissioner.userId.slice(0, 8)}…`
+      );
+
+      res.json({
+        ok:               true,
+        idempotent:       false,
+        was_correction:   wasAlreadySettled,
+        prop_id,
+        correct_answer,
+        card_auto_settled: result.cardAutoSettled,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/finalize
+  // Seals Week N results. Idempotent. Requires card locked + all comp props settled.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/finalize",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase     = getServiceSupabase();
+      const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      if ((room as any).status === "finalized") {
+        res.json({ ok: true, already_finalized: true });
+        return;
+      }
+
+      // Card auto-settles to "settled" once all props are resolved — allow finalizing from either state.
+      if (!["locked", "settled"].includes((card as any).status)) {
+        res.status(409).json({ error: `Week ${wn} picks must be locked before finalizing`, card_status: (card as any).status });
+        return;
+      }
+
+      const { data: unsettled } = await supabase
+        .from("gameday_props")
+        .select("id")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .neq("status", "settled");
+
+      if ((unsettled?.length ?? 0) > 0) {
+        res.status(409).json({
+          error: `All Week ${wn} questions must be resolved before finalizing`,
+          unsettled_competition_count: unsettled?.length ?? 0,
+        });
+        return;
+      }
+
+      const { error: finalizeErr } = await supabase
+        .from("gameday_rooms")
+        .update({ status: "finalized" })
+        .eq("id", (room as any).id);
+
+      if (finalizeErr) {
+        console.error(`[fantasy/weekly] Week ${wn} finalize error:`, finalizeErr.message);
+        res.status(500).json({ error: `Failed to finalize Week ${wn}` });
+        return;
+      }
+
+      console.log(`[fantasy/weekly] Week ${wn} finalized: room=${String((room as any).id).slice(0, 8)}… by=${commissioner.userId.slice(0, 8)}…`);
+      res.json({ ok: true, already_finalized: false });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/results
+  // Member-accessible after finalization. Reveals correct answers.
+  // Before finalization: { finalized: false }.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/results",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
+
+      const supabase = getServiceSupabase();
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
+      const { room, card } = rc;
+
+      if ((room as any).status !== "finalized") { res.json({ finalized: false }); return; }
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("season_year, fantasy_leagues(league_name)")
+        .eq("id", seasonId)
+        .maybeSingle();
+
+      const { data: allProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .order("display_order", { ascending: true });
+
+      const competitionProps = (allProps ?? []) as any[];
+
+      const answerLabelMap: Record<string, Record<string, string>> = {};
+      for (const p of competitionProps) {
+        answerLabelMap[p.id] = {};
+        for (const opt of (Array.isArray(p.answer_options) ? p.answer_options : [])) {
+          if (opt?.id && opt?.label) answerLabelMap[p.id][opt.id] = opt.label;
+        }
+      }
+
+      const leaderboard = await _buildLeaderboard(supabase, (room as any).id, competitionProps);
+      const topPoints   = leaderboard[0]?.points ?? 0;
+      const winners     = leaderboard.filter((e: any) => e.points === topPoints);
+
+      let myCompPicks: any[] = [];
+      let myTotalPoints = 0;
+      let myCorrectCount = 0;
+
+      try {
+        const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
+        if (viewerData) {
+          const { data: vPart } = await supabase
+            .from("gameday_participants")
+            .select("id")
+            .eq("room_id", (room as any).id)
+            .eq("season_member_id", viewerData.season_member_id)
+            .maybeSingle();
+
+          if (vPart) {
+            const vId = (vPart as any).id as string;
+            const cpIds = competitionProps.map((p: any) => p.id as string);
+            const pvMap: Record<string, number> = {};
+            for (const p of competitionProps) pvMap[p.id] = (p.point_value as number) ?? 0;
+
+            if (cpIds.length > 0) {
+              const { data: picks } = await supabase
+                .from("gameday_picks")
+                .select("prop_id, selected_answer, is_correct")
+                .eq("participant_id", vId)
+                .in("prop_id", cpIds);
+              const pickByProp: Record<string, any> = {};
+              for (const pk of picks ?? []) pickByProp[pk.prop_id] = pk;
+
+              myCompPicks = competitionProps.map((prop: any) => {
+                const pick         = pickByProp[prop.id] ?? null;
+                const myAnswerId   = pick?.selected_answer ?? null;
+                const correctId    = prop.correct_answer ?? null;
+                const isCorrect    = pick?.is_correct ?? null;
+                const pointsEarned = isCorrect === true ? (pvMap[prop.id] ?? 0) : 0;
+                if (isCorrect === true) { myTotalPoints += pointsEarned; myCorrectCount++; }
+                return {
+                  prop_id:              prop.id,
+                  question:             prop.question,
+                  display_order:        prop.display_order,
+                  point_value:          prop.point_value,
+                  my_answer_id:         myAnswerId,
+                  my_answer_label:      myAnswerId ? (answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId) : null,
+                  correct_answer_id:    correctId,
+                  correct_answer_label: correctId ? (answerLabelMap[prop.id]?.[correctId] ?? correctId) : null,
+                  is_correct:           isCorrect,
+                  points_earned:        pointsEarned,
+                };
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn("[fantasy/weekly] results viewer lookup:", e.message);
+      }
+
+      res.json({
+        finalized:               true,
+        week_number:             wn,
+        league_name:             (season as any)?.fantasy_leagues?.league_name ?? null,
+        season_year:             (season as any)?.season_year ?? null,
+        winners:                 winners.map((w: any) => ({
+          display_name: w.display_name,
+          team_name:    w.team_name,
+          points:       w.points,
+          rank_label:   w.rank_label,
+        })),
+        leaderboard,
+        my_competition_picks:    myCompPicks,
+        my_total_points:         myTotalPoints,
+        my_correct_count:        myCorrectCount,
+        total_competition_props: competitionProps.length,
+      });
+    }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/standings
+  // Season-cumulative standings across all finalized fantasy competitions.
+  // Guests with a valid league claim may view. Read-only.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/standings",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("season_year, fantasy_leagues(league_name)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) { res.status(404).json({ error: "Season not found" }); return; }
+
+      const { standings, finalized_competitions } = await _buildSeasonStandings(supabase, seasonId);
+
+      res.json({
+        league_name:            (season as any)?.fantasy_leagues?.league_name ?? null,
+        season_year:            (season as any)?.season_year ?? null,
+        finalized_competitions,
+        standings,
+      });
+    }
+  );
 }

@@ -1,0 +1,729 @@
+The Phase 5 migration has now been applied successfully in Supabase.
+
+Proceed with Phase 5 implementation.
+
+Do NOT create or apply additional SQL unless a real implementation blocker is discovered.
+
+The architecture inspection is accepted with the following implementation guidance.
+
+==================================================
+1. BUILD WEEK 1 END TO END
+==================================================
+
+Implement:
+
+- Week 1 setup
+- Week 1 publish
+- Week 1 hub state
+- member/guest Week 1 play
+- lock/unlock
+- settlement
+- result correction before finalization
+- finalization
+- Week 1 results
+- cumulative Fantasy Season standings
+
+Do NOT build Week 2 UI yet.
+
+==================================================
+2. REUSE SHARED LOGIC — AVOID COPY/PASTE DRIFT
+==================================================
+
+Do not blindly clone the entire Draft Day implementation.
+
+Where behavior is genuinely identical, extract/reuse shared helpers.
+
+Priority candidates:
+
+- answer-option construction
+- Fantasy participant resolution/creation
+- pick validation
+- roster_revision / stale-pick handling
+- leaderboard calculation
+- settlement preview
+- result correction
+- finalization idempotency
+- finalization single-flight behavior
+- results shaping
+- stable answer-label resolution
+
+Keep route-level code explicit enough to understand.
+
+Do not build a giant generic competition framework.
+
+Goal:
+shared primitives + clear Draft Day/Weekly route behavior.
+
+==================================================
+3. VERIFY LIVE PHASE 5 MIGRATION FIRST
+==================================================
+
+Before implementation, verify live:
+
+- gameday_rooms.week_number exists
+- weekly unique index exists
+- all 7 weekly NFL templates exist
+- publish_fantasy_weekly RPC exists
+- weekly phase/check constraints are valid
+- competition_type='weekly' works
+
+Return the verification in the final report.
+
+==================================================
+4. WEEK 1 SETUP
+==================================================
+
+Fantasy League Hub:
+
+FANTASY SEASON
+
+Week 1 Swayger
+Not set up
+
+[ Set Up Week 1 ]
+
+Commissioner flow:
+
+Choose Questions
+→ Review Week 1
+→ Publish
+
+Use weekly templates only.
+
+Cap:
+8 maximum
+
+Recommend:
+5–8
+
+No member/guest access to setup.
+
+==================================================
+5. WEEK 1 PUBLISH
+==================================================
+
+Use publish_fantasy_weekly.
+
+Verify atomically creates:
+
+- weekly fantasy gameday_room
+- league_season_id
+- competition_type='weekly'
+- week_number=1
+- weekly pick card
+- published props
+- stable answer_options snapshots
+
+Duplicate Week 1 creation must be prevented by both:
+
+- route/RPC behavior
+- DB partial unique index
+
+If Week 1 already exists, return the existing competition or a clean conflict/idempotent response.
+
+Never create duplicate Week 1 rooms.
+
+==================================================
+6. MEMBER / GUEST CONTINUITY
+==================================================
+
+Critical requirement:
+
+Existing Fantasy members do NOT join again.
+
+Authenticated member:
+existing claim / season member resolves automatically.
+
+Guest:
+existing fantasy guest token resolves automatically.
+
+Opening Week 1 should create/reuse only the gameday_participant for that weekly room.
+
+Do NOT create:
+
+- new persistent league member
+- new season member
+- new fantasy team
+- new member claim
+- new guest token
+
+==================================================
+7. WEEK 1 PLAY
+==================================================
+
+Create Week 1 member screen:
+
+WEEK 1 SWAYGER
+
+Make Your Picks
+
+Reuse Draft Day play behavior:
+
+- auto-save
+- partial picks
+- update while open
+- stable answer IDs
+- fabricated answer rejected
+- no correct_answer exposure
+- stale roster warning
+- reconfirm clears stale state
+
+Do not use Draft Day-specific copy.
+
+==================================================
+8. WEEK 1 HUB STATES
+==================================================
+
+Commissioner/member hub state should be explicit.
+
+NOT SET UP:
+Commissioner:
+[ Set Up Week 1 ]
+
+OPEN:
+Member:
+[ Make My Picks ]
+or
+[ View / Update My Picks ]
+
+Commissioner additionally:
+[ Manage Week 1 ]
+[ Lock Picks ]
+
+LOCKED:
+Member:
+[ View My Picks ]
+
+Commissioner:
+[ Resolve Week 1 ]
+
+PARTIAL SETTLEMENT:
+Commissioner:
+[ Continue Resolving ]
+x / y resolved
+
+ALL RESULTS ENTERED:
+Commissioner:
+[ Finalize Week 1 ]
+
+FINALIZED:
+Everyone:
+[ View Week 1 Results ]
+
+Reuse the fixed Phase 4C finalization UX.
+
+==================================================
+9. FINALIZATION RELIABILITY
+==================================================
+
+Do NOT regress the finalization bugs we just fixed.
+
+Final confirmation must:
+
+- immediately set loading state
+- disable duplicate taps
+- guard handler with in-flight state
+- remain server-idempotent
+- treat already_finalized=true as success
+- recover from ambiguous network response by re-fetching room state
+- navigate deterministically afterward
+
+Use the same proven pattern as Draft Day.
+
+==================================================
+10. RESULT CORRECTION
+==================================================
+
+Before finalization:
+
+commissioner may freely change a previously entered result.
+
+A → B → A must work.
+
+Same answer:
+idempotent success.
+
+Different answer:
+re-run settlement/re-score.
+
+After finalization:
+competition result changes rejected.
+
+Mirror classic Game Day and corrected Draft Day behavior.
+
+==================================================
+11. OPEN-ROSTER REUSE
+==================================================
+
+While Week 1 card is OPEN:
+
+new league member:
+- eligible for Week 1
+- append member/team to relevant answer_options
+- roster_revision increments
+- existing affected saved picks become stale
+
+While Week 1 LOCKED:
+
+new league member:
+- joins Fantasy league
+- excluded from Week 1
+- answer universe unchanged
+- roster_revision unchanged
+
+Do not create new revision infrastructure.
+
+==================================================
+12. WEEK 1 RESULTS
+==================================================
+
+Results screen:
+
+WEEK 1 SWAYGER RESULTS
+
+🏆 WEEK 1 CHAMPION
+
+Name
+Team
+Points
+
+Leaderboard
+
+Then:
+
+YOUR PICKS
+
+For each competition prop:
+- question
+- your pick
+- correct answer
+- points earned
+
+Do not expose other members' individual picks.
+
+Guest results access must work through existing claim.
+
+==================================================
+13. SEASON STANDINGS
+==================================================
+
+Implement:
+
+GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/standings
+
+Derived from authoritative finalized Fantasy competitions only.
+
+Include:
+
+- Draft Day finalized competition points
+- finalized weekly competition points
+
+Exclude:
+
+- pending competitions
+- scoring_scope='season'
+- claimed league members who never submitted a competition pick
+
+Aggregate by season_member_id.
+
+Return at minimum:
+
+- season_member_id
+- display_name
+- fantasy_team_id
+- team_name
+- total_points
+- draft_day_points
+- weekly_points
+- competitions_played
+- weekly_wins if implemented cleanly
+- rank / rank_label
+
+==================================================
+14. DRAFT DAY = WEEK 0
+==================================================
+
+Preserve this product rule.
+
+Draft Day competition points count toward Season Standings.
+
+Do NOT modify Draft Day historical results.
+
+Example fixture:
+
+Draft Day:
+Darius 45
+Mike 30
+
+Week 1:
+Darius 20
+Mike 40
+
+Season:
+Mike 70
+Darius 65
+
+This exact case must be tested.
+
+==================================================
+15. PARTICIPATION RULE
+==================================================
+
+This matters.
+
+competitions_played and season standings inclusion must require:
+
+at least one saved competition-scope pick in that room.
+
+Do NOT use gameday_participants row existence alone.
+
+Someone opening a screen must not create a phantom 0-point season participant.
+
+If _buildLeaderboard currently includes zero-pick participants, do not blindly reuse that behavior for Season Standings.
+
+==================================================
+16. WEEKLY WINS
+==================================================
+
+If implemented:
+
+weekly_wins =
+number of finalized competition_type='weekly' rooms where member's score equals that room's top score.
+
+Co-winners each receive a weekly win.
+
+Draft Day does NOT count as weekly win.
+
+Keep derived.
+
+If this adds disproportionate complexity, defer it and report that.
+
+Do not create a mutable win counter.
+
+==================================================
+17. SEASON STANDINGS UI
+==================================================
+
+On League Hub, add a compact standings preview.
+
+Suggested:
+
+SEASON STANDINGS
+
+1. Mike — 70 pts
+2. Darius — 65 pts
+3. Chris — 35 pts
+
+[ View Standings ]
+
+If only Draft Day is finalized:
+show standings based on Draft Day.
+
+After Week 1 finalizes:
+same standings should immediately update.
+
+This moment is a core Phase 5 acceptance criterion.
+
+==================================================
+18. STANDINGS DETAIL SCREEN
+==================================================
+
+Create a simple member-safe Season Standings screen.
+
+Display:
+
+rank
+member
+team
+total points
+
+Optional secondary breakdown:
+
+Draft Day
+Weekly
+
+Do not overdesign.
+
+No charts.
+No historical trends.
+No advanced tiebreakers.
+
+==================================================
+19. TIES
+==================================================
+
+Use competition ranking:
+
+60
+60
+40
+
+→
+T-1
+T-1
+3
+
+No arbitrary tiebreaker.
+
+Same for:
+- Week 1 results
+- Season standings
+
+==================================================
+20. WEEKLY PROP QUESTIONS
+==================================================
+
+Use the migrated V1 library.
+
+Do not add more templates this phase unless one of the 7 is invalid/unusable.
+
+Confirm each can be manually and objectively resolved.
+
+If a template has ambiguous semantics, flag it rather than inventing settlement logic.
+
+==================================================
+21. PAY ATTENTION TO “NO ONE”
+==================================================
+
+For supports_no_one props:
+
+stable answer:
+{
+  id: "no_one",
+  label: "No one",
+  type: "static"
+}
+
+Validate against published answer_options.
+
+Do not special-case labels.
+
+==================================================
+22. QUESTION EDITING FAIRNESS
+==================================================
+
+Preserve Draft Day fairness rule:
+
+Once any Week 1 pick exists:
+commissioner cannot change the published question set.
+
+Roster may still grow while open.
+
+Questions may not.
+
+==================================================
+23. MANAGE WEEK 1
+==================================================
+
+If needed, reuse Draft Day manage-before-picks behavior.
+
+Before picks:
+commissioner may edit selected weekly questions.
+
+After first pick:
+question set immutable.
+
+Do not build a large weekly admin screen.
+
+==================================================
+24. REWARDS
+==================================================
+
+Display-only.
+
+Use existing established weekly reward/default fields if available.
+
+Do not build:
+- payments
+- payout tracking
+- confirmation of payment
+
+==================================================
+25. TEST SUITE
+==================================================
+
+Create:
+
+server/test-fantasy-phase5.ts
+
+Cover at minimum:
+
+WEEK CREATION
+- commissioner create
+- member forbidden
+- guest forbidden
+- duplicate Week 1 prevented
+- room identity correct
+
+IDENTITY
+- auth member continuity
+- guest continuity
+- same season_member reused
+- no duplicate claim/member/team
+
+PICKS
+- save
+- update
+- partial
+- fabricated answer rejected
+- lock enforcement
+
+ROSTER
+- add while open
+- revision increment
+- stale pick
+- reconfirm
+- add after lock excluded
+
+SETTLEMENT
+- commissioner only
+- result correction
+- same-answer idempotency
+- weighted scoring
+- finalization single-flight/idempotency
+- post-final correction rejected
+
+RESULTS
+- winner
+- ties
+- own picks only
+- guest access
+
+SEASON STANDINGS
+- Draft Day included
+- Week 1 included
+- pending room excluded
+- season-scope excluded
+- no-pick participant excluded
+- ties
+- guest included normally
+- stable across reload
+
+==================================================
+26. FULL REGRESSION
+==================================================
+
+Baseline before Phase 5:
+
+Phase 2: 64
+Phase 3: 60
+Phase 3B: 42
+Phase 4A: 100
+Phase 4B + Manage: 153
+Open Roster: 64
+Phase 4C: 122
+Classic settle: 1
+
+Baseline total:
+606
+
+After Phase 5:
+
+Run all previous suites + Phase 5.
+
+Return exact:
+- total
+- passed
+- failed
+- skipped
+
+Do not modify old expectations simply to make regressions pass.
+
+==================================================
+27. MANUAL QA TARGET
+==================================================
+
+After implementation I should be able to manually do this:
+
+COMMISSIONER
+
+1. Open existing Fantasy League.
+2. See Season Standings based on Draft Day.
+3. See FANTASY SEASON / Week 1.
+4. Tap Set Up Week 1.
+5. Select weekly props.
+6. Review.
+7. Publish.
+8. Make my own picks.
+9. Confirm other existing members automatically see Week 1.
+10. Lock picks.
+11. Resolve Week 1.
+12. Correct one result A → B before finalization.
+13. Finalize once with protected loading state.
+14. See Week 1 champion.
+15. Return to Hub.
+16. See Season Standings immediately update from Draft Day + Week 1.
+
+MEMBER
+
+1. Open same league.
+2. No join/reclaim flow.
+3. Week 1 available automatically.
+4. Make/update picks.
+5. Picks lock correctly.
+6. Results available only after finalize.
+7. Season Standings updated.
+
+GUEST
+
+Same flow using existing guest claim/token.
+
+==================================================
+28. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- Week 2 UI
+- automatic week creation
+- schedule automation
+- provider integrations
+- NFL stats API
+- automatic settlement
+- automatic kickoff lock
+- notifications
+- Season Receipt settlement UI
+- playoffs
+- payouts
+- advanced standings
+- commissioner removal
+- social sharing
+
+==================================================
+29. RETURN
+==================================================
+
+Return:
+
+1. live migration verification
+2. shared helpers extracted/reused
+3. API routes implemented
+4. Week 1 setup behavior
+5. member/guest continuity
+6. Week 1 play behavior
+7. roster revision behavior
+8. settlement/correction behavior
+9. finalization reliability
+10. Week 1 results behavior
+11. Season Standings algorithm
+12. Draft Day Week 0 verification
+13. no-pick participant behavior
+14. tie behavior
+15. files changed
+16. Phase 5 test results
+17. full regression totals
+18. bugs found/fixed
+19. manual QA steps
+20. what remains before Week 2
+
+Then STOP.
+
+Do not begin Week 2.
+
+Final status:
+
+PHASE 5 READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

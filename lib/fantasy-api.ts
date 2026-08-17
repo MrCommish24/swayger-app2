@@ -607,6 +607,321 @@ export async function updateLeagueName(
   );
 }
 
+// ── Phase 5: Weekly Competitions ──────────────────────────────────────────────
+
+/** A weekly prop template returned by GET /weeks/:weekNumber/templates */
+export interface WeeklyTemplate {
+  id: string;
+  question: string;
+  scoring_scope: "competition";
+  point_value: number;
+  answer_target_type: "season_member" | "fantasy_team" | "yes_no" | "static" | null;
+  settlement_window: string;
+  is_default: boolean;
+  display_order: number;
+  supports_no_one: boolean;
+}
+
+export interface WeeklyTemplates {
+  sport: string;
+  week_number: number;
+  templates: WeeklyTemplate[];
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/templates
+export async function getWeeklyTemplates(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklyTemplates> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/templates`,
+    {},
+    auth
+  );
+}
+
+export interface WeeklyPublishResult {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  already_existed: boolean;
+  week_number: number;
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish
+export async function publishWeekly(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  selectedPropIds: string[],
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklyPublishResult> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/publish`,
+    { method: "POST", body: JSON.stringify({ selected_prop_ids: selectedPropIds }) },
+    auth
+  );
+}
+
+/** Hub state for a weekly competition. Null when not yet published. */
+export interface WeeklyStatus {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  room_status: "draft" | "active" | "finalized";
+  card_status: "closed" | "open" | "locked" | "settled";
+  week_number: number;
+  prop_count: number;
+  settled_count: number;
+  all_settled: boolean;
+  pick_count: number;
+  my_pick_count: number;
+  created_at: string;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber
+export async function getWeekStatus(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklyStatus | null> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}`,
+    {},
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/lock
+export async function lockWeekly(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ card_status: string; already_locked: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/lock`,
+    { method: "POST" },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/unlock
+export async function unlockWeekly(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ card_status: string; already_unlocked: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/unlock`,
+    { method: "POST" },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/finalize
+export async function finalizeWeekly(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ ok: boolean; already_finalized: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/finalize`,
+    { method: "POST" },
+    auth
+  );
+}
+
+/** Member play state returned by GET /weeks/:weekNumber/play */
+export interface WeeklyPlayState {
+  room_id: string;
+  card_id: string;
+  room_code: string | null;
+  card_status: "open" | "locked" | "settled";
+  week_number: number;
+  roster_revision: number;
+  stale_pick_prop_ids: string[];
+  participant_id: string;
+  props: DraftDayProp[];
+  my_picks: Record<string, string>;
+  my_pick_count: number;
+  total_props: number;
+  league_name?: string | null;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/play
+export async function getWeeklyPlay(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklyPlayState> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/play`,
+    {},
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/picks
+export async function submitWeeklyPick(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  propId: string,
+  selectedAnswer: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ pick_id: string; prop_id: string; selected_answer: string }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/picks`,
+    { method: "POST", body: JSON.stringify({ prop_id: propId, selected_answer: selectedAnswer }) },
+    auth
+  );
+}
+
+/** A competition prop returned by GET /weeks/:weekNumber/settlement */
+export interface WeeklySettlementProp {
+  id: string;
+  question: string;
+  display_order: number;
+  point_value: number;
+  scoring_scope: "competition";
+  status: "pending" | "settled";
+  correct_answer: string | null;
+  answer_options: DraftDayAnswerOption[];
+}
+
+export interface WeeklySettlementState {
+  room_id: string;
+  card_id: string;
+  card_status: string;
+  room_status: string;
+  week_number: number;
+  competition_props: WeeklySettlementProp[];
+  settled_count: number;
+  total_competition_count: number;
+  all_settled: boolean;
+  preview_leaderboard: DraftDaySettlementLeaderboardEntry[];
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settlement
+export async function getWeeklySettlement(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklySettlementState> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/settlement`,
+    {},
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settle
+export async function settleWeeklyProp(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  propId: string,
+  correctAnswer: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; card_auto_settled: boolean }> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/settle`,
+    { method: "POST", body: JSON.stringify({ prop_id: propId, correct_answer: correctAnswer }) },
+    auth
+  );
+}
+
+export interface WeeklyResultsPickEntry {
+  prop_id: string;
+  question: string;
+  display_order: number;
+  point_value: number;
+  my_answer_id: string | null;
+  my_answer_label: string | null;
+  correct_answer_id: string | null;
+  correct_answer_label: string | null;
+  is_correct: boolean | null;
+  points_earned: number;
+}
+
+export interface WeeklyResults {
+  finalized: boolean;
+  week_number?: number;
+  league_name?: string | null;
+  season_year?: number | null;
+  winners?: Array<{ display_name: string; team_name: string | null; points: number; rank_label: string }>;
+  leaderboard?: DraftDayResultsLeaderboardEntry[];
+  my_competition_picks?: WeeklyResultsPickEntry[];
+  my_total_points?: number;
+  my_correct_count?: number;
+  total_competition_props?: number;
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/results
+export async function getWeeklyResults(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<WeeklyResults> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/results`,
+    {},
+    auth
+  );
+}
+
+// ── Phase 5: Season Standings ──────────────────────────────────────────────────
+
+export interface SeasonStandingEntry {
+  rank: number;
+  rank_label: string;
+  season_member_id: string;
+  display_name: string | null;
+  fantasy_team_id: string | null;
+  team_name: string | null;
+  total_points: number;
+  draft_day_points: number;
+  weekly_points: number;
+  competitions_played: number;
+  weekly_wins: number;
+}
+
+export interface FinalizedCompetition {
+  room_id: string;
+  competition_type: "draft_day" | "weekly";
+  week_number: number | null;
+  label: string;
+}
+
+export interface SeasonStandings {
+  league_name: string | null;
+  season_year: number | null;
+  finalized_competitions: FinalizedCompetition[];
+  standings: SeasonStandingEntry[];
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/standings
+export async function getSeasonStandings(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<SeasonStandings> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/standings`,
+    {},
+    auth
+  );
+}
+
 // POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/claim
 export interface ClaimSeatPayload {
   league_member_id: string;
