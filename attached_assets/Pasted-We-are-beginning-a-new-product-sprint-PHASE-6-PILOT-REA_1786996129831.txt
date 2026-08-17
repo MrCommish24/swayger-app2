@@ -1,0 +1,1753 @@
+We are beginning a new product sprint:
+
+# PHASE 6 — PILOT READINESS
+## Commissioner Setup + Social Pick Reveal
+
+Swayger Fantasy now has a functioning end-to-end season loop:
+
+- Fantasy league setup
+- persistent league/member/team identities
+- Draft Day Swayger
+- weekly Swaygers
+- repeatable Week N → Week N+1 workflow
+- guest/auth joining
+- guest → account upgrade
+- commissioner-assisted account recovery
+- open roster lifecycle
+- picks
+- locking
+- result settlement/correction
+- finalization
+- season standings
+- weekly sharing/reminders
+- commissioner NEXT UP workflow
+- default weekly questions
+- Use Last Week's Questions
+
+Phase 5.3 is complete.
+
+We are intentionally NOT beginning another major feature expansion.
+
+The goal now is:
+
+# MAKE SWAYGER FANTASY READY TO PUT IN FRONT OF A REAL 10–15 PERSON FANTASY LEAGUE
+
+This sprint should remove the most obvious friction and make the social payoff stronger.
+
+The central product question is:
+
+Can one commissioner set up a real league, invite 10–15 people, run Draft Day and weekly Swaygers, and have the experience feel polished enough that we can learn from behavior rather than from preventable UX problems?
+
+==================================================
+1. PHASE 6 SCOPE
+==================================================
+
+This sprint has FIVE primary pilot-readiness areas:
+
+A. BULK MEMBER / TEAM IMPORT
+B. LARGE-ROSTER ANSWER SELECTION UX
+C. POST-LOCK PICK REVEAL / DISTRIBUTION
+D. SIMPLE FLEXIBLE WEEKLY REWARDS
+E. SAFE LEAGUE ARCHIVE
+
+Secondary items such as:
+
+- QR invite
+- Sleeper import
+- 1v1 icon polish
+
+are NOT part of this first implementation pass.
+
+We will address them after these five P0 areas are clean.
+
+==================================================
+2. IMPORTANT — INSPECT BEFORE BUILDING
+==================================================
+
+Do NOT immediately implement all five features.
+
+First inspect the current code and schema for each area.
+
+Return an architecture/readiness audit covering:
+
+1. what exists already
+2. what can be reused
+3. what is missing
+4. whether SQL is required
+5. whether existing APIs already support the needed behavior
+6. risks to current working flows
+7. exact proposed implementation order
+
+If ANY feature requires SQL:
+
+- write the smallest focused migration(s)
+- explain why they are necessary
+- STOP
+
+I will manually apply SQL.
+
+Do not continue past a SQL checkpoint without confirmation.
+
+If no SQL is required, proceed with implementation after the audit.
+
+==================================================
+3. NON-NEGOTIABLE REGRESSION PRINCIPLE
+==================================================
+
+Do not destabilize the working Fantasy engine.
+
+Preserve:
+
+- Draft Day
+- weekly Swaygers
+- open roster
+- guest claims
+- auth claims
+- guest recovery
+- commissioner recovery links
+- settlement
+- correction before finalization
+- immutable finalized results
+- season standings
+- Week N sequencing
+- share/reminder flow
+- Phase 5.3 commissioner workflow
+
+Do NOT rewrite the underlying Fantasy identity architecture.
+
+Do NOT change member IDs, season member IDs, team IDs, participant IDs, or historical pick attribution.
+
+==================================================
+4. AREA A — BULK MEMBER / TEAM IMPORT
+==================================================
+
+CURRENT PROBLEM:
+
+Entering 10–15 league members and fantasy team names one at a time creates unnecessary commissioner friction.
+
+For a real pilot, the commissioner should be able to paste an entire league roster at once.
+
+This is NOT provider API import yet.
+
+Build a generic:
+
+# PASTE YOUR LEAGUE
+
+flow.
+
+==================================================
+5. BULK IMPORT USER EXPERIENCE
+==================================================
+
+On league setup and/or Manage League, commissioner should have:
+
+Add Member
+
+and
+
+Paste League Roster
+
+or:
+
+Import Members
+
+Preferred UX:
+
+PASTE YOUR LEAGUE
+
+Paste member names and fantasy team names from:
+
+- a spreadsheet
+- a text message
+- email
+- another fantasy platform
+- notes
+
+Example:
+
+Darius, The Monstars
+Mike, Sunday Scaries
+Chris, Fourth & Long
+Rob, Grim
+Mally, All Eyes
+
+[ Review Import ]
+
+==================================================
+6. BULK IMPORT PARSING
+==================================================
+
+Support simple pasted formats.
+
+At minimum:
+
+Darius, The Monstars
+
+Darius | The Monstars
+
+Darius    The Monstars
+(tab-separated)
+
+And pasted spreadsheet rows.
+
+Do not attempt sophisticated AI parsing.
+
+Use deterministic parsing.
+
+Preferred parsing order:
+
+1. newline → rows
+2. tab if present
+3. pipe if present
+4. comma if present
+
+Trim whitespace.
+
+Ignore completely empty rows.
+
+Do not silently invent missing team names.
+
+==================================================
+7. BULK IMPORT REVIEW
+==================================================
+
+Never directly create members immediately after paste.
+
+Show:
+
+REVIEW IMPORT
+
+Member                 Fantasy Team
+Darius                 The Monstars
+Mike                   Sunday Scaries
+Chris                  Fourth & Long
+
+Allow inline correction before saving.
+
+Display:
+
+12 members ready to add
+
+[ Add 12 Members ]
+
+If a row is incomplete:
+
+flag it.
+
+Example:
+
+Rob
+Team name required
+
+Do not import invalid rows silently.
+
+==================================================
+8. BULK IMPORT SAFETY
+==================================================
+
+Reuse the existing atomic/idempotent member-add architecture.
+
+We already have durable participant/member operation handling.
+
+Do NOT create an alternate identity path.
+
+For each imported member, final creation should use the same underlying member/team creation semantics as manual Add Member.
+
+Prefer a batch endpoint/transaction if architecturally clean.
+
+Important:
+
+A network retry must NOT duplicate all 12 members.
+
+Design idempotency deliberately.
+
+Possible approaches:
+
+- one batch Idempotency-Key
+- deterministic operation records
+- existing fantasy_participant_operations pattern
+
+Inspect first.
+
+==================================================
+9. DUPLICATE DETECTION
+==================================================
+
+Before import, detect obvious duplicates against:
+
+- existing league member display names
+- existing fantasy team names
+- duplicate rows within pasted import
+
+Do NOT automatically merge people.
+
+Flag:
+
+Possible duplicate:
+Mike — Sunday Scaries
+
+Commissioner may:
+
+Skip
+or
+Correct
+
+Do not overwrite an existing member automatically.
+
+==================================================
+10. COMMISSIONER OWN TEAM
+==================================================
+
+Preserve the existing commissioner team/member requirements.
+
+Bulk import should NOT accidentally recreate the commissioner.
+
+If commissioner already exists in league:
+
+detect and flag any pasted duplicate.
+
+Do not create a second commissioner member row.
+
+==================================================
+11. BULK IMPORT LIMITS
+==================================================
+
+This is pilot readiness.
+
+Do not build for 1,000-member leagues.
+
+Reasonable league limits are acceptable.
+
+Preserve current Fantasy league/member caps if they exist.
+
+If no cap exists, do not invent a low cap that breaks 16-team leagues.
+
+Test at minimum:
+
+4
+10
+12
+15
+16
+
+members.
+
+==================================================
+12. AREA B — LARGE-ROSTER ANSWER SELECTION UX
+==================================================
+
+CURRENT PROBLEM:
+
+Roster-target questions can contain 10–16 possible answers.
+
+Rendering every possible answer vertically inside every question card creates an excessively long interface.
+
+Example:
+
+Who scores the most fantasy points this week?
+
+Then 14 vertically stacked team buttons.
+
+Multiply this by 5–8 questions and the play experience becomes unwieldy.
+
+Fix this before pilot.
+
+==================================================
+13. DESIRED LARGE-ROSTER PICK UX
+==================================================
+
+For:
+
+answer_target_type = fantasy_team
+
+and any future large roster-target answer universe:
+
+do NOT render a giant vertical radio list.
+
+Preferred interaction:
+
+QUESTION CARD
+
+Who scores the most fantasy points this week?
+
+Your Pick
+
+The Monstars
+Darius
+
+[ Choose Team ]
+
+Tap:
+
+CHOOSE A TEAM
+
+Then show an optimized selection interface.
+
+Preferred:
+
+- modal
+- bottom sheet
+- dedicated lightweight selector
+
+Use what fits the current Expo/React Native architecture best.
+
+==================================================
+14. LARGE ROSTER SELECTOR LAYOUT
+==================================================
+
+For the answer selector:
+
+Prefer approximately a 2-column layout when screen width permits.
+
+Example:
+
+The Monstars              Sunday Scaries
+Darius                     Mike
+
+Grim                       All Eyes
+Rob                        Mally
+
+Fourth & Long             House
+Chris                      Andre
+
+Do NOT cram text.
+
+Each option should remain clearly tappable.
+
+On narrow screens, responsive behavior may fall back cleanly.
+
+Do not create horizontal scrolling for team choices.
+
+==================================================
+15. TEAM + PERSON DISPLAY
+==================================================
+
+For fantasy-team answers, where both are available:
+
+Primary:
+Team Name
+
+Secondary:
+Member / manager display name
+
+Example:
+
+The Monstars
+Darius
+
+This helps players recognize both the team and the person.
+
+Do not expose internal IDs.
+
+==================================================
+16. PICK SELECTOR BEHAVIOR
+==================================================
+
+After selection:
+
+close selector
+
+show:
+
+Your Pick
+The Monstars
+Darius
+
+[ Change Pick ]
+
+Autosave behavior should remain exactly as currently implemented.
+
+Do not change pick persistence semantics.
+
+If user returns to the selector:
+
+current choice should be visibly selected.
+
+==================================================
+17. SMALL ANSWER SETS
+==================================================
+
+For:
+
+yes/no
+small static choices
+No One
+
+keep the existing compact inline buttons if they work well.
+
+Do not route every 2-option question through a modal.
+
+Use the new selector primarily where the answer universe becomes visually cumbersome.
+
+Define a clear threshold.
+
+Example:
+
+if answer_options.length > 6
+→ selector
+
+else
+→ inline
+
+Inspect current UX and choose a sensible threshold.
+
+==================================================
+18. 15-MEMBER QA
+==================================================
+
+Create/test a 15-member league.
+
+Verify:
+
+- cards remain reasonably compact
+- no giant page of 75+ answer buttons
+- selector scrolls cleanly
+- long team names don't destroy layout
+- selected answer remains obvious
+- Change Pick works
+- autosave works
+- stale-pick/reconfirm behavior still works after roster revision
+
+==================================================
+19. AREA C — POST-LOCK PICK REVEAL
+==================================================
+
+This is more than polish.
+
+This is a Swayger product-value feature.
+
+Core principle:
+
+# PICKS ARE PRIVATE WHILE OPEN.
+# PICKS BECOME SOCIAL ONCE LOCKED.
+
+While picks are open:
+
+NO player can see:
+
+- vote distribution
+- who picked what
+- percentages
+- other members' selections
+
+Otherwise later players could be influenced.
+
+==================================================
+20. REVEAL TIMING
+==================================================
+
+Reveal may begin once the pick card is no longer editable.
+
+Acceptable locked states:
+
+locked
+settled
+
+and finalized room states as appropriate.
+
+Use the existing Game Day / Fantasy lifecycle.
+
+Do not create a new "reveal" state.
+
+Do NOT reveal when card is open.
+
+==================================================
+21. AGGREGATE PICK DISTRIBUTION
+==================================================
+
+After lock, for each competition-scope prop show:
+
+WHO THE LEAGUE PICKED
+
+Example:
+
+Who scores the most points this week?
+
+The Monstars
+5 picks · 50%
+
+Sunday Scaries
+3 picks · 30%
+
+Grim
+2 picks · 20%
+
+If no one picked an option:
+
+prefer hiding 0-count answers in the default distribution view unless showing them improves clarity.
+
+Use denominator:
+
+number of submitted valid picks for THIS PROP
+
+not total eligible members.
+
+Example:
+
+8 people answered this prop:
+5 / 8 = 62.5%
+
+Do not use total league size if two members skipped the question.
+
+==================================================
+22. INDIVIDUAL PICK REVEAL
+==================================================
+
+Allow a player to see WHO chose an answer after lock.
+
+Preferred interaction:
+
+The Monstars
+5 picks
+
+[ View Picks ]
+
+Then:
+
+Darius
+Mike
+Rob
+Chris
+Mally
+
+Could also be an expandable row.
+
+Keep UI compact.
+
+Do not dump 15 names under every answer by default.
+
+==================================================
+23. ALL-PICKS VIEW
+==================================================
+
+Also consider whether a compact:
+
+View Everyone's Picks
+
+screen is cleaner.
+
+Possible design:
+
+Question 1
+Monstars — Darius, Rob, Mike
+Grim — Chris, Mally
+
+Question 2
+...
+
+Choose the architecture that keeps the primary results/pick screen clean.
+
+Do not build multiple redundant reveal interfaces.
+
+==================================================
+24. REVEAL BEFORE SETTLEMENT
+==================================================
+
+Important:
+
+The league should be able to see picks immediately AFTER LOCK, even before results are settled.
+
+That creates the social moment.
+
+Example:
+
+Week 3 locks Sunday at noon.
+
+People immediately see:
+
+"Seven people picked Mike."
+
+Results do not need to be known yet.
+
+Do not tie reveal to settlement.
+
+==================================================
+25. RESULT INTEGRATION
+==================================================
+
+After settlement, enhance the same distribution display if simple.
+
+Example:
+
+The Monstars
+5 picks · 50%
+✓ Correct
+
+Sunday Scaries
+3 picks · 30%
+
+Do not rebuild the results system.
+
+Reuse current correct-answer state.
+
+==================================================
+26. "RECEIPTS" PRODUCT LANGUAGE
+==================================================
+
+Use Swayger's existing personality where appropriate.
+
+Potential customer-facing language:
+
+PICKS ARE LOCKED
+
+The receipts are in.
+
+See what your league picked.
+
+or:
+
+LEAGUE PICKS
+
+Do not overdo gimmicky copy.
+
+Keep it clean and premium.
+
+==================================================
+27. DATA / PRIVACY
+==================================================
+
+Pick reveal should only be available to participants/league members who are authorized to view the Fantasy competition.
+
+Do not create a public endpoint exposing all member picks merely because someone has a Week URL.
+
+Inspect current Fantasy viewer authorization.
+
+Non-members should not gain access to individual pick history.
+
+==================================================
+28. PICK REVEAL API
+==================================================
+
+Prefer one efficient response.
+
+For a locked room/card return per prop:
+
+prop_id
+question
+answer distributions:
+  answer_id
+  label
+  count
+  percentage
+  pickers:
+    participant display name
+    team name if useful
+
+Do not require:
+
+one request per prop
+or
+one request per answer.
+
+Avoid N+1 API behavior.
+
+==================================================
+29. ANSWER STABILITY
+==================================================
+
+Use stable answer IDs.
+
+Do NOT aggregate by answer label text.
+
+Distribution must group by saved answer identity.
+
+This matters because:
+
+- names can change
+- team names can change
+- historical labels are snapshots
+
+Use existing saved pick/answer snapshot semantics.
+
+==================================================
+30. ABSTENTIONS
+==================================================
+
+If:
+
+15 eligible
+12 played this prop
+
+show distribution denominator as:
+
+12 picks
+
+Optionally:
+
+3 did not pick
+
+if useful.
+
+Do not make unanswered members appear to have selected "No one."
+
+"No one" is a real static answer only when the prop supports it.
+
+==================================================
+31. TIES
+==================================================
+
+Distribution has no special issue with ties.
+
+If:
+
+5 chose A
+5 chose B
+
+show equal percentages.
+
+Do not choose a "popular winner."
+
+==================================================
+32. AREA D — SIMPLE WEEKLY REWARDS
+==================================================
+
+CURRENT PRODUCT NEED:
+
+The weekly reward may change from week to week.
+
+Example:
+
+Week 1 = $20
+Week 2 = Dinner
+Week 3 = No reward
+Week 4 = $25
+
+We need flexibility without building a prize-management platform.
+
+==================================================
+33. REWARD PRODUCT MODEL
+==================================================
+
+Preferred pilot model:
+
+SEASON DEFAULT REWARD
+
+Example:
+
+Weekly reward:
+$25
+
+Then when setting up Week N:
+
+WEEK N REWARD
+
+○ Use season default
+   $25
+
+○ Override this week
+
+If override:
+
+Reward
+[ Dinner at Buffalo Wild Wings ]
+
+Allow free-text reward.
+
+Do not require reward type taxonomy.
+
+==================================================
+34. NO REWARD
+==================================================
+
+Support:
+
+No reward this week
+
+cleanly.
+
+Possible UI:
+
+○ Use season default
+○ Custom reward
+○ No reward
+
+Do not force `$0` as a text workaround.
+
+==================================================
+35. DO NOT BUILD WEEK-RANGE REWARD SCHEDULING YET
+==================================================
+
+Original idea included:
+
+"select reward and number of weeks"
+
+Do NOT build a weekly reward calendar/range engine in this sprint.
+
+Use:
+
+season default
++
+per-week override
+
+This solves the immediate pilot need with much less complexity.
+
+If real commissioners ask for:
+
+Weeks 1–5 = $20
+Weeks 6–10 = $50
+
+we can add it later.
+
+==================================================
+36. REWARD DISPLAY
+==================================================
+
+If a Week has a reward:
+
+show it in appropriate places such as:
+
+Week 3 Swayger
+Reward: $25
+
+and/or:
+
+Winner gets:
+Dinner at Buffalo Wild Wings
+
+Do not clutter every card.
+
+Relevant:
+
+- setup/review
+- current Swayger
+- final results/winner
+
+Keep concise.
+
+==================================================
+37. REWARD WINNER
+==================================================
+
+Do not create payout tracking.
+
+Swayger only records/displays:
+
+what the commissioner said the reward is.
+
+Do not add:
+
+paid/unpaid
+Venmo
+balances
+reward claim
+payment rails
+
+Out of scope.
+
+==================================================
+38. REWARD DATA ARCHITECTURE
+==================================================
+
+Inspect existing:
+
+gameday_rooms reward fields
+fantasy league/season reward fields
+setup RPCs
+
+We already have some reward infrastructure.
+
+Reuse it.
+
+Before adding schema, determine whether:
+
+- season default can already be stored
+- weekly room can already store an override
+- no reward can already be represented cleanly
+
+Prefer NO SQL.
+
+If existing fields cannot distinguish:
+
+inherit default
+custom
+none
+
+then report the smallest schema addition.
+
+Do not overload ambiguous empty strings without deliberate semantics.
+
+==================================================
+39. AREA E — SAFE LEAGUE ARCHIVE
+==================================================
+
+CURRENT PROBLEM:
+
+A commissioner eventually needs a way to remove an abandoned/test/old league from their active view.
+
+We do NOT want casual destructive deletion.
+
+For pilot:
+
+# ARCHIVE, DON'T DELETE.
+
+==================================================
+40. ARCHIVE PRODUCT BEHAVIOR
+==================================================
+
+Commissioner should have:
+
+League Settings
+
+Danger / Management section:
+
+Archive League
+
+Description:
+
+Archive this league when you're finished with it.
+
+Your teams, picks, results, standings, and receipts will be preserved.
+
+[ Archive League ]
+
+==================================================
+41. ARCHIVE CONFIRMATION
+==================================================
+
+Require deliberate confirmation.
+
+Example:
+
+ARCHIVE FOOD PYRAMID 2026?
+
+This league will be removed from your active leagues.
+
+Your league history will be preserved.
+
+You won't be able to run new Swaygers while the league is archived.
+
+Cancel
+Archive League
+
+Do NOT require typing league name for archive.
+
+That is unnecessary friction for a reversible/non-destructive action.
+
+==================================================
+42. ARCHIVED LEAGUE BEHAVIOR
+==================================================
+
+After archive:
+
+- removed from normal active league list
+- no new Draft Day/weekly Swaygers
+- no add-member actions
+- no settlement changes ideally unless explicitly restoring
+- historical data preserved
+- standings preserved
+- picks preserved
+- claims preserved
+- recovery history preserved
+
+Do not cascade-delete anything.
+
+==================================================
+43. RESTORE
+==================================================
+
+If architecturally lightweight, support:
+
+Archived Leagues
+
+→ Restore League
+
+This is preferable.
+
+If restore requires substantial additional UI:
+
+at minimum design the schema/state so archive is reversible.
+
+Do NOT implement permanent deletion.
+
+==================================================
+44. ARCHIVE AUTHORIZATION
+==================================================
+
+Only commissioner / authorized commissioner role.
+
+Regular member:
+403
+
+Guest:
+403
+
+Do not let co-commissioner archive unless current product authority explicitly treats co-commissioner as equivalent for league-level destructive management.
+
+Inspect existing role model and decide deliberately.
+
+==================================================
+45. ARCHIVE ACTIVE WEEK SAFEGUARD
+==================================================
+
+Do not allow accidental archive while a competition is actively open or unresolved without clear handling.
+
+Preferred V1:
+
+Block archive if there is an:
+
+open
+or
+locked/unfinalized
+
+Draft Day/Weekly room.
+
+Message:
+
+Finish or finalize the current Swayger before archiving this league.
+
+This avoids weird partial lifecycle states.
+
+Do not auto-finalize.
+
+Do not delete active rooms.
+
+==================================================
+46. PERMANENT DELETE
+==================================================
+
+DO NOT IMPLEMENT.
+
+No:
+
+Delete League
+Permanent Delete
+Cascade Delete
+
+during this sprint.
+
+We can design true deletion later if actually needed.
+
+==================================================
+47. PILOT UX STANDARD
+==================================================
+
+Think about the app as if:
+
+- commissioner has 15 members
+- half joined as guests
+- draft is happening in a living room/bar
+- people are using phones
+- commissioner does not understand our database
+- nobody has patience for an admin-heavy workflow
+
+Every screen should answer:
+
+What should I do?
+What happened?
+What do I tap?
+
+Do not expose system terminology.
+
+==================================================
+48. 15-PERSON TEST LEAGUE
+==================================================
+
+Create a robust Phase 6 fixture with approximately 15 league members.
+
+Use it to validate:
+
+- bulk import
+- large answer selector
+- pick saving
+- lock
+- distribution
+- individual pick reveal
+- result settlement
+- standings
+- archive safeguards
+
+Do not test only 2–3 member leagues.
+
+==================================================
+49. BULK IMPORT TEST MATRIX
+==================================================
+
+Test:
+
+comma:
+Darius, The Monstars
+
+pipe:
+Darius | The Monstars
+
+tab:
+Darius    The Monstars
+
+mixed whitespace
+
+blank lines
+
+duplicate row
+
+duplicate existing member
+
+duplicate team
+
+missing member name
+
+missing team name
+
+long team names
+
+10-member import
+
+15-member import
+
+16-member import
+
+retry same request
+
+Verify no duplicate identities.
+
+==================================================
+50. LARGE SELECTOR TEST MATRIX
+==================================================
+
+Test:
+
+4 answers
+6 answers
+7 answers
+10 answers
+15 answers
+16 answers
+
+Verify threshold behavior.
+
+Verify:
+
+select
+change
+save
+reload
+stale roster revision
+reconfirm
+
+No regression.
+
+==================================================
+51. REVEAL ACCESS TESTS
+==================================================
+
+OPEN:
+distribution unavailable
+
+OPEN:
+individual picks unavailable
+
+LOCKED:
+distribution available
+
+LOCKED:
+individual picks available
+
+SETTLED:
+available
+
+FINALIZED:
+available
+
+non-member:
+403 / unavailable
+
+commissioner:
+available
+
+guest league member:
+available
+
+authenticated league member:
+available
+
+==================================================
+52. REVEAL ACCURACY TEST
+==================================================
+
+15 members.
+
+For Prop A:
+
+7 choose Team A
+5 choose Team B
+2 choose Team C
+1 unanswered
+
+Expected:
+
+Team A:
+7 / 14 = 50%
+
+Team B:
+5 / 14 ≈ 35.7%
+
+Team C:
+2 / 14 ≈ 14.3%
+
+Total submitted picks:
+14
+
+Unanswered:
+1
+
+Do not calculate percentages from 15.
+
+==================================================
+53. PICKER LIST TEST
+==================================================
+
+Verify each displayed picker maps to the correct participant identity.
+
+Do not confuse:
+
+display_name
+team_name
+auth user
+season member
+
+Use existing participant snapshots appropriately.
+
+Historical reveal should remain stable even if the member/team is renamed later, consistent with current snapshot semantics.
+
+Inspect before deciding whether current-name or pick-time snapshot is the intended display.
+
+Prefer historical snapshot consistency.
+
+==================================================
+54. RESULT CORRECTION TEST
+==================================================
+
+Lock.
+
+Reveal picks.
+
+Settle Team A correct.
+
+Distribution remains identical.
+
+Correct result to Team B before finalization.
+
+Distribution remains identical.
+
+Only correct marker/scoring changes.
+
+Finalize.
+
+Distribution remains identical.
+
+No pick data mutation.
+
+==================================================
+55. REWARD TESTS
+==================================================
+
+Season default:
+$25
+
+Week 1:
+inherit → $25
+
+Week 2:
+custom → Dinner
+
+Week 3:
+no reward
+
+Week 4:
+inherit → $25
+
+Verify display.
+
+Verify changing Week 2 does not change season default.
+
+Verify changing season default later does NOT retroactively rewrite a published historical Week 1 reward snapshot unless that is explicitly existing product behavior.
+
+Prefer publishing/snapshotting the effective reward onto the room.
+
+==================================================
+56. ARCHIVE TESTS
+==================================================
+
+Commissioner archives eligible inactive league:
+success
+
+League disappears from active list.
+
+History preserved.
+
+Member tries:
+403
+
+Guest tries:
+403
+
+Active open week:
+blocked
+
+Locked/unfinalized week:
+blocked
+
+Finalized latest week:
+archive allowed
+
+Restore if implemented:
+same league IDs/history return.
+
+==================================================
+57. PERFORMANCE
+==================================================
+
+Do not introduce N+1 requests.
+
+Especially:
+
+bulk import:
+one batch operation if possible
+
+pick reveal:
+one room/card-level response
+
+large selector:
+use already-loaded answer options
+
+Do not query server every time selector opens if options are already present.
+
+==================================================
+58. ACCESSIBILITY / MOBILE
+==================================================
+
+Pilot is primarily mobile.
+
+Check:
+
+- tap targets
+- scrolling
+- modal/bottom sheet height
+- keyboard behavior in bulk paste
+- long names
+- 15-person list
+- iPhone-sized viewport
+- Android-sized viewport
+- web fallback
+
+Do not make a beautiful desktop-only workflow.
+
+==================================================
+59. COPY / TERMINOLOGY
+==================================================
+
+Customer-facing terms:
+
+League
+Team
+Member
+Week N Swayger
+Pick
+Reward
+League Picks
+Archive League
+
+Avoid:
+
+season_member
+participant operation
+template_prop_id
+answer universe revision
+claim row
+
+==================================================
+60. DO NOT BUILD IN THIS PHASE
+==================================================
+
+Do NOT build:
+
+- QR invite
+- Sleeper API
+- Yahoo API
+- ESPN API
+- provider sync
+- automatic scoring
+- automatic settlement
+- automatic locking
+- push notifications
+- SMS
+- email reminders
+- multi-week reward schedules
+- payout tracking
+- permanent delete
+- member deletion
+- account merge
+- playoffs
+- Season Receipts
+- advanced analytics
+- AI-generated props
+- 1v1 redesign
+
+==================================================
+61. IMPLEMENTATION ORDER
+==================================================
+
+FIRST — ARCHITECTURE CHECKPOINT:
+
+1. Audit bulk member creation path
+2. Audit existing idempotency infrastructure
+3. Audit answer-option rendering
+4. Audit pick read/access restrictions
+5. Audit whether locked picks can already be safely queried
+6. Audit reward fields
+7. Audit league status/archive capability
+8. Identify SQL requirements
+9. Identify security/privacy risks
+10. Propose exact implementation order
+
+If SQL is required:
+
+write migration(s)
+STOP
+return SQL APPLICATION REQUIRED
+
+Do not build around a missing schema capability.
+
+==================================================
+62. PREFERRED BUILD ORDER AFTER SQL
+==================================================
+
+If architecture supports it:
+
+1. Bulk paste/import
+2. Large-roster selector
+3. Pick distribution API
+4. Post-lock reveal UI
+5. Weekly reward default/override
+6. Archive League
+7. 15-member integrated pilot fixture
+8. regression
+
+Why this order:
+
+setup friction first
+→ player pick friction
+→ social payoff
+→ commissioner flexibility
+→ league lifecycle safety
+
+==================================================
+63. BASELINE / REGRESSION
+==================================================
+
+Before implementation record the current maintained regression baseline.
+
+At minimum protect:
+
+- Phase 2
+- Phase 3 / 3B
+- Phase 4A
+- Phase 4B + Manage
+- Open Roster
+- Phase 4C
+- Phase 5
+- Phase 5.1
+- Phase 5.2
+- Phase 5.2.1
+- Phase 5.2.2
+- Phase 5.2.3
+- Phase 5.3
+- Game Day settlement
+- relevant Playwright auth/recovery coverage
+
+Do not alter old expectations just to get green.
+
+==================================================
+64. PHASE 6 TEST SUITE
+==================================================
+
+Create:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+or consistent equivalent.
+
+Organize coverage sections:
+
+§A Bulk parsing
+§B Bulk validation
+§C Bulk idempotency
+§D Large roster selector contract
+§E Lock privacy
+§F Aggregate distribution
+§G Individual reveal
+§H 15-member distribution
+§I Result correction
+§J Weekly rewards
+§K Archive
+§L Authorization
+§M History preservation
+§N Full pilot flow
+
+==================================================
+65. FULL PILOT FLOW TEST
+==================================================
+
+Build an integrated flow:
+
+1. Commissioner creates league.
+2. Commissioner bulk imports ~14 other members.
+3. Verify 15 total league identities.
+4. Publish weekly Swayger.
+5. Questions contain 15 roster options.
+6. Member uses compact selector.
+7. 14 members make picks; one skips a question.
+8. While open, nobody sees others' picks.
+9. Commissioner locks.
+10. League Picks becomes visible.
+11. Distribution denominator correct.
+12. Individual names visible behind deliberate interaction.
+13. Commissioner settles results.
+14. One result corrected before finalize.
+15. Distribution unchanged.
+16. Scores recalculate.
+17. Finalize.
+18. Season standings correct.
+19. Weekly reward displayed correctly.
+20. Commissioner creates/finalizes next week as needed.
+21. League archive blocked during active unresolved competition.
+22. Once safe, archive succeeds.
+23. All historical data remains.
+
+==================================================
+66. MANUAL QA TARGET
+==================================================
+
+Once implementation is ready, I should manually be able to:
+
+BULK SETUP
+
+1. Create a league.
+2. Paste 12–15 rows of names/team names.
+3. Review them.
+4. Correct one.
+5. Import.
+6. See all teams correctly.
+
+PLAYER PICKING
+
+7. Open a Week Swayger.
+8. Tap a roster-based question.
+9. See clean large-roster selector.
+10. Select a team.
+11. Change pick.
+12. Complete 5 questions without excessive scrolling.
+
+SOCIAL REVEAL
+
+13. While open, confirm no other picks visible.
+14. Lock.
+15. Immediately see League Picks.
+16. See distribution.
+17. Tap one option and see who picked it.
+18. Settle result.
+19. See correct answer integrated with reveal.
+
+REWARD
+
+20. Season default reward = $25.
+21. Week override = Dinner.
+22. Confirm Week shows Dinner, not $25.
+23. Next Week inherits $25 again.
+
+ARCHIVE
+
+24. Attempt archive during active week → blocked.
+25. Finalize.
+26. Archive league.
+27. Confirm active league list no longer shows it.
+28. Confirm history was not deleted.
+
+==================================================
+67. FIRST RESPONSE FORMAT
+==================================================
+
+Before doing implementation, return:
+
+# PHASE 6 PILOT READINESS — ARCHITECTURE AUDIT
+
+1. Bulk import existing architecture
+2. Existing member-add/idempotency path
+3. Recommended bulk import architecture
+4. Current large-option pick UI
+5. Recommended selector architecture
+6. Existing pick visibility/read APIs
+7. Security model for post-lock reveal
+8. Proposed pick distribution architecture
+9. Existing reward fields
+10. Reward implementation recommendation
+11. Existing league lifecycle/archive support
+12. Archive recommendation
+13. SQL required?
+14. Exact migration(s), if any
+15. Risks
+16. Implementation order
+17. Baseline regression status
+
+If SQL is required:
+write migration(s), then STOP.
+
+Final status:
+
+SQL APPLICATION REQUIRED
+
+or
+
+ARCHITECTURE VERIFIED — IMPLEMENTATION CAN PROCEED
+
+==================================================
+68. FINAL RETURN AFTER IMPLEMENTATION
+==================================================
+
+After implementation return:
+
+# PHASE 6 PILOT READINESS REPORT
+
+1. Architecture decisions
+2. Bulk import UX
+3. Parsing rules
+4. Idempotency/duplicate handling
+5. Large-roster selector UX
+6. Answer threshold behavior
+7. Pick privacy behavior
+8. Lock/reveal behavior
+9. Distribution math
+10. Individual pick reveal
+11. Authorization/security
+12. Weekly reward model
+13. Archive lifecycle
+14. Files changed
+15. SQL applied/verified
+16. Phase 6 tests
+17. Full regression totals
+18. 15-member fixture results
+19. Bugs discovered/fixed
+20. Exact manual QA
+21. Known limitations
+22. What remains before real pilot launch
+
+Then STOP.
+
+Do not begin:
+
+QR
+Sleeper
+Yahoo
+Season Receipts
+or another roadmap phase.
+
+Final status:
+
+PHASE 6 PILOT READINESS READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
