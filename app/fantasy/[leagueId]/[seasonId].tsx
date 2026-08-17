@@ -27,6 +27,7 @@ import {
   Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
@@ -432,6 +433,7 @@ interface WeeklyCardProps {
   // Phase 5.1
   onShare:             () => void;
   onShareReminder:     () => void;
+  onCopyLink:          () => Promise<void>;
 }
 
 function WeeklyCard({
@@ -454,10 +456,14 @@ function WeeklyCard({
   onViewStandings,
   onShare,
   onShareReminder,
+  onCopyLink,
 }: WeeklyCardProps) {
   const [confirmLock, setConfirmLock]           = React.useState(false);
   const [confirmFinalize, setConfirmFinalize]   = React.useState(false);
   const [showParticipants, setShowParticipants] = React.useState(false);
+  // "copied" | "error" | null — auto-resets after 2 s
+  const [copyFeedback, setCopyFeedback]         = React.useState<"copied" | "error" | null>(null);
+  const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => { if (weekly?.card_status === "locked") setConfirmLock(false); }, [weekly?.card_status]);
   React.useEffect(() => { if (weekly?.room_status === "finalized") setConfirmFinalize(false); }, [weekly?.room_status]);
@@ -652,6 +658,7 @@ function WeeklyCard({
             {/* Share CTAs — visible while picks are OPEN */}
             {!isLocked && (
               <View style={{ gap: 8 }}>
+                {/* Primary: Share Week N */}
                 <TouchableOpacity
                   style={styles.weeklyShareBtn}
                   onPress={onShare}
@@ -659,17 +666,42 @@ function WeeklyCard({
                 >
                   <Text style={styles.weeklyShareBtnText}>📣  Share Week {weekNumber}</Text>
                 </TouchableOpacity>
-                {(weekly?.waiting_count ?? 0) > 0 && (
+
+                {/* Secondary row: Copy Link + Share Reminder */}
+                <View style={styles.weeklySecondaryRow}>
                   <TouchableOpacity
-                    style={[styles.btn, styles.btnSecondary]}
-                    onPress={onShareReminder}
+                    style={styles.weeklySecondaryBtn}
+                    onPress={async () => {
+                      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+                      try {
+                        await onCopyLink();
+                        setCopyFeedback("copied");
+                      } catch {
+                        setCopyFeedback("error");
+                      }
+                      copyTimerRef.current = setTimeout(() => setCopyFeedback(null), 2000);
+                    }}
                     activeOpacity={0.8}
                   >
-                    <Text style={[styles.btnText, { color: C.tint }]}>
-                      🔔  Share Reminder ({weekly?.waiting_count} waiting)
+                    <Text style={styles.weeklySecondaryBtnText}>
+                      {copyFeedback === "copied" ? "✓ Link copied" :
+                       copyFeedback === "error"  ? "⚠ Copy failed" :
+                       "🔗  Copy Link"}
                     </Text>
                   </TouchableOpacity>
-                )}
+
+                  {(weekly?.waiting_count ?? 0) > 0 && (
+                    <TouchableOpacity
+                      style={styles.weeklySecondaryBtn}
+                      onPress={onShareReminder}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.weeklySecondaryBtnText}>
+                        🔔  Remind ({weekly?.waiting_count})
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             )}
 
@@ -1393,6 +1425,10 @@ export default function LeagueHubScreen() {
                 // User dismissed — no-op
               }
             }}
+            onCopyLink={async () => {
+              const url = buildWeekUrl(leagueId, seasonId, 1);
+              await Clipboard.setStringAsync(url);
+            }}
           />
 
           {/* ── Season Standings quick-access (once any competition finalized) ── */}
@@ -1713,6 +1749,25 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   weeklyShareBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  weeklySecondaryRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  weeklySecondaryBtn: {
+    flex: 1,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  weeklySecondaryBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.textSecondary,
+  },
 
   // Shared
   btn: {

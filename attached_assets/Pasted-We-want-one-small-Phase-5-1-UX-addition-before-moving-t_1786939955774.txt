@@ -1,0 +1,244 @@
+We want one small Phase 5.1 UX addition before moving to Week 2+.
+
+# ADD “COPY LINK” TO WEEKLY SWAYGER RE-ENGAGEMENT
+
+Current behavior is good:
+
+- 📣 Share Week 1
+  - opens native share sheet
+  - includes pre-written copy + direct Week 1 URL
+
+- 🔔 Share Reminder
+  - appears while members are still waiting
+  - includes reminder copy + direct Week 1 URL
+
+We want to add a separate lightweight action for commissioners who are already in a text/group-chat conversation and only want the direct URL.
+
+==================================================
+1. NEW ACTION
+==================================================
+
+Add:
+
+🔗 Copy Link
+
+This should copy ONLY the direct Week Swayger URL.
+
+Do NOT include:
+
+- title
+- share copy
+- reminder copy
+- extra punctuation
+- member identity
+- invite token
+
+Just the canonical direct weekly play URL.
+
+Example conceptually:
+
+https://<app>/fantasy/weeks/<leagueId>/<seasonId>/<weekNumber>/play
+
+Use the actual canonical route/helper already used by Share Week.
+
+Do not create a second link format.
+
+==================================================
+2. PLACEMENT
+==================================================
+
+Keep:
+
+📣 Share Week 1
+
+as the primary re-engagement CTA.
+
+Copy Link should be visually secondary.
+
+Preferred commissioner open-state layout:
+
+WEEK 1 SWAYGER
+Picks Open
+5 / 8 Have Played
+
+[ 📣 Share Week 1 ]
+
+🔗 Copy Link     🔔 Share Reminder (3)
+
+Do not turn the WeeklyCard into a large control panel.
+
+If the existing component layout works better with secondary text buttons or an overflow row, use that.
+
+==================================================
+3. VISIBILITY RULES
+==================================================
+
+Show Copy Link when:
+
+- weekly competition exists
+- picks are still open
+- viewer is commissioner/co-commissioner
+
+For V1, hide it once picks are locked along with Share Week / Share Reminder.
+
+Do not expose commissioner re-engagement controls to normal members or guests.
+
+==================================================
+4. COPY BEHAVIOR
+==================================================
+
+On press:
+
+- copy URL to clipboard
+- provide immediate success feedback
+
+Preferred feedback:
+
+✓ Link copied
+
+or a lightweight toast/snackbar if the app already has one.
+
+Do not use a blocking modal.
+
+If clipboard write fails:
+- show a clear lightweight error
+- do not silently fail
+
+Reuse existing clipboard utilities if available.
+
+==================================================
+5. SAME URL SOURCE OF TRUTH
+==================================================
+
+Important:
+
+Share Week 1
+Share Reminder
+Copy Link
+
+must all derive from the SAME canonical weekly URL helper.
+
+Do not independently construct URLs in three different places.
+
+If URL generation is currently duplicated, extract a small helper such as:
+
+buildFantasyWeeklyPlayUrl(leagueId, seasonId, weekNumber)
+
+or equivalent.
+
+Keep it generic for Week 2+.
+
+Do NOT hardcode Week 1 into the helper.
+
+==================================================
+6. WEB / MOBILE
+==================================================
+
+Support current platforms cleanly.
+
+Mobile:
+- clipboard utility / Expo clipboard if already installed
+
+Web:
+- use existing supported clipboard path
+- fallback cleanly if navigator clipboard is unavailable
+
+Do not add a large dependency for this tiny feature if an existing utility/API is enough.
+
+==================================================
+7. DO NOT ADD “COPY MESSAGE”
+==================================================
+
+Do NOT add a separate Copy Message action in this phase.
+
+Current product roles are:
+
+Share Week:
+Swayger prepares the message + URL.
+
+Copy Link:
+commissioner writes their own message and pastes only the URL.
+
+Share Reminder:
+Swayger prepares reminder copy + URL.
+
+That is sufficient.
+
+==================================================
+8. TESTS
+==================================================
+
+Add focused tests for:
+
+- Copy Link visible to commissioner while week open
+- hidden from regular member
+- hidden from guest
+- hidden after lock
+- copied value is URL only
+- copied value matches Share Week URL exactly
+- copied value includes correct:
+  - leagueId
+  - seasonId
+  - weekNumber
+- no user/member identity embedded
+- helper works generically with another week number, e.g. Week 2
+- success feedback shown after copy
+
+Preserve all existing Phase 5.1 tests.
+
+==================================================
+9. REGRESSION
+==================================================
+
+Run:
+
+- Phase 5.1 tests
+- Phase 5 tests
+- relevant hub/frontend tests
+
+If inexpensive, run the full Fantasy regression suite.
+
+Return exact totals.
+
+==================================================
+10. MANUAL QA
+==================================================
+
+I should be able to:
+
+1. Open league as commissioner.
+2. Week 1 is open.
+3. See:
+   - Share Week 1
+   - Copy Link
+   - Share Reminder if people are waiting.
+4. Tap Copy Link.
+5. See “Link copied.”
+6. Open Messages manually.
+7. Paste.
+8. Confirm ONLY the direct Week 1 URL appears.
+9. Tap that URL.
+10. Confirm it routes to the same place as the Share Week 1 link.
+11. Lock Week 1.
+12. Confirm Share Week 1 / Copy Link / Share Reminder disappear.
+
+Do not begin Week 2 work.
+
+Return:
+
+1. files changed
+2. URL helper used/extracted
+3. Copy Link behavior
+4. visibility rules
+5. success/error feedback
+6. tests added
+7. regression totals
+8. manual QA steps
+
+Final status:
+
+COPY LINK READY FOR QA
+
+or
+
+CORRECTION REQUIRED
