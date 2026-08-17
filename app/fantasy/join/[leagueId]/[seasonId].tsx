@@ -40,6 +40,8 @@ import {
   JoinInfo,
   JoinInfoSeat,
   ClaimSeatResponse,
+  FANTASY_PENDING_UPGRADE_KEY,
+  FantasyPendingUpgrade,
 } from "@/lib/fantasy-api";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
@@ -75,6 +77,12 @@ export default function JoinLeagueScreen() {
   const [selectedSeat, setSelectedSeat] = useState<JoinInfoSeat | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+
+  // Post-claim upgrade nudge (shown to device-only guests who arrived via a
+  // shared Week link — the hub welcome handles the non-week path).
+  const [showUpgradeNudge, setShowUpgradeNudge] = useState(false);
+  const [upgradePendingDest, setUpgradePendingDest] = useState<string>("");
+  const [upgradeLmId, setUpgradeLmId]             = useState<string | null>(null);
 
   // Signed-in users skip the identity picker
   const effectiveMode: IdentityMode = session ? "account" : identityMode;
@@ -115,6 +123,22 @@ export default function JoinLeagueScreen() {
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+
+  // "Save My Spot" — stores upgrade intent + return URL then sends user to /auth.
+  // Called from the post-claim upgrade nudge (week-context path).
+  const handleSaveMySpot = async () => {
+    if (guestToken && upgradeLmId) {
+      await AsyncStorage.setItem(
+        FANTASY_PENDING_UPGRADE_KEY,
+        JSON.stringify({
+          guest_token:      guestToken,
+          league_member_id: upgradeLmId,
+        } satisfies FantasyPendingUpgrade)
+      ).catch(() => {});
+    }
+    await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, upgradePendingDest).catch(() => {});
+    router.push("/auth");
+  };
 
   const handleChooseAccount = async () => {
     // Save the join URL (preserving week context) so auth redirects back here after sign-in
@@ -157,14 +181,29 @@ export default function JoinLeagueScreen() {
         },
         auth
       );
-      // After a successful claim: if the user arrived from a Week N link and the
-      // week is still open, return them directly to Week N play. Otherwise hub.
-      if (weekNumber) {
+      // After a successful guest claim, upgrade nudge flow:
+      //   • Week-context (wn set)    → show inline upgrade nudge, pendingDest = Week N play
+      //   • No week context          → route to hub with ?joined=1 so the hub welcome
+      //                                banner (which has "Save My Spot") appears
+      // After an authenticated account claim: route directly without nudge.
+      const wasGuestClaim = !session;
+      if (wasGuestClaim && weekNumber) {
+        const dest = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play`;
+        setUpgradePendingDest(dest);
+        setUpgradeLmId(selectedSeat.league_member_id!);
+        setShowUpgradeNudge(true);
+      } else if (weekNumber) {
         router.replace(
           `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play` as any
         );
       } else {
-        router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
+        // Guest → ?joined=1 triggers the hub welcome banner (with "Save My Spot")
+        // Account → hub without banner
+        router.replace(
+          wasGuestClaim
+            ? (`/fantasy/${leagueId}/${seasonId}?joined=1` as any)
+            : (`/fantasy/${leagueId}/${seasonId}` as any)
+        );
       }
     } catch (e: any) {
       if (e.message?.includes("already been claimed") || e.message?.includes("seat_already_claimed")) {
@@ -201,6 +240,49 @@ export default function JoinLeagueScreen() {
   }
 
   if (!joinInfo) return null;
+
+  // ── Post-claim upgrade nudge (Week N path) ───────────────────────────────────
+  // Only shown when a guest claimed a seat after arriving via a shared Week link.
+  // The hub welcome handles the non-week path (via ?joined=1).
+  if (showUpgradeNudge) {
+    return (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 28, paddingBottom: insets.bottom + 48 },
+        ]}
+      >
+        <View style={styles.upgradeNudgeCard}>
+          <Text style={styles.upgradeNudgeEmoji}>🔐</Text>
+          <Text style={styles.upgradeNudgeTitle}>
+            Keep your league spot on any device
+          </Text>
+          <Text style={styles.upgradeNudgeBody}>
+            You're in as a guest. Your league access is currently saved to this
+            browser/device.{"\n\n"}Connect a Swayger account so you can return to
+            your Draft Day and weekly Swaygers even if you switch devices or clear
+            your browser.
+          </Text>
+          <TouchableOpacity
+            style={[styles.btn, { alignSelf: "stretch" as const }]}
+            onPress={handleSaveMySpot}
+          >
+            <Text style={styles.btnText}>Save My Spot</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.outlineBtn, { marginTop: 2 }]}
+            onPress={() => router.replace(upgradePendingDest as any)}
+          >
+            <Text style={styles.outlineBtnText}>Maybe Later</Text>
+          </TouchableOpacity>
+          <Text style={styles.upgradeNudgeNote}>
+            You can always connect an account later from the League Hub.
+          </Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   const { league, season, seats } = joinInfo;
   const sportEmoji = SPORT_EMOJI[league.sport] ?? "🏆";
@@ -691,6 +773,40 @@ const styles = StyleSheet.create({
     alignSelf: "stretch" as const,
   },
   outlineBtnText: { color: C.text, fontWeight: "600" as const, fontSize: 14 },
+
+  // Post-claim upgrade nudge card (shown in place of the join screen when a
+  // guest claims a seat via a shared Week link — spec §3 / Phase 5.2.2)
+  upgradeNudgeCard: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.tint,
+    padding: 28,
+    alignItems: "center" as const,
+    gap: 14,
+    marginVertical: 8,
+  },
+  upgradeNudgeEmoji: { fontSize: 36 },
+  upgradeNudgeTitle: {
+    fontSize: 20,
+    fontWeight: "800" as const,
+    color: C.text,
+    textAlign: "center",
+    lineHeight: 26,
+  },
+  upgradeNudgeBody: {
+    fontSize: 14,
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  upgradeNudgeNote: {
+    fontSize: 11,
+    color: C.textMuted,
+    textAlign: "center",
+    marginTop: 2,
+    lineHeight: 16,
+  },
 
   // Confirm
   confirmCard: {

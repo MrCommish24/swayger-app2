@@ -926,6 +926,10 @@ export default function LeagueHubScreen() {
   // Welcome banner: shown immediately after a successful claim (?joined=1)
   const [showWelcome, setShowWelcome] = useState(joined === "1");
 
+  // Guest upgrade banner: shown in the main hub for device-only guests who are
+  // past the initial welcome screen. Dismissible per-session (no DB needed).
+  const [guestBannerDismissed, setGuestBannerDismissed] = useState(false);
+
   const fetchDetail = useCallback(
     async (quiet = false) => {
       if (!leagueId || !seasonId) return;
@@ -1097,14 +1101,20 @@ export default function LeagueHubScreen() {
             <Text style={styles.btnText}>Open My League</Text>
           </TouchableOpacity>
 
-          {isGuest && viewer && (
+          {isGuest && viewer ? (
+            // Guest welcome: lead with the upgrade benefit, CTAs in priority order
             <>
               <View style={styles.welcomeDivider} />
+              <Text style={styles.welcomeUpgradeTitle}>
+                Keep your league spot on any device
+              </Text>
               <Text style={styles.welcomeUpgradeHint}>
-                Create a free account to access your league from any device.
+                You're in as a guest. Connect a Swayger account so you can return to
+                your Draft Day and weekly Swaygers even if you switch devices or
+                clear your browser.
               </Text>
               <TouchableOpacity
-                style={[styles.btn, styles.btnSecondary, { marginTop: 10 }]}
+                style={[styles.btn, { marginTop: 10, alignSelf: "stretch" as const }]}
                 onPress={async () => {
                   // Record explicit upgrade intent BEFORE navigating to auth.
                   // The hub's useEffect reads this key when a session appears;
@@ -1117,7 +1127,7 @@ export default function LeagueHubScreen() {
                       league_member_id: viewer.league_member_id,
                     } satisfies FantasyPendingUpgrade)
                   ).catch(() => {});
-                  // Return here after sign-in
+                  // Return here after sign-in / account creation
                   await AsyncStorage.setItem(
                     PENDING_AUTH_REDIRECT_KEY,
                     `/fantasy/${leagueId}/${seasonId}?joined=1`
@@ -1125,11 +1135,25 @@ export default function LeagueHubScreen() {
                   router.push("/auth");
                 }}
               >
-                <Text style={[styles.btnText, { color: C.tint }]}>
-                  Create Account / Sign In
+                <Text style={styles.btnText}>Save My Spot</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnSecondary, { marginTop: 4, alignSelf: "stretch" as const }]}
+                onPress={() => setShowWelcome(false)}
+              >
+                <Text style={[styles.btnText, { color: C.textSecondary }]}>
+                  Maybe Later
                 </Text>
               </TouchableOpacity>
             </>
+          ) : (
+            // Authenticated member welcome: just open the league
+            <TouchableOpacity
+              style={[styles.btn, { marginTop: 16 }]}
+              onPress={() => setShowWelcome(false)}
+            >
+              <Text style={styles.btnText}>Open My League</Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity
@@ -1192,6 +1216,48 @@ export default function LeagueHubScreen() {
             </TouchableOpacity>
           )}
 
+          {/* Guest upgrade banner — shown to device-only guests not on the welcome screen */}
+          {isGuest && viewer && !guestBannerDismissed && (
+            <View style={styles.guestBanner}>
+              <View style={styles.guestBannerRow}>
+                <View style={styles.guestBannerContent}>
+                  <Text style={styles.guestBannerTitle}>🔐 Keep your league access</Text>
+                  <Text style={styles.guestBannerBody}>
+                    You're playing as a guest on this device. Connect an account to
+                    keep your spot if you switch devices.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setGuestBannerDismissed(true)}
+                  hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                >
+                  <Text style={styles.guestBannerDismissIcon}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={styles.guestBannerCTA}
+                onPress={async () => {
+                  if (guestToken && viewer?.league_member_id) {
+                    await AsyncStorage.setItem(
+                      FANTASY_PENDING_UPGRADE_KEY,
+                      JSON.stringify({
+                        guest_token:      guestToken,
+                        league_member_id: viewer.league_member_id,
+                      } satisfies FantasyPendingUpgrade)
+                    ).catch(() => {});
+                  }
+                  await AsyncStorage.setItem(
+                    PENDING_AUTH_REDIRECT_KEY,
+                    `/fantasy/${leagueId}/${seasonId}`
+                  ).catch(() => {});
+                  router.push("/auth");
+                }}
+              >
+                <Text style={styles.guestBannerCTAText}>Save My Spot</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* My Team card */}
           {viewer && (
             <View style={[
@@ -1208,10 +1274,25 @@ export default function LeagueHubScreen() {
                   {viewer.role === "co_commissioner" ? "Co-Commissioner" : "Commissioner"}
                 </Text>
               )}
-              {isGuest && (
+              {isGuest && viewer && (
                 <TouchableOpacity
                   style={styles.upgradeLink}
-                  onPress={() => router.push("/auth")}
+                  onPress={async () => {
+                    // Store upgrade intent so the hub auto-upgrades the guest claim
+                    // when the authenticated session is detected (shared-device safe).
+                    await AsyncStorage.setItem(
+                      FANTASY_PENDING_UPGRADE_KEY,
+                      JSON.stringify({
+                        guest_token:      guestToken,
+                        league_member_id: viewer.league_member_id,
+                      } satisfies FantasyPendingUpgrade)
+                    ).catch(() => {});
+                    await AsyncStorage.setItem(
+                      PENDING_AUTH_REDIRECT_KEY,
+                      `/fantasy/${leagueId}/${seasonId}`
+                    ).catch(() => {});
+                    router.push("/auth");
+                  }}
                 >
                   <Text style={styles.upgradeLinkText}>
                     Sign in to keep your seat across devices →
@@ -1577,6 +1658,15 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 4,
   },
+  welcomeUpgradeTitle: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: C.text,
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 8,
+    marginTop: 4,
+  },
   welcomeUpgradeHint: {
     fontSize: 13,
     color: C.textMuted,
@@ -1584,6 +1674,52 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 8,
   },
+
+  // Guest upgrade banner (non-welcome, dismissible per-session)
+  guestBanner: {
+    backgroundColor: "#1A1300",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#8B6914",
+    padding: 14,
+    marginBottom: 20,
+    gap: 10,
+  },
+  guestBannerRow: {
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 10,
+  },
+  guestBannerContent: { flex: 1 },
+  guestBannerTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: "#D4A017",
+    marginBottom: 4,
+  },
+  guestBannerBody: {
+    fontSize: 12,
+    color: C.textSecondary,
+    lineHeight: 17,
+  },
+  guestBannerDismissIcon: {
+    fontSize: 14,
+    color: C.textMuted,
+    fontWeight: "700" as const,
+    paddingLeft: 4,
+  },
+  guestBannerCTA: {
+    backgroundColor: "#8B6914",
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: "center" as const,
+  },
+  guestBannerCTAText: {
+    color: "#fff",
+    fontWeight: "700" as const,
+    fontSize: 13,
+  },
+
   backToSwayger: { marginTop: 14, alignItems: "center" },
 
   // Header

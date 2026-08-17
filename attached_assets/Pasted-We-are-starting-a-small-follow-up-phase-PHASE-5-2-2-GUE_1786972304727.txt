@@ -1,0 +1,442 @@
+We are starting a small follow-up phase:
+
+# PHASE 5.2.2 — GUEST ACCESS DURABILITY + AUTH RETURN E2E
+
+Current verified state:
+
+- Phase 5.2.1 Guest Return / Recovery UX is complete
+- 55/55 new tests pass
+- full regression is clean
+- same-device guest return works
+- lost-token guest UX is no longer a dead end
+- Sign In now correctly returns users to the Week N route they came from
+- Manage League shows commissioner-only claim type:
+  - Claimed as Guest · device-only access
+  - Claimed with account
+  - Not yet claimed
+
+Do NOT build commissioner seat release.
+
+Do NOT redesign identity.
+
+Do NOT begin Week 3, notifications, provider integrations, or Season Receipt work.
+
+This phase has only two goals:
+
+1. make it more likely that guests convert their fragile device-only league access into durable account-linked access
+2. add a focused browser E2E test for Sign In → return to Week N
+
+==================================================
+1. PRODUCT PRINCIPLE
+==================================================
+
+Guest access remains important.
+
+We do NOT want to require account creation before someone can participate.
+
+The low-friction flow stays:
+
+Join as guest
+→ immediately participate
+
+But after the guest is successfully in the league, Swayger should clearly explain:
+
+Guest access is tied to this browser/device.
+
+Connecting an account protects their league spot across devices and future weeks.
+
+This should be an optional upgrade, not a gate.
+
+==================================================
+2. INSPECT CURRENT GUEST-UPGRADE UX
+==================================================
+
+Before changing code, inspect every place we currently offer:
+
+- Create Account
+- Sign In
+- guest → authenticated claim upgrade
+- “You’re in!” guest success screen
+- Fantasy League Hub guest state
+- Draft Day guest join success
+- weekly guest join success
+
+Report where the current upgrade prompt appears and what it says.
+
+Reuse the existing guest→account upgrade infrastructure.
+
+Do NOT create another claim-transfer mechanism.
+
+==================================================
+3. PRIMARY POST-JOIN NUDGE
+==================================================
+
+Immediately after a guest successfully claims a Fantasy league seat, strengthen the existing upgrade prompt.
+
+Preferred copy:
+
+Keep your league spot on any device
+
+You’re in as a guest. Your league access is currently saved to this browser/device.
+
+Connect a Swayger account so you can return to your Draft Day and weekly Swaygers even if you switch devices or clear your browser.
+
+Primary CTA:
+
+Save My Spot
+
+Secondary:
+
+Maybe Later
+
+If “Save My Spot” is too ambiguous relative to existing auth language, use:
+
+Create Account / Sign In
+
+but preserve the benefit-focused headline and explanation.
+
+Do NOT use alarming language.
+
+Do NOT imply their current guest access is broken.
+
+==================================================
+4. RETURN TARGET MUST BE PRESERVED
+==================================================
+
+If guest taps the upgrade CTA from:
+
+- Draft Day
+- Week 1
+- Week 2
+- future Week N
+
+after authentication/upgrade they must return to the relevant Fantasy context.
+
+Preferred:
+return to the exact week/play/hub route they came from.
+
+Use the auth return URL mechanism that Phase 5.2.1 fixed.
+
+Do not dump them on the general app home page.
+
+==================================================
+5. WEEKLY HUB NUDGE FOR DEVICE-ONLY GUEST
+==================================================
+
+For an existing guest who has NOT connected an account:
+
+consider a small non-blocking banner on the Fantasy League Hub.
+
+Preferred:
+
+🔐 Keep your league access
+
+You’re playing as a guest on this device. Connect an account to keep your spot if you switch devices.
+
+[ Save My Spot ]
+
+The banner should:
+
+- appear only to the current viewer if they are a device-only guest
+- NOT appear to authenticated members
+- NOT appear to commissioners merely because other people are guests
+- be dismissible if easy using existing local UI state
+- not dominate the page
+
+Do not add a new database preference just to remember dismissal.
+
+If persistent dismissal would require schema work, omit persistence for V1.
+
+==================================================
+6. DO NOT OVER-NAG
+==================================================
+
+Do not put the account prompt on every weekly question screen.
+
+Preferred surfaces:
+
+A. immediately after initial guest claim
+B. Fantasy League Hub
+
+That is enough.
+
+Do NOT:
+- show modal every app load
+- interrupt pick submission
+- block results
+- block Week N play
+
+==================================================
+7. EXISTING GUEST → ACCOUNT UPGRADE MUST PRESERVE IDENTITY
+==================================================
+
+Verify explicitly:
+
+guest claim:
+league_member_id = X
+season_member_id = Y
+
+after upgrade:
+same league_member_id = X
+same season_member_id = Y
+
+Only identity ownership changes from:
+
+guest_token
+
+to authenticated user linkage according to existing design.
+
+Do NOT:
+
+- create duplicate league_member
+- create duplicate season_member
+- create new fantasy_team
+- create a second active claim
+- lose Draft Day picks
+- lose weekly picks
+- alter standings
+
+==================================================
+8. COMMISSIONER VIEW REMAINS INFORMATIONAL
+==================================================
+
+Manage League currently shows:
+
+Claimed as Guest · device-only access
+
+Keep this.
+
+Do NOT add:
+
+- Release Seat
+- Reset Guest
+- Reassign Claim
+- Send Recovery
+- impersonation
+
+Those have historical identity implications and are out of scope.
+
+==================================================
+9. FOCUSED PLAYWRIGHT E2E
+==================================================
+
+Add a targeted Playwright/browser E2E covering the exact auth-return regression we discovered.
+
+Scenario:
+
+1. User is on:
+   /fantasy/weeks/:leagueId/:seasonId/2/play
+2. User is not currently authenticated for their account-linked Fantasy membership.
+3. Recovery/non-member screen appears.
+4. Tap Sign In.
+5. Verify return URL is stored.
+6. Complete auth using the existing test auth mechanism.
+7. Auth callback runs.
+8. User is returned to EXACTLY:
+   /fantasy/weeks/:leagueId/:seasonId/2/play
+9. Existing Fantasy membership resolves.
+10. Week 2 play screen loads.
+11. No duplicate member/claim/team is created.
+
+Also test the same helper generically with another Week N if practical.
+
+==================================================
+10. E2E SCOPE CONTROL
+==================================================
+
+Do not build a giant browser testing framework.
+
+If Playwright is already installed/configured:
+reuse it.
+
+If not:
+inspect whether adding one focused Playwright test is lightweight.
+
+If it requires significant infrastructure or environment changes:
+STOP and report that before building a large harness.
+
+The feature work should not be held hostage by testing infrastructure.
+
+==================================================
+11. TEST GUEST UPGRADE FLOW
+==================================================
+
+Add/update automated tests covering:
+
+- post-claim guest sees upgrade nudge
+- authenticated member does not
+- upgrade CTA preserves return route
+- guest→auth upgrade preserves league_member_id
+- preserves season_member_id
+- preserves fantasy_team relationship
+- preserves Draft Day picks
+- preserves weekly picks
+- standings unchanged
+- only one active claim remains
+
+==================================================
+12. TEST HUB NUDGE
+==================================================
+
+Verify:
+
+device-only guest:
+→ sees Keep your league access banner
+
+authenticated member:
+→ does not
+
+commissioner viewing league with guest members:
+→ does not see personal banner unless commissioner themselves is guest
+
+banner:
+→ does not block Week play
+→ does not block results
+→ CTA enters existing auth upgrade flow
+
+==================================================
+13. COPY / UX QUALITY
+==================================================
+
+Use benefit-oriented copy.
+
+Good:
+
+Keep your league spot on any device
+
+Connect an account so your Draft Day and weekly Swaygers follow you.
+
+Avoid:
+
+Your token may be lost.
+Your guest session is insecure.
+You will lose access.
+
+Keep it understandable for a normal fantasy player.
+
+==================================================
+14. NO SQL EXPECTED
+==================================================
+
+This should not require SQL.
+
+Use existing:
+
+fantasy_member_claims
+guest→auth upgrade
+auth return URL
+
+If schema changes appear necessary:
+STOP and report why before writing a migration.
+
+==================================================
+15. FULL REGRESSION
+==================================================
+
+Run:
+
+- Phase 3
+- Phase 3B
+- Phase 4C relevant identity/result tests
+- Phase 5
+- Phase 5.1
+- Phase 5.2
+- Phase 5.2.1
+- new Phase 5.2.2 tests
+
+If inexpensive, run full Fantasy regression.
+
+Return exact totals:
+- passed
+- failed
+- skipped
+
+==================================================
+16. MANUAL QA TARGET
+==================================================
+
+GUEST POST-JOIN
+
+1. Open clean persistent browser profile.
+2. Join Fantasy league as guest.
+3. Claim available seat.
+4. Confirm successful join.
+5. See:
+   Keep your league spot on any device
+6. Choose Maybe Later.
+7. Confirm guest can continue normally.
+
+UPGRADE
+
+8. Return to League Hub.
+9. See lightweight guest-access banner.
+10. Tap Save My Spot.
+11. Sign in/create account.
+12. Confirm return to same Fantasy league/week.
+13. Confirm:
+    - same member
+    - same team
+    - prior picks intact
+
+CROSS-BROWSER AFTER UPGRADE
+
+14. Sign out.
+15. Open shared Week link in another browser.
+16. Sign in.
+17. Confirm same league membership is recovered.
+18. No seat selection.
+
+E2E
+
+19. Run focused Playwright test.
+20. Confirm Week N Sign In → auth callback → exact Week N return path passes.
+
+==================================================
+17. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- commissioner seat release
+- claim reassignment
+- guest recovery codes
+- email/SMS recovery
+- magic guest links
+- device synchronization
+- notifications
+- Week 3
+- Season Receipt UI
+- provider integrations
+- automatic weekly scheduling
+
+==================================================
+18. RETURN
+==================================================
+
+Return:
+
+1. existing guest-upgrade UX audit
+2. post-claim nudge implemented
+3. Fantasy Hub guest banner behavior
+4. auth-return preservation
+5. identity preservation verification
+6. files changed
+7. SQL required or not
+8. Playwright/E2E implementation
+9. new test results
+10. full regression totals
+11. bugs found/fixed
+12. exact manual QA steps
+13. known guest limitations that remain
+
+Then STOP.
+
+Do not begin the next feature phase.
+
+Final status:
+
+PHASE 5.2.2 GUEST DURABILITY READY FOR QA
+
+or
+
+CORRECTION REQUIRED
