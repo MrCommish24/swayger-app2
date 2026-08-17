@@ -64,6 +64,16 @@
  *   RC-2. Original answer ID is a string
  *   RC-3. Re-settle with different answer → 200 OK
  *   RC-4. ok = true on correction
+ *
+ *  §38  Finalize reliability (double-tap / idempotency / ambiguous-network)
+ *   F1.  First finalize returns ok=true, already_finalized=false
+ *   F2.  Rapid second finalize returns ok=true, already_finalized=true (server never corrupts)
+ *   F3.  N-th finalize also returns ok=true, already_finalized=true
+ *   F4.  room_status remains 'finalized' after repeated calls (no regression)
+ *   F5.  GET /draft-day hub confirms room_status=finalized (ambiguous-network recovery path)
+ *   F6.  GET /settlement reflects room_status=finalized (direct-route fallback path)
+ *   F7.  competition props cannot be re-settled after finalization → 409 + room_status field
+ *   F8.  GET /results returns finalized=true after idempotent finalize calls
  *   RC-5. was_correction = true
  *   RC-6. idempotent = false (not a no-op)
  *   RC-7. Response echoes new correct_answer
@@ -734,6 +744,57 @@ async function suite_queue_exclusion() {
   );
 }
 
+// ── §38  Finalize reliability (double-tap / idempotency / ambiguous-network) ──
+
+async function suite_finalize_reliability() {
+  console.log("\n▸ §38 Finalize Reliability (double-tap / idempotency / ambiguous-network recovery)");
+
+  // F1+F2+F3: room is already finalized from suite_finalize(). Calling POST /finalize
+  // again (simulating the rapid second tap or a retry after ambiguous network response)
+  // must return 200 with already_finalized=true — never corrupt state or throw.
+  const rF1 = await request("POST", finalizePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  assert(rF1.status === 200, "F1. Second POST /finalize → 200 (server idempotent)", { status: rF1.status, data: rF1.data });
+  assert(rF1.data?.ok === true, "F2. ok = true on repeat finalize call", rF1.data);
+  assert(rF1.data?.already_finalized === true, "F3. already_finalized = true (no double-finalize corruption)", rF1.data);
+
+  // F4: Additional rapid call — still safe
+  const rF4 = await request("POST", finalizePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  assert(rF4.status === 200 && rF4.data?.already_finalized === true,
+    "F4. Third POST /finalize → 200 + already_finalized (no state corruption)", { status: rF4.status, data: rF4.data });
+
+  // F5: Ambiguous-network recovery path — GET hub returns finalized state.
+  // Client uses this when a POST /finalize throws a network error to determine
+  // whether the operation actually succeeded on the server.
+  const { status: hubStatus, data: hubData } = await request("GET", hubPath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  assert(hubStatus === 200, "F5. GET hub after idempotent finalizes → 200", { status: hubStatus });
+  assert(hubData?.room_status === "finalized",
+    "F5. Hub room_status = 'finalized' (ambiguous-network recovery: client can check this to confirm success)", hubData?.room_status);
+
+  // F6: GET /settlement reflects finalized state — direct-route fallback.
+  // When a commissioner opens the settle screen after finalization, the screen
+  // fetches settlement state and renders the read-only fallback using this field.
+  const { status: sStatus, data: sData } = await request("GET", settlementPath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  assert(sStatus === 200, "F6. GET /settlement after finalization → 200", { status: sStatus });
+  assert((sData as any)?.room_status === "finalized",
+    "F6. Settlement response includes room_status=finalized (drives finalized fallback screen)", (sData as any)?.room_status);
+
+  // F7: Competition props immutable post-finalization (already in §21, repeat here for clarity)
+  const rF7 = await request("POST", settlePath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN, contentType: true }),
+    { prop_id: firstCompProp?.id, correct_answer: firstCompPropOptionId });
+  assert(rF7.status === 409, "F7. Re-settle competition prop post-finalization → 409", { status: rF7.status });
+  assert(rF7.data?.room_status === "finalized", "F7. 409 body includes room_status=finalized (client can detect this)", rF7.data);
+
+  // F8: GET /results confirms finalized after idempotent finalize calls
+  const { data: resultsData } = await request("GET", resultsPath,
+    buildHeaders({ bearer: COMMISSIONER_TOKEN }));
+  assert(resultsData?.finalized === true, "F8. GET /results finalized=true after idempotent finalizes", resultsData?.finalized);
+}
+
 async function suite_regression_hub() {
   console.log("\n▸ §36 Regression: Hub Field");
 
@@ -782,6 +843,7 @@ async function suite_regression_hub() {
   // After finalization tests
   await suite_results();
   await suite_late_season_settlement();
+  await suite_finalize_reliability();  // ← double-tap / idempotency / ambiguous-network
   await suite_queue_exclusion();
   await suite_regression_hub();
 

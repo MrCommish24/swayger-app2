@@ -5,17 +5,15 @@
  *
  * Commissioner resolves each competition-scope prop by selecting the correct
  * answer. Results remain correctable until the commissioner taps "Finalize Draft
- * Day" and confirms — mirroring the classic Game Day Room lifecycle where hosts
- * can re-settle any prop before Finalize Standings.
+ * Day" and confirms — mirroring the classic Game Day Room lifecycle.
  *
- * Season Receipts are shown as an informational "locked for later" section —
- * they are NOT settled here.
- *
- * When all competition props are resolved, the commissioner can finalize the
- * Draft Day to seal the leaderboard and reveal results to all members.
+ * Finalize is single-flight: a ref guard prevents double submission even if
+ * the button is tapped rapidly before React re-renders with `finalizing=true`.
+ * Navigation after finalize uses router.replace (not router.back) so it is
+ * deterministic and history-independent.
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -32,6 +30,7 @@ import {
   getDraftDaySettlement,
   settleDraftDayProp,
   finalizeDraftDay,
+  getDraftDay,
   DraftDaySettlementState,
   DraftDaySettlementProp,
 } from "@/lib/fantasy-api";
@@ -53,13 +52,23 @@ export default function DraftDaySettleScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  // Per-prop settling state: propId → { settling: boolean, error: string | null }
+  // Per-prop settling state
   const [propState, setPropState] = useState<Record<string, { settling: boolean; error: string | null }>>({});
 
-  // Finalize inline confirm (two-step, mirroring Game Day modal pattern)
+  // Finalize state
   const [confirmingFinalize, setConfirmingFinalize] = useState(false);
   const [finalizing, setFinalizing]                 = useState(false);
   const [finalizeError, setFinalizeError]           = useState<string | null>(null);
+
+  // ── Single-flight ref guard ────────────────────────────────────────────────
+  // React state updates are async — two rapid taps can both pass `if (finalizing)
+  // return` before the first tap's setFinalizing(true) re-renders the component.
+  // This ref is set *synchronously* on first tap and checked before any await,
+  // making it immune to that race.
+  const finalizingRef = useRef(false);
+
+  // Canonical hub route — used for all navigation from this screen
+  const hubRoute = `/fantasy/${leagueId}/${seasonId}` as const;
 
   const fetchSettlement = useCallback(async (quiet = false) => {
     if (!leagueId || !seasonId || !session) return;
@@ -82,16 +91,11 @@ export default function DraftDaySettleScreen() {
     if (!session || !leagueId || !seasonId) return;
     setPropState(prev => ({ ...prev, [propId]: { settling: true, error: null } }));
     try {
-      const resp = await settleDraftDayProp(leagueId, seasonId, propId, answerId, { session });
-
-      // Optimistic update — mirrors Game Day: re-settlement just changes the
-      // correct_answer, settled_count doesn't increase on corrections.
+      await settleDraftDayProp(leagueId, seasonId, propId, answerId, { session });
       setState(prev => {
         if (!prev) return prev;
         const wasAlreadySettled = prev.competition_props.find(p => p.id === propId)?.status === "settled";
-        const newSettledCount = wasAlreadySettled
-          ? prev.settled_count
-          : prev.settled_count + 1;
+        const newSettledCount = wasAlreadySettled ? prev.settled_count : prev.settled_count + 1;
         return {
           ...prev,
           competition_props: prev.competition_props.map(p =>
@@ -101,33 +105,61 @@ export default function DraftDaySettleScreen() {
           all_settled: newSettledCount === prev.total_competition_count,
         };
       });
-
-      // Refresh to get updated preview_leaderboard from server after any settlement
+      // Refresh to get updated preview_leaderboard from server
       fetchSettlement(true);
-
       setPropState(prev => ({ ...prev, [propId]: { settling: false, error: null } }));
     } catch (e: any) {
       setPropState(prev => ({ ...prev, [propId]: { settling: false, error: e.message ?? "Failed to resolve. Please try again." } }));
-      // Re-fetch to get true server state
       fetchSettlement(true);
     }
   }, [session, leagueId, seasonId, fetchSettlement]);
 
   const handleFinalize = useCallback(async () => {
-    if (!session || !leagueId || !seasonId || finalizing) return;
+    if (!session || !leagueId || !seasonId) return;
+
+    // ── Single-flight guard ────────────────────────────────────────────────
+    // Check ref first (synchronous — immune to stale-closure race on double-tap),
+    // then check state (for any later re-renders that got here without the ref).
+    if (finalizingRef.current || finalizing) return;
+
+    // Set ref synchronously, before any await, so a second tap within the same
+    // render cycle is blocked immediately.
+    finalizingRef.current = true;
     setFinalizing(true);
     setFinalizeError(null);
+
     try {
       await finalizeDraftDay(leagueId, seasonId, { session });
-      // Navigate back to hub — it will show the finalized state
-      router.back();
+      // already_finalized: true and already_finalized: false both count as success.
+      // Use replace (not back) for deterministic history-independent navigation.
+      router.replace(hubRoute as never);
     } catch (e: any) {
-      setFinalizeError(e.message ?? "Failed to finalize Draft Day. Please try again.");
+      // ── Ambiguous network error recovery ────────────────────────────────
+      // The POST may have reached the server and succeeded, but the client lost
+      // the response (timeout, network blip). Check current room state before
+      // showing an error — if the room is already finalized, treat as success.
+      let recoveredAsFinalized = false;
+      try {
+        if (session && leagueId && seasonId) {
+          const hub = await getDraftDay(leagueId, seasonId, { session });
+          if ((hub as any)?.room_status === "finalized") {
+            recoveredAsFinalized = true;
+            router.replace(hubRoute as never);
+          }
+        }
+      } catch {
+        // Hub fetch failed — fall through to error display
+      }
+
+      if (!recoveredAsFinalized) {
+        setFinalizeError(e.message ?? "Failed to finalize Draft Day. Please try again.");
+        setConfirmingFinalize(false);
+      }
     } finally {
+      finalizingRef.current = false;
       setFinalizing(false);
-      setConfirmingFinalize(false);
     }
-  }, [session, leagueId, seasonId, finalizing, router]);
+  }, [session, leagueId, seasonId, finalizing, router, hubRoute]);
 
   if (loading && !state) {
     return (
@@ -144,21 +176,33 @@ export default function DraftDaySettleScreen() {
         <TouchableOpacity style={styles.btn} onPress={() => fetchSettlement()}>
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
-          <Text style={styles.linkText}>← Back</Text>
+        <TouchableOpacity onPress={() => router.replace(hubRoute as never)} style={{ marginTop: 12 }}>
+          <Text style={styles.linkText}>← Back to Hub</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ── Finalized fallback ───────────────────────────────────────────────────────
+  // Shown when a user navigates directly to this screen after finalization.
+  // Both buttons use router.replace — deterministic, history-independent.
   if (state.room_status === "finalized") {
-    // Already finalized — shouldn't normally reach here, navigate back
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Text style={styles.emoji}>🏆</Text>
-        <Text style={styles.finalizedText}>Draft Day has been finalized!</Text>
-        <TouchableOpacity style={[styles.btn, { marginTop: 20 }]} onPress={() => router.back()}>
-          <Text style={styles.btnText}>Back to League Hub</Text>
+        <Text style={styles.finalizedText}>Draft Day has been finalized</Text>
+        <Text style={styles.finalizedSub}>Results are now read-only.</Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnFinalize, { marginTop: 20, width: "100%" }]}
+          onPress={() => router.replace(`/fantasy/draft-day/${leagueId}/${seasonId}/results` as never)}
+        >
+          <Text style={styles.btnText}>🏆 View Draft Day Results</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, styles.btnSecondary, { marginTop: 10, width: "100%" }]}
+          onPress={() => router.replace(hubRoute as never)}
+        >
+          <Text style={[styles.btnText, { color: C.tint }]}>← Back to League Hub</Text>
         </TouchableOpacity>
       </View>
     );
@@ -174,12 +218,20 @@ export default function DraftDaySettleScreen() {
         { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 40 },
       ]}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSettlement(true); }} tintColor={C.tint} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { setRefreshing(true); fetchSettlement(true); }}
+          tintColor={C.tint}
+        />
       }
     >
       {/* Back */}
-      <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-        <Text style={styles.linkText}>← Back to Hub</Text>
+      <TouchableOpacity
+        onPress={() => router.replace(hubRoute as never)}
+        style={styles.backBtn}
+        disabled={finalizing}
+      >
+        <Text style={[styles.linkText, finalizing && { opacity: 0.4 }]}>← Back to Hub</Text>
       </TouchableOpacity>
 
       {/* Header */}
@@ -215,6 +267,7 @@ export default function DraftDaySettleScreen() {
           settling={propState[prop.id]?.settling ?? false}
           propError={propState[prop.id]?.error ?? null}
           onSelect={handleSettle}
+          disabled={finalizing}
         />
       ))}
 
@@ -238,42 +291,61 @@ export default function DraftDaySettleScreen() {
             members will see the Draft Day leaderboard.
           </Text>
 
-          {!confirmingFinalize && (
+          {!confirmingFinalize && !finalizing && (
             <TouchableOpacity
-              style={[styles.btn, styles.btnFinalize, finalizing && { opacity: 0.5 }]}
+              style={styles.btn}
               onPress={() => setConfirmingFinalize(true)}
-              disabled={finalizing}
               activeOpacity={0.8}
             >
               <Text style={styles.btnText}>🏆  Finalize Draft Day</Text>
             </TouchableOpacity>
           )}
 
-          {confirmingFinalize && (
+          {(confirmingFinalize || finalizing) && (
             <View style={styles.finalizeConfirmBox}>
-              <Text style={styles.finalizeConfirmTitle}>Finalize Draft Day?</Text>
-              <Text style={styles.finalizeConfirmBody}>
-                Results will become read-only and participants will see the final leaderboard.{"\n\n"}
-                Season Receipts will remain pending and settle later — they don't affect the Draft Day winner.
+              <Text style={styles.finalizeConfirmTitle}>
+                {finalizing ? "Finalizing Draft Day…" : "Finalize Draft Day?"}
               </Text>
+              {!finalizing && (
+                <Text style={styles.finalizeConfirmBody}>
+                  Results will become read-only and participants will see the final leaderboard.{"\n\n"}
+                  Season Receipts will remain pending and settle later — they don't affect the Draft Day winner.
+                </Text>
+              )}
+
+              {finalizing && (
+                <View style={styles.finalizingRow}>
+                  <ActivityIndicator color={C.tint} size="small" />
+                  <Text style={styles.finalizingText}>Sealing the leaderboard…</Text>
+                </View>
+              )}
+
               <View style={styles.finalizeConfirmButtons}>
+                {/* Cancel — disabled while in-flight */}
                 <TouchableOpacity
-                  style={[styles.btn, styles.btnSecondary, { flex: 1 }]}
+                  style={[styles.btn, styles.btnSecondary, { flex: 1 }, finalizing && styles.btnDisabledOpacity]}
                   onPress={() => { setConfirmingFinalize(false); setFinalizeError(null); }}
                   disabled={finalizing}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.btnText, { color: C.tint }]}>Cancel</Text>
+                  <Text style={[styles.btnText, { color: finalizing ? C.textMuted : C.tint }]}>Cancel</Text>
                 </TouchableOpacity>
+
+                {/* Confirm — disabled and shows spinner while in-flight */}
                 <TouchableOpacity
-                  style={[styles.btn, styles.btnFinalize, { flex: 1 }, finalizing && { opacity: 0.5 }]}
+                  style={[styles.btn, styles.btnFinalize, { flex: 1 }, finalizing && styles.btnDisabledOpacity]}
                   onPress={handleFinalize}
                   disabled={finalizing}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.btnText}>{finalizing ? "Finalizing…" : "🏆  Finalize"}</Text>
+                  {finalizing ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.btnText}>🏆  Finalize</Text>
+                  )}
                 </TouchableOpacity>
               </View>
+
               {finalizeError && (
                 <Text style={styles.errorText}>{finalizeError}</Text>
               )}
@@ -292,15 +364,15 @@ interface PropCardProps {
   index: number;
   settling: boolean;
   propError: string | null;
+  disabled?: boolean;
   onSelect: (propId: string, answerId: string) => void;
 }
 
-function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps) {
+function PropCard({ prop, index, settling, propError, disabled, onSelect }: PropCardProps) {
   const isSettled = prop.status === "settled";
 
   return (
     <View style={[styles.propCard, isSettled && styles.propCardSettled]}>
-      {/* Question header */}
       <View style={styles.propHeader}>
         <View style={styles.propNumberBadge}>
           <Text style={styles.propNumberText}>{index + 1}</Text>
@@ -317,11 +389,10 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
       </View>
 
       {/* "Tap to change" hint for settled props */}
-      {isSettled && !settling && (
+      {isSettled && !settling && !disabled && (
         <Text style={styles.changeHint}>✎ Tap any answer to change</Text>
       )}
 
-      {/* Loading overlay */}
       {settling && (
         <View style={styles.propSettling}>
           <ActivityIndicator size="small" color={C.tint} />
@@ -329,7 +400,6 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
         </View>
       )}
 
-      {/* Answer options — always visible and tappable (mirroring Game Day re-settle behavior) */}
       {!settling && (
         <View style={styles.answerList}>
           {prop.answer_options.map((opt) => {
@@ -342,8 +412,10 @@ function PropCard({ prop, index, settling, propError, onSelect }: PropCardProps)
                   styles.answerOption,
                   isCorrect && styles.answerOptionCorrect,
                   isOtherSettled && styles.answerOptionOther,
+                  disabled && { opacity: 0.5 },
                 ]}
-                onPress={() => onSelect(prop.id, opt.id)}
+                onPress={() => !disabled && onSelect(prop.id, opt.id)}
+                disabled={disabled}
                 activeOpacity={0.75}
               >
                 <View style={[
@@ -388,20 +460,15 @@ const styles = StyleSheet.create({
   linkText:   { color: C.tint, fontSize: 14 },
   errorText:  { color: "#f87171", fontSize: 14, textAlign: "center" },
   emoji:      { fontSize: 48, textAlign: "center" },
-  finalizedText: { color: C.text, fontSize: 18, fontWeight: "600", textAlign: "center" },
+  finalizedText: { color: C.text, fontSize: 20, fontWeight: "700", textAlign: "center" },
+  finalizedSub:  { color: C.textSecondary, fontSize: 14, textAlign: "center" },
 
-  screenTitle: {
-    color: C.text, fontSize: 26, fontWeight: "700", marginBottom: 6,
-  },
-  screenSub: {
-    color: C.textSecondary, fontSize: 14, marginBottom: 20, lineHeight: 20,
-  },
+  screenTitle: { color: C.text, fontSize: 26, fontWeight: "700", marginBottom: 6 },
+  screenSub:   { color: C.textSecondary, fontSize: 14, marginBottom: 20, lineHeight: 20 },
 
-  // Progress
   progressCard: {
     backgroundColor: C.surface, borderRadius: 12, padding: 16,
-    marginBottom: 20, gap: 10,
-    borderWidth: 1, borderColor: C.border,
+    marginBottom: 20, gap: 10, borderWidth: 1, borderColor: C.border,
   },
   progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   progressLabel: { color: C.textMuted, fontSize: 11, fontWeight: "600", letterSpacing: 0.8 },
@@ -409,35 +476,27 @@ const styles = StyleSheet.create({
   progressBarBg: { height: 6, backgroundColor: C.border, borderRadius: 3 },
   progressBarFill: { height: 6, backgroundColor: C.tint, borderRadius: 3 },
 
-  // Prop cards
   propCard: {
     backgroundColor: C.surface, borderRadius: 14, padding: 16,
-    marginBottom: 16, gap: 12,
-    borderWidth: 1, borderColor: C.border,
+    marginBottom: 16, gap: 12, borderWidth: 1, borderColor: C.border,
   },
   propCardSettled: { borderColor: "#22c55e33" },
   propHeader: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   propNumberBadge: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: C.border, alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
+    backgroundColor: C.border, alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
   propNumberText: { color: C.text, fontSize: 12, fontWeight: "700" },
   propHeaderRight: { flex: 1, gap: 2 },
   propQuestion: { color: C.text, fontSize: 15, fontWeight: "600", lineHeight: 20 },
   propPoints: { color: C.tint, fontSize: 12, fontWeight: "600" },
   settledBadge: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: "#22c55e", alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
+    width: 24, height: 24, borderRadius: 12, backgroundColor: "#22c55e",
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
   settledBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 
-  // "Tap to change" hint
-  changeHint: {
-    color: C.textMuted, fontSize: 11, fontStyle: "italic",
-    marginBottom: -4,
-  },
+  changeHint: { color: C.textMuted, fontSize: 11, fontStyle: "italic", marginBottom: -4 },
 
   propSettling: { flexDirection: "row", gap: 8, alignItems: "center", paddingVertical: 4 },
   propSettlingText: { color: C.textSecondary, fontSize: 14 },
@@ -448,29 +507,22 @@ const styles = StyleSheet.create({
     backgroundColor: C.background, borderRadius: 10, padding: 12,
     borderWidth: 1, borderColor: C.border,
   },
-  answerOptionCorrect: {
-    backgroundColor: "#052E16", borderColor: "#22c55e",
-  },
-  // Non-selected options on a settled prop — slightly dimmed but clearly interactive
-  answerOptionOther: { opacity: 0.6 },
+  answerOptionCorrect: { backgroundColor: "#052E16", borderColor: "#22c55e" },
+  answerOptionOther:   { opacity: 0.6 },
   answerRadio: {
     width: 20, height: 20, borderRadius: 10,
     borderWidth: 2, borderColor: C.textMuted,
-    alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
   },
   answerRadioSelected: { borderColor: "#22c55e" },
-  answerRadioDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: "#22c55e",
-  },
+  answerRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#22c55e" },
   answerLabel: { flex: 1, color: C.text, fontSize: 14, lineHeight: 18 },
   answerLabelCorrect: { color: "#4ade80", fontWeight: "600" },
-  answerLabelOther: { color: C.textSecondary },
+  answerLabelOther:   { color: C.textSecondary },
   correctMark: { color: "#4ade80", fontSize: 16, fontWeight: "700" },
 
   propErrorText: { color: "#f87171", fontSize: 12, marginTop: 4 },
 
-  // Season receipts
   seasonReceiptsCard: {
     backgroundColor: "#1A1A2E", borderRadius: 14, padding: 16, gap: 10,
     marginBottom: 20, borderWidth: 1, borderColor: "#2D2D5A",
@@ -483,11 +535,9 @@ const styles = StyleSheet.create({
   seasonReceiptsBadgeText: { color: "#818CF8", fontSize: 12, fontWeight: "600" },
   seasonReceiptsBody: { color: C.textSecondary, fontSize: 13, lineHeight: 19 },
 
-  // Finalize
   finalizeSection: {
     backgroundColor: "#0F2D1A", borderRadius: 16, padding: 20, gap: 12,
-    marginBottom: 24, borderWidth: 1, borderColor: "#22c55e33",
-    alignItems: "center",
+    marginBottom: 24, borderWidth: 1, borderColor: "#22c55e33", alignItems: "center",
   },
   finalizeSectionTitle: { color: "#4ade80", fontSize: 18, fontWeight: "700", textAlign: "center" },
   finalizeSectionBody: { color: C.textSecondary, fontSize: 13, lineHeight: 19, textAlign: "center" },
@@ -500,7 +550,9 @@ const styles = StyleSheet.create({
   finalizeConfirmBody: { color: C.textSecondary, fontSize: 13, lineHeight: 19, textAlign: "center" },
   finalizeConfirmButtons: { flexDirection: "row", gap: 10 },
 
-  // Buttons
+  finalizingRow: { flexDirection: "row", gap: 10, alignItems: "center", justifyContent: "center", paddingVertical: 4 },
+  finalizingText: { color: C.textSecondary, fontSize: 14 },
+
   btn: {
     backgroundColor: C.tint, borderRadius: 12, paddingVertical: 14,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 16,
@@ -508,4 +560,5 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   btnSecondary: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
   btnFinalize: { backgroundColor: "#16a34a" },
+  btnDisabledOpacity: { opacity: 0.5 },
 });

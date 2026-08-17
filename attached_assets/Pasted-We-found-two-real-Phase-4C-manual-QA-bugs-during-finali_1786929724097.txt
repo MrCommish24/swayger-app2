@@ -1,0 +1,363 @@
+We found two real Phase 4C manual-QA bugs during finalization.
+
+MANUAL QA RESULT
+
+The first seven manual QA steps passed.
+
+Failure occurred at actual finalization:
+
+1. I tapped the final confirm.
+2. Finalization took several seconds.
+3. Because there was not enough immediate feedback / protection, I tapped confirm a second time.
+4. I was then taken to the finalized fallback screen:
+
+🏆
+Draft Day has been finalized!
+[ Back to League Hub ]
+
+5. Clicking “Back to League Hub” does nothing.
+
+Do NOT begin Week 1 or any new feature work.
+
+This is a focused Phase 4C reliability/navigation correction.
+
+==================================================
+1. REPRODUCE AND TRACE THE DOUBLE-FINALIZE FLOW
+==================================================
+
+Inspect:
+
+- Draft Day settle screen finalize handler
+- hub finalize handler if separate
+- POST /draft-day/finalize
+- API client wrapper
+- navigation after successful finalize
+- behavior when response returns `already_finalized: true`
+- finalized fallback screen rendered inside settle.tsx
+
+Determine exactly what happens when:
+
+Request A:
+POST /finalize
+→ takes several seconds
+→ succeeds
+→ room becomes finalized
+
+Before Request A UI completes:
+
+Request B:
+POST /finalize again
+
+Trace:
+- response status
+- response body
+- state mutations
+- router calls
+- subsequent fetches
+- why user lands on the “Draft Day has been finalized!” fallback screen
+
+Return the root cause.
+
+==================================================
+2. PREVENT DOUBLE SUBMISSION
+==================================================
+
+The final confirmation must become single-flight immediately.
+
+As soon as commissioner taps the FINAL confirmation:
+
+- disable the confirm button synchronously
+- show spinner/loading state immediately
+- change button text to something clear such as:
+
+Finalizing...
+
+- ignore additional taps while request is in flight
+- do not fire a second POST
+- do not allow double finalize from rapid taps
+
+Do not wait for server response before setting loading state.
+
+Use existing `finalizingDraftDay` or equivalent state if already available.
+
+Make sure the state guard exists BOTH:
+
+A. visually
+B. in the event handler
+
+Example behavioral requirement:
+
+if (finalizingDraftDay) return;
+
+before making the request.
+
+Do not rely solely on `disabled`.
+
+==================================================
+3. FINALIZE API REMAINS IDEMPOTENT
+==================================================
+
+Keep server idempotency.
+
+POST /draft-day/finalize should still safely return success when the room is already finalized.
+
+Expected second-call behavior may remain:
+
+{
+  ok: true,
+  already_finalized: true
+}
+
+or equivalent.
+
+A duplicate request must NEVER produce a broken UX.
+
+Even though UI should prevent duplicates, server must remain retry-safe.
+
+==================================================
+4. SUCCESS NAVIGATION MUST HANDLE BOTH RESPONSES
+==================================================
+
+Whether finalize returns:
+
+already_finalized: false
+
+OR
+
+already_finalized: true
+
+the client should end in the SAME valid place.
+
+Preferred destination:
+
+Fantasy League Hub
+
+with fresh room state showing:
+
+🏆 View Draft Day Results
+
+Do not send the user to an error/fallback screen merely because the operation was already completed.
+
+Treat `already_finalized: true` as successful completion, not failure.
+
+==================================================
+5. TROUBLESHOOT “BACK TO LEAGUE HUB” BUTTON
+==================================================
+
+Inspect the exact button shown on the screenshot:
+
+“Back to League Hub”
+
+Determine:
+
+- its onPress handler
+- whether it uses `router.back()`
+- `router.push()`
+- `router.replace()`
+- incorrect route params
+- stale route state
+- a disabled/loading overlay intercepting touches
+- invalid pathname construction
+
+The button currently does nothing.
+
+Fix it.
+
+Do NOT use `router.back()` if that can return the user to the same settle screen or depend on navigation history.
+
+Preferred robust behavior:
+
+router.replace(
+  `/fantasy/${leagueId}/${seasonId}`
+)
+
+or whatever the exact canonical Fantasy League Hub route is.
+
+Use the actual existing hub route from the codebase.
+
+The navigation must be deterministic.
+
+==================================================
+6. FINALIZED SETTLE SCREEN BEHAVIOR
+==================================================
+
+If a user somehow navigates directly to the Resolve Draft Day screen after finalization:
+
+the current fallback screen is fine conceptually:
+
+🏆
+Draft Day has been finalized!
+[ Back to League Hub ]
+
+But improve it slightly.
+
+Preferred:
+
+Draft Day has been finalized
+
+Results are now read-only.
+
+[ View Draft Day Results ]
+[ Back to League Hub ]
+
+Only add View Draft Day Results if the results route already exists and can be linked safely.
+
+Most importantly:
+
+both buttons must work.
+
+Do not make this screen a dead end.
+
+==================================================
+7. LOADING UX
+==================================================
+
+Finalization currently takes several seconds.
+
+That is acceptable for now if the user gets immediate feedback.
+
+During finalize:
+
+- show spinner
+- disable Cancel
+- disable duplicate Finalize
+- disable navigation actions that could create inconsistent state if appropriate
+- show “Finalizing Draft Day...” text
+
+Do not add artificial delay.
+
+Do not optimize backend performance yet unless you discover a clearly unnecessary blocking query.
+
+First fix interaction safety.
+
+==================================================
+8. TIMEOUT / NETWORK ERROR BEHAVIOR
+==================================================
+
+Handle ambiguous completion safely.
+
+Scenario:
+
+POST /finalize reaches server and succeeds,
+but client times out / network response is lost.
+
+On retry:
+
+server returns already_finalized=true.
+
+Client should treat this as success and navigate to hub/results.
+
+Do not show:
+
+“Finalize failed”
+
+if fresh state confirms the room is finalized.
+
+If request throws:
+- fetch current hub/room state
+- if room_status === 'finalized':
+  treat as successful finalization
+  navigate appropriately
+- otherwise show retryable error
+
+This prevents a successful server action from looking like failure.
+
+==================================================
+9. TESTS TO ADD
+==================================================
+
+Add explicit regression tests for:
+
+DOUBLE CLICK:
+- call finalize twice rapidly
+- client handler only sends one request when first is in-flight
+
+SERVER IDEMPOTENCY:
+- first finalize returns success
+- second finalize returns already_finalized
+- no corruption
+
+ALREADY FINALIZED CLIENT FLOW:
+- already_finalized=true treated as success
+- user navigates to League Hub
+- no finalized dead-end screen caused by duplicate finalize
+
+AMBIGUOUS NETWORK:
+- finalize succeeds server-side
+- simulated client response failure
+- subsequent state refresh sees finalized
+- UX treats operation as success
+
+BUTTON NAVIGATION:
+- finalized fallback Back to League Hub uses deterministic canonical route
+- button is tappable
+- correct leagueId + seasonId are used
+
+DIRECT FINALIZED ROUTE:
+- opening settle screen for finalized room shows read-only finalized state
+- Back to League Hub works
+- View Draft Day Results works if implemented
+
+==================================================
+10. PRESERVE EXISTING FINALITY RULES
+==================================================
+
+Do NOT change:
+
+- pre-finalization result correction
+- member pick locking
+- competition settlement semantics
+- weighted scoring
+- Season Receipt lifecycle
+- post-finalization competition immutability
+
+This is not another lifecycle redesign.
+
+This is a reliability + navigation fix.
+
+==================================================
+11. RUN REGRESSION
+==================================================
+
+After fixing:
+
+Run:
+- Phase 4C
+- relevant navigation/UI tests
+- all previous Fantasy suites
+- classic Game Day settlement regression
+
+Return exact:
+- total
+- passed
+- failed
+- skipped
+
+==================================================
+12. RETURN
+==================================================
+
+Return:
+
+1. exact root cause of the duplicate-finalize behavior
+2. exact root cause of the broken Back to League Hub button
+3. files changed
+4. loading/single-flight behavior added
+5. how already_finalized=true is handled
+6. ambiguous network-response behavior
+7. navigation fix
+8. tests added
+9. regression totals
+10. exact manual QA steps for me
+
+Then STOP.
+
+Do not begin Week 1.
+
+End with:
+
+PHASE 4C FINALIZATION UX READY FOR QA
+
+or
+
+CORRECTION REQUIRED
