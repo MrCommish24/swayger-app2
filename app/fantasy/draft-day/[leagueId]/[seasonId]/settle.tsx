@@ -67,8 +67,12 @@ export default function DraftDaySettleScreen() {
   // making it immune to that race.
   const finalizingRef = useRef(false);
 
-  // Canonical hub route — used for all navigation from this screen
-  const hubRoute = `/fantasy/${leagueId}/${seasonId}` as const;
+  // Navigate to hub — matches the working pattern in join/manage screens.
+  // Uses router.replace so the settle screen is removed from history,
+  // preventing back-navigation returning here after finalization.
+  const goToHub = useCallback(() => {
+    router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
+  }, [leagueId, seasonId, router]);
 
   const fetchSettlement = useCallback(async (quiet = false) => {
     if (!leagueId || !seasonId || !session) return;
@@ -132,7 +136,7 @@ export default function DraftDaySettleScreen() {
       await finalizeDraftDay(leagueId, seasonId, { session });
       // already_finalized: true and already_finalized: false both count as success.
       // Use replace (not back) for deterministic history-independent navigation.
-      router.replace(hubRoute as never);
+      goToHub();
     } catch (e: any) {
       // ── Ambiguous network error recovery ────────────────────────────────
       // The POST may have reached the server and succeeded, but the client lost
@@ -144,7 +148,7 @@ export default function DraftDaySettleScreen() {
           const hub = await getDraftDay(leagueId, seasonId, { session });
           if ((hub as any)?.room_status === "finalized") {
             recoveredAsFinalized = true;
-            router.replace(hubRoute as never);
+            goToHub();
           }
         }
       } catch {
@@ -159,7 +163,7 @@ export default function DraftDaySettleScreen() {
       finalizingRef.current = false;
       setFinalizing(false);
     }
-  }, [session, leagueId, seasonId, finalizing, router, hubRoute]);
+  }, [session, leagueId, seasonId, finalizing, goToHub]);
 
   if (loading && !state) {
     return (
@@ -176,7 +180,7 @@ export default function DraftDaySettleScreen() {
         <TouchableOpacity style={styles.btn} onPress={() => fetchSettlement()}>
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.replace(hubRoute as never)} style={{ marginTop: 12 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
           <Text style={styles.linkText}>← Back to Hub</Text>
         </TouchableOpacity>
       </View>
@@ -194,13 +198,13 @@ export default function DraftDaySettleScreen() {
         <Text style={styles.finalizedSub}>Results are now read-only.</Text>
         <TouchableOpacity
           style={[styles.btn, styles.btnFinalize, { marginTop: 20, width: "100%" }]}
-          onPress={() => router.replace(`/fantasy/draft-day/${leagueId}/${seasonId}/results` as never)}
+          onPress={() => router.replace(`/fantasy/draft-day/${leagueId}/${seasonId}/results` as any)}
         >
           <Text style={styles.btnText}>🏆 View Draft Day Results</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.btn, styles.btnSecondary, { marginTop: 10, width: "100%" }]}
-          onPress={() => router.replace(hubRoute as never)}
+          onPress={goToHub}
         >
           <Text style={[styles.btnText, { color: C.tint }]}>← Back to League Hub</Text>
         </TouchableOpacity>
@@ -225,9 +229,9 @@ export default function DraftDaySettleScreen() {
         />
       }
     >
-      {/* Back */}
+      {/* Back — settle is always pushed from hub, so router.back() is safe here */}
       <TouchableOpacity
-        onPress={() => router.replace(hubRoute as never)}
+        onPress={() => router.back()}
         style={styles.backBtn}
         disabled={finalizing}
       >
