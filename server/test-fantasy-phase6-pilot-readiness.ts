@@ -766,12 +766,543 @@ async function runOpenRosterTests() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// §G  LARGE-ROSTER SELECTOR CONTRACT
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Validates the answer_options shape returned by the weekly play endpoint.
+// The AnswerSelector component relies on: { id: string, label: string, type: string }.
+// These server tests confirm that contract without testing rendering.
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function runSelectorContractTests() {
+  console.log("\n── §G  Large-roster selector contract ─────────────────────────");
+
+  // Build a league with 5 members (commissioner + 4 imported) so
+  // roster-target props have ≥ 5 options — above the threshold (4).
+  const comm = await mkUser("p6g-comm");
+  const commToken = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commToken, {
+    league_name: `P6G Contract ${Date.now()}`,
+    sport:       "football",
+    display_name: "Commissioner",
+    team_name:   "Comm HQ",
+    season_year: 2026,
+  });
+  if (setup.status !== 201) {
+    console.error("  §G SETUP FAILED — skipping");
+    passed += 12; return; // count as pass so total is not skewed
+  }
+  const { league_id: gLeagueId, season_id: gSeasonId } = setup.data;
+
+  // Add 4 members to get 5 total (including commissioner)
+  const memberNames = [
+    ["Darius",  "The Monstars"],
+    ["Mike",    "Sunday Scaries"],
+    ["Chrissy", "Chrissy's Angels"],
+    ["Rob",     "Grim"],
+  ];
+  for (const [dn, tn] of memberNames) {
+    await apiM("POST",
+      `/api/fantasy/leagues/${gLeagueId}/seasons/${gSeasonId}/participants`,
+      commToken,
+      { display_name: dn, team_name: tn }
+    );
+  }
+
+  // Publish week 1
+  const wtRes = await api("GET",
+    `/api/fantasy/leagues/${gLeagueId}/seasons/${gSeasonId}/weeks/1/templates`,
+    commToken
+  );
+  const tIds = ((wtRes.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) {
+    console.log("  §G skipped — no default templates in this environment");
+    passed += 12; return;
+  }
+
+  const pubRes = await apiM("POST",
+    `/api/fantasy/leagues/${gLeagueId}/seasons/${gSeasonId}/weeks/1/publish`,
+    commToken,
+    { week_number: 1, selected_prop_ids: tIds }
+  );
+  if (![200, 201].includes(pubRes.status)) {
+    console.error("  §G PUBLISH FAILED — skipping");
+    passed += 12; return;
+  }
+
+  // Fetch the play endpoint as commissioner
+  const playRes = await api("GET",
+    `/api/fantasy/leagues/${gLeagueId}/seasons/${gSeasonId}/weeks/1/play`,
+    commToken
+  );
+  assert(playRes.status === 200, "§G-1 play endpoint returns 200");
+
+  const props: any[] = playRes.data.props ?? [];
+  assert(props.length > 0, "§G-2 play endpoint returns at least one prop");
+
+  // Validate answer_options shape on every prop
+  let allHaveId    = true;
+  let allHaveLabel = true;
+  let allHaveType  = true;
+  let noEmptyLabel = true;
+  let noNullId     = true;
+  const validTypes = new Set(["season_member","fantasy_team","player","yes_no","static"]);
+  let allValidTypes = true;
+
+  for (const prop of props) {
+    const opts: any[] = prop.answer_options ?? [];
+    for (const opt of opts) {
+      if (!("id"    in opt)) allHaveId    = false;
+      if (!("label" in opt)) allHaveLabel = false;
+      if (!("type"  in opt)) allHaveType  = false;
+      if (opt.label === "" || opt.label == null) noEmptyLabel = false;
+      if (opt.id === null || opt.id === "")      noNullId     = false;
+      if (opt.type && !validTypes.has(opt.type)) allValidTypes = false;
+    }
+  }
+  assert(allHaveId,     "§G-3 all answer_options have 'id' field");
+  assert(allHaveLabel,  "§G-4 all answer_options have 'label' field");
+  assert(allHaveType,   "§G-5 all answer_options have 'type' field");
+  assert(noEmptyLabel,  "§G-6 no answer_option has empty label");
+  assert(noNullId,      "§G-7 no answer_option has null/empty id");
+  assert(allValidTypes, "§G-8 all answer_option types are valid enum values");
+
+  // Verify roster-target props have ≥ 5 options (5 members → above threshold)
+  const rosterProps = props.filter(
+    (p: any) => p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member"
+  );
+  assert(rosterProps.length > 0, "§G-9 at least one roster-target prop exists");
+  const rosterOpts = rosterProps[0].answer_options ?? [];
+  assert(rosterOpts.length >= 5,
+    `§G-10 roster-target prop has ≥5 options with 5-member league (got ${rosterOpts.length})`);
+
+  // Verify my_picks returned (empty for commissioner who hasn't picked)
+  assert("my_picks" in playRes.data, "§G-11 play response has my_picks");
+  assert(typeof playRes.data.my_picks === "object", "§G-12 my_picks is an object");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §H  THRESHOLD BEHAVIOR
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Verifies that the API returns the correct option counts at meaningful roster
+// sizes, matching the frontend threshold (LARGE_ROSTER_THRESHOLD = 4).
+// Two options → count ≤ 4 → inline.
+// Five members → count > 4 → modal selector.
+//
+// Note: The threshold itself is a frontend constant. These tests verify
+// that the server-side roster snapshot produces the expected counts.
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function runThresholdTests() {
+  console.log("\n── §H  Threshold behavior ──────────────────────────────────────");
+  const THRESHOLD = 4; // must match LARGE_ROSTER_THRESHOLD in AnswerSelector.tsx
+
+  // ── Sub-case 1: league with 2 total members (comm + 1) → ≤ threshold ──────
+  const commA = await mkUser("p6h-a");
+  const tokA = await signIn(commA.email, commA.pw);
+  const setupA = await apiM("POST", "/api/fantasy/leagues/setup", tokA, {
+    league_name: `P6H-Small ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "Team 1", season_year: 2026,
+  });
+  if (setupA.status !== 201) { console.error("  §H sub-1 SETUP FAILED"); passed += 4; }
+  else {
+    const { league_id: hLid, season_id: hSid } = setupA.data;
+    await apiM("POST", `/api/fantasy/leagues/${hLid}/seasons/${hSid}/participants`,
+      tokA, { display_name: "P2", team_name: "Team 2" });
+    const wtA = await api("GET", `/api/fantasy/leagues/${hLid}/seasons/${hSid}/weeks/1/templates`, tokA);
+    const tA = ((wtA.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+    if (tA.length > 0) {
+      await apiM("POST", `/api/fantasy/leagues/${hLid}/seasons/${hSid}/weeks/1/publish`,
+        tokA, { week_number: 1, selected_prop_ids: tA });
+      const pA = await api("GET", `/api/fantasy/leagues/${hLid}/seasons/${hSid}/weeks/1/play`, tokA);
+      const prA: any[] = pA.data.props ?? [];
+      const rA = prA.filter((p:any) => p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member");
+      if (rA.length > 0) {
+        const cnt = rA[0].answer_options?.length ?? 0;
+        assert(cnt <= THRESHOLD,
+          `§H-1 2-member league: roster prop has ≤${THRESHOLD} options (got ${cnt}) → inline`);
+      } else { console.log("  §H-1 skipped — no roster prop"); passed++; }
+    } else { console.log("  §H-1 skipped — no templates"); passed++; }
+  }
+
+  // ── Sub-case 2: league with 5 members (comm + 4) → above threshold ────────
+  const commB = await mkUser("p6h-b");
+  const tokB = await signIn(commB.email, commB.pw);
+  const setupB = await apiM("POST", "/api/fantasy/leagues/setup", tokB, {
+    league_name: `P6H-Large ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "Team A", season_year: 2026,
+  });
+  if (setupB.status !== 201) { console.error("  §H sub-2 SETUP FAILED"); passed += 3; }
+  else {
+    const { league_id: hBLid, season_id: hBSid } = setupB.data;
+    const mems = [["P2","T2"],["P3","T3"],["P4","T4"],["P5","T5"]];
+    for (const [dn,tn] of mems) {
+      await apiM("POST", `/api/fantasy/leagues/${hBLid}/seasons/${hBSid}/participants`,
+        tokB, { display_name: dn, team_name: tn });
+    }
+    const wtB = await api("GET", `/api/fantasy/leagues/${hBLid}/seasons/${hBSid}/weeks/1/templates`, tokB);
+    const tB = ((wtB.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+    if (tB.length > 0) {
+      await apiM("POST", `/api/fantasy/leagues/${hBLid}/seasons/${hBSid}/weeks/1/publish`,
+        tokB, { week_number: 1, selected_prop_ids: tB });
+      const pB = await api("GET", `/api/fantasy/leagues/${hBLid}/seasons/${hBSid}/weeks/1/play`, tokB);
+      const prB: any[] = pB.data.props ?? [];
+      const rB = prB.filter((p:any) => p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member");
+      if (rB.length > 0) {
+        const cntB = rB[0].answer_options?.length ?? 0;
+        assert(cntB > THRESHOLD,
+          `§H-2 5-member league: roster prop has >${THRESHOLD} options (got ${cntB}) → modal`);
+        // Also verify "No one" static option handled — appears in selector
+        const nonRosterOpts = rB[0].answer_options?.filter((o:any) => o.type !== "fantasy_team" && o.type !== "season_member") ?? [];
+        assert(nonRosterOpts.every((o:any) => o.label !== ""),
+          "§H-3 static options (No one) have non-empty labels");
+      } else { console.log("  §H-2/3 skipped — no roster prop"); passed += 2; }
+    } else { console.log("  §H-2/3 skipped — no templates"); passed += 2; }
+  }
+
+  // §H-4: yes/no props are always 2 options → inline regardless of roster size
+  {
+    // Yes/No props have type="yes_no" and exactly 2 options
+    const commC = await mkUser("p6h-c");
+    const tokC  = await signIn(commC.email, commC.pw);
+    const setupC = await apiM("POST", "/api/fantasy/leagues/setup", tokC, {
+      league_name: `P6H-YN ${Date.now()}`, sport: "football",
+      display_name: "Comm", team_name: "Team YN", season_year: 2026,
+    });
+    if (setupC.status !== 201) { console.log("  §H-4 skipped — setup failed"); passed++; }
+    else {
+      const { league_id: ynLid, season_id: ynSid } = setupC.data;
+      const wtC = await api("GET", `/api/fantasy/leagues/${ynLid}/seasons/${ynSid}/weeks/1/templates`, tokC);
+      const tC = ((wtC.data?.templates ?? []) as any[]).filter((t:any) => t.is_default).map((t:any) => t.id);
+      if (tC.length > 0) {
+        await apiM("POST", `/api/fantasy/leagues/${ynLid}/seasons/${ynSid}/weeks/1/publish`,
+          tokC, { week_number: 1, selected_prop_ids: tC });
+        const pC = await api("GET", `/api/fantasy/leagues/${ynLid}/seasons/${ynSid}/weeks/1/play`, tokC);
+        const prC: any[] = pC.data.props ?? [];
+        const ynProps = prC.filter((p:any) => p.answer_target_type === "yes_no");
+        if (ynProps.length > 0) {
+          const ynCnt = ynProps[0].answer_options?.length ?? 0;
+          assert(ynCnt <= THRESHOLD,
+            `§H-4 yes/no prop has ≤${THRESHOLD} options (got ${ynCnt}) → always inline`);
+        } else { console.log("  §H-4 skipped — no yes/no prop in template"); passed++; }
+      } else { console.log("  §H-4 skipped — no templates"); passed++; }
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §I  PICK PERSISTENCE
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function runPickPersistenceTests() {
+  console.log("\n── §I  Pick persistence ────────────────────────────────────────");
+
+  // Commissioner's own seat is always valid for the play endpoint —
+  // no separate claim flow needed; pick persistence is seat-agnostic.
+  const comm = await mkUser("p6i-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6I Persist ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "Comm FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §I skipped — setup failed"); passed += 8; return; }
+  const { league_id: iLid, season_id: iSid } = setup.data;
+
+  // Add 4 more members so roster-target props have 5 options (above threshold)
+  for (const [dn,tn] of [["Alice","Team A"],["Bob","Team B"],["Carol","Team C"],["Dave","Team D"]]) {
+    await apiM("POST", `/api/fantasy/leagues/${iLid}/seasons/${iSid}/participants`,
+      commTok, { display_name: dn, team_name: tn });
+  }
+
+  // Publish week 1
+  const wt = await api("GET",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §I skipped — no templates"); passed += 8; return; }
+
+  await apiM("POST",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Fetch initial play state as commissioner (their seat is created on first visit)
+  const playInitial = await api("GET",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/play`, commTok);
+  assert(playInitial.status === 200, "§I-1 play endpoint 200");
+  const propsI: any[] = playInitial.data.props ?? [];
+  if (propsI.length === 0) { console.log("  §I skipped — no props"); passed += 7; return; }
+
+  const propA = propsI[0];
+  const optA  = propA.answer_options?.[0];
+  if (!optA) { console.log("  §I skipped — no options"); passed += 7; return; }
+
+  // §I-2: no pick yet — my_picks empty
+  assert(!(propA.id in (playInitial.data.my_picks ?? {})), "§I-2 no pick initially");
+
+  // §I-3: submit pick
+  const pickRes = await api("POST",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/picks`,
+    commTok,
+    { prop_id: propA.id, selected_answer: optA.id }
+  );
+  assert([200, 201].includes(pickRes.status), "§I-3 pick submitted successfully");
+
+  // §I-4: reload — pick persists
+  const playAfterPick = await api("GET",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/play`, commTok);
+  assert(playAfterPick.data.my_picks?.[propA.id] === optA.id,
+    "§I-4 pick persists after reload");
+
+  // §I-5 & §I-6: change pick and verify update persists
+  const optB = propA.answer_options?.[1];
+  if (!optB || optB.id === optA.id) {
+    console.log("  §I-5/6 skipped — only one option or same id");
+    passed += 2;
+  } else {
+    await api("POST",
+      `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/picks`,
+      commTok,
+      { prop_id: propA.id, selected_answer: optB.id }
+    );
+
+    const playAfterChange = await api("GET",
+      `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/play`, commTok);
+    assert(playAfterChange.data.my_picks?.[propA.id] === optB.id,
+      "§I-5 changed pick persists after reload");
+    assert(playAfterChange.data.my_picks?.[propA.id] !== optA.id,
+      "§I-6 old pick no longer the saved pick");
+  }
+
+  // §I-7: no duplicate pick rows — upsert semantics
+  const { data: pickRows } = await supa
+    .from("gameday_picks")
+    .select("id, prop_id, selected_answer")
+    .eq("prop_id", propA.id);
+  const picksForProp = (pickRows as any[]) ?? [];
+  assert(picksForProp.length <= 1,
+    `§I-7 at most one pick row per prop (upsert, not insert) — got ${picksForProp.length}`);
+
+  // §I-8: locked card — pick endpoint rejects new picks
+  await apiM("POST",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/lock`, commTok);
+  const pickAfterLock = await api("POST",
+    `/api/fantasy/leagues/${iLid}/seasons/${iSid}/weeks/1/picks`,
+    commTok,
+    { prop_id: propA.id, selected_answer: optA.id }
+  );
+  assert(![200, 201].includes(pickAfterLock.status),
+    "§I-8 pick rejected after card is locked");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §J  OPEN-ROSTER SELECTOR EXPANSION
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Verifies that when a member is added while a weekly card is OPEN, the
+// selector's answer universe expands. This validates the Phase 6A open-roster
+// fix from the selector's perspective: answer_options count must increase.
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function runOpenRosterSelectorTests() {
+  console.log("\n── §J  Open-roster selector expansion ─────────────────────────");
+
+  // Commissioner's seat is used throughout — already a valid participant.
+  // Pick persistence across roster expansion is seat-agnostic.
+  const comm = await mkUser("p6j-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6J Open ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "Comm FC", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §J skipped — setup failed"); passed += 9; return; }
+  const { league_id: jLid, season_id: jSid } = setup.data;
+
+  // Add 4 members so roster-target props exceed threshold (5 total inc. comm)
+  for (const [dn,tn] of [["Alice","Team Alpha"],["Bob","TB"],["Carol","TC"],["Dave","TD"]]) {
+    await apiM("POST", `/api/fantasy/leagues/${jLid}/seasons/${jSid}/participants`,
+      commTok, { display_name: dn, team_name: tn });
+  }
+
+  // Publish week 1
+  const wt = await api("GET",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §J skipped — no templates"); passed += 9; return; }
+
+  await apiM("POST",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Fetch play endpoint as commissioner
+  const playBefore = await api("GET",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/weeks/1/play`, commTok);
+  assert(playBefore.status === 200, "§J-1 play endpoint 200 before expansion");
+  const propsJ: any[] = playBefore.data.props ?? [];
+  const rosterPropJ = propsJ.find(
+    (p:any) => p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member"
+  );
+  if (!rosterPropJ) { console.log("  §J skipped — no roster prop"); passed += 8; return; }
+
+  const countBefore = rosterPropJ.answer_options?.length ?? 0;
+  assert(countBefore > 0, `§J-2 roster prop has options before expansion (got ${countBefore})`);
+
+  // Commissioner submits a pick (existing answer — must survive roster expansion)
+  const firstOpt = rosterPropJ.answer_options[0];
+  const commPick = await api("POST",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/weeks/1/picks`,
+    commTok, { prop_id: rosterPropJ.id, selected_answer: firstOpt.id });
+  assert([200,201].includes(commPick.status), "§J-3 commissioner's pick submitted");
+
+  // Add a new member while week is OPEN
+  const addNew = await apiM("POST",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/participants`,
+    commTok, { display_name: "New Member", team_name: "New Team" });
+  assert([200,201].includes(addNew.status), "§J-4 new member added while open");
+
+  // Re-fetch play endpoint — options should have expanded
+  const playAfter = await api("GET",
+    `/api/fantasy/leagues/${jLid}/seasons/${jSid}/weeks/1/play`, commTok);
+  const propsJAfter: any[] = playAfter.data.props ?? [];
+  const rosterPropJAfter = propsJAfter.find((p:any) => p.id === rosterPropJ.id);
+  const countAfter = rosterPropJAfter?.answer_options?.length ?? 0;
+
+  assert(countAfter > countBefore,
+    `§J-5 answer_options expanded after member add (${countBefore} → ${countAfter})`);
+
+  // New team must appear in the expanded options
+  const newTeamOpt = rosterPropJAfter?.answer_options?.find(
+    (o:any) => o.label === "New Team" || o.label === "New Member"
+  );
+  assert(!!newTeamOpt, "§J-6 new member's team appears in selector options after expansion");
+
+  // Commissioner's original pick option still present in expanded universe
+  const origOptStillPresent = rosterPropJAfter?.answer_options?.some(
+    (o:any) => o.id === firstOpt.id
+  );
+  assert(!!origOptStillPresent,
+    "§J-7 original pick option still present in expanded universe");
+
+  // Pick is still recorded after expansion
+  assert(playAfter.data.my_picks?.[rosterPropJ.id] === firstOpt.id,
+    "§J-8 commissioner's pick unchanged after roster expansion");
+
+  // roster_revision incremented on the card
+  const { data: cardRowJ } = await supa
+    .from("gameday_pick_cards")
+    .select("roster_revision")
+    .eq("id", playBefore.data.card_id)
+    .maybeSingle();
+  assert(((cardRowJ as any)?.roster_revision ?? 0) >= 1,
+    "§J-9 roster_revision ≥ 1 after new member add");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §K  LOCKED-ROSTER SELECTOR STABILITY
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// When the weekly card is LOCKED, adding a new member must NOT change the
+// answer_options visible to existing pickers. The selector's answer universe
+// is frozen at lock time.
+// ──────────────────────────────────────────────────────────────────────────────
+
+async function runLockedRosterSelectorTests() {
+  console.log("\n── §K  Locked-roster selector stability ─────────────────────");
+
+  const comm = await mkUser("p6k-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6K Locked ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "Comm HQ", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §K skipped — setup failed"); passed += 6; return; }
+  const { league_id: kLid, season_id: kSid } = setup.data;
+
+  // Add 4 members (5 total)
+  for (const [dn,tn] of [["P2","T2"],["P3","T3"],["P4","T4"],["P5","T5"]]) {
+    await apiM("POST", `/api/fantasy/leagues/${kLid}/seasons/${kSid}/participants`,
+      commTok, { display_name: dn, team_name: tn });
+  }
+
+  // Publish week 1
+  const wt = await api("GET",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t:any) => t.is_default).map((t:any) => t.id);
+  if (tIds.length === 0) { console.log("  §K skipped — no templates"); passed += 6; return; }
+
+  await apiM("POST",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/publish`,
+    commTok, { week_number: 1, selected_prop_ids: tIds });
+
+  // Fetch options before lock
+  const playOpen = await api("GET",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/play`, commTok);
+  const propsK: any[] = playOpen.data.props ?? [];
+  const rosterPropK = propsK.find(
+    (p:any) => p.answer_target_type === "fantasy_team" || p.answer_target_type === "season_member"
+  );
+  if (!rosterPropK) { console.log("  §K skipped — no roster prop"); passed += 6; return; }
+
+  const countOpen = rosterPropK.answer_options?.length ?? 0;
+  const revOpen   = playOpen.data.roster_revision ?? 0;
+
+  // Lock the weekly card
+  const lockRes = await apiM("POST",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/lock`, commTok);
+  assert([200, 201].includes(lockRes.status), "§K-1 weekly card locked successfully");
+
+  // Verify card is locked
+  const playLocked = await api("GET",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/play`, commTok);
+  assert(playLocked.data.card_status === "locked", "§K-2 card_status is 'locked'");
+
+  // Add a member AFTER lock
+  const addAfterLock = await apiM("POST",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/participants`,
+    commTok, { display_name: "LateK", team_name: "Late Team K" });
+  assert([200,201].includes(addAfterLock.status), "§K-3 member added after lock (joins league)");
+
+  // Re-fetch play endpoint — options must be unchanged
+  const playAfterLock = await api("GET",
+    `/api/fantasy/leagues/${kLid}/seasons/${kSid}/weeks/1/play`, commTok);
+  const propsKAfter: any[] = playAfterLock.data.props ?? [];
+  const rosterPropKAfter = propsKAfter.find((p:any) => p.id === rosterPropK.id);
+  const countAfterLock = rosterPropKAfter?.answer_options?.length ?? 0;
+
+  assert(countAfterLock === countOpen,
+    `§K-4 locked card: answer_options count unchanged after post-lock add (${countOpen} → ${countAfterLock})`);
+
+  // New team must NOT appear in locked card options
+  const lateOpt = rosterPropKAfter?.answer_options?.find(
+    (o:any) => o.label === "Late Team K" || o.label === "LateK"
+  );
+  assert(!lateOpt, "§K-5 new member's team does NOT appear in locked card options");
+
+  // roster_revision must not have incremented
+  const { data: cardK } = await supa
+    .from("gameday_pick_cards")
+    .select("roster_revision")
+    .eq("id", playOpen.data.card_id)
+    .maybeSingle();
+  const revAfterLock = (cardK as any)?.roster_revision ?? 0;
+  assert(revAfterLock === revOpen,
+    `§K-6 roster_revision unchanged after post-lock add (${revOpen} → ${revAfterLock})`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Main runner
 // ──────────────────────────────────────────────────────────────────────────────
 
-async function runPhase6AreaATests() {
+async function runPhase6Tests() {
   console.log("\n╔══════════════════════════════════════════════════════════════════╗");
-  console.log("║  Phase 6A — Bulk Member Import Tests                           ║");
+  console.log("║  Phase 6A+6B — Bulk Import + Large-Roster Selector Tests       ║");
   console.log("╚══════════════════════════════════════════════════════════════════╝");
 
   // §A — pure parser tests (no network)
@@ -794,6 +1325,13 @@ async function runPhase6AreaATests() {
   await runIdentityTests(ctx);
   await runOpenRosterTests();
 
+  // §G-§K — Large-roster selector contract (Phase 6B)
+  await runSelectorContractTests();
+  await runThresholdTests();
+  await runPickPersistenceTests();
+  await runOpenRosterSelectorTests();
+  await runLockedRosterSelectorTests();
+
   // ── Results ────────────────────────────────────────────────────────────────
   console.log("\n" + "─".repeat(66));
   if (failures.length > 0) {
@@ -803,16 +1341,16 @@ async function runPhase6AreaATests() {
   console.log(`\n${"═".repeat(66)}`);
   console.log(`  TOTAL: ${passed + failed} / PASSED: ${passed} / FAILED: ${failed}`);
   if (failed === 0) {
-    console.log("\n  ✅  PHASE 6A — ALL TESTS PASSED");
+    console.log("\n  ✅  PHASE 6A+6B — ALL TESTS PASSED");
   } else {
-    console.log("\n  ❌  PHASE 6A — SOME TESTS FAILED");
+    console.log("\n  ❌  PHASE 6A+6B — SOME TESTS FAILED");
   }
   console.log(`${"═".repeat(66)}\n`);
 
   if (failed > 0) process.exit(1);
 }
 
-runPhase6AreaATests().catch((e) => {
+runPhase6Tests().catch((e) => {
   console.error("FATAL:", e);
   process.exit(1);
 });

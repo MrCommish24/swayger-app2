@@ -34,6 +34,7 @@ import {
 } from "@/lib/fantasy-api";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
+import { AnswerSelector } from "@/components/fantasy/AnswerSelector";
 
 const C = Colors.dark;
 
@@ -285,32 +286,19 @@ export default function WeeklyPlayScreen() {
               <Text style={styles.staleHint}>⚠️ New member added — please resubmit</Text>
             )}
 
-            <View style={styles.answers}>
-              {(prop.answer_options ?? []).map((opt) => {
-                const isSelected = myPick === opt.id;
-                return (
-                  <TouchableOpacity
-                    key={opt.id}
-                    style={[
-                      styles.answerBtn,
-                      isSelected && styles.answerBtnSelected,
-                      isLocked && styles.answerBtnLocked,
-                    ]}
-                    onPress={() => handlePick(prop.id, opt.id)}
-                    disabled={isLocked}
-                    activeOpacity={isLocked ? 1 : 0.7}
-                  >
-                    <Text style={[styles.answerText, isSelected && styles.answerTextSelected]}>
-                      {opt.label}
-                    </Text>
-                    {isSelected && <Text style={styles.answerCheck}>✓</Text>}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {status === "saving" && <Text style={styles.savingText}>Saving…</Text>}
-            {status === "error"  && <Text style={styles.saveErrorText}>Failed to save. Tap to retry.</Text>}
+            <AnswerSelector
+              options={prop.answer_options ?? []}
+              selectedId={myPick}
+              isLocked={isLocked}
+              question={prop.question}
+              onSelect={(answerId) => handlePick(prop.id, answerId)}
+              pickStatus={
+                status === "saving" ? "saving" :
+                status === "error"  ? "error"  :
+                status === "saved"  ? "saved"  :
+                undefined
+              }
+            />
           </View>
         );
       })}
@@ -364,19 +352,7 @@ const styles = StyleSheet.create({
   propPts:    { fontSize: 11, fontWeight: "700", color: C.tint },
   propQ:      { fontSize: 16, fontWeight: "700", color: C.text, lineHeight: 22 },
   staleHint:  { fontSize: 12, color: "#F59E0B", fontWeight: "600" },
-  answers:    { gap: 8 },
-  answerBtn: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: C.background, borderRadius: 10, borderWidth: 1, borderColor: C.border,
-    paddingVertical: 13, paddingHorizontal: 16,
-  },
-  answerBtnSelected: { backgroundColor: "#06091A", borderColor: C.tint },
-  answerBtnLocked:   { opacity: 0.8 },
-  answerText:        { flex: 1, fontSize: 14, fontWeight: "600", color: C.text },
-  answerTextSelected:{ color: C.tint },
-  answerCheck: { fontSize: 16, color: C.tint, fontWeight: "800", marginLeft: 8 },
-  savingText:    { fontSize: 12, color: C.textMuted, textAlign: "right" },
-  saveErrorText: { fontSize: 12, color: C.danger, textAlign: "right" },
+  // answer_options are rendered by AnswerSelector — no local answer styles needed
   btn: {
     backgroundColor: C.tint, borderRadius: 10,
     paddingVertical: 12, paddingHorizontal: 24,

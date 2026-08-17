@@ -44,6 +44,7 @@ import {
   DraftDayAnswerOption,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import { AnswerSelector, LARGE_ROSTER_THRESHOLD } from "@/components/fantasy/AnswerSelector";
 
 const C = Colors.dark;
 
@@ -143,19 +144,30 @@ function PropCard({
         </View>
       )}
 
-      {/* Answers */}
-      <View style={styles.answerList}>
-        {options.map((opt) => (
-          <AnswerOption
-            key={opt.id}
-            option={opt}
-            selected={selectedAnswer === opt.id}
-            locked={locked}
-            saving={savingAnswerId === opt.id}
-            onSelect={() => onSelect(opt.id)}
-          />
-        ))}
-      </View>
+      {/* Answers — inline for ≤4 options, modal selector for large rosters */}
+      {options.length > LARGE_ROSTER_THRESHOLD ? (
+        <AnswerSelector
+          options={options}
+          selectedId={selectedAnswer}
+          isLocked={locked}
+          question={prop.question}
+          onSelect={onSelect}
+          pickStatus={savingAnswerId ? "saving" : undefined}
+        />
+      ) : (
+        <View style={styles.answerList}>
+          {options.map((opt) => (
+            <AnswerOption
+              key={opt.id}
+              option={opt}
+              selected={selectedAnswer === opt.id}
+              locked={locked}
+              saving={savingAnswerId === opt.id}
+              onSelect={() => onSelect(opt.id)}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }

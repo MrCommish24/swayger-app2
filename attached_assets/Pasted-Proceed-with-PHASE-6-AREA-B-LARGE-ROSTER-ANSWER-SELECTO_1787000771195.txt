@@ -1,0 +1,770 @@
+Proceed with:
+
+# PHASE 6 — AREA B
+## LARGE-ROSTER ANSWER SELECTOR
+
+Phase 6A is verified and complete.
+
+Important current behavior:
+
+- Open weekly roster expansion now works correctly.
+- Single-add and bulk-add have parity.
+- `roster_revision` increments when an open weekly answer universe expands.
+- Locked weekly cards do not expand.
+- Draft Day open-roster behavior remains intact.
+- No SQL is required for Area B.
+
+Do not begin Area C yet.
+
+==================================================
+1. GOAL
+==================================================
+
+Make roster-target questions feel clean and usable for real 10–16 person fantasy leagues.
+
+Current problem:
+
+The play screen renders every answer option inline.
+
+A 15-member league with 5 roster-based questions can create 75+ visible answer buttons.
+
+This creates:
+
+- excessive scrolling
+- visual clutter
+- poor mobile usability
+- harder pick review
+- higher chance of mis-taps
+
+The goal is:
+
+# KEEP QUESTION CARDS COMPACT WHILE MAKING 10–16 TEAM SELECTION FAST AND OBVIOUS.
+
+==================================================
+2. PRESERVE PICK SEMANTICS
+==================================================
+
+Do not change:
+
+- pick API
+- autosave behavior
+- selected_answer format
+- answer IDs
+- answer_universe_revision
+- locking behavior
+- scoring
+- settlement
+- stale-pick behavior
+
+This is a UI/interaction change only unless a small API display field is truly necessary.
+
+==================================================
+3. AUDIT CURRENT PLAY SCREEN FIRST
+==================================================
+
+Inspect:
+
+app/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/play.tsx
+
+and any shared pick components.
+
+Identify:
+
+- how answer_options are rendered
+- how selected answer is stored
+- how autosave fires
+- how loading/saving state displays
+- how stale answers are currently represented
+- what labels exist inside answer_options
+- whether team manager/member name is already available
+- Draft Day equivalent UI if useful
+
+Do not duplicate pick logic.
+
+==================================================
+4. SELECTOR THRESHOLD
+==================================================
+
+Use a clear threshold.
+
+Recommended:
+
+answer_options.length <= 4
+→ keep existing inline buttons
+
+answer_options.length > 4
+→ use large-roster selector
+
+This keeps:
+
+- yes/no
+- small static questions
+- very small leagues
+
+fast and direct.
+
+Test threshold behavior explicitly.
+
+==================================================
+5. COMPACT QUESTION CARD
+==================================================
+
+For large answer sets, the question card should NOT render every option.
+
+Before selection:
+
+Who scores the most fantasy points this week?
+
+YOUR PICK
+
+No pick yet
+
+[ Choose Team ]
+
+After selection:
+
+YOUR PICK
+
+The Monstars
+Darius
+
+[ Change Pick ]
+
+Keep the card compact.
+
+==================================================
+6. SELECTOR INTERACTION
+==================================================
+
+Tap:
+
+Choose Team
+or
+Change Pick
+
+Open a React Native selector.
+
+Preferred architecture:
+
+- Modal
+or
+- existing project modal/bottom-sheet pattern
+
+Do not add a heavyweight new dependency unless necessary.
+
+==================================================
+7. SELECTOR HEADER
+==================================================
+
+Example:
+
+CHOOSE A TEAM
+
+Who scores the most fantasy points this week?
+
+Optional:
+
+15 teams
+
+[ X ]
+
+Keep the question visible so the user remembers what they are choosing.
+
+==================================================
+8. OPTION LAYOUT
+==================================================
+
+For fantasy_team answers, use a responsive 2-column grid when practical.
+
+Each option:
+
+The Monstars
+Darius
+
+Primary:
+team name
+
+Secondary:
+member/manager name
+
+Cards should:
+
+- have sufficient tap target
+- wrap long team names
+- avoid text collision
+- avoid horizontal scrolling
+
+If viewport is too narrow for 2 columns cleanly:
+fall back to one column.
+
+Do not force cramped cards.
+
+==================================================
+9. TEAM / MEMBER LABEL SOURCE
+==================================================
+
+Inspect current `answer_options`.
+
+Use stable option metadata already available.
+
+If options currently contain only:
+
+id
+label
+type
+
+and do NOT include manager/member display name:
+
+determine whether the existing publish snapshot already stores that value elsewhere.
+
+Preferred:
+
+answer option snapshot contains enough display metadata to render:
+
+team_name
+member_name
+
+without a request per option.
+
+Do not create N+1 requests.
+
+If a tiny response-shape addition is needed:
+make it in the existing play GET response.
+
+No SQL unless absolutely required.
+
+==================================================
+10. HISTORICAL / SNAPSHOT PRINCIPLE
+==================================================
+
+For pick choices, use the published answer-option snapshot.
+
+Do not query current team names each time selector opens if the published card already has answer labels.
+
+This preserves competition consistency.
+
+If secondary member name is not snapshotted and must use current season-member data, document that distinction.
+
+Do not change stable answer IDs.
+
+==================================================
+11. SELECT BEHAVIOR
+==================================================
+
+Tap an option:
+
+- immediately select it
+- invoke the same existing autosave function
+- close modal after successful local selection / request initiation as appropriate
+- update compact card
+
+Do not require a second “Save Pick” button.
+
+Existing autosave behavior should remain familiar.
+
+==================================================
+12. SAVE FEEDBACK
+==================================================
+
+Preserve existing feedback:
+
+Saving...
+Saved
+error/retry
+
+If the modal closes before network completion:
+the card should still clearly reflect save state.
+
+Do not make a user wonder whether the pick registered.
+
+==================================================
+13. CURRENT PICK
+==================================================
+
+When reopening selector:
+
+current saved/local selection must be visibly highlighted.
+
+Example:
+
+✓ The Monstars
+  Darius
+
+User can tap another team to change pick while open.
+
+==================================================
+14. LONG TEAM NAMES
+==================================================
+
+Test:
+
+The Extremely Questionable Decision Makers
+
+and other long names.
+
+Requirements:
+
+- wrap cleanly
+- no overlap
+- no hidden critical text
+- card height can grow
+- grid remains aligned reasonably
+
+==================================================
+15. SCROLLING
+==================================================
+
+15–16 teams must fit in a vertically scrollable selector.
+
+Use FlatList if appropriate.
+
+Do not nest problematic scroll views.
+
+Ensure:
+
+- top options reachable
+- bottom options reachable
+- modal close control remains usable
+- no content trapped behind phone safe area
+
+==================================================
+16. SEARCH?
+==================================================
+
+Do NOT add search in V1 unless the selector is clearly cumbersome at 16 teams.
+
+A 16-team grid should not require search.
+
+Keep this simple.
+
+==================================================
+17. SORT ORDER
+==================================================
+
+Preserve the published answer_options order unless there is a strong existing product rule.
+
+Do not alphabetize independently if that changes the competition snapshot/order unexpectedly.
+
+Use server/published ordering.
+
+==================================================
+18. STATIC / SPECIAL OPTIONS
+==================================================
+
+Handle options such as:
+
+No one
+
+correctly.
+
+If a roster-target prop has 15 teams + No one:
+
+No one should appear in the same selector in a clearly recognizable card.
+
+Do not lose static options merely because the selector is team-focused.
+
+==================================================
+19. YES/NO
+==================================================
+
+Questions like:
+
+Will any team score 150+?
+
+should remain inline:
+
+[ Yes ] [ No ]
+
+Do not open a modal for two choices.
+
+==================================================
+20. DRAFT DAY
+==================================================
+
+Inspect whether Draft Day uses the same large vertical answer UI.
+
+If the selector can be safely reused for Draft Day roster-target questions with minimal shared-component work:
+
+prefer extracting a reusable component.
+
+However:
+
+Do not create a large refactor.
+
+Weekly pilot UX is the priority.
+
+If Draft Day already has the same 10–16 option problem, include it only if the shared fix is straightforward and regression-safe.
+
+Report what you decide.
+
+==================================================
+21. REUSABLE COMPONENT
+==================================================
+
+Preferred if clean:
+
+components/fantasy/AnswerSelector.tsx
+
+or similar.
+
+Responsibilities:
+
+- threshold-based display if appropriate
+- modal
+- option grid
+- selected state
+- team/member labels
+- static option handling
+
+Keep pick persistence outside the component if that avoids coupling.
+
+Do not embed API calls deeply if the play screen already owns them.
+
+==================================================
+22. ACCESSIBILITY
+==================================================
+
+Each option should have sensible accessibility labels.
+
+Example:
+
+"The Monstars, Darius"
+
+Selected state should be conveyed beyond color alone.
+
+Use:
+
+checkmark
+selected border/state
+accessibilityState.selected
+
+where practical.
+
+==================================================
+23. 15-MEMBER FIXTURE
+==================================================
+
+Use the Phase 6 15-member fixture.
+
+Publish a weekly Swayger with roster-target questions.
+
+Verify:
+
+15 roster answers appear in selector.
+
+Do not test only mocked 5-option arrays.
+
+==================================================
+24. THRESHOLD TEST MATRIX
+==================================================
+
+Test:
+
+2 options
+→ inline
+
+4 options
+→ inline
+
+5 options
+→ selector
+
+6 options
+→ selector
+
+10 options
+→ selector
+
+15 options
+→ selector
+
+16 options
+→ selector
+
+17 if No one is included
+→ selector
+
+==================================================
+25. PICK TEST MATRIX
+==================================================
+
+For selector:
+
+open
+select Team A
+modal closes
+pick saves
+
+reopen
+Team A selected
+
+change to Team B
+pick updates
+
+reload screen
+Team B remains selected
+
+lock
+Change Pick unavailable
+
+No duplicate picks created.
+
+==================================================
+26. OPEN-ROSTER TEST
+==================================================
+
+Critical because of the Phase 6A correction.
+
+Start:
+
+15-member open Week 3.
+
+Existing pick:
+Darius chooses Team A.
+
+Add member:
+Rob / Grim
+
+Expected:
+
+- roster_revision increments
+- answer_options expand to 16
+- selector shows Grim
+- Darius's existing pick remains
+- selection UI does not crash
+- current selected option remains identifiable
+
+==================================================
+27. WEEKLY STALE-PICK NOTE
+==================================================
+
+Important known architecture detail:
+
+Weekly `roster_revision` is now maintained correctly, but the weekly play endpoint currently does NOT expose the Draft Day-style:
+
+stale_pick_prop_ids
+
+Do NOT silently invent a new stale-pick UX during Area B.
+
+Instead:
+
+1. verify existing weekly behavior after roster expansion
+2. confirm whether a previously saved roster-target pick remains accepted/displayed
+3. note the stale-reconfirmation gap explicitly in the final report
+
+If Area B exposes a correctness bug rather than merely a missing warning:
+STOP and report it.
+
+Do not expand scope casually.
+
+==================================================
+28. LOCKED OPEN-ROSTER TEST
+==================================================
+
+Lock Week 3.
+
+Add new league member.
+
+Expected:
+
+- current selector remains at old answer universe
+- new team does not appear
+- no roster_revision increment
+- member participates beginning next Swayger
+
+No selector inconsistency.
+
+==================================================
+29. LOADING / ERROR
+==================================================
+
+If answer options fail to load:
+
+do not show an empty selector that looks valid.
+
+Use existing play-screen error behavior.
+
+If pick save fails:
+
+- preserve user-visible error
+- allow retry/change
+- do not falsely show permanent “Saved”
+
+==================================================
+30. PERFORMANCE
+==================================================
+
+No request on selector open if options are already loaded.
+
+No request per option.
+
+No request per team.
+
+Rendering 16 options should be trivial.
+
+Do not over-optimize.
+
+==================================================
+31. MOBILE QA
+==================================================
+
+Check:
+
+small iPhone-sized viewport
+larger iPhone
+Android
+web
+
+Specifically:
+
+- modal height
+- safe area
+- 2-column spacing
+- long names
+- scroll
+- close button
+- tapping near edges
+- selected state
+
+==================================================
+32. VISUAL STANDARD
+==================================================
+
+The selector should feel like a polished consumer fantasy product, not an admin form.
+
+Keep:
+
+- generous spacing
+- obvious selection
+- compact question cards
+- readable typography
+
+Do not clutter with:
+
+IDs
+revision numbers
+technical metadata
+
+==================================================
+33. TEST FILE
+==================================================
+
+Extend:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+Add:
+
+§G Large-roster selector contract
+§H Threshold behavior
+§I Pick persistence
+§J Open-roster selector expansion
+§K Locked-roster selector stability
+
+If frontend-specific behavior cannot be fully validated in server tests:
+add lightweight component/unit tests if project conventions support them.
+
+Do not fake server tests that claim to validate rendering.
+
+==================================================
+34. REGRESSION
+==================================================
+
+After Area B:
+
+run:
+
+- Phase 6A/6B tests
+- Open Roster
+- Phase 5 weekly suites
+- Phase 4B play/manage
+- relevant Draft Day tests if shared component touched
+
+If inexpensive:
+run full maintained Fantasy regression.
+
+Return exact totals.
+
+==================================================
+35. MANUAL QA
+==================================================
+
+Return exact steps:
+
+1. Open 15-member Week Swayger.
+2. Verify question cards are compact.
+3. Tap Choose Team.
+4. Verify selector opens.
+5. Verify 15 teams visible/scrollable.
+6. Verify team + member labels.
+7. Pick Team A.
+8. Verify autosave.
+9. Reopen.
+10. Verify Team A selected.
+11. Change to Team B.
+12. Reload.
+13. Verify Team B persists.
+14. Test yes/no remains inline.
+15. Add a member while week is open.
+16. Verify new team appears.
+17. Lock.
+18. Verify choices cannot change.
+19. Add another member after lock.
+20. Verify locked answer universe does not change.
+
+==================================================
+36. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- pick distribution
+- League Picks reveal
+- weekly rewards
+- archive
+- search
+- favorites
+- ranking teams
+- AI suggestions
+- provider imports
+- QR codes
+- stale-pick redesign
+- new identity behavior
+
+==================================================
+37. RETURN
+==================================================
+
+Return:
+
+# PHASE 6B — LARGE-ROSTER SELECTOR REPORT
+
+1. Existing UI replaced
+2. Selector architecture
+3. Threshold chosen
+4. Team/member label source
+5. Static option handling
+6. Autosave behavior
+7. Open-roster behavior
+8. Locked-roster behavior
+9. 15-member fixture result
+10. Mobile/responsive behavior
+11. Files changed
+12. Tests added
+13. Regression totals
+14. Bugs found/fixed
+15. Known limitations
+16. Weekly stale-pick observation
+17. Exact manual QA steps
+
+Then STOP.
+
+Do not begin Area C.
+
+Final status:
+
+PHASE 6B LARGE-ROSTER SELECTOR READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
