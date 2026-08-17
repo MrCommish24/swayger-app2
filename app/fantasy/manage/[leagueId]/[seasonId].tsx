@@ -477,6 +477,20 @@ export default function ManageLeagueScreen() {
               ) : (
                 <Text style={styles.memberTeamEmpty}>No team</Text>
               )}
+              {/* Commissioner-only: claim type indicator (Phase 5.2.1) */}
+              {p.claim_type === "guest" && (
+                <Text style={styles.guestClaimBadge}>
+                  Claimed as Guest · device-only access
+                </Text>
+              )}
+              {p.claim_type === "account" && (
+                <Text style={styles.accountClaimBadge}>
+                  Claimed with account
+                </Text>
+              )}
+              {p.is_claimed === false && (
+                <Text style={styles.unclaimedBadge}>Not yet claimed</Text>
+              )}
             </View>
             <TouchableOpacity
               style={styles.editBtn}
@@ -704,6 +718,16 @@ const styles = StyleSheet.create({
   commBadge: { fontSize: 12, fontWeight: "400", color: C.tint },
   memberTeam: { fontSize: 13, color: C.textSecondary, marginTop: 2 },
   memberTeamEmpty: { fontSize: 13, color: C.textMuted, marginTop: 2, fontStyle: "italic" },
+  // Claim type badges (Phase 5.2.1 — commissioner-only visibility)
+  guestClaimBadge: {
+    fontSize: 11, fontWeight: "600" as const, color: "#B8860B", marginTop: 3,
+  },
+  accountClaimBadge: {
+    fontSize: 11, fontWeight: "600" as const, color: C.tint, marginTop: 3,
+  },
+  unclaimedBadge: {
+    fontSize: 11, fontWeight: "600" as const, color: C.textMuted, marginTop: 3,
+  },
 
   editBtn: {
     backgroundColor: C.surface,

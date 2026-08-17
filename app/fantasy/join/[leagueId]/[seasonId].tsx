@@ -57,10 +57,15 @@ export default function JoinLeagueScreen() {
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
   const { guestToken, guestTokenLoading } = useFantasyGuestToken();
-  const { leagueId, seasonId } = useLocalSearchParams<{
+  const { leagueId, seasonId, wn } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
+    /** Week number context — set when user arrived from a shared Week link. */
+    wn?: string;
   }>();
+
+  /** Week number from the ?wn= query param (e.g. arriving from a Week N shared link). */
+  const weekNumber = wn ? parseInt(wn, 10) : null;
 
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,8 +117,10 @@ export default function JoinLeagueScreen() {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleChooseAccount = async () => {
-    // Save the join URL so auth redirects back here after sign-in
-    const path = `/fantasy/join/${leagueId}/${seasonId}`;
+    // Save the join URL (preserving week context) so auth redirects back here after sign-in
+    const path = weekNumber
+      ? `/fantasy/join/${leagueId}/${seasonId}?wn=${weekNumber}`
+      : `/fantasy/join/${leagueId}/${seasonId}`;
     try { await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, path); } catch {}
     router.push("/auth");
   };
@@ -150,7 +157,15 @@ export default function JoinLeagueScreen() {
         },
         auth
       );
-      router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
+      // After a successful claim: if the user arrived from a Week N link and the
+      // week is still open, return them directly to Week N play. Otherwise hub.
+      if (weekNumber) {
+        router.replace(
+          `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play` as any
+        );
+      } else {
+        router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
+      }
     } catch (e: any) {
       if (e.message?.includes("already been claimed") || e.message?.includes("seat_already_claimed")) {
         setClaimError("This seat has already been claimed by someone else.");
@@ -365,9 +380,46 @@ export default function JoinLeagueScreen() {
       </View>
 
       {availableSeats.length === 0 && (
-        <Text style={styles.noSeatsText}>
-          All seats in this league have been claimed.
-        </Text>
+        <View style={styles.allClaimedCard}>
+          <Text style={styles.allClaimedTitle}>All league spots are already claimed</Text>
+          <Text style={styles.allClaimedBody}>
+            If you previously joined this league as a guest, return using the same browser or device you used when you joined.
+          </Text>
+          <Text style={styles.allClaimedBody}>
+            If you connected your Swayger account, sign in to recover your league access.
+          </Text>
+          {!session && (
+            <TouchableOpacity
+              style={[styles.btn, { alignSelf: "stretch" as const, marginTop: 4 }]}
+              onPress={handleChooseAccount}
+            >
+              <Text style={styles.btnText}>Sign In</Text>
+            </TouchableOpacity>
+          )}
+          {weekNumber ? (
+            <TouchableOpacity
+              style={[styles.outlineBtn, { alignSelf: "stretch" as const }]}
+              onPress={() =>
+                router.replace(
+                  `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play` as any
+                )
+              }
+            >
+              <Text style={styles.outlineBtnText}>← Back to Week {weekNumber}</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={[styles.outlineBtn, { alignSelf: "stretch" as const }]}
+            onPress={() => router.replace(`/fantasy/${leagueId}/${seasonId}` as any)}
+          >
+            <Text style={styles.outlineBtnText}>← Back to League</Text>
+          </TouchableOpacity>
+          {!session && (
+            <Text style={styles.allClaimedNote}>
+              Guest access is tied to the browser or device you originally used. If you no longer have access, ask your commissioner for help.
+            </Text>
+          )}
+        </View>
       )}
 
       {/* ── Confirm ────────────────────────────────────────────────────────── */}
@@ -596,6 +648,49 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 8,
   },
+
+  // All-claimed recovery card (Phase 5.2.1)
+  allClaimedCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    marginBottom: 20,
+    gap: 12,
+    alignItems: "center" as const,
+  },
+  allClaimedTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: C.text,
+    textAlign: "center",
+  },
+  allClaimedBody: {
+    fontSize: 13,
+    color: C.textSecondary,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  allClaimedNote: {
+    fontSize: 11,
+    color: C.textMuted,
+    textAlign: "center",
+    lineHeight: 16,
+    paddingHorizontal: 4,
+  },
+
+  // Outline button (used on all-claimed + other secondary CTAs)
+  outlineBtn: {
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: "center" as const,
+    alignSelf: "stretch" as const,
+  },
+  outlineBtnText: { color: C.text, fontWeight: "600" as const, fontSize: 14 },
 
   // Confirm
   confirmCard: {

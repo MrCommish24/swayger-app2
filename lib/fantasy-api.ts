@@ -113,6 +113,13 @@ export interface FantasyParticipant {
   manager_role: string | null;
   /** Whether this seat has an active claim. Populated by GET /seasons/:id. */
   is_claimed: boolean;
+  /**
+   * Commissioner-only: how the seat was claimed.
+   * "guest"   → durable guest token (device-specific; cross-device recovery requires sign-in).
+   * "account" → linked Swayger account (sign-in recovers access from any device).
+   * null      → seat is unclaimed.
+   */
+  claim_type?: "guest" | "account" | null;
 }
 
 /** The authenticated/guest caller's identity within this league. Null if no claim. */

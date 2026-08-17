@@ -12,3 +12,4 @@
 - [Gameday Fantasy Phase 5](gameday-fantasy-phase5-nav.md) — weekly competition routes, hub WeeklyCard, auto-settle card quirk (accept 'settled'+'locked'), 91/91 tests.
 - [Gameday Fantasy Phase 5.1](gameday-fantasy-phase51-nav.md) — re-engagement share loop: participation data in hub endpoint, commissioner participants_status, Share/Reminder CTAs, finalized banner in play screen, non-member 403 join CTA, 48/48 tests.
 - [Gameday Fantasy Phase 5.2](gameday-fantasy-phase52-nav.md) — repeatable weekly season: weekly-summary endpoint (one request for all weeks), sequencing guards on publish, hub `weeklyWeek1` → `weeklySummary` refactor, PastWeekRow, dynamic week numbers, 93/93 tests.
+- [Gameday Fantasy Phase 5.2.1](gameday-fantasy-phase521-nav.md) — guest return/recovery UX: auth-callback redirect fix, non-member play screen + join screen wn-param flow, all-seats-claimed recovery card, commissioner claim_type indicator (guest/account/null), 55/55 tests.

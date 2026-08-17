@@ -870,21 +870,34 @@ export function registerFantasyRoutes(app: Express) {
       // Resolve viewer — null if caller has no active claim in this league
       const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
 
-      // Add is_claimed to each participant (one extra query; powers commissioner claim-status view)
+      // Add is_claimed + claim_type to each participant (one extra query).
+      // claim_type is commissioner-only: "guest" | "account" | null.
       const lmIds = participants.map((p: any) => p.league_member_id).filter(Boolean);
       const { data: activeClaims } = lmIds.length
         ? await supabase
             .from("fantasy_member_claims")
-            .select("league_member_id")
+            .select("league_member_id, user_id, guest_token")
             .in("league_member_id", lmIds)
             .eq("is_active", true)
         : { data: [] };
       const claimedMemberIds = new Set(
         (activeClaims ?? []).map((c: any) => c.league_member_id)
       );
+      // Build claim-type map: authenticated (user_id set) vs guest (guest_token set).
+      const claimTypeByMemberId: Record<string, "guest" | "account"> = {};
+      for (const c of (activeClaims ?? []) as any[]) {
+        claimTypeByMemberId[c.league_member_id] = c.user_id ? "account" : "guest";
+      }
+
+      const isCommissioner = viewer && (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+
       const participantsWithClaims = participants.map((p: any) => ({
         ...p,
         is_claimed: p.league_member_id ? claimedMemberIds.has(p.league_member_id) : false,
+        // Commissioner-only: how the seat was claimed (guest token vs linked account).
+        ...(isCommissioner && p.league_member_id
+          ? { claim_type: claimTypeByMemberId[p.league_member_id] ?? null }
+          : {}),
       }));
 
       res.json({ league, season, participants: participantsWithClaims, viewer });

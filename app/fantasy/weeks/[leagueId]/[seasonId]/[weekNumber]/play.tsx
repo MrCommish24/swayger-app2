@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/lib/auth-context";
 import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
@@ -31,6 +32,7 @@ import {
   DraftDayProp,
   DraftDayAnswerOption,
 } from "@/lib/fantasy-api";
+import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -117,36 +119,76 @@ export default function WeeklyPlayScreen() {
   }
 
   if (error) {
-    // Non-member: show join CTA instead of generic retry
+    // ── Non-member / lost-token guest recovery screen ─────────────────────────
     if (errorIsNonMember) {
+      const handleSignIn = async () => {
+        // Save the current week URL so auth-callback returns here after sign-in.
+        const weekPath = `/fantasy/weeks/${leagueId}/${seasonId}/${wn}/play`;
+        try { await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, weekPath); } catch {}
+        router.push("/auth");
+      };
+
+      // Deterministic Back — never router.back() since history may be empty
+      // (user arrived via a shared Week link with no prior app history).
+      const handleBack = () =>
+        router.replace(`/fantasy/join/${leagueId}/${seasonId}` as any);
+
       return (
         <View style={[styles.center, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
           <Text style={[styles.errorText, { fontSize: 32, marginBottom: 8 }]}>🏈</Text>
           <Text style={[styles.errorText, { marginBottom: 8, fontWeight: "700", fontSize: 17 }]}>
-            You're not part of this league
+            You're not recognized for this league
           </Text>
-          <Text style={[styles.errorText, { color: "#999", fontSize: 14, textAlign: "center", marginBottom: 24 }]}>
-            You need to join this fantasy league before you can make picks.
+          <Text style={[styles.errorText, { color: "#999", fontSize: 14, textAlign: "center", marginBottom: 8, lineHeight: 20 }]}>
+            If you already joined this league as a guest, open this link on the same browser or device you originally used.
           </Text>
+          <Text style={[styles.errorText, { color: "#999", fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }]}>
+            If you connected your Swayger account, sign in to continue.
+          </Text>
+
+          {/* Sign In — primary recovery for authenticated users; hidden if already signed in */}
+          {!session && (
+            <TouchableOpacity
+              style={[styles.btn, { marginBottom: 10, alignSelf: "stretch" }]}
+              onPress={handleSignIn}
+            >
+              <Text style={styles.btnText}>Sign In</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Join — for true non-members who have an available seat */}
           <TouchableOpacity
-            style={[styles.btn, { marginBottom: 12 }]}
-            onPress={() => router.replace(`/fantasy/join/${leagueId}/${seasonId}` as any)}
+            style={[styles.outlineBtn, { marginBottom: 10 }]}
+            onPress={() =>
+              router.replace(`/fantasy/join/${leagueId}/${seasonId}?wn=${wn}` as any)
+            }
           >
-            <Text style={styles.btnText}>Join This League</Text>
+            <Text style={styles.outlineBtnText}>Join This League</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={styles.linkText}>← Back</Text>
+
+          {/* Deterministic Back — never inert */}
+          <TouchableOpacity onPress={handleBack}>
+            <Text style={styles.linkText}>← Back to League</Text>
           </TouchableOpacity>
         </View>
       );
     }
+
+    // ── Generic error (network, server) ────────────────────────────────────────
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.btn} onPress={load}>
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
+        <TouchableOpacity
+          onPress={() =>
+            router.canGoBack()
+              ? router.back()
+              : router.replace(`/fantasy/join/${leagueId}/${seasonId}` as any)
+          }
+          style={{ marginTop: 12 }}
+        >
           <Text style={styles.linkText}>← Back</Text>
         </TouchableOpacity>
       </View>
@@ -341,6 +383,16 @@ const styles = StyleSheet.create({
     alignItems: "center", alignSelf: "stretch",
   },
   btnText:   { color: "#fff", fontWeight: "700", fontSize: 15 },
+  outlineBtn: {
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: "center" as const,
+    alignSelf: "stretch" as const,
+  },
+  outlineBtnText: { color: C.text, fontWeight: "600", fontSize: 15 },
   linkText:  { color: C.tint, fontSize: 14, fontWeight: "600" },
   errorText: { color: C.danger, fontSize: 14, textAlign: "center" },
 });

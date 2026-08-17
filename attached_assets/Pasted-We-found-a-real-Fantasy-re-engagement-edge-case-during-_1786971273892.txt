@@ -1,0 +1,530 @@
+We found a real Fantasy re-engagement edge case during manual QA.
+
+# PHASE 5.2.1 — GUEST RETURN / RECOVERY UX
+
+CURRENT SCENARIO
+
+A league member originally joined Draft Day as a guest using an incognito/private browser.
+
+That created:
+
+- a persistent fantasy_member_claim in the database
+- tied to a durable guest_token stored in that browser/device
+
+Later, the incognito session was closed.
+
+The database still knows the seat is claimed, but the new incognito session no longer has the old guest token.
+
+Then:
+
+1. Commissioner shares Week 1 direct link.
+2. Returning guest opens it in a new incognito window.
+3. Weekly play screen says:
+
+“You’re not part of this league”
+
+4. “Back” button does nothing.
+5. “Join This League” sends them to the league join page.
+6. Join page says:
+
+“All seats in this league have been claimed.”
+
+This is technically consistent with the current guest-token architecture, but the UX becomes a dead end.
+
+We need to fix the dead end without weakening identity security.
+
+Do NOT begin Week 3 or any unrelated feature work.
+
+==================================================
+1. INSPECT THE CURRENT GUEST IDENTITY FLOW FIRST
+==================================================
+
+Trace:
+
+- fantasy_member_claims
+- guest_token creation/storage
+- guest-token lookup
+- guest → authenticated upgrade
+- league join route
+- weekly play non-member route
+- shared Week link routing
+- current “all seats claimed” logic
+
+Return exact current behavior for:
+
+A. same-device returning guest
+B. different-device/new-browser returning guest
+C. guest whose browser storage was cleared
+D. authenticated user with an existing claim
+E. authenticated user with no claim
+
+Confirm whether a guest claim is currently recoverable by any mechanism other than presenting the original guest token.
+
+Do not infer.
+
+==================================================
+2. DO NOT EMBED MEMBER IDENTITY IN WEEK LINKS
+==================================================
+
+Preserve the security rule:
+
+The shared Week link identifies:
+
+- league
+- season
+- week
+
+It must NOT identify:
+
+- member
+- seat
+- guest token
+- auth user
+- fantasy team
+
+Do not “fix” this by putting a guest token or season_member_id into the shared URL.
+
+==================================================
+3. FIX THE BROKEN BACK BUTTON
+==================================================
+
+The “← Back” button on the weekly non-member screen currently does nothing.
+
+Fix it.
+
+Do not rely on router.back() if navigation history may be empty or unstable.
+
+Preferred deterministic destination:
+
+the Fantasy League Hub for:
+
+/fantasy/:leagueId/:seasonId
+
+Use the actual canonical route.
+
+If the user cannot access the hub because they are not a member, route instead to the safest existing league landing/join screen.
+
+The button must never be inert.
+
+==================================================
+4. IMPROVE THE NON-MEMBER WEEK SCREEN
+==================================================
+
+Current:
+
+You’re not part of this league
+
+You need to join this fantasy league before you can make picks.
+
+[ Join This League ]
+
+[ Back ]
+
+This is too generic.
+
+Replace with something more useful:
+
+You’re not recognized for this league
+
+If you already joined this league as a guest, open this link on the same browser/device you originally used.
+
+If you connected your Swayger account, sign in to continue.
+
+Actions:
+
+[ Sign In ]
+[ Join This League ]
+[ Back to League ]
+
+Do not imply they definitely need to join again.
+
+If auth state already exists, hide Sign In appropriately.
+
+==================================================
+5. IMPROVE “ALL SEATS CLAIMED” PAGE
+==================================================
+
+Current dead end:
+
+“All seats in this league have been claimed.”
+
+Replace with recovery-oriented copy.
+
+Preferred:
+
+All league spots are already claimed
+
+If you previously joined this league as a guest, return using the same browser/device you used when you joined.
+
+If you connected your Swayger account, sign in to recover your league access.
+
+Actions:
+
+[ Sign In ]
+[ Back to Week 1 ]
+[ Back to League ]
+
+If the week number is available, use dynamic Week N copy.
+
+Do NOT offer users the ability to take over an already-claimed seat without identity verification.
+
+==================================================
+6. RETURNING AUTHENTICATED USER RECOVERY
+==================================================
+
+Inspect whether a guest seat that was later upgraded to an authenticated user already reconnects correctly.
+
+If yes:
+make Sign In the primary recovery path for those users.
+
+Expected:
+
+user signs in
+→ existing fantasy_member_claim for user_id resolves
+→ same persistent league member
+→ same season member
+→ Week N play screen loads
+
+No duplicate claim.
+
+No duplicate league member.
+
+==================================================
+7. UNUPGRADED GUEST — CURRENT LIMITATION
+==================================================
+
+For a guest who NEVER connected an account and loses the original guest token:
+
+do not silently reclaim the seat.
+
+That would allow identity takeover.
+
+For this phase, if no safe recovery credential exists:
+
+show a clear limitation.
+
+Example:
+
+“Guest access is tied to the browser/device you originally used. If you no longer have access to that device, ask your commissioner for help.”
+
+Do NOT invent insecure seat recovery.
+
+==================================================
+8. COMMISSIONER HELP PATH
+==================================================
+
+We need a safe V1 escape hatch.
+
+Inspect what commissioner controls already exist around member claims.
+
+Preferred V1:
+do NOT allow commissioner to impersonate or directly assign identity.
+
+But if feasible, add a lightweight commissioner-only indicator in Manage League:
+
+Claimed as Guest
+
+and optionally:
+
+Needs account recovery
+
+Do not build claim-reset functionality yet unless it can be done safely.
+
+If there is currently no safe commissioner recovery action, report that explicitly.
+
+==================================================
+9. DO NOT RESET CLAIMS AUTOMATICALLY
+==================================================
+
+Never do:
+
+- clear guest claim because token is missing
+- free the seat automatically
+- create duplicate member
+- overwrite claim with a new guest token
+- let a forwarded link reclaim an occupied seat
+
+All of those create identity/security problems.
+
+==================================================
+10. CONSIDER ACCOUNT UPGRADE PROMPT
+==================================================
+
+This flow highlights why persistent guests are fragile.
+
+Inspect current guest success/onboarding UI.
+
+If a guest has just joined a Fantasy league and has not connected an account, consider adding or strengthening a lightweight prompt:
+
+“Keep your league access across devices”
+
+Create an account or sign in to save your spot.
+
+This should be optional, not blocking.
+
+Do NOT build a new auth flow if existing guest→account upgrade already exists.
+
+Reuse it.
+
+==================================================
+11. WEEK LINK ROUTING
+==================================================
+
+Test:
+
+A. Same-device guest:
+Week link → Week play
+
+B. Authenticated claimed member:
+Week link → Week play
+
+C. Lost-token guest:
+Week link → recovery-oriented non-member screen
+
+D. Non-member:
+Week link → join flow if seats available
+
+E. Non-member + all seats claimed:
+Week link → recovery/help page, not a dead end
+
+F. Week finalized:
+claimed member → results
+
+G. Week locked:
+claimed member → read-only picks
+
+==================================================
+12. SIGN-IN RETURN TARGET
+==================================================
+
+If a user taps Sign In from a Week N recovery screen:
+
+after successful auth, return them to the SAME Week N route they came from.
+
+Do not dump them on the general home screen.
+
+Preserve:
+
+leagueId
+seasonId
+weekNumber
+
+Use existing returnUrl / redirect handling if available.
+
+==================================================
+13. JOIN RETURN TARGET
+==================================================
+
+If a true non-member joins successfully from a Week N link while Week N is open:
+
+after claim:
+return them directly to Week N play.
+
+If Week N is locked:
+
+they may join the persistent league,
+but must NOT become eligible for the locked week.
+
+After joining:
+show league hub or a clear:
+
+“You’re in the league. Week N picks are already locked.”
+
+Do not route them into an ineligible play screen.
+
+==================================================
+14. GUEST CROSS-DEVICE RECOVERY — DO NOT OVERBUILD
+==================================================
+
+Do NOT build in this phase:
+
+- email verification for guests
+- SMS recovery
+- magic links
+- commissioner identity override
+- recovery codes
+- device syncing
+- seat passwords
+- secret invite URLs
+- claim transfer without auth
+
+Those may be future options.
+
+For now:
+
+same-device guest continuity
++
+account sign-in recovery
++
+clear lost-token messaging
++
+no dead ends.
+
+==================================================
+15. QA SUPPORT
+==================================================
+
+We also need a practical way to test multiple users.
+
+Document the recommended QA setup:
+
+- Browser/Profile A = commissioner
+- Browser/Profile B = authenticated member
+- Browser/Profile C = persistent guest
+- Incognito = unrecognized/new user
+
+Do not change production behavior just to make QA easier.
+
+If there is a safe existing dev-only way to inspect claims/tokens, report it but do not expose it in production UI.
+
+==================================================
+16. TESTS
+==================================================
+
+Add focused tests for:
+
+NAVIGATION
+- Back button works
+- deterministic route
+- no dead-end router.back dependency
+
+SAME-DEVICE GUEST
+- guest token resolves claim
+- Week play loads
+
+LOST-TOKEN GUEST
+- claimed seat exists
+- no matching token
+- cannot reclaim seat
+- sees recovery-oriented UX
+- no duplicate member/claim
+
+AUTH RECOVERY
+- user signs in
+- existing authenticated claim resolves
+- returns to same Week N
+- no duplicate identity
+
+TRUE NON-MEMBER
+- seats available → join flow
+- successful join → Week play if open
+
+ALL SEATS CLAIMED
+- no seat selection possible
+- clear recovery/help messaging
+- Sign In action available
+- Back to Week/League works
+
+LOCKED WEEK
+- late join does not become eligible
+
+SECURITY
+- week link does not include identity
+- no guest token exposed
+- no seat takeover
+
+==================================================
+17. REGRESSION
+==================================================
+
+Run:
+
+- Phase 3 / guest claim tests
+- Phase 3B
+- Phase 5
+- Phase 5.1
+- Phase 5.2
+- new recovery tests
+
+If inexpensive, run full Fantasy regression.
+
+Return exact totals.
+
+==================================================
+18. MANUAL QA
+==================================================
+
+I should be able to test:
+
+SAME-DEVICE GUEST
+
+1. Use persistent Browser Profile B.
+2. Claim a league seat as guest.
+3. Close browser.
+4. Reopen same profile.
+5. Open Week 1 link.
+6. Confirm recognized immediately.
+
+LOST-TOKEN GUEST
+
+1. Claim seat in Incognito.
+2. Close Incognito.
+3. Open new Incognito.
+4. Open Week 1 link.
+5. Confirm:
+   - not recognized
+   - clear explanation
+   - Sign In option
+   - Join option if appropriate
+   - Back works
+6. Join page with all seats claimed should NOT be a dead end.
+
+AUTH MEMBER
+
+1. Claim/upgrade seat to account.
+2. Sign out.
+3. Open Week link.
+4. Tap Sign In.
+5. Sign in.
+6. Return directly to Week play as same member.
+
+NON-MEMBER
+
+1. Open shared Week link in clean browser.
+2. Seats available:
+   - Join This League
+   - claim available seat
+   - return to Week play if open.
+3. Seats unavailable:
+   - no takeover
+   - recovery/help messaging.
+
+==================================================
+19. RETURN
+==================================================
+
+Return:
+
+1. current guest identity behavior
+2. exact root cause of incognito re-entry failure
+3. Back button root cause/fix
+4. non-member screen changes
+5. all-seats-claimed screen changes
+6. sign-in recovery behavior
+7. lost-token guest behavior
+8. commissioner help behavior
+9. guest→account upgrade UX
+10. Week return routing
+11. security safeguards
+12. files changed
+13. SQL required or not
+14. tests added
+15. regression totals
+16. exact manual QA steps
+17. known limitations that remain
+
+Then STOP.
+
+Do not begin Week 3 or notification work.
+
+Final status:
+
+GUEST RETURN UX READY FOR QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

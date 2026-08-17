@@ -213,14 +213,20 @@ export default function AuthCallbackScreen() {
   }
 
   async function navigateHome() {
-    // Clear any stale layout redirect — auth-callback owns navigation from here,
-    // so we don't want _layout.tsx to re-redirect on the next sign-in.
+    // Read the pending redirect BEFORE removing it, so we can honour it.
+    // Stored by: join screen, weekly play non-member Sign In, or _layout's
+    // useProtectedRoute when a deep link is interrupted by auth.
+    const pendingRedirect = await AsyncStorage.getItem(PENDING_AUTH_REDIRECT_KEY).catch(() => null);
     await AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
     // Peek (don't consume) so the invite survives if username-setup is needed first
     const pending = await peekPendingInvite();
     setTimeout(() => {
       if (pending?.code) {
         router.replace(`/invite/${pending.code}` as never);
+      } else if (pendingRedirect) {
+        // Return user to wherever they were before auth interrupted them
+        // (e.g. a weekly play screen after Sign In from the non-member gate)
+        router.replace(pendingRedirect as never);
       } else {
         router.replace("/(tabs)");
       }
@@ -235,10 +241,13 @@ export default function AuthCallbackScreen() {
   }
 
   async function handleContinue() {
+    const pendingRedirect = await AsyncStorage.getItem(PENDING_AUTH_REDIRECT_KEY).catch(() => null);
     await AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
     const pending = await peekPendingInvite();
     if (pending?.code) {
       router.replace(`/invite/${pending.code}` as never);
+    } else if (pendingRedirect) {
+      router.replace(pendingRedirect as never);
     } else {
       router.replace("/(tabs)");
     }
