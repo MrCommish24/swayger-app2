@@ -725,6 +725,28 @@ export interface WeeklySummaryResponse {
   can_create_next:  boolean;
 }
 
+/** Response from GET /weeks/:weekNumber/last-week-templates */
+export interface LastWeekTemplatesResponse {
+  /** Template IDs used in week N-1, in original display order. Empty for week 1. */
+  template_ids: string[];
+  /** Subset of template_ids that are no longer active in the library. */
+  inactive_template_ids: string[];
+}
+
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/last-week-templates
+export async function getLastWeekTemplates(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<LastWeekTemplatesResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/last-week-templates`,
+    {},
+    auth
+  );
+}
+
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary
 export async function getWeeklySummary(
   leagueId: string,

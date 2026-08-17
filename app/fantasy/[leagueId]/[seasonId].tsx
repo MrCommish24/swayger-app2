@@ -57,6 +57,43 @@ import {
   PastWeekSummary,
   SeasonStandings,
 } from "@/lib/fantasy-api";
+
+// ── Phase 5.3: Commissioner next-action helper ────────────────────────────────
+// Derives the single most important commissioner action from current hub state.
+// Used for visual hierarchy — does not hide any controls, only drives emphasis.
+type CommissionerNextAction =
+  | "create"           // no week yet, or previous week finalized — create next
+  | "share"            // week open, early — primary job is getting people to play
+  | "remind"           // week open, some have played, others haven't
+  | "lock"             // everyone has played — ready to lock
+  | "resolve"          // locked, no questions resolved yet
+  | "continue_resolve" // locked, partially resolved
+  | "finalize"         // all resolved — ready to finalize
+  | "view_results";    // finalized
+
+function getCommissionerNextAction(
+  ws: WeeklySummaryResponse | undefined
+): CommissionerNextAction | null {
+  if (!ws) return null;
+  if (ws.can_create_next) return "create";
+
+  const cw = ws.current_week;
+  if (!cw) return "create";
+  if (cw.room_status === "finalized") return "view_results";
+
+  if (cw.card_status === "locked") {
+    if (cw.all_settled) return "finalize";
+    if ((cw.settled_count ?? 0) > 0) return "continue_resolve";
+    return "resolve";
+  }
+
+  // Open / picks active
+  const eligible = cw.eligible_count ?? 0;
+  const played   = cw.played_count   ?? 0;
+  if (eligible > 0 && played >= eligible) return "lock";
+  if (played > 0) return "remind";
+  return "share";
+}
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -730,17 +767,17 @@ function WeeklyCard({
               </View>
             )}
 
-            {/* Lock Picks (when open) */}
+            {/* Lock Picks (when open) — secondary action below Share */}
             {!isLocked && (
               <View style={styles.draftDayActionRow}>
                 {!confirmLock && (
                   <TouchableOpacity
-                    style={[styles.btn, { flex: 1, backgroundColor: "#5B21B6" }, locking && { opacity: 0.5 }]}
+                    style={[styles.lockPicksBtn, locking && { opacity: 0.5 }]}
                     onPress={() => setConfirmLock(true)}
                     disabled={locking}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.btnText}>🔒  Lock Picks</Text>
+                    <Text style={styles.lockPicksBtnText}>🔒  Lock Picks</Text>
                   </TouchableOpacity>
                 )}
                 {confirmLock && (
@@ -1547,24 +1584,37 @@ export default function LeagueHubScreen() {
                   </>
                 )}
 
-                {/* Set Up Next Week — commissioner CTA when current week finalized */}
+                {/* NEXT UP — commissioner CTA when current week finalized (Phase 5.3) */}
                 {weeklySummary?.can_create_next && isCommissioner && (
-                  <TouchableOpacity
-                    style={styles.setupNextWeekBtn}
-                    onPress={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${weeklySummary.next_week_number}/setup` as any)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.setupNextWeekIcon}>🏈</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.setupNextWeekTitle}>
-                        Set Up Week {weeklySummary.next_week_number}
-                      </Text>
-                      <Text style={styles.setupNextWeekSub}>
-                        Create your next weekly competition
-                      </Text>
+                  <View style={styles.nextUpSection}>
+                    <Text style={styles.nextUpLabel}>NEXT UP</Text>
+                    <View style={styles.nextUpCard}>
+                      <View style={styles.nextUpCardHeader}>
+                        <Text style={styles.nextUpIcon}>🏈</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.nextUpTitle}>
+                            Week {weeklySummary.next_week_number} Swayger
+                          </Text>
+                          <Text style={styles.nextUpSub}>
+                            Ready to set up your next weekly Swayger.
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.nextUpBtn}
+                        onPress={() =>
+                          router.push(
+                            `/fantasy/weeks/${leagueId}/${seasonId}/${weeklySummary.next_week_number}/setup` as any
+                          )
+                        }
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.nextUpBtnText}>
+                          Create Week {weeklySummary.next_week_number}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
-                    <Text style={styles.inviteBtnArrow}>›</Text>
-                  </TouchableOpacity>
+                  </View>
                 )}
 
                 {/* Past Swaygers — finalized weekly history (compact) */}
@@ -1941,22 +1991,51 @@ const styles = StyleSheet.create({
   pastWeekSub:   { fontSize: 12, color: C.textMuted, marginTop: 1 },
   pastWeekArrow: { fontSize: 13, color: C.tint, fontWeight: "600" },
 
-  // Set Up Next Week CTA (Phase 5.2)
-  setupNextWeekBtn: {
+  // NEXT UP section (Phase 5.3)
+  nextUpSection: { marginBottom: 12 },
+  nextUpLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    color: "#22c55e",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  nextUpCard: {
+    backgroundColor: "#071a0e",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#22c55e",
+    padding: 16,
+    gap: 12,
+  },
+  nextUpCardHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: "#06091A",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.tint,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    marginBottom: 12,
   },
-  setupNextWeekIcon:  { fontSize: 22 },
-  setupNextWeekTitle: { fontSize: 15, fontWeight: "700", color: C.text },
-  setupNextWeekSub:   { fontSize: 12, color: C.textMuted, marginTop: 2 },
+  nextUpIcon:  { fontSize: 22 },
+  nextUpTitle: { fontSize: 16, fontWeight: "800", color: C.text },
+  nextUpSub:   { fontSize: 12, color: C.textMuted, marginTop: 2 },
+  nextUpBtn: {
+    backgroundColor: "#22c55e",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  nextUpBtnText: { color: "#000", fontWeight: "800", fontSize: 15 },
+
+  // Lock Picks — secondary visual weight (Phase 5.3)
+  lockPicksBtn: {
+    flex: 1,
+    backgroundColor: "transparent",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#5B21B6",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  lockPicksBtnText: { color: "#a78bfa", fontWeight: "600", fontSize: 14 },
 
   // Weekly participation list (Phase 5.1)
   weeklyPartToggle: {

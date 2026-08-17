@@ -1,0 +1,1049 @@
+We are beginning:
+
+# PHASE 5.3 — COMMISSIONER WEEKLY WORKFLOW
+
+Current state:
+
+- Draft Day is working
+- Week 1 is working
+- Week 2+ repeatability is working
+- weekly sharing / reminders / Copy Link are working
+- participation counts are working
+- guest durability/recovery is working
+- single-use commissioner recovery has been manually verified
+- season standings are derived and working
+- weekly settlement/finalization follows the proven Game Day lifecycle
+
+We are now shifting away from identity/infrastructure work.
+
+The product goal is:
+
+# MAKE WEEKLY SWAYGER EASY ENOUGH FOR A COMMISSIONER TO RUN EVERY WEEK
+
+The commissioner should be able to go from:
+
+“Week 2 is over”
+
+to:
+
+“Week 3 is live and shared”
+
+in roughly 2–3 minutes.
+
+This phase is about reducing commissioner effort and making the NEXT ACTION obvious.
+
+Do NOT build notifications, provider integrations, automated scoring, or full season automation.
+
+==================================================
+1. PRODUCT PRINCIPLE
+==================================================
+
+Swayger Fantasy Season should not feel like another fantasy-admin job.
+
+The commissioner should not have to think:
+
+- What week are we on?
+- Where do I create the next one?
+- Which questions should I choose?
+- Do I need to re-add people?
+- How do I share it?
+- What do I do after picks come in?
+
+The hub should guide them through the weekly operating loop.
+
+Preferred weekly rhythm:
+
+Finalize Week N
+
+→ Create Week N+1
+
+→ Publish
+
+→ Share
+
+→ Monitor participation
+
+→ Remind
+
+→ Lock Picks
+
+→ Resolve Results
+
+→ Finalize
+
+→ Create Week N+2
+
+==================================================
+2. PRIMARY PHASE 5.3 MILESTONE
+==================================================
+
+After this phase, I should be able to:
+
+1. Finalize Week 2.
+2. Return to Fantasy League Hub.
+3. Immediately see:
+   NEXT UP
+   Week 3 Swayger
+   [ Create Week 3 ]
+4. Tap Create Week 3.
+5. See a high-quality default question set already selected.
+6. Optionally:
+   - edit selections
+   - use last week’s questions
+7. Publish Week 3.
+8. Return to hub.
+9. Immediately see:
+   Week 3 is live
+   0 / N have played
+   [ Share Week 3 ]
+10. Share it.
+11. Run the same weekly workflow without hunting through screens.
+
+This is the acceptance milestone.
+
+==================================================
+3. DO NOT BUILD ANOTHER WEEK ENGINE
+==================================================
+
+The repeatable weekly engine already exists.
+
+Do NOT create:
+
+- Week 3-specific routes
+- Week 3-specific state
+- another WeeklyCard
+- another setup architecture
+
+Everything remains driven by:
+
+weekNumber
+
+This phase should improve the operating UX around the existing engine.
+
+==================================================
+4. ARCHITECTURE / UX INSPECTION FIRST
+==================================================
+
+Before coding, inspect:
+
+- current Fantasy League Hub
+- current weekly summary response
+- current weekly setup flow
+- current template-picker behavior
+- weekly template defaults
+- current current_week / next_week_number / can_create_next logic
+- Past Swaygers
+- weekly share controls
+- participation controls
+- lock / settlement / finalization controls
+
+Identify:
+
+A. where commissioner currently has to make unnecessary decisions
+B. where next action is unclear
+C. where setup is repetitive
+D. what can be reused without new backend infrastructure
+
+Return this audit in the final report.
+
+Do not redesign the whole app.
+
+==================================================
+5. “NEXT UP” COMMISSIONER SECTION
+==================================================
+
+When the latest weekly Swayger is finalized and the next week can be created:
+
+show a prominent commissioner-only section:
+
+NEXT UP
+
+Week 3 Swayger
+
+Ready to set up your next weekly Swayger.
+
+[ Create Week 3 ]
+
+Use dynamic week number.
+
+Do not make commissioner find setup inside another menu.
+
+==================================================
+6. CURRENT ACTION PRIORITY
+==================================================
+
+The hub should make exactly one primary commissioner action visually obvious at a time.
+
+Examples:
+
+No current week:
+→ Create Week 3
+
+Current week published/open:
+→ Share Week 3
+
+Members still missing:
+→ Share / Remind visible
+
+Ready to lock:
+→ Lock Picks
+
+Locked:
+→ Resolve Week 3
+
+Partially resolved:
+→ Continue Resolving
+
+All results entered:
+→ Finalize Week 3
+
+Finalized:
+→ Create Week 4
+
+Do not remove secondary actions like Manage / Copy Link.
+
+But establish a clear primary action hierarchy.
+
+==================================================
+7. CREATE NEXT SWAYGER
+==================================================
+
+The commissioner should never manually enter a week number.
+
+Use:
+
+weeklySummary.next_week_number
+
+or established equivalent.
+
+CTA:
+
+Create Week N
+
+routes directly into the setup flow for that N.
+
+Server sequencing remains authoritative.
+
+Do not infer next week from calendar.
+
+==================================================
+8. DEFAULT QUESTION SET — IMPORTANT
+==================================================
+
+Weekly setup should open with a recommended question set already selected.
+
+Commissioner should be able to publish quickly without starting from zero.
+
+Use the current weekly prop library.
+
+Recommended approach:
+
+preselect the existing weekly templates where:
+
+is_default = true
+
+Current migrated defaults were intended to include the core roster-target questions.
+
+Inspect live library and confirm exact default set.
+
+Target:
+roughly 5 questions.
+
+Do not preselect all 7 unless that actually makes sense.
+
+==================================================
+9. DEFAULT QUESTION UX
+==================================================
+
+When opening:
+
+Set Up Week 3
+
+show:
+
+WEEK 3 SWAYGER
+
+Suggested Questions
+
+✓ Highest-scoring fantasy team
+✓ Lowest-scoring fantasy team
+✓ Largest margin of victory
+✓ Smallest margin of victory
+✓ Highest-scoring player’s team
+
+Then optional additional questions below.
+
+Commissioner can:
+
+- leave defaults as-is
+- uncheck
+- add others
+
+Primary CTA:
+
+Review Week 3
+
+Goal:
+commissioner should be able to move through setup with almost no thinking.
+
+==================================================
+10. “USE LAST WEEK’S QUESTIONS”
+==================================================
+
+Add a lightweight option:
+
+Use Last Week’s Questions
+
+This should reuse the TEMPLATE SELECTIONS from Week N-1.
+
+Do NOT copy:
+
+- published answer_options
+- correct answers
+- pick data
+- result status
+- room IDs
+- prop IDs
+- scoring outcomes
+
+Only reuse the underlying template IDs / question definitions.
+
+Then rebuild fresh answer_options using the CURRENT Fantasy roster snapshot.
+
+This is critical.
+
+==================================================
+11. LAST-WEEK QUESTION SAFETY
+==================================================
+
+Example:
+
+Week 2 used templates:
+
+A
+B
+C
+D
+E
+
+Week 3:
+commissioner taps Use Last Week’s Questions
+
+Expected:
+
+Week 3 setup selects A–E
+
+but answer choices are rebuilt from Week 3’s eligible roster.
+
+A member added since Week 2 should appear in Week 3 options.
+
+No historical snapshots copied.
+
+==================================================
+12. INACTIVE / RETIRED TEMPLATE BEHAVIOR
+==================================================
+
+If a template used last week is now:
+
+inactive
+deprecated
+no longer recommended
+
+do not silently break setup.
+
+Preferred:
+
+still show it as:
+
+No longer recommended
+
+if existing architecture supports historical template visibility.
+
+Or skip it with a clear note.
+
+Reuse Draft Day’s handling for historical/inactive templates if possible.
+
+Do not create duplicate template records.
+
+==================================================
+13. DEFAULT VS LAST WEEK
+==================================================
+
+When entering setup, default behavior should be:
+
+Suggested/default set preselected.
+
+Then commissioner may choose:
+
+Use Last Week’s Questions
+
+which replaces current selections with last week’s template IDs.
+
+Do not merge both sets automatically unless explicitly chosen.
+
+Keep behavior predictable.
+
+==================================================
+14. QUESTION COUNT
+==================================================
+
+Keep current cap:
+
+8 maximum.
+
+Recommended:
+5–8.
+
+Display:
+
+5 questions selected
+
+Avoid setup friction.
+
+==================================================
+15. REVIEW SCREEN
+==================================================
+
+Keep review simple.
+
+Example:
+
+REVIEW WEEK 3
+
+5 questions
+
+Highest-scoring fantasy team
+15 pts
+
+Lowest-scoring fantasy team
+10 pts
+
+...
+
+[ Publish Week 3 ]
+
+Do not add unnecessary configuration.
+
+==================================================
+16. POST-PUBLISH SUCCESS MOMENT
+==================================================
+
+After publish, do not simply dump commissioner back on the hub with no feedback.
+
+Preferred:
+
+Week 3 Swayger is live 🎉
+
+0 / 10 have played
+
+[ Share Week 3 ]
+
+Secondary:
+Copy Link
+Back to League
+
+If this creates too much extra UI, the hub may show the same state immediately.
+
+But the commissioner should clearly understand:
+
+THE WEEK IS LIVE
+NEXT JOB = SHARE IT
+
+==================================================
+17. HUB CURRENT SWAYGER
+==================================================
+
+Once published:
+
+CURRENT SWAYGER
+
+Week 3 Swayger
+Picks Open
+
+0 / 10 Have Played
+
+Primary commissioner CTA:
+
+📣 Share Week 3
+
+Secondary:
+
+Copy Link
+Remind (when appropriate)
+Manage Week 3
+Lock Picks
+
+Do not bury Share.
+
+==================================================
+18. PARTICIPATION PROGRESS
+==================================================
+
+Keep existing:
+
+X / Y Have Played
+
+Played definition remains:
+
+at least one saved competition-scope pick.
+
+Do not change.
+
+If everyone has played:
+
+10 / 10 Have Played ✓
+
+Then primary commissioner action can shift toward:
+
+Lock Picks
+
+But do NOT automatically lock.
+
+==================================================
+19. NEXT-ACTION LOGIC
+==================================================
+
+Create a small deterministic UI helper if useful.
+
+Conceptually:
+
+getCommissionerNextAction(weeklySummary/currentWeek)
+
+Possible values:
+
+create
+share
+remind
+lock
+resolve
+continue_resolve
+finalize
+view_results
+
+Do not store this in DB.
+
+Derive from current state.
+
+This may help keep the hub logic clean.
+
+Do not create a giant workflow engine.
+
+==================================================
+20. SHARE REMINDER POSITIONING
+==================================================
+
+Keep current reminder logic.
+
+If:
+waiting_count > 0
+
+show reminder action.
+
+Do NOT spam commissioner with a prominent reminder if:
+
+0 people have played immediately after publish.
+
+Primary action initially:
+Share Week N
+
+Reminder becomes useful after initial sharing / later return.
+
+We do not currently track whether commissioner has already shared, so do not invent complex state.
+
+Keep both available but preserve Share as the primary launch action.
+
+==================================================
+21. MANAGE WEEK
+==================================================
+
+Keep Manage Week as secondary.
+
+Commissioner should not need to open Manage just to perform the normal weekly loop.
+
+Normal loop stays on hub:
+
+Create
+Share
+Monitor
+Lock
+Resolve
+Finalize
+
+Manage is for editing questions before picks / other exceptional actions.
+
+==================================================
+22. PAST SWAYGERS
+==================================================
+
+Keep compact.
+
+Example:
+
+PAST SWAYGERS
+
+Week 2   Mike won   View
+Week 1   Darius won View
+
+Do not add operational controls there.
+
+No:
+Share
+Remind
+Manage
+Resolve
+
+Historical weeks = results only.
+
+==================================================
+23. SEASON STANDINGS
+==================================================
+
+Season Standings remain visible/accessible.
+
+Do not redesign them this phase.
+
+The commissioner should be able to see the value of running another week:
+
+Season Standings
+1. Darius 100
+2. Mike 80
+
+then:
+
+NEXT UP
+Week 3 Swayger
+[ Create Week 3 ]
+
+That reinforces continuity.
+
+==================================================
+24. WEEKLY QUESTION LIBRARY QUALITY CHECK
+==================================================
+
+Before finalizing defaults, inspect the 7 current NFL weekly templates.
+
+For each, confirm:
+
+- objective
+- manually resolvable
+- unambiguous
+- answer_target_type correct
+- point_value sensible
+- no_one behavior sensible
+
+Flag any question whose wording could create commissioner confusion.
+
+Do NOT automatically add more templates unless a current one is clearly broken.
+
+==================================================
+25. QUESTION COPY — THINK LIKE A FANTASY PLAYER
+==================================================
+
+Review customer-facing wording.
+
+Examples should feel conversational and understandable.
+
+Potential:
+
+Which fantasy team scores the most points this week?
+
+Which fantasy team scores the fewest?
+
+Which team wins by the largest margin?
+
+Which team has the highest-scoring player?
+
+Avoid database-ish language.
+
+If copy needs light polish, do it.
+
+Do not change settlement meaning.
+
+==================================================
+26. QUICK CREATE — DO NOT ADD YET
+==================================================
+
+Do NOT create a true one-click:
+
+Publish Next Week
+
+without review.
+
+Commissioner should still see/confirm the questions.
+
+We want:
+
+fast setup
+
+not:
+
+blind automated publishing.
+
+==================================================
+27. REUSE LAST WEEK — BACKEND DATA SOURCE
+==================================================
+
+Prefer deriving last week’s templates from published props’:
+
+source/template ID
+
+or existing prop library linkage.
+
+Inspect whether published gameday_props currently retain enough template identity.
+
+If they do:
+reuse it.
+
+If they do NOT:
+
+STOP and report the minimal schema gap.
+
+Do NOT attempt fuzzy matching by question text.
+
+Do not use normalized question strings to infer template IDs.
+
+==================================================
+28. SQL EXPECTATION
+==================================================
+
+Prefer NO SQL.
+
+This phase should mostly be UI/workflow.
+
+However:
+
+if “Use Last Week’s Questions” cannot safely identify source template IDs from published props:
+
+report whether a small additive template-source column is required.
+
+If SQL required:
+write migration and STOP.
+
+Do not apply automatically.
+
+==================================================
+29. MEMBER EXPERIENCE
+==================================================
+
+Do not change member weekly experience unnecessarily.
+
+Members should still:
+
+open league
+→ see current Week N
+→ make picks
+
+The workflow optimization is commissioner-focused.
+
+==================================================
+30. GUEST / RECOVERY
+==================================================
+
+Do not touch:
+
+- guest claims
+- account upgrade
+- recovery links
+- identity infrastructure
+
+That work is complete.
+
+No identity changes in Phase 5.3.
+
+==================================================
+31. FINALIZATION RELIABILITY
+==================================================
+
+Preserve all proven behavior:
+
+- result correction before finalization
+- single-flight finalization
+- idempotent backend
+- deterministic navigation
+- immutable results afterward
+
+Do not refactor this unless necessary.
+
+==================================================
+32. TESTS — NEXT ACTION
+==================================================
+
+Add tests for hub states:
+
+No weekly room:
+→ Create Week 1
+
+Week 1 finalized:
+→ Create Week 2
+
+Week 2 finalized:
+→ Create Week 3
+
+Week 3 open:
+→ primary Share Week 3
+
+Week 3 locked:
+→ Resolve Week 3
+
+partially resolved:
+→ Continue Resolving
+
+all resolved:
+→ Finalize Week 3
+
+finalized:
+→ Create Week 4
+
+No incorrect week numbers.
+
+==================================================
+33. TESTS — DEFAULT QUESTIONS
+==================================================
+
+Verify:
+
+- setup preselects current is_default weekly templates
+- default count within cap
+- commissioner can remove one
+- commissioner can add optional one
+- Review reflects actual selection
+- publish uses selected set only
+
+==================================================
+34. TESTS — USE LAST WEEK
+==================================================
+
+Week 2 templates:
+
+A B C D E
+
+Week 3:
+Use Last Week’s Questions
+
+Expected selection:
+
+A B C D E
+
+Verify:
+
+- no old prop IDs copied
+- no correct_answer copied
+- no old answer_options copied
+- fresh Week 3 answer snapshots generated
+- current roster represented
+- point values/template metadata correct
+
+==================================================
+35. TESTS — ROSTER CHANGE
+==================================================
+
+Week 2 has:
+
+Darius
+Mike
+
+Week 2 finalizes.
+
+Add:
+Rob
+
+Create Week 3
+→ Use Last Week’s Questions
+
+Expected:
+
+same question templates
+but Rob appears in roster-target answer options.
+
+This is critical.
+
+==================================================
+36. TESTS — DYNAMIC COPY
+==================================================
+
+Verify:
+
+Week 3 setup
+Week 3 review
+Week 3 publish
+Share Week 3
+Week 3 reminder
+Week 3 results
+
+No stale Week 1/2 copy.
+
+==================================================
+37. TESTS — NO IDENTITY REGRESSION
+==================================================
+
+Run existing identity/recovery tests.
+
+Phase 5.3 should not alter:
+
+- claims
+- guest tokens
+- auth return
+- recovery tokens
+
+No regressions.
+
+==================================================
+38. TESTS — WEEKLY FLOW
+==================================================
+
+Verify full:
+
+Week 2 finalized
+→ Create Week 3
+→ default questions selected
+→ publish
+→ share
+→ member picks
+→ lock
+→ settle
+→ correction
+→ finalize
+→ Season Standings update
+→ Create Week 4 appears
+
+==================================================
+39. PERFORMANCE
+==================================================
+
+Preserve one season-level weekly summary fetch.
+
+Do not add one fetch per historical week.
+
+Default/last-week setup fetches may load only what setup needs.
+
+Hub request count remains approximately constant as season grows.
+
+==================================================
+40. MANUAL QA TARGET
+==================================================
+
+I should be able to:
+
+1. Finalize Week 2.
+2. Return to hub.
+3. Immediately see:
+   NEXT UP
+   Week 3 Swayger
+   Create Week 3.
+4. Tap Create Week 3.
+5. See ~5 suggested questions preselected.
+6. Tap Use Last Week’s Questions.
+7. Confirm selections change to Week 2’s question set.
+8. Add/remove a question.
+9. Review.
+10. Publish.
+11. See Week 3 live immediately.
+12. See:
+    0 / N Have Played
+13. Share Week 3.
+14. Member makes pick.
+15. Participation count updates.
+16. All members eventually play.
+17. Hub makes Lock Picks the obvious next action.
+18. Lock.
+19. Resolve.
+20. Correct one mistaken result.
+21. Finalize.
+22. Season Standings update.
+23. Hub offers:
+    Create Week 4.
+24. Past Swaygers shows Week 3 compactly after finalization.
+
+==================================================
+41. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- automatic weekly creation
+- auto-publish
+- scheduled notifications
+- SMS/email/push
+- provider imports
+- automated stat settlement
+- kickoff scheduling
+- automatic locking
+- Season Receipt settlement
+- playoffs
+- rewards/payment tracking
+- commissioner seat release
+- identity changes
+- advanced analytics
+- AI-generated questions
+- large question library expansion
+
+==================================================
+42. IMPLEMENTATION ORDER
+==================================================
+
+First:
+
+1. audit current commissioner weekly workflow
+2. audit Week 1/2 hardcoded remnants
+3. inspect template-source linkage for Use Last Week
+4. confirm SQL needed or not
+5. inspect current defaults
+6. implement next-action hierarchy
+7. implement suggested question selection
+8. implement Use Last Week if safely supported
+9. polish post-publish/share flow
+10. test
+
+If template lineage requires SQL:
+
+STOP.
+
+Return:
+
+SQL APPLICATION REQUIRED
+
+with exact migration.
+
+Do not hack around missing template identity.
+
+==================================================
+43. RETURN
+==================================================
+
+Return:
+
+1. commissioner workflow audit
+2. friction points found
+3. NEXT UP implementation
+4. next-action hierarchy
+5. weekly default question set
+6. current weekly template quality audit
+7. Use Last Week architecture
+8. template lineage source
+9. SQL required or not
+10. setup/review UX changes
+11. post-publish UX
+12. hub current-week behavior
+13. Past Swaygers behavior
+14. files changed
+15. Phase 5.3 test results
+16. full relevant regression totals
+17. bugs found/fixed
+18. exact manual QA steps
+19. what remains before commissioner weekly workflow is production-ready
+
+Then STOP.
+
+Do not begin another roadmap phase.
+
+Final status:
+
+PHASE 5.3 COMMISSIONER WORKFLOW READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

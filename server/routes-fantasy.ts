@@ -3366,6 +3366,107 @@ export function registerFantasyRoutes(app: Express) {
     }
   );
 
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/last-week-templates
+  // Returns the template IDs used in week (weekNumber - 1).
+  // Reads gameday_props.template_prop_id — already stored at publish time.
+  // Used by "Use Last Week's Questions" in setup UI.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/last-week-templates",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+
+      // Week 1 has no previous week — return empty immediately
+      if (!Number.isInteger(wn) || wn < 2) {
+        res.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+
+      // Verify season belongs to league and get sport
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, fantasy_leagues(sport)")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) { res.status(404).json({ error: "Season not found" }); return; }
+
+      const sport = (season as any).fantasy_leagues?.sport ?? "football";
+
+      // Find the previous week's room
+      const { data: lastRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "weekly")
+        .eq("week_number", wn - 1)
+        .maybeSingle();
+
+      if (!lastRoom) {
+        res.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+
+      // Find the pick card for that room
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id")
+        .eq("room_id", lastRoom.id)
+        .maybeSingle();
+
+      if (!card) {
+        res.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+
+      // Read template_prop_id from published props (preserving display order)
+      const { data: props, error: propsErr } = await supabase
+        .from("gameday_props")
+        .select("template_prop_id, display_order")
+        .eq("card_id", card.id)
+        .not("template_prop_id", "is", null)
+        .order("display_order", { ascending: true });
+
+      if (propsErr) {
+        console.error("[fantasy/last-week-templates] props error:", propsErr.message);
+        res.status(500).json({ error: "Failed to fetch last week templates" });
+        return;
+      }
+
+      if (!props || props.length === 0) {
+        res.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+
+      const allTemplateIds: string[] = props
+        .map((p: any) => p.template_prop_id as string)
+        .filter(Boolean);
+
+      // Cross-reference with active library to identify any now-inactive templates
+      const { data: activeLibrary } = await supabase
+        .from("gameday_prop_library")
+        .select("id")
+        .in("id", allTemplateIds)
+        .eq("experience_type", "fantasy")
+        .eq("competition_type", "weekly")
+        .eq("sport", sport)
+        .eq("is_active", true);
+
+      const activeIds = new Set((activeLibrary ?? []).map((t: any) => t.id as string));
+      const inactiveTemplateIds = allTemplateIds.filter((id) => !activeIds.has(id));
+
+      res.json({
+        template_ids: allTemplateIds,             // all last-week template IDs, display order
+        inactive_template_ids: inactiveTemplateIds, // subset no longer active/recommended
+      });
+    }
+  );
+
   // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish
   app.post(
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish",
