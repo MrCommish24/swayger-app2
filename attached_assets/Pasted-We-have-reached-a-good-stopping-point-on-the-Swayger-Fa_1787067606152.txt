@@ -1,0 +1,166 @@
+We have reached a good stopping point on the Swayger Fantasy season-long build and are ready to begin testing.
+
+Before testing begins, close the one outstanding historical-data preservation concern identified in the prior architecture review.
+
+This is a narrowly scoped data-integrity task.
+
+Do not begin any new Game Day history UX, receipt, guest-claim, or standings work.
+
+## Objective
+
+Verify that removing a Fantasy season member cannot delete that person's historical Game Day/Fantasy participation or picks.
+
+The specific relationship to inspect is:
+
+`gameday_participants.season_member_id → fantasy_season_members.id`
+
+## Step 1 — Inspect the actual live schema
+
+Determine the exact current foreign-key constraint from the database, not merely from migration files or assumptions.
+
+Return:
+
+* Constraint name
+* Source table/column
+* Referenced table/column
+* Whether `season_member_id` is nullable
+* Exact `ON DELETE` behavior
+
+Then classify the result:
+
+### Safe
+
+If the FK uses:
+
+* `SET NULL`
+* `RESTRICT`
+* `NO ACTION`
+* or another behavior that does not delete the `gameday_participants` row
+
+Return:
+
+`NO CHANGE NEEDED — HISTORICAL PARTICIPATION IS PRESERVED`
+
+Do not make a migration.
+
+### Unsafe
+
+If the FK uses:
+
+`ON DELETE CASCADE`
+
+Return:
+
+`MIGRATION REQUIRED — HISTORICAL PARTICIPATION AT RISK`
+
+and proceed only to the migration proposal below.
+
+## Step 2 — If CASCADE exists, propose the smallest safe migration
+
+Do not apply it yet.
+
+The desired behavior is:
+
+`ON DELETE SET NULL`
+
+The migration should only:
+
+1. Drop the existing FK constraint.
+2. Re-create the same FK using `ON DELETE SET NULL`.
+
+Do not modify unrelated tables, columns, indexes, Fantasy logic, or Game Day logic.
+
+Before proposing the migration, confirm that:
+
+* `gameday_participants.season_member_id` is nullable.
+* Existing rows will remain valid.
+* `gameday_picks.participant_id` continues to point to the preserved `gameday_participants` row.
+* Removing a `fantasy_season_members` row will leave historical picks intact.
+* No current code requires every historical `gameday_participants` row to retain a non-null `season_member_id`.
+
+Return:
+
+* Exact forward SQL
+* Exact rollback SQL
+* Constraint name
+* Any code assumptions that could be affected
+* Risk assessment
+
+Stop for approval before applying any migration.
+
+## Step 3 — After an approved migration, run a focused preservation test
+
+Use disposable test data.
+
+Create or identify:
+
+* A Fantasy season member
+* A linked `gameday_participants` row
+* At least one linked `gameday_pick`
+
+Capture the IDs before removal.
+
+Then remove the Fantasy season member through the same path used by the actual application where practical.
+
+Verify afterward:
+
+* `fantasy_season_members` row is removed as intended.
+* `gameday_participants` row still exists.
+* `season_member_id` is now NULL.
+* `gameday_picks` still exist.
+* Selected answers remain intact.
+* `is_correct` remains intact.
+* Room/card/prop records are unchanged.
+* Historical leaderboard reconstruction still has the participant and pick data needed.
+* No unrelated participant or pick rows were modified.
+
+Also confirm that the normal member-removal flow still succeeds from the commissioner's perspective.
+
+## Step 4 — Regression check
+
+Run the relevant existing Fantasy and Game Day tests.
+
+At minimum verify:
+
+* Fantasy member removal
+* Fantasy participant identity
+* Weekly Swayger participation
+* Game Day picks
+* Existing Game Day settlement
+* No foreign-key errors introduced
+
+Do not make unrelated fixes unless the preservation change directly causes a regression.
+
+## Stop condition
+
+Once the FK is verified safe, or the narrow migration and preservation test are complete, stop.
+
+Do not implement:
+
+* My Game Day History
+* Recent Game Days
+* Historical receipt UI
+* Receipt regeneration endpoints
+* Guest Game Day claim flow
+* Final standings snapshots
+* Lifetime statistics
+* New navigation
+* Historical search/filtering
+
+Those belong in a separate post-Fantasy-MVP sprint.
+
+## Final report
+
+Return:
+
+1. Exact FK behavior found
+2. Whether a migration was necessary
+3. Exact schema change, if any
+4. Preservation test result
+5. Regression test result
+6. Confirmation that historical participant/pick data survives member removal
+7. Recommendation:
+
+   * `SAFE TO BEGIN FANTASY TESTING`
+   * or
+   * `BLOCKED — DATA PRESERVATION ISSUE REMAINS`
