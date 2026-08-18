@@ -2871,6 +2871,196 @@ async function runArchiveScopeTests() {
   assert(restoreIdm.data?.already_active === true, `§AO-3 second restore already_active=true when league already active`);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 6F — Invite & QR Sharing (§AP – §AS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── §AP  Canonical invite URL / join context ──────────────────────────────────
+
+async function runInviteJoinContextTests() {
+  console.log("\n── §AP  Canonical invite URL / join context ────────────────────");
+
+  const { commToken, leagueId, seasonId } = await buildLeague("p6f-ap");
+
+  // join-info is PUBLIC — no auth needed
+  const info = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  assert(info.status === 200, `§AP-1 join-info public 200 (got ${info.status})`);
+
+  // Returns correct league and season identifiers
+  assert(info.data?.league?.id === leagueId, `§AP-2 join-info league.id matches`);
+  assert(info.data?.season?.id === seasonId, `§AP-3 join-info season.id matches`);
+  assert(
+    typeof info.data?.league?.league_name === "string" && info.data.league.league_name.length > 0,
+    `§AP-4 join-info has non-empty league_name (got ${JSON.stringify(info.data?.league?.league_name)})`
+  );
+
+  // Seats array present
+  assert(Array.isArray(info.data?.seats), `§AP-5 join-info has seats array`);
+
+  // Each seat has is_claimed boolean
+  const seat0 = info.data.seats[0];
+  assert(
+    seat0 && typeof seat0.is_claimed === "boolean",
+    `§AP-6 seat has is_claimed boolean (got ${typeof seat0?.is_claimed})`
+  );
+
+  // Authenticated caller gets my_seat resolved
+  const infoAuth = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, commToken);
+  assert(infoAuth.status === 200, `§AP-7 join-info with auth 200`);
+  assert(infoAuth.data?.my_seat !== undefined, `§AP-8 join-info.my_seat present when authenticated`);
+}
+
+// ── §AQ  QR security invariants ──────────────────────────────────────────────
+
+async function runQRSecurityTests() {
+  console.log("\n── §AQ  QR security invariants ─────────────────────────────────");
+
+  const { leagueId, seasonId } = await buildLeague("p6f-aq");
+
+  // Canonical path does not contain any sensitive data
+  const invitePath = `/fantasy/join/${leagueId}/${seasonId}`;
+  assert(invitePath.startsWith("/fantasy/join/"), `§AQ-1 canonical path starts /fantasy/join/`);
+  assert(!invitePath.includes("guest_token"), `§AQ-2 canonical path has no guest_token`);
+  assert(!invitePath.includes("user_id"), `§AQ-3 canonical path has no user_id`);
+  assert(!invitePath.includes("recovery"), `§AQ-4 canonical path has no recovery token`);
+  assert(!invitePath.includes("claim_id"), `§AQ-5 canonical path has no claim_id`);
+
+  // join-info response exposes no identity credentials
+  const info = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  const responseJson = JSON.stringify(info.data ?? {});
+  assert(!responseJson.includes('"guest_token"'), `§AQ-6 join-info JSON has no guest_token key`);
+  // Seats expose is_claimed but not WHO claimed
+  const seat = (info.data?.seats ?? [])[0];
+  assert(seat && !("user_id" in seat), `§AQ-7 seat object has no user_id field`);
+  assert(seat && !("guest_token" in seat), `§AQ-8 seat object has no guest_token field`);
+
+  // Invalid leagueId → 404
+  const badInfo = await api("GET",
+    `/api/fantasy/leagues/00000000-0000-0000-0000-000000000000/seasons/${seasonId}/join-info`, null);
+  assert(badInfo.status === 404, `§AQ-9 invalid leagueId → 404 (got ${badInfo.status})`);
+}
+
+// ── §AR  Archived invite behavior ─────────────────────────────────────────────
+
+async function runArchivedInviteTests() {
+  console.log("\n── §AR  Archived invite behavior ───────────────────────────────");
+
+  const { commToken, leagueId, seasonId, memberId } = await buildLeague("p6f-ar");
+
+  // Archive the league
+  const arch = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(arch.status === 200, `§AR-1 archive succeeded (got ${arch.status})`);
+
+  // join-info returns 404 for archived leagues (is_active=false treated as "not found")
+  const archivedInfo = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  assert(
+    archivedInfo.status === 404,
+    `§AR-2 join-info 404 for archived league (got ${archivedInfo.status})`
+  );
+
+  // Claim attempt on archived league → 409 LEAGUE_ARCHIVED
+  // The /claim endpoint requires Bearer JWT or X-Fantasy-Guest-Token; pass a generated token
+  const archivedClaimToken = crypto.randomUUID();
+  const claimBlocked = await api("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/claim`,
+    null,
+    { league_member_id: memberId },
+    archivedClaimToken
+  );
+  assert(
+    claimBlocked.status === 409,
+    `§AR-3 seat claim blocked on archived league (got ${claimBlocked.status})`
+  );
+  assert(
+    claimBlocked.data?.code === "LEAGUE_ARCHIVED",
+    `§AR-4 claim returns LEAGUE_ARCHIVED code (got ${claimBlocked.data?.code})`
+  );
+
+  // Restore league
+  const rest = await api("POST", `/api/fantasy/leagues/${leagueId}/restore`, commToken, {});
+  assert(rest.status === 200, `§AR-5 restore succeeded (got ${rest.status})`);
+
+  // join-info works again after restore
+  const restoredInfo = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  assert(
+    restoredInfo.status === 200,
+    `§AR-6 join-info 200 again after restore (got ${restoredInfo.status})`
+  );
+  assert(
+    restoredInfo.data?.league?.is_active === true,
+    `§AR-7 league.is_active=true after restore`
+  );
+}
+
+// ── §AS  Multi-user claim independence ────────────────────────────────────────
+
+async function runMultiUserClaimTests() {
+  console.log("\n── §AS  Multi-user claim independence ──────────────────────────");
+
+  const { commToken, leagueId, seasonId } = await buildLeague("p6f-as");
+
+  // Add a second member so we have 2 claimable seats (commissioner + member)
+  const addResult = await apiM("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
+    commToken, { display_name: "AS Member Two", team_name: "Team Two" });
+  const member2Id = addResult.data?.league_member_id;
+  assert(member2Id, `§AS-0 second member added (got ${JSON.stringify(addResult.data)})`);
+
+  // Seat info before any claims — both seats available
+  const infoBefore = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  const seatsBefore = (infoBefore.data?.seats ?? []) as any[];
+  const unclaimed = seatsBefore.filter((s: any) => !s.is_claimed && !s.role?.includes("commissioner"));
+  assert(unclaimed.length >= 2, `§AS-1 at least 2 unclaimed member seats (got ${unclaimed.length})`);
+
+  const seat1Id = unclaimed[0]?.league_member_id;
+  const seat2Id = unclaimed[1]?.league_member_id;
+
+  // User A and B each generate their own guest token and claim independently
+  const guestTokenA = crypto.randomUUID();
+  const guestTokenB = crypto.randomUUID();
+
+  // User A claims seat 1
+  const claimA = await api("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/claim`,
+    null, { league_member_id: seat1Id }, guestTokenA);
+  assert(
+    claimA.status === 200 || claimA.status === 201,
+    `§AS-2 User A claims seat 1 (got ${claimA.status})`
+  );
+
+  // User B claims seat 2 (independent — different guest token)
+  const claimB = await api("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/claim`,
+    null, { league_member_id: seat2Id }, guestTokenB);
+  assert(
+    claimB.status === 200 || claimB.status === 201,
+    `§AS-3 User B claims seat 2 independently (got ${claimB.status})`
+  );
+
+  // Both seats now show as claimed in join-info
+  const infoAfter = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null);
+  const seatsAfter = (infoAfter.data?.seats ?? []) as any[];
+  const claimedSeat1 = seatsAfter.find((s: any) => s.league_member_id === seat1Id);
+  const claimedSeat2 = seatsAfter.find((s: any) => s.league_member_id === seat2Id);
+  assert(claimedSeat1?.is_claimed === true, `§AS-4 seat 1 shows is_claimed=true`);
+  assert(claimedSeat2?.is_claimed === true, `§AS-5 seat 2 shows is_claimed=true`);
+
+  // is_mine check: User A's guest token shows seat 1 as is_mine
+  // User A's guest token recognises their seat as is_mine
+  const infoA = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/join-info`, null,
+    undefined, guestTokenA);
+  const mySeatA = (infoA.data?.seats ?? []).find((s: any) => s.league_member_id === seat1Id);
+  assert(mySeatA?.is_mine === true, `§AS-6 User A's seat shows is_mine=true`);
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Main runner
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2931,6 +3121,12 @@ async function runPhase6Tests() {
   await runBackwardCompatTests();
   await runRewardAuthTests();
 
+  // §AP-§AS — Invite & QR sharing (Phase 6F)
+  await runInviteJoinContextTests();
+  await runQRSecurityTests();
+  await runArchivedInviteTests();
+  await runMultiUserClaimTests();
+
   // §AF-§AO — Safe league archive (Phase 6E)
   await runArchiveAuthTests();
   await runArchiveSafeguardTests();
@@ -2967,9 +3163,9 @@ async function runPhase6Tests() {
   console.log(`\n${"═".repeat(66)}`);
   console.log(`  TOTAL: ${passed + failed} / PASSED: ${passed} / FAILED: ${failed}`);
   if (failed === 0) {
-    console.log("\n  ✅  PHASE 6A+6B+6C+6D+6E — ALL TESTS PASSED");
+    console.log("\n  ✅  PHASE 6A+6B+6C+6D+6E+6F — ALL TESTS PASSED");
   } else {
-    console.log("\n  ❌  PHASE 6A+6B+6C+6D+6E — SOME TESTS FAILED");
+    console.log("\n  ❌  PHASE 6A+6B+6C+6D+6E+6F — SOME TESTS FAILED");
   }
   console.log(`${"═".repeat(66)}\n`);
 

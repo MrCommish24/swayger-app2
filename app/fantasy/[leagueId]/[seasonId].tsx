@@ -41,6 +41,7 @@ import {
   unlockDraftDay,
   finalizeDraftDay,
   restoreLeague,
+  buildFantasyInviteUrl,
   getWeekStatus,
   getWeeklySummary,
   lockWeekly,
@@ -58,6 +59,7 @@ import {
   PastWeekSummary,
   SeasonStandings,
 } from "@/lib/fantasy-api";
+import { FantasyInviteSheet } from "@/components/fantasy/FantasyInviteSheet";
 
 // ── Phase 5.3: Commissioner next-action helper ────────────────────────────────
 // Derives the single most important commissioner action from current hub state.
@@ -497,6 +499,8 @@ interface WeeklyCardProps {
   onShare:             () => void;
   onShareReminder:     () => void;
   onCopyLink:          () => Promise<void>;
+  // Phase 6F — optional weekly QR
+  onShowQR?:           () => void;
 }
 
 function WeeklyCard({
@@ -520,6 +524,7 @@ function WeeklyCard({
   onShare,
   onShareReminder,
   onCopyLink,
+  onShowQR,
 }: WeeklyCardProps) {
   const [confirmLock, setConfirmLock]           = React.useState(false);
   const [confirmFinalize, setConfirmFinalize]   = React.useState(false);
@@ -751,7 +756,7 @@ function WeeklyCard({
                   <Text style={styles.weeklyShareBtnText}>📣  Share Week {weekNumber}</Text>
                 </TouchableOpacity>
 
-                {/* Secondary row: Copy Link + Share Reminder */}
+                {/* Secondary row: Copy Link + Show QR + Share Reminder */}
                 <View style={styles.weeklySecondaryRow}>
                   <TouchableOpacity
                     style={styles.weeklySecondaryBtn}
@@ -773,6 +778,18 @@ function WeeklyCard({
                        "🔗  Copy Link"}
                     </Text>
                   </TouchableOpacity>
+
+                  {/* Phase 6F: optional Show QR button */}
+                  {onShowQR && (
+                    <TouchableOpacity
+                      style={styles.weeklySecondaryBtn}
+                      onPress={onShowQR}
+                      activeOpacity={0.8}
+                      accessibilityLabel="Show QR Code"
+                    >
+                      <Text style={styles.weeklySecondaryBtnText}>⬛  Show QR</Text>
+                    </TouchableOpacity>
+                  )}
 
                   {(weekly?.waiting_count ?? 0) > 0 && (
                     <TouchableOpacity
@@ -982,6 +999,13 @@ export default function LeagueHubScreen() {
   // ── Archive restore state (Phase 6E) ────────────────────────────────────────
   const [restoring, setRestoring]       = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // ── League Invite Sheet state (Phase 6F) ────────────────────────────────────
+  const [inviteSheetVisible, setInviteSheetVisible] = useState(false);
+  // Optional weekly QR — tracks which week's URL/label to display
+  const [weeklyQRVisible, setWeeklyQRVisible]       = useState(false);
+  const [weeklyQRUrl, setWeeklyQRUrl]               = useState("");
+  const [weeklyQRLabel, setWeeklyQRLabel]           = useState("");
 
   // Track initial mount so useFocusEffect doesn't double-fetch on first render
   const initialFocusRef = useRef(true);
@@ -1296,7 +1320,7 @@ export default function LeagueHubScreen() {
 
           {/* Commissioner: Invite Members button — hidden when archived */}
           {isCommissioner && !isArchived && (
-            <TouchableOpacity style={styles.inviteBtn} onPress={handleShare} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.inviteBtn} onPress={() => setInviteSheetVisible(true)} activeOpacity={0.8}>
               <Text style={styles.inviteBtnIcon}>🔗</Text>
               <View style={styles.inviteBtnText}>
                 <Text style={styles.inviteBtnTitle}>Invite Members</Text>
@@ -1649,6 +1673,11 @@ export default function LeagueHubScreen() {
                         const url = buildWeekUrl(leagueId, seasonId, wn);
                         await Clipboard.setStringAsync(url);
                       }}
+                      onShowQR={() => {
+                        setWeeklyQRUrl(buildWeekUrl(leagueId, seasonId, wn));
+                        setWeeklyQRLabel(`${league.league_name} — Week ${wn} Swayger`);
+                        setWeeklyQRVisible(true);
+                      }}
                     />
                   </>
                 )}
@@ -1738,6 +1767,21 @@ export default function LeagueHubScreen() {
           )}
         </>
       )}
+      {/* ── League Invite Sheet (Phase 6F) ────────────────────────────────── */}
+      <FantasyInviteSheet
+        visible={inviteSheetVisible}
+        onClose={() => setInviteSheetVisible(false)}
+        leagueName={`${league.league_name} ${season.season_year}`}
+        inviteUrl={buildFantasyInviteUrl(leagueId, seasonId)}
+      />
+
+      {/* ── Weekly QR Sheet (Phase 6F optional) ─────────────────────────── */}
+      <FantasyInviteSheet
+        visible={weeklyQRVisible}
+        onClose={() => setWeeklyQRVisible(false)}
+        leagueName={weeklyQRLabel}
+        inviteUrl={weeklyQRUrl}
+      />
     </ScrollView>
   );
 }

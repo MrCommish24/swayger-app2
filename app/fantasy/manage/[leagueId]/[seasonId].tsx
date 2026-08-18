@@ -41,6 +41,7 @@ import {
   updateMember,
   updateLeagueName,
   archiveLeague,
+  buildFantasyInviteUrl,
   createMemberRecoveryToken,
   revokeMemberRecoveryToken,
   type RecoveryTokenCreateResult,
@@ -49,6 +50,7 @@ import {
   DraftDayStatus,
   getDraftDay,
 } from "@/lib/fantasy-api";
+import { FantasyInviteSheet } from "@/components/fantasy/FantasyInviteSheet";
 import Colors from "@/constants/colors";
 
 // ── Recovery URL helper ────────────────────────────────────────────────────────
@@ -135,6 +137,9 @@ export default function ManageLeagueScreen() {
   // ── Archive state ─────────────────────────────────────────────────────────────
   const [archiveSaving, setArchiveSaving] = useState(false);
   const [archiveError, setArchiveError]   = useState<string | null>(null);
+
+  // ── Invite Sheet state (Phase 6F) ────────────────────────────────────────────
+  const [inviteSheetVisible, setInviteSheetVisible] = useState(false);
 
   // ── Recovery token state ──────────────────────────────────────────────────────
   const [recoveryTarget,  setRecoveryTarget]  = useState<FantasyParticipant | null>(null);
@@ -640,11 +645,21 @@ export default function ManageLeagueScreen() {
           <TouchableOpacity
             style={styles.pasteBtn}
             onPress={() =>
-              router.push(`/fantasy/bulk-import/${leagueId}/${seasonId}` as any)
+              router.push(
+                `/fantasy/bulk-import/${leagueId}/${seasonId}?leagueName=${encodeURIComponent(detail?.league.league_name ?? "Your League")}` as any
+              )
             }
             activeOpacity={0.8}
           >
             <Text style={styles.pasteBtnText}>📋 Paste League Roster</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.inviteActionBtn}
+            onPress={() => setInviteSheetVisible(true)}
+            activeOpacity={0.8}
+            accessibilityLabel="Invite Your League"
+          >
+            <Text style={styles.inviteActionBtnText}>🔗 Invite Your League</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -767,6 +782,16 @@ export default function ManageLeagueScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      )}
+
+      {/* ── Invite Sheet (Phase 6F) ──────────────────────────────────────── */}
+      {detail && (
+        <FantasyInviteSheet
+          visible={inviteSheetVisible}
+          onClose={() => setInviteSheetVisible(false)}
+          leagueName={`${detail.league.league_name} ${detail.season.season_year}`}
+          inviteUrl={buildFantasyInviteUrl(leagueId, seasonId)}
+        />
       )}
 
       {/* ── Recovery modal (Phase 5.2.3) ─────────────────────────────────── */}
@@ -1119,6 +1144,22 @@ const styles = StyleSheet.create({
   },
   urlText: {
     color: C.tint, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+
+  // Invite action button (Phase 6F)
+  inviteActionBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.tint,
+    paddingVertical: 11,
+    alignItems: "center" as const,
+    backgroundColor: "transparent",
+    marginTop: 4,
+  },
+  inviteActionBtnText: {
+    color: C.tint,
+    fontSize: 14,
+    fontWeight: "600" as const,
   },
 
   // Archive section

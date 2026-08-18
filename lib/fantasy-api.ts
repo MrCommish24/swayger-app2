@@ -943,6 +943,21 @@ export interface WeeklyPlayState {
   league_name?: string | null;
 }
 
+/** Build the canonical Fantasy league invite URL.
+ *  Used by QR code, Share Invite, and Copy Link — must all encode exactly this URL. */
+export function buildFantasyInviteUrl(leagueId: string, seasonId: string): string {
+  const path = `/fantasy/join/${leagueId}/${seasonId}`;
+  // Web: use current window origin
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  // Native: use injected env var (prod = www.swayger.app, dev = REPLIT_DEV_DOMAIN)
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
 /** Build a direct shareable URL to the weekly pick screen */
 export function buildWeekUrl(
   leagueId: string,

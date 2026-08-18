@@ -1,0 +1,1074 @@
+We are beginning:
+
+# PHASE 6F — INVITE & QR SHARING
+## Pilot Readiness Convenience Pass
+
+Phase 6A–6E are complete.
+
+Current Phase 6 product:
+
+- bulk league import
+- 10–16 member roster UX
+- post-lock League Picks / receipts
+- weekly reward flexibility
+- safe archive / restore
+- repeatable weekly commissioner workflow
+- guest/account joining
+- guest recovery
+- commissioner-assisted recovery
+
+We are preparing for a real-world Fantasy pilot later this week.
+
+The goal of 6F is:
+
+# MAKE IT EXTREMELY EASY FOR A COMMISSIONER TO GET 10–15 PEOPLE INTO SWAYGER IN PERSON.
+
+The primary use case is Draft Day / league setup:
+
+Commissioner is in a room with league members.
+
+Instead of texting the invite URL individually, commissioner opens:
+
+Invite Your League
+
+→ displays QR code
+
+→ members scan
+
+→ existing Fantasy join flow opens
+
+We also want:
+
+- native Share Invite
+- Copy Link
+
+Do NOT create another invitation identity system.
+
+==================================================
+1. SCOPE
+==================================================
+
+Build:
+
+A. canonical Fantasy invite URL audit
+B. reusable Invite League UI
+C. QR-code display
+D. Copy Link
+E. native Share Invite
+F. entry points from the Fantasy Hub / commissioner flow
+G. clean joining behavior after scanning
+
+OPTIONAL ONLY IF VERY LIGHTWEIGHT:
+
+H. reuse the QR/share component for current Week N sharing
+
+Do NOT build:
+
+- Sleeper
+- Yahoo
+- email invitations
+- SMS sending infrastructure
+- contact picker
+- invitation tracking
+- invite analytics
+- expiring invitation codes
+- unique invite per person
+- deep-link infrastructure redesign
+- QR-based identity authentication
+
+==================================================
+2. INSPECT BEFORE IMPLEMENTING
+==================================================
+
+Before coding, inspect the existing Fantasy invitation architecture.
+
+Specifically identify:
+
+- current league join route
+- how commissioner currently gets/shares the join URL
+- current canonical URL builder
+- leagueId / seasonId requirements
+- existing join-info endpoint
+- guest join behavior
+- authenticated join behavior
+- current Share.share() usage
+- current Copy Link utilities
+- current weekly URL builder
+- existing QR package/dependencies, if any
+
+Return this audit in the final report.
+
+Do NOT invent another URL format if a canonical invite URL already exists.
+
+==================================================
+3. PRIMARY PRODUCT RULE
+==================================================
+
+THE QR CODE IS JUST ANOTHER REPRESENTATION OF THE EXISTING CANONICAL INVITE URL.
+
+It must NOT contain:
+
+- guest_token
+- recovery token
+- user_id
+- league_member_id
+- season_member_id
+- fantasy_team_id
+- claim ID
+- authentication credentials
+
+Scanning the QR should be security-equivalent to receiving the normal league invite link.
+
+==================================================
+4. CANONICAL INVITE URL
+==================================================
+
+Find and reuse the existing Fantasy league join URL.
+
+Conceptually it may look like:
+
+/fantasy/join/:leagueId/:seasonId
+
+or whatever the actual current route is.
+
+Do not guess.
+
+Use one helper so:
+
+QR
+Share Invite
+Copy Link
+
+all use EXACTLY the same canonical URL.
+
+Preferred helper concept:
+
+buildFantasyInviteUrl(leagueId, seasonId)
+
+If one already exists:
+reuse it.
+
+==================================================
+5. FULL HTTPS URL
+==================================================
+
+The QR must encode a real externally usable HTTPS URL.
+
+Do not encode only an Expo Router pathname such as:
+
+/fantasy/join/abc
+
+unless the QR library/browser flow already resolves that correctly.
+
+Use the app's established public web origin.
+
+Example conceptually:
+
+https://<swayger-domain>/fantasy/join/...
+
+Inspect existing share-link generation and use the same origin strategy.
+
+Do not hardcode a development Replit URL if production URL configuration already exists.
+
+==================================================
+6. QR DEPENDENCY AUDIT
+==================================================
+
+Before adding a package, inspect package.json.
+
+If the project already has a QR library:
+reuse it.
+
+If not:
+
+choose a lightweight maintained React Native / Expo-compatible QR component.
+
+Examples of acceptable architecture:
+
+react-native-qrcode-svg
+
+or an equivalent already-compatible package.
+
+Do not add a large dependency.
+
+Do not create QR codes on the backend.
+
+QR generation should be client-side from the canonical URL.
+
+==================================================
+7. PRIMARY UI
+==================================================
+
+Commissioner entry point:
+
+Invite Members
+
+or the existing equivalent.
+
+Preferred screen/modal:
+
+# INVITE YOUR LEAGUE
+
+Food Pyramid 2026
+
+Scan this code to join Swayger.
+
+[ QR CODE ]
+
+Point your phone's camera at the code.
+
+[ Share Invite ]
+
+[ Copy Link ]
+
+Optional small text:
+
+Or send the invite link directly.
+
+Keep this extremely simple.
+
+==================================================
+8. QR SIZE
+==================================================
+
+QR should be large enough to scan easily from:
+
+- another phone
+- across a draft table
+- laptop screen
+- TV/tablet if commissioner mirrors it
+
+Aim around:
+
+220–280 px logical size
+
+depending on viewport.
+
+Do not render a tiny QR inside a card.
+
+==================================================
+9. QR CONTRAST
+==================================================
+
+High scanning reliability matters more than decorative styling.
+
+Use:
+
+dark QR
+light background
+clear quiet zone
+
+Do NOT:
+
+- put complex gradients through QR modules
+- distort modules
+- put busy imagery behind it
+- over-brand the QR
+
+If adding Swayger logo to center:
+ONLY do so if the QR package/error correction supports it and scanning remains reliable.
+
+For V1:
+plain QR is acceptable and probably preferable.
+
+==================================================
+10. MOBILE RESPONSIVENESS
+==================================================
+
+On phone:
+
+QR centered
+large
+no horizontal clipping
+buttons easy to tap
+
+On web/desktop:
+
+QR remains centered and comfortably sized.
+
+Test small iPhone viewport.
+
+==================================================
+11. SHARE INVITE
+==================================================
+
+Use existing React Native Share behavior.
+
+Suggested share copy:
+
+Join our Swayger Fantasy league:
+
+Food Pyramid 2026
+
+Make your Draft Day and weekly picks and see who knows the league best.
+
+<URL>
+
+Keep copy concise.
+
+Do not promise functionality that isn't built.
+
+==================================================
+12. COPY LINK
+==================================================
+
+Copy Link copies:
+
+URL ONLY
+
+not the full share message.
+
+Use existing clipboard utility/pattern.
+
+Show short feedback:
+
+Link copied
+
+for approximately 2 seconds.
+
+Use existing Phase 5.1 behavior if possible.
+
+==================================================
+13. SHARE / COPY URL PARITY
+==================================================
+
+Critical test:
+
+QR decoded URL
+=
+Copy Link URL
+=
+Share Invite URL
+
+Exactly.
+
+No different paths.
+
+No different query parameters.
+
+No accidental environment mismatch.
+
+==================================================
+14. COMMISSIONER HUB ENTRY POINT
+==================================================
+
+The Fantasy League Hub should make Invite Members easy to find.
+
+Current commissioner experience likely already has an:
+
+Invite Members
+
+action.
+
+Improve/reuse that.
+
+Preferred:
+
+INVITE YOUR LEAGUE
+
+[ Show QR / Invite ]
+
+or:
+
+[ Invite Members ]
+
+which opens the unified invite experience.
+
+Do not add 3 separate prominent buttons:
+
+QR
+Copy
+Share
+
+to the hub itself.
+
+One Invite action should open the complete sharing experience.
+
+==================================================
+15. MANAGE LEAGUE ENTRY POINT
+==================================================
+
+If Manage League already has invite/member actions:
+
+include access to the same Invite League experience.
+
+Do not build a second QR screen.
+
+Use one reusable component/screen.
+
+==================================================
+16. AFTER BULK IMPORT
+==================================================
+
+Area 6A creates the natural commissioner sequence:
+
+Bulk import 12 members
+
+→ now get them into Swayger.
+
+Consider adding a lightweight post-import action:
+
+12 members added
+
+[ Invite Your League ]
+
+This would be useful for pilot.
+
+Only add if it fits naturally.
+
+Do not redesign the bulk import flow.
+
+==================================================
+17. JOIN FLOW AFTER QR SCAN
+==================================================
+
+This is critical.
+
+Scan from a clean phone/browser.
+
+Expected:
+
+- opens the existing Fantasy join experience
+- correct league name shown
+- available seats shown
+- person may select their seat
+- guest or authenticated join works according to existing architecture
+- successful claim lands in appropriate league / Draft Day context
+
+Do not introduce a separate QR join flow.
+
+==================================================
+18. COMMISSIONER SEAT
+==================================================
+
+Commissioner's existing seat must not appear claimable if already claimed.
+
+No QR-specific behavior.
+
+Use existing join-info rules.
+
+==================================================
+19. CLAIMED SEATS
+==================================================
+
+Already claimed seats remain unavailable.
+
+QR scan does not bypass claim protections.
+
+==================================================
+20. ALL SEATS CLAIMED
+==================================================
+
+If QR is scanned after all seats are claimed:
+
+existing recovery-oriented join UX should appear.
+
+Do not show a broken generic error.
+
+Use existing Phase 5.2.1/5.2.2 behavior.
+
+==================================================
+21. ARCHIVED LEAGUE
+==================================================
+
+Phase 6E rule:
+
+Archived league does not accept new seat claims.
+
+If someone scans an old QR after archive:
+
+show existing/archive-appropriate message:
+
+This league is archived and is not accepting new members.
+
+Do NOT reactivate league.
+
+Do NOT claim seat.
+
+==================================================
+22. QR PERSISTENCE
+==================================================
+
+The league invite QR should remain valid for the season as long as the underlying canonical invite URL remains valid.
+
+Do NOT generate expiring QR codes.
+
+No database row required.
+
+No SQL expected.
+
+==================================================
+23. SECURITY
+==================================================
+
+QR possession grants:
+
+access to the same public join page as the invite URL.
+
+It does NOT grant:
+
+membership
+seat ownership
+authentication
+guest identity
+
+The user must still complete the normal claim flow.
+
+==================================================
+24. WEEKLY QR — DECISION POINT
+==================================================
+
+We already have:
+
+Share Week N
+Copy Link
+
+Evaluate whether the same QR component can support:
+
+Show Week N QR
+
+with essentially no additional architecture.
+
+If yes:
+
+add a small optional:
+
+Show QR
+
+inside the Week sharing experience.
+
+This can be useful if the commissioner is running Swayger in person.
+
+But prioritize LEAGUE INVITE QR.
+
+Do not create a separate weekly QR architecture.
+
+==================================================
+25. WEEKLY QR SECURITY
+==================================================
+
+If implemented:
+
+QR should encode only the existing canonical Week URL.
+
+No:
+
+guest token
+member identity
+auth data
+
+Same principle as league invite.
+
+==================================================
+26. QR IMAGE SHARING
+==================================================
+
+Do NOT build QR-image generation/export by default.
+
+"Share Invite" should share the canonical URL/message.
+
+"Show QR" handles in-person scanning.
+
+If the current project already has an easy screenshot/share-image utility and sharing the QR image is nearly free:
+report it as optional.
+
+Do not introduce view-shot/image-file complexity solely for this sprint.
+
+==================================================
+27. OFFLINE
+==================================================
+
+No offline QR join requirement.
+
+QR can render client-side without network once URL exists, but scanning/joining requires normal connectivity.
+
+Do not build offline support.
+
+==================================================
+28. ACCESSIBILITY
+==================================================
+
+Buttons should have clear labels:
+
+Show QR Code
+Share Invite
+Copy Invite Link
+
+QR itself should have surrounding explanatory text because a QR image alone is not accessible.
+
+Do not rely on icon-only actions.
+
+==================================================
+29. PRODUCT COPY
+==================================================
+
+Preferred restrained copy:
+
+INVITE YOUR LEAGUE
+
+Food Pyramid 2026
+
+Scan to join Swayger Fantasy.
+
+Make your picks. See who knows the league best.
+
+[ QR ]
+
+[ Share Invite ]
+[ Copy Link ]
+
+Avoid lengthy explanation.
+
+==================================================
+30. SENSITIVE LOGGING
+==================================================
+
+Invite URL itself is not a private credential, but avoid unnecessary debug logging of full routing context.
+
+Absolutely do not add:
+
+guest tokens
+recovery tokens
+
+to QR/share logs.
+
+==================================================
+31. REUSABLE COMPONENT
+==================================================
+
+Preferred architecture:
+
+components/fantasy/FantasyInviteSheet.tsx
+
+or:
+
+FantasyInviteModal.tsx
+
+Props conceptually:
+
+leagueName
+inviteUrl
+visible
+onClose
+
+Responsibilities:
+
+- QR render
+- Share
+- Copy
+- feedback
+
+Keep URL generation outside or in one canonical helper.
+
+==================================================
+32. QR GENERATION TESTS
+==================================================
+
+Test that QR component receives exactly:
+
+canonicalInviteUrl
+
+Do not attempt computer-vision QR decoding in the automated suite unless an existing QR testing utility makes that trivial.
+
+Instead test:
+
+same string passed to:
+
+QR component
+clipboard
+share payload
+
+Manual QA verifies camera scanning.
+
+==================================================
+33. URL TESTS
+==================================================
+
+Verify:
+
+production/public base URL used
+
+correct league ID
+
+correct season ID
+
+no guest token
+
+no recovery token
+
+no user ID
+
+no seat ID
+
+no accidental localhost URL
+
+no dev-only path
+
+==================================================
+34. SHARE TESTS
+==================================================
+
+Verify share payload contains:
+
+league name
+Swayger context
+canonical URL
+
+No sensitive data.
+
+Copy Link:
+URL only.
+
+==================================================
+35. AUTHORIZATION FOR DISPLAYING QR
+==================================================
+
+League invite QR should primarily be commissioner-facing.
+
+If regular league members already have permission to invite/share the league:
+preserve existing product rule.
+
+Do not accidentally broaden invite capabilities.
+
+Inspect current invitation authority.
+
+My preference for pilot:
+
+commissioner/co-commissioner can access invite controls.
+
+Regular members:
+not necessary.
+
+But follow current architecture unless there is reason to change.
+
+==================================================
+36. 15-MEMBER PILOT TEST
+==================================================
+
+Use a 15-member league.
+
+Commissioner:
+
+- bulk imports league
+- opens Invite Your League
+- QR displays
+
+Then simulate/verify:
+
+clean browser follows exact QR URL
+→ join-info returns correct league
+→ seats shown
+→ claim succeeds
+
+Use existing join tests where possible.
+
+==================================================
+37. MULTIPLE SCANS
+==================================================
+
+Same QR can be scanned by:
+
+Mike
+Rob
+Chris
+
+Each person independently selects/claims their own available seat.
+
+No QR-specific session state.
+
+==================================================
+38. DUPLICATE SCAN
+==================================================
+
+Same person scans again after claiming.
+
+Existing identity behavior should recognize them according to:
+
+account claim
+or persistent guest token
+
+No duplicate claim.
+
+Do not add QR-specific handling.
+
+==================================================
+39. GUEST RETURN
+==================================================
+
+Guest scans QR and claims Rob.
+
+Later same device opens same QR.
+
+Expected:
+existing guest identity behavior remains intact.
+
+No second Rob.
+
+==================================================
+40. OTHER DEVICE
+==================================================
+
+Guest claims Rob on Device A.
+
+Device B scans QR.
+
+Rob's seat remains claimed/unavailable.
+
+This remains true until proper recovery.
+
+QR does not weaken claim security.
+
+==================================================
+41. ARCHIVED TEST
+==================================================
+
+Generate/display QR.
+
+Archive league.
+
+Scan old QR.
+
+Expected:
+join blocked appropriately because league inactive.
+
+Restore league.
+
+Same URL works again according to normal join rules.
+
+No need to regenerate QR.
+
+==================================================
+42. UI TEST ENTRY POINTS
+==================================================
+
+At minimum verify:
+
+Fantasy League Hub
+→ Invite Members
+→ QR
+
+Manage League
+→ Invite / QR if included
+
+Bulk Import success
+→ Invite Your League if included
+
+Do not add duplicate modal implementations.
+
+==================================================
+43. DEPENDENCY SAFETY
+==================================================
+
+If new QR npm package required:
+
+- use a stable Expo-compatible package
+- install exact dependency normally
+- do not patch node_modules
+- record package change
+- verify web bundling
+- verify iOS/Android bundling expectations
+
+No native eject/prebuild requirement for this feature.
+
+==================================================
+44. SQL
+==================================================
+
+Expected:
+
+NO SQL.
+
+QR should be stateless.
+
+If you conclude SQL is necessary:
+STOP and explain why.
+
+Do not create:
+
+fantasy_invites
+qr_codes
+
+tables just to render an existing URL.
+
+==================================================
+45. PHASE 6F TEST SUITE
+==================================================
+
+Extend:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+where server behavior is relevant.
+
+Add sections conceptually:
+
+§AP Canonical invite URL / join context
+§AQ QR security invariants
+§AR Archived invite behavior
+§AS Multi-user claim behavior
+
+For frontend share/QR helper behavior:
+use appropriate unit/component tests rather than pretending server tests validate UI rendering.
+
+==================================================
+46. REGRESSION
+==================================================
+
+After implementation run:
+
+- Phase 6 full suite
+- Phase 3 claims
+- Phase 5.2.1 guest return
+- Phase 5.2.2 auth upgrade
+- Phase 5.2.3 recovery
+- Phase 6E archived claim blocking
+- relevant join tests
+
+If inexpensive:
+run the full maintained Fantasy regression.
+
+Return exact totals.
+
+==================================================
+47. MANUAL QA — COMMISSIONER
+==================================================
+
+Return exact steps:
+
+1. Open a 12–15 member Fantasy league.
+2. Tap Invite Members.
+3. Verify Invite Your League experience opens.
+4. Verify correct league name.
+5. Verify large QR.
+6. Tap Copy Link.
+7. Paste URL somewhere and inspect.
+8. Tap Share Invite.
+9. Verify share message + URL.
+10. Confirm QR/Copy/Share all use identical URL.
+
+==================================================
+48. MANUAL QA — SCAN
+==================================================
+
+Use a different phone or clean browser:
+
+1. Open device Camera.
+2. Scan QR from commissioner screen.
+3. Tap camera URL.
+4. Verify correct Swayger Fantasy league loads.
+5. Verify available league seats.
+6. Select a seat.
+7. Join as guest.
+8. Verify landing into league experience.
+9. Return to commissioner.
+10. Verify that seat now shows claimed.
+11. Scan same QR with another device.
+12. Verify claimed seat unavailable.
+13. Claim another seat.
+14. Verify both identities remain distinct.
+
+==================================================
+49. MANUAL QA — ARCHIVE
+==================================================
+
+1. Archive test league.
+2. Scan the same existing QR.
+3. Verify join is rejected with appropriate archived messaging.
+4. Restore league.
+5. Scan same QR.
+6. Verify URL works again.
+7. No QR regeneration required.
+
+==================================================
+50. MANUAL QA — AUTH ACCOUNT
+==================================================
+
+Scan from a browser where a user is authenticated.
+
+Verify:
+
+- correct league
+- normal seat claim
+- no duplicate membership
+- no auth return regression
+
+==================================================
+51. OPTIONAL WEEKLY QR QA
+==================================================
+
+Only if implemented:
+
+1. Open Week N share controls.
+2. Tap Show QR.
+3. Verify QR URL exactly equals existing Copy Link Week N URL.
+4. Scan.
+5. Verify correct Week N opens.
+6. Member identity is resolved normally.
+7. No credentials in URL.
+
+==================================================
+52. DO NOT BUILD
+==================================================
+
+Do NOT build:
+
+- unique invite codes
+- invite acceptance tracking
+- invitation database
+- QR analytics
+- dynamic QR redirects
+- QR expiration
+- person-specific QR codes
+- printable PDFs
+- QR image downloads
+- contacts integration
+- SMS
+- email delivery
+- Sleeper
+- Yahoo
+- ESPN
+- deep-link overhaul
+- notifications
+
+==================================================
+53. RETURN
+==================================================
+
+Return:
+
+# PHASE 6F — INVITE & QR SHARING REPORT
+
+1. Existing invitation architecture
+2. Canonical invite URL
+3. QR architecture/dependency
+4. Invite UI
+5. Hub entry point
+6. Manage/bulk-import entry points
+7. Share Invite behavior
+8. Copy Link behavior
+9. QR security model
+10. Join behavior
+11. Guest behavior
+12. Account behavior
+13. Archived-league behavior
+14. Optional Weekly QR decision
+15. Files changed
+16. Tests added
+17. Phase 6 total tests
+18. Full regression totals
+19. Bugs found/fixed
+20. Known limitations
+21. Exact commissioner QA
+22. Exact scanning QA
+
+Then STOP.
+
+Do not begin provider imports or another roadmap phase.
+
+Final status:
+
+PHASE 6F QR INVITES READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

@@ -30,9 +30,11 @@ import { useAuth } from "@/lib/auth-context";
 import {
   fantasyFetch,
   batchImportParticipants,
+  buildFantasyInviteUrl,
   type FantasySeasonDetail,
   type BatchMemberResult,
 } from "@/lib/fantasy-api";
+import { FantasyInviteSheet } from "@/components/fantasy/FantasyInviteSheet";
 import {
   parsePasteText,
   applyExistingLeagueFlags,
@@ -75,10 +77,12 @@ export default function BulkImportScreen() {
   const router   = useRouter();
   const insets   = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
-  const { leagueId, seasonId } = useLocalSearchParams<{
+  const { leagueId, seasonId, leagueName = "Your League" } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
+    leagueName?: string;
   }>();
+  const [inviteSheetVisible, setInviteSheetVisible] = useState(false);
 
   // ── Auth guard ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -351,10 +355,30 @@ export default function BulkImportScreen() {
             </>
           )}
 
-          <TouchableOpacity style={[styles.btn, { marginTop: 24 }]} onPress={handleDone}>
+          {/* Phase 6F: invite CTA after successful import */}
+          {successRows.length > 0 && (
+            <TouchableOpacity
+              style={[styles.btn, styles.btnSecondary, { marginTop: 24 }]}
+              onPress={() => setInviteSheetVisible(true)}
+              activeOpacity={0.8}
+              accessibilityLabel="Invite Your League"
+            >
+              <Text style={[styles.btnText, { color: C.tint }]}>🔗  Invite Your League</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={[styles.btn, { marginTop: successRows.length > 0 ? 10 : 24 }]} onPress={handleDone}>
             <Text style={styles.btnText}>Done — Back to League</Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* Phase 6F: invite sheet */}
+        <FantasyInviteSheet
+          visible={inviteSheetVisible}
+          onClose={() => setInviteSheetVisible(false)}
+          leagueName={decodeURIComponent(leagueName)}
+          inviteUrl={buildFantasyInviteUrl(leagueId, seasonId)}
+        />
       </KeyboardAvoidingView>
     );
   }
