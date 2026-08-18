@@ -675,6 +675,9 @@ export interface WeeklyTemplate {
 export interface WeeklyTemplates {
   sport: string;
   week_number: number;
+  /** Season-level default reward, null if not set. Used to pre-populate reward on setup screen. */
+  default_reward_description:    string | null;
+  default_reward_amount_display: string | null;
   templates: WeeklyTemplate[];
 }
 
@@ -706,11 +709,21 @@ export async function publishWeekly(
   seasonId: string,
   weekNumber: number,
   selectedPropIds: string[],
-  auth: Parameters<typeof fantasyFetch>[2]
+  auth: Parameters<typeof fantasyFetch>[2],
+  reward?: { description?: string | null; amount_display?: string | null }
 ): Promise<WeeklyPublishResult> {
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/publish`,
-    { method: "POST", body: JSON.stringify({ selected_prop_ids: selectedPropIds }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        selected_prop_ids: selectedPropIds,
+        ...(reward !== undefined && {
+          reward_description:    reward.description ?? null,
+          reward_amount_display: reward.amount_display ?? null,
+        }),
+      }),
+    },
     auth
   );
 }
@@ -739,21 +752,27 @@ export interface WeeklyStatus {
   played_count: number;
   waiting_count: number;
   participants_status?: WeeklyParticipantStatus[]; // commissioner-only
+  // Phase 6D: room-level reward snapshot
+  reward_description:    string | null;
+  reward_amount_display: string | null;
   created_at: string;
 }
 
 /** Compact summary row for a finalized past week (no participation detail needed). */
 export interface PastWeekSummary {
-  week_number:   number;
-  room_id:       string;
-  card_id:       string | null;
-  room_status:   "draft" | "active" | "finalized";
-  card_status:   "closed" | "open" | "locked" | "settled";
-  prop_count:    number;
-  settled_count: number;
-  all_settled:   boolean;
-  pick_count:    number;
-  created_at:    string;
+  week_number:           number;
+  room_id:               string;
+  card_id:               string | null;
+  room_status:           "draft" | "active" | "finalized";
+  card_status:           "closed" | "open" | "locked" | "settled";
+  prop_count:            number;
+  settled_count:         number;
+  all_settled:           boolean;
+  pick_count:            number;
+  // Phase 6D: reward snapshot for this specific week
+  reward_description:    string | null;
+  reward_amount_display: string | null;
+  created_at:            string;
 }
 
 /** Season-level weekly summary — one request serves all weeks. */
@@ -998,6 +1017,9 @@ export interface WeeklyResults {
   week_number?: number;
   league_name?: string | null;
   season_year?: number | null;
+  // Phase 6D: reward snapshot for this specific week
+  reward_description?:    string | null;
+  reward_amount_display?: string | null;
   winners?: Array<{ display_name: string; team_name: string | null; points: number; rank_label: string }>;
   leaderboard?: DraftDayResultsLeaderboardEntry[];
   my_competition_picks?: WeeklyResultsPickEntry[];

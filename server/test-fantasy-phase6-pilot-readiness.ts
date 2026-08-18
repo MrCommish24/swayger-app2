@@ -2178,6 +2178,352 @@ async function runLargeFixtureTests() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// §W  Templates endpoint returns season default reward fields
+// ──────────────────────────────────────────────────────────────────────────────
+async function runRewardTemplatesTests() {
+  console.log("\n── §W  Reward templates endpoint ────────────────────────────────");
+
+  const comm    = await mkUser("p6w-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6W ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §W skipped"); passed += 2; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wtRes = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  assert(wtRes.status === 200, "§W-1 templates 200");
+  assert("default_reward_description" in (wtRes.data ?? {}),
+    "§W-2 templates response has default_reward_description field");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §X  Custom reward snapshot
+// ──────────────────────────────────────────────────────────────────────────────
+async function runCustomRewardTests() {
+  console.log("\n── §X  Custom reward snapshot ────────────────────────────────────");
+
+  const comm    = await mkUser("p6x-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6X ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §X skipped"); passed += 5; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §X skipped — no templates"); passed += 5; return; }
+
+  const pub = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Test Reward", reward_amount_display: "$100" });
+  assert([201, 200].includes(pub.status), `§X-1 publish succeeds (got ${pub.status})`);
+
+  const summary = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weekly-summary`, commTok);
+  assert(summary.data?.current_week?.reward_description === "Test Reward",
+    `§X-2 summary.current_week.reward_description='Test Reward' (got '${summary.data?.current_week?.reward_description}')`);
+  assert(summary.data?.current_week?.reward_amount_display === "$100",
+    `§X-3 summary.current_week.reward_amount_display='$100' (got '${summary.data?.current_week?.reward_amount_display}')`);
+
+  const weekRes = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1`, commTok);
+  assert(weekRes.data?.reward_description === "Test Reward",
+    `§X-4 /weeks/1.reward_description='Test Reward' (got '${weekRes.data?.reward_description}')`);
+  assert(weekRes.data?.reward_amount_display === "$100",
+    `§X-5 /weeks/1.reward_amount_display='$100' (got '${weekRes.data?.reward_amount_display}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §Y  No-reward publish (explicit nulls)
+// ──────────────────────────────────────────────────────────────────────────────
+async function runNoRewardTests() {
+  console.log("\n── §Y  No-reward publish ─────────────────────────────────────────");
+
+  const comm    = await mkUser("p6y-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6Y ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §Y skipped"); passed += 3; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §Y skipped — no templates"); passed += 3; return; }
+
+  const pub = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: null, reward_amount_display: null });
+  assert([201, 200].includes(pub.status), `§Y-1 publish succeeds with null reward (got ${pub.status})`);
+
+  const summary = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weekly-summary`, commTok);
+  assert(summary.data?.current_week?.reward_description === null,
+    `§Y-2 reward_description=null (got '${summary.data?.current_week?.reward_description}')`);
+  assert(summary.data?.current_week?.reward_amount_display === null,
+    `§Y-3 reward_amount_display=null (got '${summary.data?.current_week?.reward_amount_display}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §Z  Snapshot semantics: room reward is independent of season default
+// ──────────────────────────────────────────────────────────────────────────────
+async function runSnapshotSemanticsTests() {
+  console.log("\n── §Z  Snapshot semantics ────────────────────────────────────────");
+
+  const comm    = await mkUser("p6z-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6Z ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §Z skipped"); passed += 3; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §Z skipped — no templates"); passed += 3; return; }
+
+  // Publish with a specific custom reward
+  const pub = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Pizza Party", reward_amount_display: null });
+  if (![201, 200].includes(pub.status)) { console.log("  §Z skipped — pub failed"); passed += 3; return; }
+
+  // Season default is null (never configured on this test league); room reward is "Pizza Party"
+  const wt2 = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  assert(wt2.data?.default_reward_description === null,
+    `§Z-1 season default=null — independent of room reward (got '${wt2.data?.default_reward_description}')`);
+
+  const summary = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weekly-summary`, commTok);
+  assert(summary.data?.current_week?.reward_description === "Pizza Party",
+    `§Z-2 room reward='Pizza Party' despite null season default (got '${summary.data?.current_week?.reward_description}')`);
+
+  const weekRes = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1`, commTok);
+  assert(weekRes.data?.reward_description === "Pizza Party",
+    `§Z-3 /weeks/1 still has 'Pizza Party' (got '${weekRes.data?.reward_description}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §AA  Idempotency: reward survives idempotent replay
+// ──────────────────────────────────────────────────────────────────────────────
+async function runRewardIdempotencyTests() {
+  console.log("\n── §AA  Reward idempotency ───────────────────────────────────────");
+
+  const comm    = await mkUser("p6aa-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6AA ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §AA skipped"); passed += 3; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §AA skipped — no templates"); passed += 3; return; }
+
+  // First publish with reward
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Dinner", reward_amount_display: "$50" });
+
+  // Idempotent replay — sends same reward
+  const replay = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Dinner", reward_amount_display: "$50" });
+  assert(replay.status === 200 && replay.data?.already_existed === true,
+    `§AA-1 replay returns 200 already_existed (got ${replay.status})`);
+
+  const summary = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weekly-summary`, commTok);
+  assert(summary.data?.current_week?.reward_description === "Dinner",
+    `§AA-2 reward_description='Dinner' after replay (got '${summary.data?.current_week?.reward_description}')`);
+  assert(summary.data?.current_week?.reward_amount_display === "$50",
+    `§AA-3 reward_amount_display='$50' after replay (got '${summary.data?.current_week?.reward_amount_display}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §AB  Historical: finalized past_weeks includes reward
+// ──────────────────────────────────────────────────────────────────────────────
+async function runHistoricalRewardTests() {
+  console.log("\n── §AB  Historical reward in past_weeks ─────────────────────────");
+
+  const comm    = await mkUser("p6ab-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6AB ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §AB skipped"); passed += 4; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id).slice(0, 1);
+  if (tIds.length === 0) { console.log("  §AB skipped — no templates"); passed += 4; return; }
+
+  // Publish week 1 with reward
+  const pub1 = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Week1Prize", reward_amount_display: "$25" });
+  if (![201, 200].includes(pub1.status)) { console.log("  §AB skipped — pub1 failed"); passed += 4; return; }
+
+  // Lock → settle → finalize
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const prop = (playR.data?.props ?? [])[0];
+  if (!prop) { console.log("  §AB skipped — no prop"); passed += 4; return; }
+  const opt = (prop.answer_options ?? [])[0];
+  if (!opt) { console.log("  §AB skipped — no opt"); passed += 4; return; }
+
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`, commTok, {});
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opt.id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/finalize`, commTok, {});
+
+  // Publish week 2 (different reward)
+  const wt2 = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/2/templates`, commTok);
+  const tIds2 = ((wt2.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id).slice(0, 1);
+  if (tIds2.length === 0) { console.log("  §AB skipped — no w2 templates"); passed += 4; return; }
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/2/publish`,
+    commTok, { selected_prop_ids: tIds2, reward_description: "Week2Prize", reward_amount_display: null });
+
+  const summary = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weekly-summary`, commTok);
+  const pastWeeks = summary.data?.past_weeks ?? [];
+  assert(pastWeeks.length >= 1, `§AB-1 past_weeks has ≥ 1 entry (got ${pastWeeks.length})`);
+  const w1 = pastWeeks.find((w: any) => w.week_number === 1);
+  assert(w1?.reward_description === "Week1Prize",
+    `§AB-2 past week 1 reward_description='Week1Prize' (got '${w1?.reward_description}')`);
+  assert(w1?.reward_amount_display === "$25",
+    `§AB-3 past week 1 reward_amount_display='$25' (got '${w1?.reward_amount_display}')`);
+  assert(summary.data?.current_week?.reward_description === "Week2Prize",
+    `§AB-4 current week reward independent: 'Week2Prize' (got '${summary.data?.current_week?.reward_description}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §AC  Results endpoint includes reward after finalization
+// ──────────────────────────────────────────────────────────────────────────────
+async function runResultsRewardTests() {
+  console.log("\n── §AC  Results endpoint reward ─────────────────────────────────");
+
+  const comm    = await mkUser("p6ac-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6AC ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §AC skipped"); passed += 4; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id).slice(0, 1);
+  if (tIds.length === 0) { console.log("  §AC skipped — no templates"); passed += 4; return; }
+
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds, reward_description: "Grand Prize", reward_amount_display: "$500" });
+
+  const playR = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/play`, commTok);
+  const prop = (playR.data?.props ?? [])[0];
+  if (!prop) { console.log("  §AC skipped — no prop"); passed += 4; return; }
+  const opt = (prop.answer_options ?? [])[0];
+  if (!opt) { console.log("  §AC skipped — no opt"); passed += 4; return; }
+
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/lock`, commTok, {});
+  await api("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/settle`,
+    commTok, { prop_id: prop.id, correct_answer: opt.id });
+  await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/finalize`, commTok, {});
+
+  const results = await api("GET",
+    `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/results`, commTok);
+  assert(results.status === 200, `§AC-1 results 200 (got ${results.status})`);
+  assert(results.data?.finalized === true, "§AC-2 results.finalized=true");
+  assert(results.data?.reward_description === "Grand Prize",
+    `§AC-3 results.reward_description='Grand Prize' (got '${results.data?.reward_description}')`);
+  assert(results.data?.reward_amount_display === "$500",
+    `§AC-4 results.reward_amount_display='$500' (got '${results.data?.reward_amount_display}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §AD  Backward compat: publish without reward keys does not write reward fields
+// ──────────────────────────────────────────────────────────────────────────────
+async function runBackwardCompatTests() {
+  console.log("\n── §AD  Backward compat — no reward keys ─────────────────────────");
+
+  const comm    = await mkUser("p6ad-comm");
+  const commTok = await signIn(comm.email, comm.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6AD ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §AD skipped"); passed += 3; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §AD skipped — no templates"); passed += 3; return; }
+
+  // Old-style publish — no reward keys in body (backward compat)
+  const pub = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    commTok, { selected_prop_ids: tIds });
+  assert([201, 200].includes(pub.status), `§AD-1 old-style publish succeeds (got ${pub.status})`);
+
+  const weekRes = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1`, commTok);
+  assert(weekRes.data?.reward_description === null,
+    `§AD-2 no reward keys → reward_description=null (got '${weekRes.data?.reward_description}')`);
+  assert(weekRes.data?.reward_amount_display === null,
+    `§AD-3 no reward keys → reward_amount_display=null (got '${weekRes.data?.reward_amount_display}')`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// §AE  Authorization: non-commissioner cannot publish with reward fields
+// ──────────────────────────────────────────────────────────────────────────────
+async function runRewardAuthTests() {
+  console.log("\n── §AE  Reward authorization ─────────────────────────────────────");
+
+  const comm    = await mkUser("p6ae-comm");
+  const member  = await mkUser("p6ae-member");
+  const commTok   = await signIn(comm.email, comm.pw);
+  const memberTok = await signIn(member.email, member.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commTok, {
+    league_name: `P6AE ${Date.now()}`, sport: "football",
+    display_name: "Comm", team_name: "CT", season_year: 2026,
+  });
+  if (setup.status !== 201) { console.log("  §AE skipped"); passed += 2; return; }
+  const { league_id: lid, season_id: sid } = setup.data;
+
+  const wt = await api("GET", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/templates`, commTok);
+  const tIds = ((wt.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+  if (tIds.length === 0) { console.log("  §AE skipped — no templates"); passed += 2; return; }
+
+  // Non-commissioner publish attempt
+  const denied = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    memberTok, { selected_prop_ids: tIds, reward_description: "Stolen Reward" });
+  assert(denied.status === 403, `§AE-1 non-commissioner publish blocked (got ${denied.status})`);
+
+  // Unauthenticated publish attempt
+  const unauth = await apiM("POST", `/api/fantasy/leagues/${lid}/seasons/${sid}/weeks/1/publish`,
+    null, { selected_prop_ids: tIds, reward_description: "Stolen Reward" });
+  assert(unauth.status === 401, `§AE-2 unauthenticated publish blocked (got ${unauth.status})`);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Main runner
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -2226,6 +2572,17 @@ async function runPhase6Tests() {
   await runFinalizedHistoryTests();
   await runLargeFixtureTests();
 
+  // §W-§AE — Weekly reward flexibility (Phase 6D)
+  await runRewardTemplatesTests();
+  await runCustomRewardTests();
+  await runNoRewardTests();
+  await runSnapshotSemanticsTests();
+  await runRewardIdempotencyTests();
+  await runHistoricalRewardTests();
+  await runResultsRewardTests();
+  await runBackwardCompatTests();
+  await runRewardAuthTests();
+
   // ── Results ────────────────────────────────────────────────────────────────
   console.log("\n" + "─".repeat(66));
   if (failures.length > 0) {
@@ -2235,9 +2592,9 @@ async function runPhase6Tests() {
   console.log(`\n${"═".repeat(66)}`);
   console.log(`  TOTAL: ${passed + failed} / PASSED: ${passed} / FAILED: ${failed}`);
   if (failed === 0) {
-    console.log("\n  ✅  PHASE 6A+6B+6C — ALL TESTS PASSED");
+    console.log("\n  ✅  PHASE 6A+6B+6C+6D — ALL TESTS PASSED");
   } else {
-    console.log("\n  ❌  PHASE 6A+6B+6C — SOME TESTS FAILED");
+    console.log("\n  ❌  PHASE 6A+6B+6C+6D — SOME TESTS FAILED");
   }
   console.log(`${"═".repeat(66)}\n`);
 

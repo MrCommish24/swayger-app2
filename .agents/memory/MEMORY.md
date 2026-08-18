@@ -19,3 +19,4 @@
 - [Gameday Fantasy Phase 6A](gameday-fantasy-phase6a.md) — bulk import: replay needs pre-check query (not already_exists); weekly rooms never get p_room_id (only Draft Day); tab→pipe→comma parser; open-roster parity fix (_appendMemberToWeeklyCards); 103/103 tests.
 - [Gameday Fantasy Phase 6B](gameday-fantasy-phase6b.md) — large-roster selector: threshold=4, AnswerSelector component, weekly+DD integrated, secondary label gap documented; 142/142 tests.
 - [Gameday Fantasy Phase 6C](gameday-fantasy-phase6c.md) — league picks reveal: claim path=/claim (no /account suffix), weekly settle=POST /settle {prop_id,correct_answer}, privacy gate, 217/217 tests.
+- [Gameday Fantasy Phase 6D](gameday-fantasy-phase6d.md) — weekly reward flexibility: publish-time snapshot, three modes, backward-compat key-presence guard, 246/246 tests.

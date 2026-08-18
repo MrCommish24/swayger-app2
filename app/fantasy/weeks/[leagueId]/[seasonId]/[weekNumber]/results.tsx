@@ -134,6 +134,17 @@ export default function WeeklyResultsScreen() {
         </View>
       )}
 
+      {/* Reward — shown when this week has a snapshotted reward */}
+      {(data.reward_description || data.reward_amount_display) && (
+        <View style={styles.rewardBanner}>
+          <Text style={styles.rewardBannerText}>
+            🏆&nbsp;
+            {data.reward_amount_display ? `${data.reward_amount_display} — ` : ""}
+            {data.reward_description}
+          </Text>
+        </View>
+      )}
+
       {/* My picks */}
       {hasMyPicks && (
         <>
@@ -246,6 +257,21 @@ const styles = StyleSheet.create({
   pendingTitle: { fontSize: 20, fontWeight: "700", color: C.text },
   pendingBody:  { fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20 },
 
+  rewardBanner: {
+    backgroundColor: "#1a2840",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#B45309",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    alignItems: "center" as const,
+  },
+  rewardBannerText: {
+    color: "#FCD34D",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   winnerBanner: {
     backgroundColor: "#1A1500", borderRadius: 14,
     borderWidth: 1, borderColor: C.accentGold,

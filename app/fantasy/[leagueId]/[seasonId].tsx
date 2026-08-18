@@ -579,6 +579,16 @@ function WeeklyCard({
             <Text style={[styles.draftDayStatusText, { color: C.accentGold }]}>FINAL</Text>
           </View>
         </View>
+        {/* Reward snapshot for finalized week */}
+        {(weekly?.reward_description || weekly?.reward_amount_display) && (
+          <View style={styles.weeklyRewardRow}>
+            <Text style={styles.weeklyRewardText}>
+              🏆&nbsp;
+              {weekly?.reward_amount_display ? `${weekly.reward_amount_display} — ` : ""}
+              {weekly?.reward_description}
+            </Text>
+          </View>
+        )}
         <View style={styles.draftDayActions}>
           <TouchableOpacity
             style={[styles.btn, { backgroundColor: "#B45309" }]}
@@ -621,6 +631,17 @@ function WeeklyCard({
           <Text style={[styles.draftDayStatusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
+
+      {/* Reward — shown when this week's room has a snapshotted reward */}
+      {(weekly?.reward_description || weekly?.reward_amount_display) && (
+        <View style={styles.weeklyRewardRow}>
+          <Text style={styles.weeklyRewardText}>
+            🏆&nbsp;
+            {weekly?.reward_amount_display ? `${weekly.reward_amount_display} — ` : ""}
+            {weekly?.reward_description}
+          </Text>
+        </View>
+      )}
 
       {/* Prop count */}
       <View style={styles.draftDayCounts}>
@@ -1909,6 +1930,22 @@ const styles = StyleSheet.create({
   claimBadgeText:    { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
   claimBadgeTextJoined:  { color: "#22c55e" },
   claimBadgeTextWaiting: { color: C.textMuted },
+
+  // Phase 6D: weekly room reward row (inside WeeklyCard)
+  weeklyRewardRow: {
+    backgroundColor: "#1a2840",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#B45309",
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    alignSelf: "flex-start" as const,
+  },
+  weeklyRewardText: {
+    color: "#FCD34D",
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
 
     // Draft Day card
   draftDayCard: {

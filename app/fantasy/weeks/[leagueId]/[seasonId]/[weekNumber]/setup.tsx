@@ -20,6 +20,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -58,6 +59,11 @@ export default function WeeklySetupScreen() {
   const [loadingLastWeek, setLoadingLastWeek] = useState(false);
   const [publishing, setPublishing]         = useState(false);
   const [error, setError]                   = useState<string | null>(null);
+  // Phase 6D: weekly reward flexibility
+  const [defaultReward, setDefaultReward]   = useState<{ description: string | null; amount_display: string | null } | null>(null);
+  const [rewardMode, setRewardMode]         = useState<"season_default" | "custom" | "none">("none");
+  const [rewardAmount, setRewardAmount]     = useState("");
+  const [rewardDesc, setRewardDesc]         = useState("");
 
   const auth = session ? { session } : {};
 
@@ -73,6 +79,11 @@ export default function WeeklySetupScreen() {
         data.templates.filter((t) => t.is_default).map((t) => t.id)
       );
       setSelected(defaults);
+      // Phase 6D: Capture season-level default reward for reward-mode picker
+      const defDesc   = data.default_reward_description ?? null;
+      const defAmount = data.default_reward_amount_display ?? null;
+      setDefaultReward({ description: defDesc, amount_display: defAmount });
+      setRewardMode(!!(defDesc || defAmount) ? "season_default" : "none");
     } catch (e: any) {
       setError(e.message ?? "Failed to load questions");
     } finally {
@@ -148,7 +159,14 @@ export default function WeeklySetupScreen() {
     try {
       // Preserve the order templates appear on screen
       const ordered = templates.filter(t => selected.has(t.id)).map(t => t.id);
-      await publishWeekly(leagueId, seasonId, wn, ordered, { session });
+      // Phase 6D: compute effective reward from mode selection
+      const effectiveReward =
+        rewardMode === "season_default"
+          ? { description: defaultReward?.description ?? null, amount_display: defaultReward?.amount_display ?? null }
+          : rewardMode === "custom"
+          ? { description: rewardDesc.trim() || null, amount_display: rewardAmount.trim() || null }
+          : { description: null, amount_display: null };
+      await publishWeekly(leagueId, seasonId, wn, ordered, { session }, effectiveReward);
       // Navigate back to hub — useFocusEffect there will quiet-refresh
       router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
     } catch (e: any) {
@@ -326,6 +344,72 @@ export default function WeeklySetupScreen() {
         ))}
       </View>
 
+      {/* Phase 6D: Reward picker */}
+      <Text style={[styles.sectionLabel, { marginTop: 4 }]}>REWARD FOR THIS WEEK</Text>
+      <View style={styles.rewardCard}>
+        {/* Season default — only shown when the season has a reward configured */}
+        {defaultReward && (defaultReward.description || defaultReward.amount_display) && (
+          <TouchableOpacity
+            style={[styles.rewardOption, rewardMode === "season_default" && styles.rewardOptionSelected]}
+            onPress={() => setRewardMode("season_default")}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.rewardRadio, rewardMode === "season_default" && styles.rewardRadioSelected]} />
+            <View style={styles.rewardOptionText}>
+              <Text style={styles.rewardOptionLabel}>Use Season Default</Text>
+              <Text style={styles.rewardOptionSub}>
+                {defaultReward.amount_display ? `${defaultReward.amount_display} — ` : ""}
+                {defaultReward.description}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* Custom reward */}
+        <TouchableOpacity
+          style={[
+            styles.rewardOption,
+            !!(defaultReward?.description || defaultReward?.amount_display) && styles.rewardOptionBorder,
+            rewardMode === "custom" && styles.rewardOptionSelected,
+          ]}
+          onPress={() => setRewardMode("custom")}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.rewardRadio, rewardMode === "custom" && styles.rewardRadioSelected]} />
+          <Text style={styles.rewardOptionLabel}>Custom Reward</Text>
+        </TouchableOpacity>
+        {rewardMode === "custom" && (
+          <View style={styles.rewardInputs}>
+            <TextInput
+              style={styles.rewardInput}
+              placeholder="Amount (e.g. $25)"
+              placeholderTextColor={C.textMuted}
+              value={rewardAmount}
+              onChangeText={setRewardAmount}
+              maxLength={60}
+            />
+            <TextInput
+              style={[styles.rewardInput, { marginTop: 8 }]}
+              placeholder="Description (e.g. Team dinner)"
+              placeholderTextColor={C.textMuted}
+              value={rewardDesc}
+              onChangeText={setRewardDesc}
+              maxLength={120}
+            />
+          </View>
+        )}
+
+        {/* No reward */}
+        <TouchableOpacity
+          style={[styles.rewardOption, styles.rewardOptionBorder, rewardMode === "none" && styles.rewardOptionSelected]}
+          onPress={() => setRewardMode("none")}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.rewardRadio, rewardMode === "none" && styles.rewardRadioSelected]} />
+          <Text style={styles.rewardOptionLabel}>No Reward</Text>
+        </TouchableOpacity>
+      </View>
+
       {error && <Text style={styles.errorText}>{error}</Text>}
 
       <TouchableOpacity
@@ -483,6 +567,44 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   errorText: { color: C.danger, fontSize: 13, marginBottom: 12, textAlign: "center" },
   linkText:  { color: C.tint, fontSize: 14, fontWeight: "600" },
+
+  // Phase 6D: reward picker
+  rewardCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: "hidden",
+    marginBottom: 16,
+  },
+  rewardOption: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  rewardOptionBorder: { borderTopWidth: 1, borderTopColor: C.border },
+  rewardOptionSelected: { backgroundColor: "#06091A" },
+  rewardRadio: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: C.border,
+  },
+  rewardRadioSelected: { borderColor: C.tint, backgroundColor: C.tint },
+  rewardOptionText: { flex: 1 },
+  rewardOptionLabel: { fontSize: 14, fontWeight: "600" as const, color: C.text },
+  rewardOptionSub: { fontSize: 12, color: C.textMuted, marginTop: 2 },
+  rewardInputs: { paddingHorizontal: 16, paddingBottom: 14, paddingTop: 2 },
+  rewardInput: {
+    backgroundColor: "#0f172a",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: C.text,
+  },
 
   // Review step
   summaryRow: { flexDirection: "row", gap: 12, marginBottom: 16 },

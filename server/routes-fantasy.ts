@@ -3456,7 +3456,7 @@ export function registerFantasyRoutes(app: Express) {
   ): Promise<{ ok: true; room: any; card: any } | { ok: false; status: number; body: object }> {
     const { data: room } = await supabase
       .from("gameday_rooms")
-      .select("id, status, week_number, room_code, created_at")
+      .select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at")
       .eq("league_season_id", seasonId)
       .eq("competition_type", "weekly")
       .eq("week_number", weekNumber)
@@ -3877,7 +3877,7 @@ export function registerFantasyRoutes(app: Express) {
       const supabase = getServiceSupabase();
       const { data: season } = await supabase
         .from("fantasy_league_seasons")
-        .select("fantasy_leagues(sport)")
+        .select("fantasy_leagues(sport), default_reward_description, default_reward_amount_display")
         .eq("id", seasonId)
         .eq("league_id", leagueId)
         .maybeSingle();
@@ -3903,6 +3903,8 @@ export function registerFantasyRoutes(app: Express) {
       res.json({
         sport,
         week_number: wn,
+        default_reward_description:    (season as any).default_reward_description ?? null,
+        default_reward_amount_display: (season as any).default_reward_amount_display ?? null,
         // Weekly props are all competition-scope
         templates: (templates ?? []).map((t: any) => ({ ...t, scoring_scope: "competition" })),
       });
@@ -4060,7 +4062,18 @@ export function registerFantasyRoutes(app: Express) {
         }
       }
 
-      const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
+      // ── Reward fields — optional; absent body keys mean "no update" for old clients ──
+      const publishBody = req.body as {
+        selected_prop_ids?: string[];
+        reward_description?: string | null;
+        reward_amount_display?: string | null;
+      };
+      const { selected_prop_ids } = publishBody;
+      // Only snapshot reward when the client explicitly sends reward keys.
+      const hasRewardKeys     = "reward_description" in publishBody || "reward_amount_display" in publishBody;
+      const effectiveRewardDesc   = hasRewardKeys ? (publishBody.reward_description?.trim() || null) : undefined;
+      const effectiveRewardAmount = hasRewardKeys ? (publishBody.reward_amount_display?.trim() || null) : undefined;
+
       if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
         res.status(400).json({ error: "Select at least one question" });
         return;
@@ -4160,6 +4173,14 @@ export function registerFantasyRoutes(app: Express) {
           .select("id")
           .eq("room_id", (existingRoom as any).id)
           .maybeSingle();
+        // Reward update on idempotent replay is intentional: safe before lock,
+        // allows commissioner to correct a reward before the week goes live.
+        if (hasRewardKeys) {
+          await supabase
+            .from("gameday_rooms")
+            .update({ reward_description: effectiveRewardDesc, reward_amount_display: effectiveRewardAmount })
+            .eq("id", (existingRoom as any).id);
+        }
         console.log(`[fantasy/weekly] Week ${wn} already exists (idempotent)`);
         res.status(200).json({
           room_id: (existingRoom as any).id,
@@ -4197,6 +4218,14 @@ export function registerFantasyRoutes(app: Express) {
         `room=${String(rpcResult.room_id).slice(0, 8)}… props=${propsPayload.length}`
       );
 
+      // Snapshot reward onto the new room (non-fatal if skipped)
+      if (hasRewardKeys) {
+        await supabase
+          .from("gameday_rooms")
+          .update({ reward_description: effectiveRewardDesc, reward_amount_display: effectiveRewardAmount })
+          .eq("id", rpcResult.room_id);
+      }
+
       res.status(201).json({
         room_id:         rpcResult.room_id,
         card_id:         rpcResult.card_id,
@@ -4223,7 +4252,7 @@ export function registerFantasyRoutes(app: Express) {
       // 1. All weekly rooms for this season (one query)
       const { data: rooms } = await supabase
         .from("gameday_rooms")
-        .select("id, status, week_number, room_code, created_at")
+        .select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at")
         .eq("league_season_id", seasonId)
         .eq("competition_type", "weekly")
         .is("archived_at", null)
@@ -4349,17 +4378,19 @@ export function registerFantasyRoutes(app: Express) {
         const allSettled = pc.total > 0 && pc.settled === pc.total;
 
         const item: any = {
-          room_id:       room.id,
-          card_id:       card?.id ?? null,
-          room_code:     room.room_code ?? null,
-          room_status:   room.status,
-          card_status:   cardStatus,
-          week_number:   room.week_number,
-          prop_count:    pc.total,
-          settled_count: pc.settled,
-          all_settled:   allSettled,
-          pick_count:    pc.ids.reduce((s: number, id: string) => s + (pickCountByProp[id] ?? 0), 0),
-          created_at:    room.created_at,
+          room_id:               room.id,
+          card_id:               card?.id ?? null,
+          room_code:             room.room_code ?? null,
+          room_status:           room.status,
+          card_status:           cardStatus,
+          week_number:           room.week_number,
+          prop_count:            pc.total,
+          settled_count:         pc.settled,
+          all_settled:           allSettled,
+          pick_count:            pc.ids.reduce((s: number, id: string) => s + (pickCountByProp[id] ?? 0), 0),
+          reward_description:    room.reward_description ?? null,
+          reward_amount_display: room.reward_amount_display ?? null,
+          created_at:            room.created_at,
         };
 
         if (isCurrent) {
@@ -4411,7 +4442,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("id, status, room_code, created_at")
+        .select("id, status, room_code, reward_description, reward_amount_display, created_at")
         .eq("league_season_id", seasonId)
         .eq("competition_type", "weekly")
         .eq("week_number", wn)
@@ -4525,22 +4556,24 @@ export function registerFantasyRoutes(app: Express) {
       }
 
       res.json({
-        room_id:       (room as any).id,
-        card_id:       (card as any).id,
-        room_code:     (room as any).room_code ?? null,
-        room_status:   (room as any).status,
-        card_status:   (card as any).status,
-        week_number:   wn,
-        prop_count:    propList.length,
-        settled_count: settledCount,
-        all_settled:   propList.length > 0 && settledCount === propList.length,
-        pick_count:    pickCount,
-        my_pick_count: myPickCount,
-        eligible_count: eligibleCount,
-        played_count:  playedCount,
-        waiting_count: waitingCount,
+        room_id:               (room as any).id,
+        card_id:               (card as any).id,
+        room_code:             (room as any).room_code ?? null,
+        room_status:           (room as any).status,
+        card_status:           (card as any).status,
+        week_number:           wn,
+        prop_count:            propList.length,
+        settled_count:         settledCount,
+        all_settled:           propList.length > 0 && settledCount === propList.length,
+        pick_count:            pickCount,
+        my_pick_count:         myPickCount,
+        eligible_count:        eligibleCount,
+        played_count:          playedCount,
+        waiting_count:         waitingCount,
+        reward_description:    (room as any).reward_description ?? null,
+        reward_amount_display: (room as any).reward_amount_display ?? null,
         ...(participantsStatus !== undefined && { participants_status: participantsStatus }),
-        created_at:    (room as any).created_at,
+        created_at:            (room as any).created_at,
       });
     }
   );
@@ -5224,6 +5257,8 @@ export function registerFantasyRoutes(app: Express) {
         week_number:             wn,
         league_name:             (season as any)?.fantasy_leagues?.league_name ?? null,
         season_year:             (season as any)?.season_year ?? null,
+        reward_description:      (room as any).reward_description ?? null,
+        reward_amount_display:   (room as any).reward_amount_display ?? null,
         winners:                 winners.map((w: any) => ({
           display_name: w.display_name,
           team_name:    w.team_name,

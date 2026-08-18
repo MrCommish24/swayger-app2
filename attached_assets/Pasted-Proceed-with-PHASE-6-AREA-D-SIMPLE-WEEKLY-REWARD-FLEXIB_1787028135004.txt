@@ -1,0 +1,1003 @@
+Proceed with:
+
+# PHASE 6 — AREA D
+## SIMPLE WEEKLY REWARD FLEXIBILITY
+
+Phase 6A, 6B, and 6C are complete and verified.
+
+Current Phase 6 status:
+
+- Bulk member import complete
+- Open weekly roster expansion corrected
+- Large-roster answer selector complete
+- League Picks post-lock social reveal complete
+- Draft Day League Picks reuse complete
+- Phase 6 tests: 217 / 217 passing
+- Prior maintained Fantasy regression suites remain green
+
+Do NOT begin Area E yet.
+
+==================================================
+1. PRODUCT GOAL
+==================================================
+
+A fantasy commissioner may have a default weekly reward but occasionally want a different reward for a particular week.
+
+Examples:
+
+Season default:
+$25
+
+Week 1:
+$25
+
+Week 2:
+Dinner at Buffalo Wild Wings
+
+Week 3:
+No reward
+
+Week 4:
+$25
+
+We need to support this without creating a prize-management or payout system.
+
+The model should remain:
+
+# SEASON DEFAULT
++
+# OPTIONAL WEEK-SPECIFIC OVERRIDE
+
+==================================================
+2. KEEP THIS SMALL
+==================================================
+
+Do NOT build:
+
+- reward calendars
+- date ranges
+- "apply for next 5 weeks"
+- reward schedules
+- payout tracking
+- payment status
+- Venmo/Cash App integration
+- winner claiming
+- reward inventory
+- sponsor rewards
+- multi-winner allocation
+
+This is descriptive reward metadata only.
+
+==================================================
+3. EXISTING ARCHITECTURE
+==================================================
+
+Architecture audit already confirmed existing fields:
+
+fantasy_league_seasons:
+- default_reward_description
+- default_reward_amount_display
+
+gameday_rooms:
+- reward_description
+- reward_amount_display
+
+No SQL is expected.
+
+Before coding, verify those fields and current setup/publish behavior again.
+
+If the live architecture differs materially:
+STOP and report.
+
+Otherwise proceed.
+
+==================================================
+4. CORE PRODUCT MODEL
+==================================================
+
+Weekly setup should support three choices:
+
+○ Use season default
+
+○ Custom reward
+
+○ No reward this week
+
+Default selection:
+
+Use season default
+
+when a season default exists.
+
+If no season default exists:
+
+default to:
+No reward this week
+
+or the cleanest existing UX behavior.
+
+Do not make users configure a fake empty reward.
+
+==================================================
+5. SEASON DEFAULT DISPLAY
+==================================================
+
+When season default exists, show it directly.
+
+Example:
+
+WEEK 3 REWARD
+
+● Use season default
+  $25
+
+○ Custom reward
+
+○ No reward this week
+
+If default includes both amount and description:
+
+● Use season default
+  $25
+  Weekly winner prize
+
+Keep concise.
+
+==================================================
+6. CUSTOM REWARD
+==================================================
+
+If commissioner chooses:
+
+Custom reward
+
+show lightweight input(s).
+
+Preferred:
+
+Reward
+[ Dinner at Buffalo Wild Wings ]
+
+If the existing season reward model cleanly separates:
+
+amount_display
+description
+
+you may support both:
+
+Amount / Value
+[ $50 ]
+
+Description
+[ Dinner / Gift Card / Bragging Rights ]
+
+But do not force both.
+
+A free-text description alone must be valid.
+
+Examples:
+
+$25
+Dinner
+$50 gift card
+Winner chooses punishment
+Bragging rights
+
+==================================================
+7. NO REWARD
+==================================================
+
+No reward this week must be a real deliberate state.
+
+Do not display:
+
+$0
+
+unless commissioner typed that.
+
+Published room should snapshot:
+
+reward_description = null
+reward_amount_display = null
+
+or the existing intentional equivalent.
+
+Do not inherit the season default accidentally.
+
+==================================================
+8. SNAPSHOT PRINCIPLE — CRITICAL
+==================================================
+
+At PUBLISH time, determine the effective Week N reward and store it on:
+
+gameday_rooms.reward_description
+gameday_rooms.reward_amount_display
+
+Therefore:
+
+Season default today = $25
+
+Publish Week 1:
+Week 1 room snapshots $25
+
+Later commissioner changes season default to $50.
+
+Expected:
+
+Week 1 remains $25
+
+Future Week 2 using season default:
+snapshots $50
+
+Historical rewards must NOT depend on the current season default.
+
+==================================================
+9. WEEKLY PUBLISH API
+==================================================
+
+Extend the existing weekly publish request to accept the effective reward snapshot.
+
+Prefer fields such as:
+
+reward_description
+reward_amount_display
+
+Do not send UI-state terminology like:
+
+reward_mode = "season_default"
+
+unless useful internally.
+
+The server ultimately needs to store the EFFECTIVE reward on the room.
+
+If server needs mode for validation, keep it lightweight.
+
+==================================================
+10. WRITE ORDER / FAILURE SAFETY
+==================================================
+
+Architecture audit proposed:
+
+publish_fantasy_weekly RPC
+→ receive room_id
+→ UPDATE gameday_rooms reward fields
+
+Inspect whether this can fail after the room has already successfully published.
+
+We do NOT want:
+
+room published successfully
++
+reward update fails
++
+client thinks publish failed
++
+retry creates confusion
+
+Prefer one of:
+
+A. existing publish RPC can accept reward fields cleanly without SQL changes
+
+OR
+
+B. server treats reward update as part of a carefully idempotent publish flow
+
+If using post-publish UPDATE:
+
+- verify retry semantics
+- verify duplicate publish returns same room
+- verify reward update can safely retry
+- do not create duplicate weekly rooms
+
+This must be tested.
+
+==================================================
+11. EXISTING PUBLISHED WEEK EDITING
+==================================================
+
+Do NOT build a new reward-editing workflow after publish unless it already fits current Manage Week architecture naturally.
+
+For this phase:
+
+reward is primarily selected during Week setup/publish.
+
+If current Manage Week already allows editing room metadata before lock and adding reward editing is trivial, report it.
+
+Do not expand scope automatically.
+
+==================================================
+12. SETUP UX LOCATION
+==================================================
+
+Add reward selection to:
+
+Set Up Week N
+
+Preferred placement:
+
+after question selection
+before Review
+
+or on Review if cleaner.
+
+Do not interrupt question selection with a large reward form.
+
+The weekly setup should still feel fast.
+
+==================================================
+13. REVIEW SCREEN
+==================================================
+
+On:
+
+REVIEW WEEK 3
+
+show:
+
+5 questions
+
+REWARD
+$25
+
+or:
+
+REWARD
+Dinner at Buffalo Wild Wings
+
+or:
+
+REWARD
+No reward this week
+
+Then:
+
+[ Publish Week 3 ]
+
+Commissioner should know exactly what they are publishing.
+
+==================================================
+14. HUB DISPLAY
+==================================================
+
+When Week N is live and has a reward:
+
+CURRENT SWAYGER
+
+Week 3 Swayger
+Picks Open
+
+🏆 Reward: $25
+
+8 / 12 Have Played
+
+[ Share Week 3 ]
+
+Keep reward secondary to competition status.
+
+Do not let reward dominate the card.
+
+==================================================
+15. CUSTOM DESCRIPTION DISPLAY
+==================================================
+
+Examples:
+
+🏆 Reward: Dinner at Buffalo Wild Wings
+
+🏆 Reward: $50 gift card
+
+Use one clean display line where possible.
+
+For very long description:
+wrap reasonably or truncate with access to full text.
+
+Do not break the hub layout.
+
+==================================================
+16. NO-REWARD DISPLAY
+==================================================
+
+If no reward:
+
+preferred:
+do not display a reward row on the hub
+
+rather than:
+
+Reward: None
+
+unless the design benefits from explicit confirmation.
+
+Setup/review can say:
+
+No reward this week
+
+but live member-facing cards do not need to advertise absence.
+
+==================================================
+17. RESULTS DISPLAY
+==================================================
+
+On finalized Week results:
+
+If reward exists:
+
+WEEK 3 WINNER
+
+Darius
+100 pts
+
+🏆 Reward
+$25
+
+or:
+
+🏆 Winner gets
+Dinner at Buffalo Wild Wings
+
+If co-winners exist:
+
+do not invent reward-splitting rules.
+
+Simply show the declared Week reward.
+
+Example:
+
+CO-WINNERS
+
+Darius
+Mike
+
+Reward: $25
+
+Do not state "$12.50 each."
+
+Commissioner controls actual fulfillment outside Swayger.
+
+==================================================
+18. DRAFT DAY
+==================================================
+
+Do NOT expand reward work into Draft Day unless Draft Day already uses the exact same reward fields and displaying them is essentially free.
+
+This phase is weekly reward flexibility.
+
+Report existing Draft Day behavior separately if relevant.
+
+==================================================
+19. PAST SWAYGERS
+==================================================
+
+Historical Week detail/results should show the room's snapshotted reward.
+
+Do not use current season default.
+
+Past Week 1:
+$25
+
+Past Week 2:
+Dinner
+
+even if season default later becomes $100.
+
+==================================================
+20. SEASON DEFAULT SOURCE
+==================================================
+
+Weekly setup should get season default efficiently.
+
+Do not add unnecessary extra requests if existing:
+
+league/season detail
+or
+weekly summary
+
+can include:
+
+default_reward_description
+default_reward_amount_display
+
+Prefer extending an existing relevant response over a dedicated endpoint just for reward metadata.
+
+No N+1.
+
+==================================================
+21. EMPTY DEFAULT
+==================================================
+
+Test season with:
+
+default_reward_description = null
+default_reward_amount_display = null
+
+Weekly setup should remain clean.
+
+Expected initial mode:
+
+No reward
+
+with option:
+
+Custom reward
+
+Do not display:
+
+Use season default — blank
+
+as a confusing primary choice.
+
+==================================================
+22. AMOUNT ONLY
+==================================================
+
+Season default:
+
+amount_display = "$25"
+description = null
+
+Expected:
+
+Use season default
+$25
+
+Publish snapshots:
+reward_amount_display = "$25"
+reward_description = null
+
+==================================================
+23. DESCRIPTION ONLY
+==================================================
+
+Season default:
+
+description = "Dinner"
+amount_display = null
+
+Expected:
+
+Use season default
+Dinner
+
+Publish correctly.
+
+==================================================
+24. BOTH
+==================================================
+
+Season default:
+
+amount = "$50"
+description = "Gift Card"
+
+Display intelligently.
+
+Example:
+
+$50 Gift Card
+
+or two concise lines.
+
+Do not duplicate awkwardly:
+
+$50 — $50 Gift Card
+
+Use actual data semantics.
+
+==================================================
+25. CUSTOM VALIDATION
+==================================================
+
+If Custom Reward chosen:
+
+require at least one non-empty:
+
+reward_description
+or
+reward_amount_display
+
+If both blank:
+validation error.
+
+Do not publish "custom reward" with no data.
+
+Trim whitespace.
+
+==================================================
+26. CHARACTER LIMITS
+==================================================
+
+Inspect existing DB/text constraints.
+
+If fields are TEXT with no practical constraint:
+still impose a reasonable UI maximum if necessary for pilot UX.
+
+Do not allow a pasted essay to destroy cards.
+
+Something in the 100–200 character range for description is reasonable if there is no established project convention.
+
+Do not truncate stored data silently.
+
+==================================================
+27. REWARD DOES NOT AFFECT SCORING
+==================================================
+
+Critical:
+
+Reward metadata must have ZERO effect on:
+
+- point values
+- standings
+- weekly wins
+- competition winner logic
+- co-winner logic
+- finalization
+- settlement
+
+It is descriptive only.
+
+==================================================
+28. SEASON DEFAULT EDITING
+==================================================
+
+Inspect whether commissioner can currently edit the season default reward after league creation.
+
+If they can:
+ensure future Week setup reads the updated default.
+
+If they cannot:
+do NOT build a new Season Settings system in this phase.
+
+Just use the existing stored default.
+
+Report the limitation.
+
+==================================================
+29. PUBLISH IDEMPOTENCY TEST
+==================================================
+
+Critical scenario:
+
+Commissioner publishes Week 3 with:
+
+Custom reward = Dinner
+
+Server publishes room successfully.
+Client loses response.
+
+Retry same publish.
+
+Expected:
+
+- same Week 3 room
+- no duplicate
+- reward remains Dinner
+- no conflicting reward state
+
+Test this explicitly.
+
+==================================================
+30. REWARD CHANGE ON IDEMPOTENT RETRY
+==================================================
+
+Scenario:
+
+Original publish succeeds with:
+Dinner
+
+Client retries same idempotent publish payload:
+Dinner
+
+Expected:
+safe replay.
+
+If client somehow retries same Week with:
+$50
+
+determine established weekly publish behavior.
+
+Do NOT silently rewrite reward on what should be an idempotent replay unless the current workflow intentionally permits it.
+
+Document exact semantics.
+
+==================================================
+31. SEASON DEFAULT SNAPSHOT TEST
+==================================================
+
+Default:
+$25
+
+Publish Week 1 using default.
+
+Verify room:
+$25
+
+Change season default directly in fixture to:
+$50
+
+Verify Week 1 still:
+$25
+
+Publish Week 2 using default.
+
+Verify:
+Week 2 = $50
+
+This is central.
+
+==================================================
+32. OVERRIDE TEST
+==================================================
+
+Default:
+$25
+
+Week 1:
+inherit → $25
+
+Week 2:
+custom Dinner
+
+Week 3:
+no reward
+
+Week 4:
+inherit → $25
+
+Verify exact stored room values and API output.
+
+==================================================
+33. DISPLAY TESTS
+==================================================
+
+Verify API shapes for:
+
+amount only
+description only
+both
+none
+
+Verify:
+
+weekly summary
+weekly results
+
+return the ROOM snapshot, not current default.
+
+Do not claim pixel-perfect rendering from server tests.
+
+==================================================
+34. CO-WINNER TEST
+==================================================
+
+Create weekly tie.
+
+Reward:
+$50 gift card
+
+Finalize.
+
+Results:
+
+two co-winners
+reward shown once as declared
+
+No automatic split.
+
+==================================================
+35. OPEN / LOCK / FINALIZE
+==================================================
+
+Reward remains stable through:
+
+open
+locked
+settled
+finalized
+
+No lifecycle operation clears it.
+
+==================================================
+36. USE LAST WEEK'S QUESTIONS
+==================================================
+
+"Use Last Week's Questions" should affect QUESTIONS ONLY.
+
+It should NOT automatically copy last week's reward.
+
+Week N reward selection should still default to:
+
+current season default
+
+not:
+
+last week's override.
+
+Example:
+
+Season default $25
+Week 2 override Dinner
+
+Week 3:
+Use Last Week's Questions
+
+Expected reward default:
+$25
+
+NOT Dinner.
+
+Critical test.
+
+==================================================
+37. CREATE NEXT SWAYGER
+==================================================
+
+Phase 5.3 NEXT UP flow remains unchanged.
+
+Tap:
+
+Create Week 4
+
+→ current season reward default is loaded.
+
+No week-specific reward carries forward accidentally.
+
+==================================================
+38. MEMBER VIEW
+==================================================
+
+Members do not need reward configuration controls.
+
+They only see the published effective reward.
+
+Guests and account members see the same reward.
+
+No authorization difference.
+
+==================================================
+39. AUTHORIZATION
+==================================================
+
+Only commissioner/co-commissioner according to existing weekly setup authority can define reward during publish.
+
+Members cannot modify room reward.
+
+Do not expose a new mutation endpoint to regular members.
+
+==================================================
+40. SECURITY
+==================================================
+
+Treat reward as normal league metadata.
+
+Escape/render text safely.
+
+Do not interpret arbitrary reward description as HTML.
+
+Plain text only.
+
+==================================================
+41. TEST FILE
+==================================================
+
+Extend:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+Continue with:
+
+§W Season default reward
+§X Custom reward
+§Y No reward
+§Z Snapshot semantics
+§AA Publish idempotency
+§AB Historical reward
+§AC Co-winner reward
+§AD Use Last Week isolation
+§AE Reward authorization
+
+Use consistent naming if letters beyond Z are awkward.
+
+==================================================
+42. REGRESSION
+==================================================
+
+After Area D run:
+
+- complete Phase 6 suite
+- Phase 5.3
+- Phase 5 weekly publish
+- Phase 4C settlement/finalization
+- standings
+- relevant Draft Day if touched
+
+If inexpensive:
+full maintained Fantasy regression.
+
+Return exact totals.
+
+==================================================
+43. MANUAL QA
+==================================================
+
+Return exact manual flow:
+
+1. League has season default $25.
+2. Finalize previous Week.
+3. Create Week 3.
+4. Verify reward defaults to Use season default — $25.
+5. Select Custom reward.
+6. Enter Dinner at Buffalo Wild Wings.
+7. Review Week 3.
+8. Confirm reward displayed.
+9. Publish.
+10. Hub shows Week 3 reward.
+11. Member sees reward.
+12. Run picks/lock/League Picks/settlement.
+13. Finalize.
+14. Results show reward.
+15. Create Week 4.
+16. Verify reward defaults back to $25, not Dinner.
+17. Select No reward this week.
+18. Publish Week 4.
+19. Confirm live card has no reward display.
+20. Reopen Week 3 history.
+21. Verify Dinner remains historically preserved.
+
+==================================================
+44. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- Archive League
+- QR
+- Sleeper/Yahoo
+- reward scheduling
+- reward ranges
+- payout tracking
+- sponsor rewards
+- notifications
+- Season Receipts
+- stale-pick warning
+- reward sharing image
+- provider payout integration
+
+==================================================
+45. RETURN
+==================================================
+
+Return:
+
+# PHASE 6D — WEEKLY REWARD REPORT
+
+1. Existing reward architecture
+2. Reward modes
+3. Season default behavior
+4. Custom reward behavior
+5. No-reward behavior
+6. Publish snapshot implementation
+7. Idempotency behavior
+8. Hub display
+9. Member display
+10. Results/history display
+11. Co-winner behavior
+12. Use Last Week isolation
+13. Files changed
+14. Tests added
+15. Phase 6 test totals
+16. Full regression totals
+17. Bugs found/fixed
+18. Known limitations
+19. Exact manual QA
+
+Then STOP.
+
+Do not begin Area E.
+
+Final status:
+
+PHASE 6D WEEKLY REWARDS READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
