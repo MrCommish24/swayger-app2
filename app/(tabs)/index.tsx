@@ -539,7 +539,10 @@ export default function GameDayHomeScreen() {
             style={({ pressed }) => [homeStyles.swaygerLink, pressed && homeStyles.swaygerLinkPressed]}
             onPress={() => router.push("/(tabs)/challenges" as never)}
           >
-            <Text style={homeStyles.swaygerLinkText}>My 1v1 Swaygers →</Text>
+            <View style={homeStyles.swaygerLinkRow}>
+              <SwaygerMark color={C.textSecondary} size={14} />
+              <Text style={homeStyles.swaygerLinkText}>My 1v1 Swaygers →</Text>
+            </View>
           </Pressable>
         </>
       ) : (
@@ -614,6 +617,11 @@ const homeStyles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: C.border,
     alignItems: "center",
+  },
+  swaygerLinkRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 6,
   },
   swaygerLinkPressed: { opacity: 0.6 },
   swaygerLinkText: {
