@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
 import { fantasyFetch, getArchivedLeagues, restoreLeague, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import SwaygerMark from "@/components/SwaygerMark";
 
 const C = Colors.dark;
 
@@ -63,7 +64,10 @@ function MySwaygersCard() {
         style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
         onPress={onPress}
       >
-        <Text style={cardStyles.title}>My Swaygers</Text>
+        <View style={cardStyles.titleRow}>
+          <SwaygerMark color={C.tint} size={18} />
+          <Text style={cardStyles.title}>My Swaygers</Text>
+        </View>
         <Text style={cardStyles.body}>
           Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
         </Text>
@@ -88,7 +92,10 @@ function MySwaygersCard() {
       style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
       onPress={onPress}
     >
-      <Text style={cardStyles.title}>My Swaygers</Text>
+      <View style={cardStyles.titleRow}>
+        <SwaygerMark color={C.tint} size={18} />
+        <Text style={cardStyles.title}>My Swaygers</Text>
+      </View>
 
       {!isReady ? (
         // Still loading — preserve static fallback, never briefly flash "zero Swaygers"
@@ -617,6 +624,11 @@ const homeStyles = StyleSheet.create({
 });
 
 const cardStyles = StyleSheet.create({
+  titleRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 8,
+  },
   card: {
     backgroundColor: C.surface,
     borderRadius: 16,
