@@ -16,7 +16,7 @@ import { Analytics } from "@/lib/posthog";
 import { getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
-import { fantasyFetch, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
+import { fantasyFetch, getArchivedLeagues, restoreLeague, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -140,6 +140,12 @@ function FantasySection() {
   const [leagueLoading, setLeagueLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
 
+  // Archived leagues (Phase 6E)
+  const [archivedLeagues, setArchivedLeagues]   = useState<FantasyLeague[]>([]);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [archivedLoading, setArchivedLoading]   = useState(false);
+  const [restoringId, setRestoringId]           = useState<string | null>(null);
+
   const loadLeagues = useCallback(async () => {
     if (!session) return;
     setLeagueLoading(true);
@@ -157,6 +163,37 @@ function FantasySection() {
       setFetched(true);
     }
   }, [session]);
+
+  const loadArchivedLeagues = useCallback(async () => {
+    if (!session) return;
+    setArchivedLoading(true);
+    try {
+      const d = await getArchivedLeagues({ session });
+      setArchivedLeagues(d.leagues);
+    } catch {
+      setArchivedLeagues([]);
+    } finally {
+      setArchivedLoading(false);
+    }
+  }, [session]);
+
+  const handleToggleArchived = useCallback(() => {
+    const next = !archivedExpanded;
+    setArchivedExpanded(next);
+    if (next) loadArchivedLeagues();
+  }, [archivedExpanded, loadArchivedLeagues]);
+
+  const handleRestore = useCallback(async (leagueId: string) => {
+    if (!session) return;
+    setRestoringId(leagueId);
+    try {
+      await restoreLeague(leagueId, { session });
+      // Refresh both lists
+      await Promise.all([loadLeagues(), loadArchivedLeagues()]);
+    } catch { /* silently ignore */ } finally {
+      setRestoringId(null);
+    }
+  }, [session, loadLeagues, loadArchivedLeagues]);
 
   // Fire when auth resolves on initial render
   useEffect(() => {
@@ -271,6 +308,80 @@ function FantasySection() {
       >
         <Text style={fantasyStyles.createMoreText}>+ Create Fantasy League</Text>
       </Pressable>
+
+      {/* Archived Leagues — collapsed by default (Phase 6E) */}
+      <Pressable
+        style={({ pressed }) => [fantasyStyles.archivedToggle, pressed && { opacity: 0.7 }]}
+        onPress={handleToggleArchived}
+      >
+        <Text style={fantasyStyles.archivedToggleText}>
+          {archivedExpanded ? "▲" : "▼"}{"  "}Archived Leagues
+        </Text>
+      </Pressable>
+
+      {archivedExpanded && (
+        <>
+          {archivedLoading ? (
+            <ActivityIndicator
+              color={C.tint}
+              size="small"
+              style={{ alignSelf: "flex-start", marginLeft: 8, marginTop: 4 }}
+            />
+          ) : archivedLeagues.length === 0 ? (
+            <Text style={fantasyStyles.archivedEmpty}>No archived leagues</Text>
+          ) : (
+            archivedLeagues.map((lg) => {
+              const latestSeason = [...(lg.fantasy_league_seasons ?? [])]
+                .sort((a, b) => b.season_year - a.season_year)[0];
+              const sportEmoji =
+                FANTASY_SPORTS.find((s) => s.value === lg.sport)?.emoji ?? "🏆";
+              const isRestoring = restoringId === lg.id;
+              return (
+                <View key={lg.id} style={fantasyStyles.archivedCard}>
+                  <View style={fantasyStyles.archivedCardLeft}>
+                    <Text style={fantasyStyles.archivedCardName} numberOfLines={1}>
+                      {sportEmoji}{"  "}{lg.league_name}
+                    </Text>
+                    {latestSeason && (
+                      <Text style={fantasyStyles.archivedCardMeta}>
+                        {latestSeason.season_year} · Archived
+                      </Text>
+                    )}
+                  </View>
+                  <View style={fantasyStyles.archivedCardActions}>
+                    <Pressable
+                      onPress={() => {
+                        if (latestSeason) {
+                          router.push(`/fantasy/${lg.id}/${latestSeason.id}` as never);
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        fantasyStyles.archivedActionBtn,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text style={fantasyStyles.archivedActionText}>View</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleRestore(lg.id)}
+                      disabled={isRestoring}
+                      style={({ pressed }) => [
+                        fantasyStyles.archivedActionBtn,
+                        fantasyStyles.archivedRestoreBtn,
+                        (pressed || isRestoring) && { opacity: 0.6 },
+                      ]}
+                    >
+                      {isRestoring
+                        ? <ActivityIndicator color={C.tint} size="small" />
+                        : <Text style={[fantasyStyles.archivedActionText, { color: C.tint }]}>Restore</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </>
+      )}
     </View>
   );
 }
@@ -707,6 +818,72 @@ const fantasyStyles = StyleSheet.create({
     fontSize: 14,
     color: C.textMuted,
     textDecorationLine: "underline" as const,
+  },
+
+  // Phase 6E — Archived leagues section
+  archivedToggle: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: "center" as const,
+    marginTop: 4,
+  },
+  archivedToggleText: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: C.textMuted,
+    letterSpacing: 0.5,
+  },
+  archivedEmpty: {
+    fontSize: 13,
+    color: C.textMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontStyle: "italic" as const,
+  },
+  archivedCard: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 8,
+    gap: 10,
+  },
+  archivedCardLeft: { flex: 1 },
+  archivedCardName: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: C.textSecondary,
+  },
+  archivedCardMeta: {
+    fontSize: 12,
+    color: C.textMuted,
+    marginTop: 2,
+  },
+  archivedCardActions: {
+    flexDirection: "row" as const,
+    gap: 8,
+  },
+  archivedActionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    minWidth: 50,
+  },
+  archivedRestoreBtn: {
+    borderColor: C.tint,
+  },
+  archivedActionText: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    color: C.textMuted,
   },
 });
 

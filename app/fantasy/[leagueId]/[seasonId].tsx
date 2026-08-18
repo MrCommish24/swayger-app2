@@ -40,6 +40,7 @@ import {
   lockDraftDay,
   unlockDraftDay,
   finalizeDraftDay,
+  restoreLeague,
   getWeekStatus,
   getWeeklySummary,
   lockWeekly,
@@ -978,6 +979,10 @@ export default function LeagueHubScreen() {
   const [weeklyLockError, setWeeklyLockError]   = useState<string | null>(null);
   const [finalizingWeekly, setFinalizingWeekly] = useState(false);
   const [weeklyFinalizeError, setWeeklyFinalizeError] = useState<string | null>(null);
+  // ── Archive restore state (Phase 6E) ────────────────────────────────────────
+  const [restoring, setRestoring]       = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
   // Track initial mount so useFocusEffect doesn't double-fetch on first render
   const initialFocusRef = useRef(true);
 
@@ -1127,8 +1132,24 @@ export default function LeagueHubScreen() {
   const sportLabel   = league.sport.charAt(0).toUpperCase() + league.sport.slice(1);
   const statusLabel  = STATUS_LABEL[season.status] ?? season.status;
   const statusColor  = STATUS_COLOR[season.status] ?? C.textMuted;
-  const isCommissioner = viewer?.role === "commissioner" || viewer?.role === "co_commissioner";
-  const isGuest        = !session && !!guestToken;
+  const isCommissioner       = viewer?.role === "commissioner" || viewer?.role === "co_commissioner";
+  const isPrimaryCommissioner = viewer?.role === "commissioner";
+  const isGuest              = !session && !!guestToken;
+  const isArchived           = !league.is_active;
+
+  const handleRestore = async () => {
+    if (!session) return;
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await restoreLeague(leagueId, { session });
+      fetchDetail(true); // quiet refresh to update is_active
+    } catch (e: any) {
+      setRestoreError(e.message ?? "Failed to restore league");
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -1246,8 +1267,35 @@ export default function LeagueHubScreen() {
             </View>
           </View>
 
-          {/* Commissioner: Invite Members button */}
-          {isCommissioner && (
+          {/* Archived league banner (Phase 6E) */}
+          {isArchived && (
+            <View style={styles.archivedLeagueBanner}>
+              <Text style={styles.archivedLeagueBannerTitle}>🗄 League Archived</Text>
+              <Text style={styles.archivedLeagueBannerBody}>
+                This league is archived. Your past Swaygers and standings are preserved.
+              </Text>
+              {isPrimaryCommissioner && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.restoreLeagueBtn, restoring && { opacity: 0.5 }]}
+                    onPress={handleRestore}
+                    disabled={restoring}
+                    activeOpacity={0.8}
+                  >
+                    {restoring
+                      ? <ActivityIndicator color={C.tint} size="small" />
+                      : <Text style={styles.restoreLeagueBtnText}>Restore League</Text>}
+                  </TouchableOpacity>
+                  {restoreError && (
+                    <Text style={styles.restoreErrorText}>{restoreError}</Text>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
+          {/* Commissioner: Invite Members button — hidden when archived */}
+          {isCommissioner && !isArchived && (
             <TouchableOpacity style={styles.inviteBtn} onPress={handleShare} activeOpacity={0.8}>
               <Text style={styles.inviteBtnIcon}>🔗</Text>
               <View style={styles.inviteBtnText}>
@@ -1258,8 +1306,8 @@ export default function LeagueHubScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Commissioner: Manage League button */}
-          {isCommissioner && (
+          {/* Commissioner: Manage League button — hidden when archived */}
+          {isCommissioner && !isArchived && (
             <TouchableOpacity
               style={styles.inviteBtn}
               onPress={() => router.push(`/fantasy/manage/${leagueId}/${seasonId}` as any)}
@@ -2163,4 +2211,43 @@ const styles = StyleSheet.create({
   btnText:   { color: "#fff", fontWeight: "700", fontSize: 15 },
   linkText:  { color: C.tint, fontSize: 14, fontWeight: "600" },
   errorText: { color: C.danger, fontSize: 14, textAlign: "center" },
+
+  // Phase 6E — Archived league banner
+  archivedLeagueBanner: {
+    backgroundColor: "#0d0d14",
+    borderWidth: 1,
+    borderColor: "#3b3b5c",
+    borderRadius: 14,
+    padding: 18,
+    marginBottom: 16,
+    gap: 10,
+  },
+  archivedLeagueBannerTitle: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: C.textSecondary,
+  },
+  archivedLeagueBannerBody: {
+    fontSize: 13,
+    color: C.textMuted,
+    lineHeight: 19,
+  },
+  restoreLeagueBtn: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.tint,
+    paddingVertical: 11,
+    alignItems: "center" as const,
+    marginTop: 4,
+  },
+  restoreLeagueBtnText: {
+    color: C.tint,
+    fontSize: 14,
+    fontWeight: "700" as const,
+  },
+  restoreErrorText: {
+    color: "#ef4444",
+    fontSize: 13,
+    marginTop: 4,
+  },
 });

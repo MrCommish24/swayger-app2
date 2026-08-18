@@ -20,3 +20,4 @@
 - [Gameday Fantasy Phase 6B](gameday-fantasy-phase6b.md) — large-roster selector: threshold=4, AnswerSelector component, weekly+DD integrated, secondary label gap documented; 142/142 tests.
 - [Gameday Fantasy Phase 6C](gameday-fantasy-phase6c.md) — league picks reveal: claim path=/claim (no /account suffix), weekly settle=POST /settle {prop_id,correct_answer}, privacy gate, 217/217 tests.
 - [Gameday Fantasy Phase 6D](gameday-fantasy-phase6d.md) — weekly reward flexibility: publish-time snapshot, three modes, backward-compat key-presence guard, 246/246 tests.
+- [Gameday Fantasy Phase 6E](gameday-fantasy-phase6e.md) — safe league archive: is_active flag, primary-comm-only, write guard pattern, archived list branch, frontend restore banner, 281/281 tests.

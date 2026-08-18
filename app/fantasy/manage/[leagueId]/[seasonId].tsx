@@ -16,6 +16,7 @@
 
 import React, { useState, useCallback, useEffect } from "react";
 import {
+  Alert,
   View,
   Text,
   ScrollView,
@@ -39,6 +40,7 @@ import {
   fantasyFetch,
   updateMember,
   updateLeagueName,
+  archiveLeague,
   createMemberRecoveryToken,
   revokeMemberRecoveryToken,
   type RecoveryTokenCreateResult,
@@ -129,6 +131,10 @@ export default function ManageLeagueScreen() {
   const [leagueNameInput,   setLeagueNameInput]   = useState("");
   const [leagueNameSaving,  setLeagueNameSaving]  = useState(false);
   const [leagueNameError,   setLeagueNameError]   = useState<string | null>(null);
+
+  // ── Archive state ─────────────────────────────────────────────────────────────
+  const [archiveSaving, setArchiveSaving] = useState(false);
+  const [archiveError, setArchiveError]   = useState<string | null>(null);
 
   // ── Recovery token state ──────────────────────────────────────────────────────
   const [recoveryTarget,  setRecoveryTarget]  = useState<FantasyParticipant | null>(null);
@@ -320,6 +326,34 @@ export default function ManageLeagueScreen() {
         url,
       });
     } catch { /* user cancelled */ }
+  };
+
+  // ── Archive handler ───────────────────────────────────────────────────────────
+  const handleArchive = () => {
+    if (!session || !detail) return;
+    const leagueName = detail.league.league_name;
+    Alert.alert(
+      `Archive ${leagueName}?`,
+      "This league will be removed from your active leagues.\n\nYour league history will be preserved.\n\nYou won't be able to create or run new Swaygers until the league is restored.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Archive League",
+          style: "destructive",
+          onPress: async () => {
+            setArchiveSaving(true);
+            setArchiveError(null);
+            try {
+              await archiveLeague(leagueId, { session });
+              router.replace("/(tabs)");
+            } catch (e: any) {
+              setArchiveError(e.message ?? "Failed to archive league");
+              setArchiveSaving(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // ── Add member handlers ───────────────────────────────────────────────────────
@@ -709,6 +743,32 @@ export default function ManageLeagueScreen() {
         </View>
       )}
 
+      {/* ── League Management (Archive) — primary commissioner only ────── */}
+      {detail.viewer?.role === "commissioner" && (
+        <View style={{ marginTop: 32, marginBottom: 8 }}>
+          <Text style={styles.sectionLabel}>LEAGUE MANAGEMENT</Text>
+          <View style={styles.archiveCard}>
+            <Text style={styles.archiveCardTitle}>Archive League</Text>
+            <Text style={styles.archiveCardBody}>
+              Archive this league when you're finished with it.{"\n\n"}
+              Your teams, picks, results, standings, rewards, and receipts will be preserved.
+            </Text>
+            {archiveError && (
+              <Text style={styles.archiveErrorText}>{archiveError}</Text>
+            )}
+            <TouchableOpacity
+              style={[styles.archiveBtn, archiveSaving && styles.btnDisabled]}
+              onPress={handleArchive}
+              disabled={archiveSaving}
+            >
+              {archiveSaving
+                ? <ActivityIndicator color="#ef4444" size="small" />
+                : <Text style={styles.archiveBtnText}>Archive League</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* ── Recovery modal (Phase 5.2.3) ─────────────────────────────────── */}
       <Modal
         visible={recoveryTarget !== null}
@@ -1059,6 +1119,31 @@ const styles = StyleSheet.create({
   },
   urlText: {
     color: C.tint, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+  },
+
+  // Archive section
+  archiveCard: {
+    backgroundColor: C.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: "#3f1010",
+    padding: 18, gap: 10,
+  },
+  archiveCardTitle: {
+    fontSize: 15, fontWeight: "700" as const, color: "#ef4444",
+  },
+  archiveCardBody: {
+    fontSize: 13, color: C.textSecondary, lineHeight: 20,
+  },
+  archiveErrorText: {
+    color: "#ef4444", fontSize: 13, marginTop: 4,
+  },
+  archiveBtn: {
+    marginTop: 6,
+    borderRadius: 10, borderWidth: 1, borderColor: "#ef4444",
+    paddingVertical: 11, alignItems: "center" as const,
+    backgroundColor: "transparent",
+  },
+  archiveBtnText: {
+    color: "#ef4444", fontSize: 14, fontWeight: "700" as const,
   },
 
   // Modal

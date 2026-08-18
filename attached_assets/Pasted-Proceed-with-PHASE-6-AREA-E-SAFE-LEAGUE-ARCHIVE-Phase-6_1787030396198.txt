@@ -1,0 +1,1046 @@
+Proceed with:
+
+# PHASE 6 — AREA E
+## SAFE LEAGUE ARCHIVE
+
+Phase 6A–6D are complete and verified.
+
+Current Phase 6 status:
+
+- Bulk member import complete
+- Open weekly roster behavior corrected
+- Large-roster selector complete
+- League Picks post-lock reveal complete
+- Weekly reward flexibility complete
+- Phase 6 tests: 246 / 246 passing
+- Prior maintained Fantasy regression remains green
+
+This is the FINAL P0 feature in the initial Phase 6 pilot-readiness sprint.
+
+Do NOT begin QR, Sleeper, Yahoo, or another roadmap phase.
+
+==================================================
+1. PRODUCT GOAL
+==================================================
+
+A commissioner needs a safe way to remove:
+
+- abandoned test leagues
+- duplicate/setup-error leagues
+- finished leagues
+- old leagues
+
+from the active experience.
+
+We do NOT want casual destructive deletion.
+
+Pilot product rule:
+
+# ARCHIVE, DON'T DELETE.
+
+Archive must preserve:
+
+- league identity
+- seasons
+- members
+- teams
+- claims
+- Draft Day history
+- weekly history
+- picks
+- results
+- League Picks receipts
+- standings
+- rewards
+- recovery history
+
+==================================================
+2. EXISTING ARCHITECTURE
+==================================================
+
+Prior audit confirmed:
+
+fantasy_leagues.is_active
+BOOLEAN NOT NULL DEFAULT true
+
+Active league list already filters:
+
+is_active = true
+
+fantasy_league_seasons.status includes:
+upcoming
+active
+completed
+archived
+
+gameday_rooms.archived_at also exists for Game Day room visibility.
+
+No SQL is expected.
+
+Before coding, re-verify actual live code/schema.
+
+If architecture differs materially:
+STOP and report.
+
+Otherwise proceed.
+
+==================================================
+3. DO NOT DELETE DATA
+==================================================
+
+Archive must NOT:
+
+DELETE fantasy_leagues
+DELETE fantasy_league_seasons
+DELETE fantasy_league_members
+DELETE fantasy_season_members
+DELETE fantasy_teams
+DELETE fantasy_member_claims
+DELETE gameday_rooms
+DELETE gameday_participants
+DELETE gameday_picks
+
+Do not cascade anything.
+
+Primary archive operation:
+
+fantasy_leagues.is_active = false
+
+Use additional season state only if clearly needed by existing architecture.
+
+Keep the operation minimal.
+
+==================================================
+4. ARCHIVE AUTHORIZATION
+==================================================
+
+Inspect current:
+
+requireFantasyLeagueCommissioner
+
+and existing commissioner/co-commissioner role rules.
+
+Determine who should be allowed to archive.
+
+My preference for pilot:
+
+PRIMARY COMMISSIONER ONLY
+
+because archiving removes the entire league from active use.
+
+If current architecture cannot distinguish primary commissioner cleanly, report that before broadening authority.
+
+Do not assume co-commissioner should have destructive/lifecycle authority merely because they can run weekly Swaygers.
+
+==================================================
+5. ARCHIVE ENTRY POINT
+==================================================
+
+Put archive inside:
+
+Manage League
+or
+League Settings
+
+not on the main hub.
+
+Preferred section near bottom:
+
+LEAGUE MANAGEMENT
+
+Archive League
+
+Remove this league from your active leagues while preserving its history.
+
+[ Archive League ]
+
+Do not visually make it look like a normal primary action.
+
+==================================================
+6. LANGUAGE
+==================================================
+
+Use:
+
+Archive League
+
+NOT:
+
+Delete League
+Remove League
+Destroy League
+
+Description:
+
+Archive this league when you're finished with it.
+
+Your teams, picks, results, standings, rewards, and receipts will be preserved.
+
+==================================================
+7. CONFIRMATION
+==================================================
+
+Tap Archive League.
+
+Show:
+
+ARCHIVE FOOD PYRAMID 2026?
+
+This league will be removed from your active leagues.
+
+Your league history will be preserved.
+
+You won't be able to create or run new Swaygers until the league is restored.
+
+[ Cancel ]
+
+[ Archive League ]
+
+Do not require typing the league name.
+
+This is reversible.
+
+==================================================
+8. ACTIVE COMPETITION SAFEGUARD
+==================================================
+
+Do NOT archive while there is an unresolved active Fantasy competition.
+
+Block if ANY room associated with this league has an active unresolved lifecycle state.
+
+At minimum consider:
+
+draft / published/open
+locked
+settled-but-not-finalized
+
+Use actual room/card lifecycle, not guessed strings.
+
+Allowed:
+all relevant competitions finalized
+
+Blocked:
+any competition still operational/unresolved
+
+Message:
+
+Finish or finalize the current Swayger before archiving this league.
+
+Do not:
+
+auto-lock
+auto-settle
+auto-finalize
+auto-archive rooms
+
+==================================================
+9. WHAT ABOUT NEVER-PUBLISHED SETUP?
+==================================================
+
+A brand-new league with no Draft Day or Weekly competition should be archivable.
+
+Do not require a competition to exist.
+
+Likewise, abandoned setup/test league:
+archive should be easy.
+
+==================================================
+10. FINALIZED HISTORY
+==================================================
+
+If league contains:
+
+Draft Day finalized
+Week 1 finalized
+Week 2 finalized
+Week 3 finalized
+
+archive should succeed.
+
+All historical views must remain intact after restore.
+
+==================================================
+11. ARCHIVE API
+==================================================
+
+Preferred dedicated endpoint:
+
+POST
+/api/fantasy/leagues/:leagueId/archive
+
+Do not overload league rename semantics if a dedicated lifecycle endpoint is cleaner.
+
+Flow:
+
+1. authenticate
+2. primary commissioner authorization
+3. verify league active
+4. check unresolved rooms
+5. set is_active = false
+6. return archived context
+
+Response example:
+
+{
+  "archived": true,
+  "league_id": "...",
+  "league_name": "Food Pyramid 2026"
+}
+
+==================================================
+12. IDEMPOTENCY
+==================================================
+
+Archive should be safely repeatable.
+
+First call:
+200 archived=true
+
+Network response lost.
+
+Retry:
+safe 200 such as:
+
+{
+  "archived": true,
+  "already_archived": true
+}
+
+Do not return a scary failure simply because the first request succeeded.
+
+==================================================
+13. ACTIVE LIST
+==================================================
+
+After archive:
+
+GET /api/fantasy/leagues
+
+normal active list should no longer contain the league.
+
+Do not make frontend manually hide it while backend still returns it.
+
+Backend state is authoritative.
+
+==================================================
+14. NAVIGATION AFTER ARCHIVE
+==================================================
+
+After successful archive:
+
+do not leave commissioner stranded on an inactive league screen.
+
+Preferred:
+
+Archive successful
+→ navigate back to Fantasy/Game Day Hub or league list
+
+Show lightweight confirmation:
+
+Food Pyramid 2026 archived.
+
+==================================================
+15. ARCHIVED LEAGUES
+==================================================
+
+Implement lightweight discoverability.
+
+Preferred:
+
+At bottom of Fantasy league list/hub:
+
+Archived Leagues
+
+collapsed by default.
+
+Tap:
+show commissioner-owned archived leagues.
+
+Example:
+
+ARCHIVED LEAGUES
+
+Food Pyramid 2025
+Archived
+
+[ View / Restore ]
+
+Do not clutter active leagues.
+
+==================================================
+16. ARCHIVED QUERY
+==================================================
+
+Use a clean API shape.
+
+Possible:
+
+GET /api/fantasy/leagues?status=archived
+
+or:
+
+GET /api/fantasy/leagues?include_archived=true
+
+Choose the architecture that avoids accidentally mixing archived leagues into normal active selection.
+
+Prefer explicit archived query.
+
+==================================================
+17. ARCHIVED LEAGUE MEMBER EXPERIENCE
+==================================================
+
+This needs deliberate behavior.
+
+If an existing member follows an old link to an archived league:
+
+Do not present active competition controls.
+
+Preferred:
+
+FOOD PYRAMID 2026
+
+This league is archived.
+
+Your past Swaygers and standings are preserved.
+
+[ View History ]
+
+If building a full read-only archived hub is substantial:
+at minimum show a clear archived state instead of generic failure.
+
+Do not silently reactivate.
+
+==================================================
+18. ARCHIVED COMMISSIONER EXPERIENCE
+==================================================
+
+Commissioner viewing archived league should see:
+
+ARCHIVED
+
+Food Pyramid 2026
+
+League history is preserved.
+
+[ Restore League ]
+
+No:
+
+Create Week
+Add Member
+Bulk Import
+Share current week
+Recovery generation
+new competition setup
+
+unless restored first.
+
+==================================================
+19. RESTORE
+==================================================
+
+Implement lightweight restore.
+
+POST
+/api/fantasy/leagues/:leagueId/restore
+
+Authorization:
+same primary commissioner requirement.
+
+Operation:
+
+is_active = true
+
+No new IDs.
+
+No copies.
+
+No resets.
+
+Return:
+
+{
+  "restored": true,
+  "league_id": "..."
+}
+
+==================================================
+20. RESTORE IDEMPOTENCY
+==================================================
+
+First restore:
+200
+
+Retry:
+safe 200 already_active=true
+
+No data mutation beyond active state.
+
+==================================================
+21. RESTORE HISTORY
+==================================================
+
+After restore, verify SAME:
+
+league_id
+season_id
+league_member_ids
+season_member_ids
+fantasy_team_ids
+claim IDs
+room IDs
+participant IDs
+pick IDs
+scores
+standings
+rewards
+
+Nothing should be recreated.
+
+==================================================
+22. RESTORE NEXT WEEK FLOW
+==================================================
+
+Example:
+
+Week 3 finalized.
+
+Archive league.
+
+Restore league.
+
+Expected:
+
+Phase 5.3 weekly summary still determines:
+
+next_week_number = 4
+
+Commissioner sees:
+
+NEXT UP
+Week 4 Swayger
+
+Do not reset season progress.
+
+==================================================
+23. ARCHIVED LEAGUE — NO NEW COMPETITIONS
+==================================================
+
+Critical server-side safeguard.
+
+Do not rely only on hiding buttons.
+
+When league.is_active = false, server must reject attempts to:
+
+- publish Draft Day
+- create/publish weekly Swayger
+- add member
+- bulk import
+- mutate league operational state
+
+where appropriate.
+
+Prefer centralized active-league guard if clean.
+
+Do NOT scatter fragile frontend-only checks.
+
+==================================================
+24. READ VS WRITE
+==================================================
+
+Archived should be:
+
+READABLE
+but
+NOT OPERATIONAL.
+
+Historical reads should remain possible for authorized league members:
+
+- results
+- standings
+- League Picks
+- past weeks
+
+Writes should be blocked until restore.
+
+Do not block all historical endpoints merely because is_active=false.
+
+==================================================
+25. CLAIM / RECOVERY BEHAVIOR
+==================================================
+
+Do not mutate claims on archive.
+
+Existing member/account ownership remains intact.
+
+For pilot:
+
+Do not allow generating new recovery links while league archived.
+
+Existing already-created pending recovery token:
+
+inspect current behavior.
+
+Preferred:
+archive does not delete/revoke it automatically.
+
+But redemption into an archived league should not accidentally reactivate the league.
+
+Recovered member may regain identity and see archived read-only state.
+
+If this meaningfully expands scope, document exact current behavior rather than inventing new identity rules.
+
+==================================================
+26. MEMBER JOINING ARCHIVED LEAGUE
+==================================================
+
+Do not allow a brand-new seat claim/join into an archived league.
+
+Existing claimed members retain historical read access.
+
+Unclaimed seat invitation from an old link:
+
+show:
+
+This league is archived and is not accepting new members.
+
+Do not claim the seat.
+
+==================================================
+27. BULK IMPORT
+==================================================
+
+Area 6A:
+
+Bulk import must reject archived league.
+
+Single Add Member must also reject.
+
+Verify parity.
+
+==================================================
+28. WEEKLY SETUP
+==================================================
+
+Archived league:
+
+Create Week N
+must be server-rejected even via direct API.
+
+Do not trust hidden UI.
+
+==================================================
+29. REWARD / RESULTS
+==================================================
+
+Archived history must retain snapshotted weekly rewards.
+
+No archive operation touches reward fields.
+
+==================================================
+30. LEAGUE PICKS
+==================================================
+
+Archived finalized weeks should still expose League Picks to authorized historical members.
+
+Archive is not deletion.
+
+Do not break Area 6C.
+
+==================================================
+31. SEASON STANDINGS
+==================================================
+
+Archived standings remain readable.
+
+Do not recompute differently because league is inactive.
+
+After restore:
+identical values.
+
+==================================================
+32. PRIMARY COMMISSIONER TEST
+==================================================
+
+Commissioner:
+archive allowed when safe
+
+Commissioner:
+restore allowed
+
+Co-commissioner:
+determine explicit expected behavior from role inspection
+
+Regular member:
+403 archive
+403 restore
+
+Guest:
+403 archive
+403 restore
+
+Unrelated:
+403/404 consistent with existing security
+
+==================================================
+33. ACTIVE-WEEK TEST MATRIX
+==================================================
+
+Test archive with:
+
+No competitions:
+allowed
+
+Draft Day open:
+blocked
+
+Draft Day locked:
+blocked
+
+Draft Day finalized:
+allowed if no other unresolved room
+
+Weekly open:
+blocked
+
+Weekly locked:
+blocked
+
+Weekly settled but room not finalized:
+blocked
+
+Weekly finalized:
+allowed if nothing else unresolved
+
+==================================================
+34. MULTIPLE SEASONS
+==================================================
+
+If league can contain multiple seasons:
+
+check unresolved competitions across ALL seasons belonging to the league.
+
+Do not archive league merely because current season is clean while another season has an active room.
+
+Use actual ownership joins safely.
+
+==================================================
+35. OTHER GAMEDAY ROOMS
+==================================================
+
+Do not accidentally block/archive based on unrelated non-Fantasy Game Day rooms.
+
+Scope unresolved-room query to:
+
+this fantasy league / its league_season_ids
+
+and appropriate experience/competition types.
+
+==================================================
+36. DIRECT API SAFETY
+==================================================
+
+After archive, test direct calls attempting:
+
+Add Member
+Bulk Add
+Publish Week
+Create next week
+
+Expected:
+409 or appropriate inactive-league response
+
+with clear message:
+
+This league is archived. Restore it before making changes.
+
+Historical GETs should continue.
+
+==================================================
+37. RESTORE THEN WRITE
+==================================================
+
+Restore.
+
+Then:
+
+Add Member
+Create Week N
+
+should work again using existing semantics.
+
+No stale cached archive state.
+
+==================================================
+38. FRONTEND ACTIVE LIST
+==================================================
+
+Test:
+
+League A active
+League B active
+
+Archive B.
+
+Normal league list:
+A only
+
+Archived section:
+B
+
+Restore B.
+
+Normal list:
+A + B
+
+Archived:
+B removed
+
+==================================================
+39. MANUAL QA — ARCHIVE
+==================================================
+
+Return exact steps:
+
+1. Open completed/test league.
+2. Go to Manage League / League Settings.
+3. Scroll to League Management.
+4. Tap Archive League.
+5. Read confirmation.
+6. Cancel once.
+7. Reopen confirmation.
+8. Confirm Archive.
+9. Verify navigation away.
+10. Verify active league list no longer contains league.
+11. Open Archived Leagues.
+12. Verify league appears.
+13. Open archived league.
+14. Verify clear ARCHIVED state.
+15. Verify no operational controls.
+16. Open historical Week.
+17. Verify results.
+18. Verify League Picks.
+19. Verify reward.
+20. Verify standings.
+
+==================================================
+40. MANUAL QA — SAFEGUARD
+==================================================
+
+1. Restore league.
+2. Create an open weekly Swayger.
+3. Attempt Archive.
+4. Verify blocked:
+   Finish or finalize the current Swayger before archiving this league.
+5. Lock but do not finalize.
+6. Attempt again.
+7. Verify still blocked.
+8. Finalize.
+9. Archive now succeeds.
+
+==================================================
+41. MANUAL QA — RESTORE
+==================================================
+
+1. Open Archived Leagues.
+2. Select archived league.
+3. Tap Restore League.
+4. Confirm restored.
+5. Verify same members.
+6. Verify same standings.
+7. Verify same past Swaygers.
+8. Verify same League Picks.
+9. Verify same rewards.
+10. Verify NEXT UP points to correct next Week.
+11. Create next Week successfully.
+
+==================================================
+42. DO NOT IMPLEMENT PERMANENT DELETE
+==================================================
+
+Explicitly do not add:
+
+DELETE /fantasy/leagues/:id
+
+or:
+
+Permanently Delete League
+
+No cascade UI.
+
+No type-league-name destructive confirmation.
+
+Not in Phase 6.
+
+==================================================
+43. ARCHIVE UI STYLE
+==================================================
+
+Archive is a management action, not an emergency warning.
+
+Use restrained styling.
+
+It may use warning/destructive visual treatment on confirmation, but do not make League Settings look dangerous.
+
+Restore should look positive/neutral.
+
+==================================================
+44. TEST FILE
+==================================================
+
+Extend:
+
+server/test-fantasy-phase6-pilot-readiness.ts
+
+Add sections:
+
+§AF Archive authorization
+§AG Active competition safeguard
+§AH Archive idempotency
+§AI Archived active-list filtering
+§AJ Archived write blocking
+§AK Historical read preservation
+§AL Restore
+§AM Restore history preservation
+§AN Restore weekly continuation
+§AO Multi-season/unrelated-room scope
+
+Use consistent section naming.
+
+==================================================
+45. INTEGRATED PHASE 6 FIXTURE
+==================================================
+
+Use the existing 15-member Phase 6 league if practical.
+
+Run:
+
+bulk import
+→ large selector
+→ picks
+→ lock
+→ League Picks
+→ settle
+→ finalize
+→ reward preserved
+→ archive
+→ historical read
+→ restore
+→ next Week available
+
+This should become our first near-end-to-end pilot fixture.
+
+==================================================
+46. REGRESSION
+==================================================
+
+After Area E:
+
+run full Phase 6 suite.
+
+Also run:
+
+- Phase 5.3 weekly workflow
+- Phase 5 weekly sequencing
+- Phase 4B Manage
+- Phase 4C settlement
+- Open Roster
+- claims/recovery
+- League Picks
+- reward tests
+
+If inexpensive:
+run full maintained Fantasy regression.
+
+Return:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+==================================================
+47. IMPORTANT — COMPLETE PHASE 6 AS A SPRINT
+==================================================
+
+After Area E passes:
+
+Do NOT begin another feature.
+
+Return an integrated Phase 6 status:
+
+6A Bulk Import
+6B Large Roster UX
+6C League Picks
+6D Weekly Rewards
+6E Archive
+
+Then identify remaining PILOT BLOCKERS separately from NICE-TO-HAVES.
+
+Do not automatically classify:
+
+QR
+Sleeper
+Yahoo
+1v1 icon
+
+as blockers.
+
+We need to decide that based on the finished product.
+
+==================================================
+48. RETURN
+==================================================
+
+Return:
+
+# PHASE 6E — SAFE LEAGUE ARCHIVE REPORT
+
+1. Existing lifecycle architecture
+2. Archive authorization
+3. Active-competition safeguard
+4. Archive endpoint
+5. Archived write restrictions
+6. Historical read behavior
+7. Archived league UI
+8. Active-list behavior
+9. Restore endpoint
+10. Restore continuity
+11. Weekly continuation after restore
+12. Claims/recovery behavior
+13. Multi-season behavior
+14. Files changed
+15. Tests added
+16. Phase 6 totals
+17. Full regression totals
+18. Integrated 15-member fixture result
+19. Bugs found/fixed
+20. Known limitations
+21. Exact archive QA
+22. Exact restore QA
+
+Then also return:
+
+# PHASE 6 — PILOT READINESS SUMMARY
+
+A. 6A Bulk Import status
+B. 6B Large Roster status
+C. 6C League Picks status
+D. 6D Weekly Rewards status
+E. 6E Archive status
+
+Then classify remaining work:
+
+PILOT BLOCKER
+PILOT IMPORTANT
+POST-PILOT
+
+Do not implement any of it yet.
+
+Final status:
+
+PHASE 6 PILOT READINESS READY FOR INTEGRATED MANUAL QA
+
+or
+
+CORRECTION REQUIRED

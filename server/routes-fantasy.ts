@@ -343,6 +343,97 @@ async function requireFantasyLeagueCommissioner(
 }
 
 /**
+ * Verifies the caller is the PRIMARY commissioner (role = 'commissioner' exactly,
+ * NOT co_commissioner) in any active season of the given league.
+ * Used for lifecycle operations (archive/restore) that require top-level authority.
+ * Returns { userId, leagueMemberId } on success, null on failure (response already sent).
+ */
+async function requirePrimaryLeagueCommissioner(
+  req: Request,
+  res: Response,
+  supabase: ReturnType<typeof getServiceSupabase>,
+  leagueId: string
+): Promise<{ userId: string; leagueMemberId: string } | null> {
+  const userId = requireFantasyAuth(req, res);
+  if (!userId) return null;
+
+  const { data: claims } = await supabase
+    .from("fantasy_member_claims")
+    .select("league_member_id")
+    .eq("user_id", userId)
+    .eq("is_active", true);
+
+  if (!claims?.length) {
+    res.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+
+  const memberIds = (claims as any[]).map((c) => c.league_member_id);
+
+  const { data: leagueMember } = await supabase
+    .from("fantasy_league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("is_active", true)
+    .in("id", memberIds)
+    .maybeSingle();
+
+  if (!leagueMember) {
+    res.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+
+  // Must be the primary commissioner (exactly 'commissioner', not 'co_commissioner')
+  // in at least one active season of this league.
+  const { data: seasonMember } = await supabase
+    .from("fantasy_season_members")
+    .select("id")
+    .eq("league_member_id", (leagueMember as any).id)
+    .eq("is_active", true)
+    .eq("role", "commissioner")
+    .maybeSingle();
+
+  if (!seasonMember) {
+    res.status(403).json({ error: "Primary commissioner authority required for this operation" });
+    return null;
+  }
+
+  return { userId, leagueMemberId: (leagueMember as any).id };
+}
+
+/**
+ * Checks that a league is currently active (is_active = true).
+ * Returns true if active, false if archived (409 response already sent).
+ * Returns false with 404 if the league doesn't exist.
+ */
+async function requireLeagueActive(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  leagueId: string,
+  res: Response
+): Promise<boolean> {
+  const { data: league } = await supabase
+    .from("fantasy_leagues")
+    .select("is_active")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (!league) {
+    res.status(404).json({ error: "League not found" });
+    return false;
+  }
+
+  if (!(league as any).is_active) {
+    res.status(409).json({
+      error: "This league is archived. Restore it before making changes.",
+      code: "LEAGUE_ARCHIVED",
+    });
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Given a caller identity (user_id or guest_token) and a season_id,
  * returns the viewer's participant info or null if they have no claim.
  */
@@ -582,6 +673,9 @@ export function registerFantasyRoutes(app: Express) {
       );
       if (!commissioner) return;
 
+      // Block writes on archived leagues
+      if (!await requireLeagueActive(supabase, leagueId, res)) return;
+
       const { display_name, team_name } = req.body as {
         display_name?: string;
         team_name?: string;
@@ -747,6 +841,9 @@ export function registerFantasyRoutes(app: Express) {
         req, res, supabase, leagueId, seasonId
       );
       if (!commissioner) return;
+
+      // Block writes on archived leagues
+      if (!await requireLeagueActive(supabase, leagueId, res)) return;
 
       const { batch_key, members } = req.body as {
         batch_key?: string;
@@ -1090,6 +1187,160 @@ export function registerFantasyRoutes(app: Express) {
     }
   );
 
+  // ── POST /api/fantasy/leagues/:leagueId/archive ──────────────────────────────
+  //
+  // Primary-commissioner-only lifecycle operation.
+  // Sets is_active = false on the league; preserves ALL data.
+  //
+  // Guards:
+  //   1. Primary commissioner only (not co-commissioner)
+  //   2. No unresolved rooms (open/locked rooms block archive)
+  //   3. Already-archived is safe idempotent 200
+  //
+  // Response: { archived: true, league_id, league_name }
+  //       or: { archived: true, already_archived: true }
+  app.post(
+    "/api/fantasy/leagues/:leagueId/archive",
+    async (req: Request, res: Response) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requirePrimaryLeagueCommissioner(req, res, supabase, leagueId);
+      if (!commissioner) return;
+
+      // Fetch current league state
+      const { data: league } = await supabase
+        .from("fantasy_leagues")
+        .select("id, league_name, is_active")
+        .eq("id", leagueId)
+        .maybeSingle();
+
+      if (!league) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      // Idempotency: already archived → safe 200
+      if (!(league as any).is_active) {
+        res.json({
+          archived:         true,
+          already_archived: true,
+          league_id:        leagueId,
+          league_name:      (league as any).league_name,
+        });
+        return;
+      }
+
+      // Guard: no unresolved competitions across ALL seasons of this league.
+      // Scope: experience_type='fantasy', non-archived rooms, status != 'finalized'.
+      const { data: seasons } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id")
+        .eq("league_id", leagueId);
+
+      const seasonIds = ((seasons ?? []) as any[]).map((s) => s.id);
+
+      if (seasonIds.length > 0) {
+        const { data: unresolvedRooms } = await supabase
+          .from("gameday_rooms")
+          .select("id, status")
+          .in("league_season_id", seasonIds)
+          .eq("experience_type", "fantasy")
+          .is("archived_at", null)
+          .not("status", "eq", "finalized")
+          .limit(1);
+
+        if ((unresolvedRooms ?? []).length > 0) {
+          res.status(409).json({
+            error: "Finish or finalize the current Swayger before archiving this league.",
+            code:  "UNRESOLVED_COMPETITION",
+          });
+          return;
+        }
+      }
+
+      // Archive: set is_active = false
+      const { error: updateError } = await supabase
+        .from("fantasy_leagues")
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq("id", leagueId);
+
+      if (updateError) {
+        console.error("[fantasy] archive league error:", updateError.message);
+        res.status(500).json({ error: "Failed to archive league" });
+        return;
+      }
+
+      console.log(`[fantasy] League archived: id=${leagueId.slice(0, 8)}… name="${(league as any).league_name}"`);
+
+      res.json({
+        archived:    true,
+        league_id:   leagueId,
+        league_name: (league as any).league_name,
+      });
+    }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/restore ───────────────────────────────
+  //
+  // Primary-commissioner-only restore. Sets is_active = true.
+  // No data is recreated — identical IDs, history, members, picks, standings.
+  //
+  // Idempotency: already-active returns { restored: true, already_active: true }
+  //
+  // Response: { restored: true, league_id, league_name }
+  app.post(
+    "/api/fantasy/leagues/:leagueId/restore",
+    async (req: Request, res: Response) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const commissioner = await requirePrimaryLeagueCommissioner(req, res, supabase, leagueId);
+      if (!commissioner) return;
+
+      const { data: league } = await supabase
+        .from("fantasy_leagues")
+        .select("id, league_name, is_active")
+        .eq("id", leagueId)
+        .maybeSingle();
+
+      if (!league) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      // Idempotency: already active → safe 200
+      if ((league as any).is_active) {
+        res.json({
+          restored:      true,
+          already_active: true,
+          league_id:     leagueId,
+          league_name:   (league as any).league_name,
+        });
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("fantasy_leagues")
+        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .eq("id", leagueId);
+
+      if (updateError) {
+        console.error("[fantasy] restore league error:", updateError.message);
+        res.status(500).json({ error: "Failed to restore league" });
+        return;
+      }
+
+      console.log(`[fantasy] League restored: id=${leagueId.slice(0, 8)}… name="${(league as any).league_name}"`);
+
+      res.json({
+        restored:    true,
+        league_id:   leagueId,
+        league_name: (league as any).league_name,
+      });
+    }
+  );
+
   // ── GET /api/fantasy/leagues ─────────────────────────────────────────────────
   //
   // Returns Fantasy leagues the caller belongs to (via claim chain).
@@ -1101,6 +1352,60 @@ export function registerFantasyRoutes(app: Express) {
 
     const supabase = getServiceSupabase();
 
+    // ── Archived leagues branch (?status=archived) ─────────────────────────────
+    // Returns leagues where the user is a member that are currently archived
+    // (is_active = false). Separate explicit query to avoid ever mixing archived
+    // leagues into the normal active list.
+    const statusFilter = (req.query.status as string | undefined)?.toLowerCase();
+    if (statusFilter === "archived") {
+      const { data: claims } = await supabase
+        .from("fantasy_member_claims")
+        .select("league_member_id")
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      if (!claims?.length) {
+        res.json({ leagues: [] });
+        return;
+      }
+
+      const memberIds = (claims as any[]).map((c) => c.league_member_id);
+
+      const { data: leagueMembers } = await supabase
+        .from("fantasy_league_members")
+        .select("league_id")
+        .in("id", memberIds)
+        .eq("is_active", true);
+
+      if (!leagueMembers?.length) {
+        res.json({ leagues: [] });
+        return;
+      }
+
+      const leagueIds = [
+        ...new Set((leagueMembers as any[]).map((lm) => lm.league_id)),
+      ];
+
+      const { data: leagues, error } = await supabase
+        .from("fantasy_leagues")
+        .select(
+          "id, league_name, sport, is_active, created_at, fantasy_league_seasons(id, season_year, status)"
+        )
+        .in("id", leagueIds)
+        .eq("is_active", false)          // archived only
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("[fantasy] GET /leagues?status=archived error:", error.message);
+        res.status(500).json({ error: "Failed to fetch archived leagues" });
+        return;
+      }
+
+      res.json({ leagues: leagues ?? [] });
+      return;
+    }
+
+    // ── Active leagues (default) ───────────────────────────────────────────────
     const { data: claims } = await supabase
       .from("fantasy_member_claims")
       .select("league_member_id")
@@ -1432,6 +1737,17 @@ export function registerFantasyRoutes(app: Express) {
       }
 
       const supabase = getServiceSupabase();
+
+      // Block seat claims into archived leagues (§26).
+      // Note: existing claimed members access the hub directly via their stored
+      // token — they do not go through this endpoint again.
+      // Recovery token redemption (separate endpoint) is intentionally NOT blocked.
+      if (!await requireLeagueActive(supabase, leagueId, res)) {
+        // Override the generic 409 message with a more specific one for joining.
+        // requireLeagueActive has already sent the response; the override below
+        // would be a second write — so we just return and rely on its message.
+        return;
+      }
 
       const { data, error } = await supabase.rpc("claim_fantasy_seat", {
         p_league_id:   leagueId,
@@ -1920,6 +2236,9 @@ export function registerFantasyRoutes(app: Express) {
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
+
+      // Block writes on archived leagues
+      if (!await requireLeagueActive(supabase, leagueId, res)) return;
 
       const { selected_prop_ids } = req.body as { selected_prop_ids?: string[] };
 
@@ -4024,6 +4343,9 @@ export function registerFantasyRoutes(app: Express) {
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
 
+      // Block writes on archived leagues
+      if (!await requireLeagueActive(supabase, leagueId, res)) return;
+
       // ── Sequencing guard: week N requires week N-1 to exist and be finalized ─
       // Skip if this week already exists — idempotent re-publish is always safe.
       if (wn > 1) {
@@ -5323,6 +5645,9 @@ export function registerFantasyRoutes(app: Express) {
 
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
+
+      // Block recovery-link creation for archived leagues
+      if (!await requireLeagueActive(supabase, leagueId, res)) return;
 
       // 1. Verify target member exists in this league (active)
       const { data: targetMember } = await supabase

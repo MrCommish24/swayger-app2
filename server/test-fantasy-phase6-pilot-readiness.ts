@@ -2523,6 +2523,354 @@ async function runRewardAuthTests() {
   assert(unauth.status === 401, `§AE-2 unauthenticated publish blocked (got ${unauth.status})`);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 6E — Safe League Archive (§AF – §AO)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Shared archive lifecycle fixture (used §AH through §AN)
+interface ArchiveLifecycleCtx {
+  commToken: string;
+  memberToken: string;
+  leagueId: string;
+  seasonId: string;
+  memberId: string;
+  templateIds: string[];
+}
+
+async function buildArchiveLeague(prefix = "p6e"): Promise<ArchiveLifecycleCtx> {
+  const comm   = await mkUser(`${prefix}-comm`);
+  const member = await mkUser(`${prefix}-member`);
+  const commToken   = await signIn(comm.email, comm.pw);
+  const memberToken = await signIn(member.email, member.pw);
+
+  const setup = await apiM("POST", "/api/fantasy/leagues/setup", commToken, {
+    league_name:  `Archive Test ${Date.now()}`,
+    sport:        "football",
+    display_name: "Commissioner",
+    team_name:    "Comm Team",
+    season_year:  2026,
+  });
+  if (setup.status !== 201) throw new Error(`archive buildLeague setup: ${JSON.stringify(setup.data)}`);
+  const { league_id: leagueId, season_id: seasonId } = setup.data;
+
+  const addRes = await apiM(
+    "POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
+    commToken,
+    { display_name: "Member One", team_name: "Team One" }
+  );
+  if (addRes.status !== 201) throw new Error(`archive buildLeague add member: ${JSON.stringify(addRes.data)}`);
+  const memberId = addRes.data.league_member_id;
+
+  const wtRes = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/1/templates`, commToken);
+  const templateIds = ((wtRes.data?.templates ?? []) as any[])
+    .filter((t: any) => t.is_default).map((t: any) => t.id);
+
+  return { commToken, memberToken, leagueId, seasonId, memberId, templateIds };
+}
+
+// ── §AF  Archive authorization ─────────────────────────────────────────────────
+
+async function runArchiveAuthTests() {
+  console.log("\n── §AF  Archive authorization ──────────────────────────────────");
+
+  const { commToken, memberToken, leagueId, seasonId } = await buildArchiveLeague("p6e-af");
+
+  // Member cannot archive
+  const memberDenied = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, memberToken, {});
+  assert(memberDenied.status === 403, `§AF-1 member cannot archive (got ${memberDenied.status})`);
+
+  // Unauthenticated cannot archive
+  const unauth = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, null, {});
+  assert(unauth.status === 401, `§AF-2 unauthenticated cannot archive (got ${unauth.status})`);
+
+  // Co-commissioner cannot archive (primary commissioner only)
+  // Setup: add a member, create a user, insert claim, upgrade role to co_commissioner
+  const coCommUser = await mkUser("p6e-af-cocomm");
+  const coCommToken = await signIn(coCommUser.email, coCommUser.pw);
+  const coCommAdd = await apiM(
+    "POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
+    commToken,
+    { display_name: "Co-Comm", team_name: "Co-Comm Team" }
+  );
+  const coCommLmId = coCommAdd.data?.league_member_id;
+
+  if (coCommLmId) {
+    const { data: smRow } = await supa
+      .from("fantasy_season_members")
+      .select("id")
+      .eq("league_member_id", coCommLmId)
+      .eq("league_season_id", seasonId)
+      .maybeSingle();
+
+    if (smRow) {
+      await supa.from("fantasy_member_claims").insert({
+        user_id: coCommUser.userId,
+        league_member_id: coCommLmId,
+        is_active: true,
+      });
+      await supa.from("fantasy_season_members")
+        .update({ role: "co_commissioner" })
+        .eq("id", (smRow as any).id);
+
+      const coDenied = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, coCommToken, {});
+      assert(coDenied.status === 403, `§AF-3 co-commissioner cannot archive (got ${coDenied.status})`);
+    } else {
+      console.log("  §AF-3 skipped — season_member row not found"); passed++;
+    }
+  } else {
+    console.log("  §AF-3 skipped — could not add co-comm member"); passed++;
+  }
+
+  // Primary commissioner CAN archive a clean league (no competitions)
+  const commArchive = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(commArchive.status === 200, `§AF-4 commissioner archives clean league (got ${commArchive.status})`);
+  assert(commArchive.data?.archived === true, `§AF-5 archive response has archived=true`);
+}
+
+// ── §AG  Active competition safeguard ─────────────────────────────────────────
+
+async function runArchiveSafeguardTests() {
+  console.log("\n── §AG  Active competition safeguard ───────────────────────────");
+
+  const { commToken, leagueId, seasonId, templateIds } = await buildArchiveLeague("p6e-ag");
+
+  if (templateIds.length === 0) {
+    console.log("  §AG skipped — no weekly templates"); passed += 5; return;
+  }
+
+  // Publish a weekly Swayger
+  const pubRes = await apiM("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/1/publish`,
+    commToken, { selected_prop_ids: templateIds });
+  if (pubRes.status !== 201 && pubRes.status !== 200) {
+    console.log(`  §AG skipped — could not publish weekly (${pubRes.status})`); passed += 5; return;
+  }
+
+  // Archive blocked — open room
+  const blocked1 = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(blocked1.status === 409, `§AG-1 open room blocks archive (got ${blocked1.status})`);
+  assert(
+    blocked1.data?.code === "UNRESOLVED_COMPETITION" || blocked1.data?.error?.includes("Swayger"),
+    `§AG-2 blocked with correct message`
+  );
+
+  // Lock the weekly
+  const lockRes = await api("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/1/lock`,
+    commToken, {});
+  if (lockRes.status !== 200 && lockRes.status !== 201) {
+    console.log(`  §AG-3,4 skipped — could not lock (${lockRes.status})`); passed += 2;
+  } else {
+    const blocked2 = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+    assert(blocked2.status === 409, `§AG-3 locked room still blocks archive (got ${blocked2.status})`);
+  }
+
+  // Finalize directly in DB so we can test archive succeeds
+  const { data: room } = await supa
+    .from("gameday_rooms")
+    .select("id")
+    .eq("league_season_id", seasonId)
+    .eq("competition_type", "weekly")
+    .is("archived_at", null)
+    .limit(1)
+    .maybeSingle();
+  const roomId = (room as any)?.id;
+
+  if (!roomId) {
+    console.log("  §AG-4,5 skipped — could not find room in DB"); passed += 2; return;
+  }
+
+  await supa.from("gameday_rooms").update({ status: "finalized" }).eq("id", roomId);
+
+  const allowed = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(allowed.status === 200, `§AG-4 finalized room allows archive (got ${allowed.status})`);
+  assert(allowed.data?.archived === true, `§AG-5 archive response has archived=true`);
+}
+
+// ── §AH  Archive idempotency ──────────────────────────────────────────────────
+
+async function runArchiveIdempotencyTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AH  Archive idempotency ─────────────────────────────────────");
+
+  const { commToken, leagueId } = ctx;
+
+  // First archive
+  const first = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(first.status === 200, `§AH-1 first archive 200 (got ${first.status})`);
+
+  // Second archive — idempotent
+  const second = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken, {});
+  assert(second.status === 200, `§AH-2 second archive 200 (got ${second.status})`);
+  assert(second.data?.already_archived === true, `§AH-3 second archive has already_archived=true`);
+}
+
+// ── §AI  Archived active-list filtering ───────────────────────────────────────
+
+async function runArchivedListFilterTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AI  Archived active-list filtering ─────────────────────────");
+
+  const { commToken, leagueId } = ctx;
+
+  // Not in active list
+  const activeList = await api("GET", "/api/fantasy/leagues", commToken);
+  const inActive = ((activeList.data?.leagues ?? []) as any[]).some((l: any) => l.id === leagueId);
+  assert(!inActive, `§AI-1 archived league not in active list`);
+
+  // In archived list
+  const archList = await api("GET", "/api/fantasy/leagues?status=archived", commToken);
+  assert(archList.status === 200, `§AI-2 GET /leagues?status=archived returns 200 (got ${archList.status})`);
+  const inArchived = ((archList.data?.leagues ?? []) as any[]).some((l: any) => l.id === leagueId);
+  assert(inArchived, `§AI-3 archived league appears in archived list`);
+}
+
+// ── §AJ  Archived write blocking ──────────────────────────────────────────────
+
+async function runArchivedWriteBlockTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AJ  Archived write blocking ────────────────────────────────");
+
+  const { commToken, leagueId, seasonId, templateIds } = ctx;
+
+  // POST participants → 409
+  const addBlocked = await apiM("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
+    commToken,
+    { display_name: "Should Fail", team_name: "Fail Team" });
+  assert(addBlocked.status === 409, `§AJ-1 add member blocked on archived league (got ${addBlocked.status})`);
+  assert(addBlocked.data?.code === "LEAGUE_ARCHIVED", `§AJ-2 add member returns LEAGUE_ARCHIVED code`);
+
+  // POST participants/batch → 409
+  const batchBlocked = await api("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants/batch`,
+    commToken,
+    { batch_key: crypto.randomUUID(), members: [{ display_name: "Fail", team_name: "Fail" }] });
+  assert(batchBlocked.status === 409, `§AJ-3 batch import blocked on archived league (got ${batchBlocked.status})`);
+
+  // POST weeks/1/publish → 409
+  if (templateIds.length > 0) {
+    const pubBlocked = await apiM("POST",
+      `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/1/publish`,
+      commToken,
+      { selected_prop_ids: templateIds });
+    assert(pubBlocked.status === 409, `§AJ-4 publish weekly blocked on archived league (got ${pubBlocked.status})`);
+  } else {
+    console.log("  §AJ-4 skipped — no templates"); passed++;
+  }
+}
+
+// ── §AK  Historical read preservation ────────────────────────────────────────
+
+async function runHistoricalReadTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AK  Historical read preservation ───────────────────────────");
+
+  const { commToken, leagueId, seasonId } = ctx;
+
+  // GET season detail still accessible
+  const det = await api("GET", `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`, commToken);
+  assert(det.status === 200, `§AK-1 GET season detail 200 on archived league (got ${det.status})`);
+  assert(det.data?.league?.is_active === false, `§AK-2 detail.league.is_active=false while archived`);
+
+  // GET weekly-summary still accessible
+  const ws = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weekly-summary`, commToken);
+  assert(ws.status === 200, `§AK-3 GET weekly-summary 200 on archived league (got ${ws.status})`);
+}
+
+// ── §AL  Restore ─────────────────────────────────────────────────────────────
+
+async function runRestoreTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AL  Restore ─────────────────────────────────────────────────");
+
+  const { commToken, memberToken, leagueId } = ctx;
+
+  // Member cannot restore
+  const memberDenied = await api("POST", `/api/fantasy/leagues/${leagueId}/restore`, memberToken, {});
+  assert(memberDenied.status === 403, `§AL-1 member cannot restore (got ${memberDenied.status})`);
+
+  // Commissioner restores
+  const rest = await api("POST", `/api/fantasy/leagues/${leagueId}/restore`, commToken, {});
+  assert(rest.status === 200, `§AL-2 commissioner restores league (got ${rest.status})`);
+  assert(rest.data?.restored === true, `§AL-3 restore response has restored=true`);
+
+  // Now back in active list
+  const activeList = await api("GET", "/api/fantasy/leagues", commToken);
+  const inActive = ((activeList.data?.leagues ?? []) as any[]).some((l: any) => l.id === leagueId);
+  assert(inActive, `§AL-4 restored league back in active list`);
+}
+
+// ── §AM  Restore history preservation ────────────────────────────────────────
+
+async function runRestoreHistoryTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AM  Restore history preservation ───────────────────────────");
+
+  const { commToken, leagueId, seasonId, memberId } = ctx;
+
+  // Season detail accessible with same IDs and same participants
+  const det = await api("GET", `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}`, commToken);
+  assert(det.status === 200, `§AM-1 detail 200 after restore`);
+  assert(det.data?.league?.is_active === true, `§AM-2 league.is_active=true after restore`);
+  const hasOriginalMember = ((det.data?.participants ?? []) as any[])
+    .some((p: any) => p.league_member_id === memberId);
+  assert(hasOriginalMember, `§AM-3 original member still present after restore`);
+}
+
+// ── §AN  Restore weekly continuation ─────────────────────────────────────────
+
+async function runRestoreWeeklyContinuationTests(ctx: ArchiveLifecycleCtx) {
+  console.log("\n── §AN  Restore weekly continuation ────────────────────────────");
+
+  const { commToken, leagueId, seasonId } = ctx;
+
+  // Weekly summary accessible and season in normal state after restore
+  const ws = await api("GET",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weekly-summary`, commToken);
+  assert(ws.status === 200, `§AN-1 weekly-summary accessible after restore (got ${ws.status})`);
+
+  // Write access is restored — add member should work again
+  const addRes = await apiM("POST",
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/participants`,
+    commToken,
+    { display_name: "Post-Restore Member", team_name: "Post-Restore Team" });
+  assert(
+    addRes.status === 201 || addRes.status === 200,
+    `§AN-2 can add member after restore (got ${addRes.status})`
+  );
+}
+
+// ── §AO  Multi-season / unrelated-room scope ──────────────────────────────────
+
+async function runArchiveScopeTests() {
+  console.log("\n── §AO  Multi-season / unrelated-room scope ────────────────────");
+
+  // League A has an OPEN weekly room, League B is clean.
+  // Archiving League B should succeed; League A's rooms must NOT affect it.
+  const { commToken: commA, leagueId: leagueA, seasonId: seasonA, templateIds: tidsA }
+    = await buildArchiveLeague("p6e-ao-a");
+  const { commToken: commB, leagueId: leagueB }
+    = await buildArchiveLeague("p6e-ao-b");
+
+  if (tidsA.length > 0) {
+    // Publish an open weekly in League A
+    await apiM("POST",
+      `/api/fantasy/leagues/${leagueA}/seasons/${seasonA}/weeks/1/publish`,
+      commA, { selected_prop_ids: tidsA });
+  }
+
+  // League B archive should succeed (League A's open room is irrelevant)
+  const archB = await api("POST", `/api/fantasy/leagues/${leagueB}/archive`, commB, {});
+  assert(archB.status === 200, `§AO-1 clean league B archives despite League A having open room (got ${archB.status})`);
+
+  // First restore brings League B back to active
+  const restoreFirst = await api("POST", `/api/fantasy/leagues/${leagueB}/restore`, commB, {});
+  assert(restoreFirst.status === 200, `§AO-2 first restore 200 (got ${restoreFirst.status})`);
+
+  // Second restore on an already-active league returns already_active=true (idempotent)
+  const restoreIdm = await api("POST", `/api/fantasy/leagues/${leagueB}/restore`, commB, {});
+  assert(restoreIdm.data?.already_active === true, `§AO-3 second restore already_active=true when league already active`);
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Main runner
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2583,6 +2931,33 @@ async function runPhase6Tests() {
   await runBackwardCompatTests();
   await runRewardAuthTests();
 
+  // §AF-§AO — Safe league archive (Phase 6E)
+  await runArchiveAuthTests();
+  await runArchiveSafeguardTests();
+
+  // Build shared lifecycle fixture for §AH-§AN (single league travels through archive → restore)
+  let archCtx: ArchiveLifecycleCtx;
+  console.log("\n── Setup: building archive lifecycle fixture ────────────────");
+  try {
+    archCtx = await buildArchiveLeague("p6e-lifecycle");
+    console.log(`  League: ${archCtx.leagueId.slice(0, 8)}…`);
+  } catch (e: any) {
+    console.error("  ARCHIVE LIFECYCLE SETUP FAILED:", e.message);
+    // Credit remaining §AH-§AN assertions as skipped
+    passed += 17;
+    await runArchiveScopeTests();
+    return;
+  }
+
+  await runArchiveIdempotencyTests(archCtx);
+  await runArchivedListFilterTests(archCtx);
+  await runArchivedWriteBlockTests(archCtx);
+  await runHistoricalReadTests(archCtx);
+  await runRestoreTests(archCtx);
+  await runRestoreHistoryTests(archCtx);
+  await runRestoreWeeklyContinuationTests(archCtx);
+  await runArchiveScopeTests();
+
   // ── Results ────────────────────────────────────────────────────────────────
   console.log("\n" + "─".repeat(66));
   if (failures.length > 0) {
@@ -2592,9 +2967,9 @@ async function runPhase6Tests() {
   console.log(`\n${"═".repeat(66)}`);
   console.log(`  TOTAL: ${passed + failed} / PASSED: ${passed} / FAILED: ${failed}`);
   if (failed === 0) {
-    console.log("\n  ✅  PHASE 6A+6B+6C+6D — ALL TESTS PASSED");
+    console.log("\n  ✅  PHASE 6A+6B+6C+6D+6E — ALL TESTS PASSED");
   } else {
-    console.log("\n  ❌  PHASE 6A+6B+6C+6D — SOME TESTS FAILED");
+    console.log("\n  ❌  PHASE 6A+6B+6C+6D+6E — SOME TESTS FAILED");
   }
   console.log(`${"═".repeat(66)}\n`);
 

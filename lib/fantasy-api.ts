@@ -640,6 +640,53 @@ export async function getDraftDayResults(
   );
 }
 
+// ── Phase 6E: League Archive / Restore ───────────────────────────────────────
+
+export interface ArchiveLeagueResult {
+  archived:         true;
+  league_id:        string;
+  league_name:      string;
+  already_archived?: true;
+}
+
+export interface RestoreLeagueResult {
+  restored:       true;
+  league_id:      string;
+  league_name:    string;
+  already_active?: true;
+}
+
+// POST /api/fantasy/leagues/:leagueId/archive — primary commissioner only
+export async function archiveLeague(
+  leagueId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<ArchiveLeagueResult> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/archive`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+    auth
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/restore — primary commissioner only
+export async function restoreLeague(
+  leagueId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<RestoreLeagueResult> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/restore`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+    auth
+  );
+}
+
+// GET /api/fantasy/leagues?status=archived
+export async function getArchivedLeagues(
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<{ leagues: FantasyLeague[] }> {
+  return fantasyFetch("/api/fantasy/leagues?status=archived", {}, auth);
+}
+
 // PATCH /api/fantasy/leagues/:leagueId — commissioner-only league rename
 export async function updateLeagueName(
   leagueId: string,
