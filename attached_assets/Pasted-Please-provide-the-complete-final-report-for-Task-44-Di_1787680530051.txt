@@ -1,0 +1,248 @@
+Please provide the complete final report for **Task #44 — Diagnose Discord isolation fixture failure**.
+
+Do not make any additional code, database, RLS, grant, schema, Discord, or product changes.
+
+I only want the final documented results of the work already completed and committed as:
+
+`e32dedd`
+
+The purpose of this report is to decide whether it is safe to retry the live Game Day RLS lockdown.
+
+Please return the report in the exact structure below.
+
+## A. Executive summary
+
+Briefly explain:
+
+* what failed during the first lockdown attempt
+* what Task #44 determined was the actual root cause
+* whether the issue was in:
+
+  * test infrastructure
+  * test flakiness/race
+  * production Game Day behavior
+  * template/data assumptions
+  * something else
+* whether the existing Swayger Game Day product was ever actually broken
+
+Use one explicit classification:
+
+* **TEST FIXTURE BUG**
+* **TEST FLAKINESS / RACE**
+* **PRODUCTION CODE DEPENDENCY**
+* **TEMPLATE / DATA ASSUMPTION**
+* **OTHER**
+
+## B. Restored-baseline reproduction
+
+Before changing the test, report exactly what happened when the Discord isolation suite was run against the restored pre-lockdown Supabase state.
+
+Include:
+
+* command run
+* result
+* whether it reached `23/23`
+* whether the original halftime-card failure reproduced
+* whether the baseline itself was healthy before the test-only fix
+
+## C. Five consecutive baseline runs
+
+Report the five consecutive Discord isolation suite runs required by Task #44.
+
+Use a table:
+
+| Run | Result | Assertions reached | Notes |
+| --- | ------ | -----------------: | ----- |
+| 1   |        |                    |       |
+| 2   |        |                    |       |
+| 3   |        |                    |       |
+| 4   |        |                    |       |
+| 5   |        |                    |       |
+
+State explicitly whether there was any intermittent/flaky behavior.
+
+## D. Exact halftime-card fixture path
+
+Explain exactly how the failing test expected the halftime card to exist.
+
+Document:
+
+1. How the web fixture room is created
+2. What template/data source is used
+3. How cards are generated
+4. Whether the halftime card is:
+
+   * created by production room-creation logic
+   * inserted directly by test setup
+   * cloned from template data
+   * retrieved through an API
+5. What Supabase client the fixture uses
+6. Whether it goes through Express or queries tables directly
+7. How the test identifies the halftime card
+8. The exact phase/name/type value it expects
+9. Any timing or ordering assumptions
+
+## E. Root cause
+
+Explain precisely why the first post-lockdown run stopped with:
+
+`Security suite failed: Web fixture did not create a halftime card`
+
+Do not give a vague answer.
+
+Explain:
+
+* what actually happened
+* why the 25/25 normal Game Day web regression still passed
+* why this failure appeared specifically in the Discord isolation suite
+* whether the RLS lockdown actually broke production Game Day behavior
+
+## F. Why the lockdown exposed the issue
+
+Explain the relationship, if any, between the lockdown and the fixture failure.
+
+Was the failure caused by:
+
+* direct anon/authenticated database access in the test fixture
+* a service-role/client mismatch
+* timing/race behavior
+* brittle fixture assumptions
+* cleanup state
+* template generation
+* another cause
+
+If the lockdown was merely correlated and not causal, state that explicitly.
+
+## G. Exact change in commit `e32dedd`
+
+List every file changed in commit:
+
+`e32dedd`
+
+For each file explain:
+
+* what changed
+* why it was necessary
+* why it is test infrastructure / failure signaling rather than a production Game Day behavior change
+
+Do not include unrelated files.
+
+## H. Failure-signaling correction
+
+The previous runner allowed the combined shell command to appear successful even though the suite printed a security failure.
+
+Explain exactly how that was fixed.
+
+Prove that now:
+
+* fixture setup failures exit nonzero
+* assertion failures exit nonzero
+* the process cannot report success without reaching the explicit `23/23` completion condition
+
+Include an example or validation result showing the corrected behavior if one was run.
+
+## I. Final validation results
+
+Report the exact final results after the test-only fix.
+
+Use:
+
+| Validation                     | Final result |
+| ------------------------------ | -----------: |
+| Server build                   |              |
+| Discord isolation suite        |              |
+| Normal web Game Day regression |              |
+| Broader Fantasy regression     |              |
+| Any other required validation  |              |
+
+I expect explicit counts where available, such as:
+
+* `23/23`
+* `25/25`
+* `312/312`
+
+Do not summarize a suite as "passed" if you have the exact count.
+
+## J. Production behavior impact
+
+Answer each explicitly:
+
+> Did Task #44 change production Swayger Game Day behavior?
+
+**YES / NO**
+
+> Did Task #44 change Discord bot behavior?
+
+**YES / NO**
+
+> Did Task #44 change RLS, grants, schema, props, templates, or room codes?
+
+**YES / NO**
+
+> Is there evidence that the existing Swayger Game Day web product was broken by the previous lockdown attempt?
+
+**YES / NO**
+
+Explain any answer that is not straightforward.
+
+## K. Remaining concerns
+
+List any remaining:
+
+### P0
+
+### P1
+
+### P2
+
+Do not invent issues merely to populate the sections.
+
+Specifically state whether the halftime fixture problem is now fully resolved.
+
+## L. Recommendation for a second lockdown attempt
+
+Answer:
+
+> Is it now safe to retry the exact same `supabase/gameday-rls-lockdown.sql` migration using the already captured rollback artifact and the same pre/post regression gates?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+If conditions remain, list them explicitly.
+
+Also state whether you recommend any change to:
+
+* the lockdown SQL
+* the rollback SQL
+* production Game Day code
+
+before retrying.
+
+## M. Commit status
+
+Confirm:
+
+* commit hash: `e32dedd`
+* branch
+* whether it was pushed
+* final git status
+* whether the working tree is clean
+
+## Final gate
+
+End with these exact lines:
+
+**ROOT CAUSE: [classification]**
+
+**DISCORD ISOLATION FINAL RESULT: [result]**
+
+**NORMAL WEB GAMEDAY FINAL RESULT: [result]**
+
+**BROADER REGRESSION FINAL RESULT: [result]**
+
+**SAFE TO RETRY RLS LOCKDOWN: YES / YES WITH CONDITIONS / NO**
+
+Do not begin the second lockdown attempt after producing this report.
