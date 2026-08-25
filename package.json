@@ -12,6 +12,7 @@
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "db:push": "drizzle-kit push",
     "start": "npx expo start",
+    "test:gameday:web": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-gameday-web-regression.ts",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "test:fantasy:4c": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-fantasy-phase4c-run.ts"
