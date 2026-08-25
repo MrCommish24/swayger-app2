@@ -1,0 +1,944 @@
+You are working in the **main Swayger Replit project**.
+
+The Discord/backend/security foundation is now complete enough for pilot work.
+
+The next major product task is:
+
+# NFL Game Day V1
+
+The objective is to make Swayger Game Day genuinely football-ready for the NFL season without breaking the existing NBA/World Cup-style Game Day experience.
+
+This is a product build, not another security hardening task.
+
+The required end state is:
+
+> A host can create an NFL Game Day room, participants can join, make football-specific picks before kickoff, return at halftime, return again late in the game, earn Swayger Points, view the leaderboard, and see final standings.
+
+This NFL experience must work through the existing Swayger Game Day architecture and must also be compatible with Discord-created rooms.
+
+Do not redesign Game Day from scratch.
+
+Do not change the existing Discord guild-isolation model.
+
+Do not weaken RLS/security.
+
+Do not change the default unlisted behavior for Discord-created rooms.
+
+Do not build Madden rewards, College Football, automatic NFL schedules, or sponsor functionality in this task.
+
+Those are follow-ups.
+
+---
+
+# 1. Preserve existing Game Day behavior
+
+This is a hard requirement.
+
+The existing Swayger Game Day product has already been used successfully for NBA and World Cup activations.
+
+Do not break:
+
+* current app-created Game Day rooms
+* existing historical rooms
+* existing public room behavior
+* guest joining
+* authenticated joining
+* picks
+* leaderboard
+* settlement
+* finalization
+* room-code links
+* share links
+* Discord-created room behavior
+* Discord room privacy/unlisted behavior
+
+The current regression gates remain authoritative:
+
+* Discord isolation: **23/23**
+* Normal web Game Day: **25/25**
+* Broader regression: **312/312**
+* Discord visibility: **16/16**
+* server build
+
+All must stay green.
+
+---
+
+# 2. Inspect the existing sport/template model first
+
+Before changing code, inspect how Game Day currently distinguishes NBA, soccer/World Cup, and any other sport/template behavior.
+
+Determine:
+
+* whether `sport` already exists on `gameday_rooms`
+* what values are currently supported
+* how templates are selected
+* where card definitions live
+* where prop definitions live
+* how team names/stars are interpolated
+* how phases are represented
+* whether existing NBA templates assume:
+
+  * tipoff
+  * quarters
+  * stars
+  * specific terminology
+* how soccer/World Cup behavior differs
+* whether Game Day creation already accepts a sport parameter
+
+Do not create a second parallel Game Day engine if the existing template system can safely support NFL.
+
+Use the existing architecture.
+
+---
+
+# 3. Add NFL as a first-class Game Day sport
+
+Add an explicit NFL/football template path.
+
+Use the project's existing sport conventions where possible.
+
+Preferred normalized value:
+
+`nfl`
+
+If the existing system uses `football`, determine whether changing/adding `nfl` is safe.
+
+Do not conflate NFL with soccer.
+
+The room must clearly know that it is an NFL Game Day so the UI/template can use football-specific:
+
+* terminology
+* cards
+* props
+* placeholders
+* labels
+
+---
+
+# 4. NFL Game Day phase structure
+
+For V1, use three phases:
+
+## Pregame
+
+Open before kickoff.
+
+## Halftime
+
+Open at halftime.
+
+## 4Q / Late Game
+
+Open for the fourth quarter / late-game period.
+
+Use existing Game Day phase identifiers if possible.
+
+If current identifiers are:
+
+* `pregame`
+* `halftime`
+* `fourth`
+
+reuse them unless there is a strong technical reason not to.
+
+Do not create unnecessary schema changes for phase naming.
+
+## UI language
+
+For NFL rooms, use:
+
+* **Pregame Picks**
+* **Halftime Picks**
+* **4Q / Clutch Picks** or the closest existing product convention
+
+Use football terminology in instructional copy.
+
+Do not show NBA-specific copy such as:
+
+> Make your picks before tipoff.
+
+For NFL:
+
+> Make your picks before kickoff.
+
+---
+
+# 5. Default card sizes
+
+Use a **deep prop library but compact player-facing cards**.
+
+Large prop library does not mean large card.
+
+For NFL V1, target approximately:
+
+### Pregame
+
+**6 picks**
+
+### Halftime
+
+**4 picks**
+
+### 4Q / Clutch
+
+**3 picks**
+
+If the existing template engine expects a slightly different count, preserve technical simplicity while keeping the cards compact.
+
+Do not put 15–20 questions on a single card.
+
+---
+
+# 6. NFL prop design principles
+
+All V1 props must be:
+
+* objective
+* easy to understand
+* quickly answerable
+* easy for the host to settle
+* relevant to the phase
+* not dependent on subjective judgment
+* not wagering language
+* appropriate as a social sports-prediction competition
+
+Do not include subjective prompts such as:
+
+* biggest play
+* most clutch player
+* best drive
+* most impressive performance
+* momentum winner
+* who "looks better"
+
+Avoid props requiring obscure stat interpretation.
+
+Prefer binary, team, player, threshold, range, or multiple-choice outcomes.
+
+---
+
+# 7. Build an NFL prop library
+
+Create a larger reusable NFL prop library behind the templates.
+
+The player-facing cards should draw a subset from this library.
+
+Use placeholders rather than hardcoding a specific NFL matchup.
+
+Relevant placeholders may include:
+
+* `{TEAM_A}`
+* `{TEAM_B}`
+* `{TEAM_A_QB}`
+* `{TEAM_B_QB}`
+* `{TEAM_A_STAR}`
+* `{TEAM_B_STAR}`
+
+If the existing template engine has a different placeholder convention, reuse it.
+
+Do not introduce a conflicting interpolation system.
+
+---
+
+# 8. Pregame prop library
+
+Build a strong initial pregame library.
+
+Include objective options such as:
+
+### Winner / game state
+
+* Who wins the game?
+* Who leads at halftime?
+* Which team scores first?
+* Which team scores the first touchdown?
+* Will the game be tied at any point after 0–0?
+* Which team scores last?
+
+### First-score / scoring
+
+* First score type:
+
+  * touchdown
+  * field goal
+  * other/safety where appropriate
+* Will both teams score a touchdown in the first half?
+* Will either team score 3+ touchdowns?
+
+### QB
+
+* Which QB throws more touchdown passes?
+* Which QB has more passing yards?
+* Will `{TEAM_A_QB}` throw 2+ touchdown passes?
+* Will `{TEAM_B_QB}` throw 2+ touchdown passes?
+* Will either starting QB throw an interception?
+
+### Rushing / receiving
+
+* Will `{TEAM_A_STAR}` score a touchdown?
+* Will `{TEAM_B_STAR}` score a touchdown?
+* Will `{TEAM_A_STAR}` reach an appropriate yardage threshold?
+* Will `{TEAM_B_STAR}` reach an appropriate yardage threshold?
+
+Use thresholds that are configurable/template-driven rather than pretending one fixed threshold fits every player.
+
+### Turnovers / special teams
+
+* Will both teams commit a turnover?
+* Will there be 3+ total turnovers?
+* Will either team miss a field goal?
+* Will there be a field goal of 50+ yards?
+
+### Game totals/ranges
+
+Avoid sportsbook-style over/under presentation.
+
+Use social prediction wording such as:
+
+> How many total touchdowns will be scored?
+
+Options:
+
+* 0–3
+* 4–5
+* 6+
+
+or another sensible range.
+
+Also consider:
+
+* winning margin range
+* total touchdown range
+* first-half touchdown range
+
+Do not build odds, spreads, payouts, or gambling UI.
+
+---
+
+# 9. Recommended V1 Pregame default card
+
+Create a balanced default card of approximately 6 picks.
+
+A strong starting structure is:
+
+1. **Game winner**
+2. **First team to score**
+3. **Halftime leader**
+4. **Which QB throws more TD passes?**
+5. **Will either starting QB throw an interception?**
+6. **Total touchdown range**
+
+If player-star data is strong enough in the existing creation model, consider replacing one generic question with:
+
+> Will `{TEAM_A_STAR}` score a touchdown?
+
+Do not require player-specific props if the creation flow cannot reliably supply the necessary player.
+
+---
+
+# 10. Halftime prop strategy
+
+Halftime questions must reflect that the first half has already happened.
+
+Do not simply repeat Pregame props.
+
+They should predict the **second half** or final result.
+
+Build an initial Halftime library including:
+
+* Who wins the game?
+* Which team scores first in the second half?
+* Which team scores more points in the second half?
+* Will the team currently trailing come back to win?
+* Which QB throws more second-half TD passes?
+* Will either QB throw a second-half interception?
+* Will `{TEAM_A_STAR}` score in the second half?
+* Will `{TEAM_B_STAR}` score in the second half?
+* Will there be 3+ second-half touchdowns?
+* Will there be a fourth-quarter lead change?
+* Winning margin range
+
+Avoid questions whose answer is already known at halftime.
+
+---
+
+# 11. Recommended V1 Halftime default card
+
+Target approximately 4 picks:
+
+1. **Who wins the game?**
+2. **Who scores first in the second half?**
+3. **Which team scores more second-half points?**
+4. **Will there be a fourth-quarter lead change?**
+
+If the current state makes a question nonsensical—for example a large blowout—do not build dynamic contextual filtering in V1 unless it is already easy within the architecture.
+
+V1 may use a stable template.
+
+Context-aware cards can be a follow-up.
+
+---
+
+# 12. 4Q / Clutch prop strategy
+
+These must be quick, relevant, and settle soon.
+
+Build a Late Game library such as:
+
+* Who wins?
+* Which team scores next?
+* Will there be another touchdown?
+* Will there be another turnover?
+* Will there be another field-goal attempt?
+* Will the lead change again?
+* Will the game be decided by 7 points or fewer?
+* Will the team currently trailing tie or take the lead?
+* Will there be overtime?
+
+Avoid props that require a full extra quarter of detailed stat tracking.
+
+---
+
+# 13. Recommended V1 4Q default card
+
+Target approximately 3 picks:
+
+1. **Who wins?**
+2. **Which team scores next?**
+3. **Will there be another touchdown?**
+
+If current Game Day architecture already tracks the leading/trailing team easily, a fourth option could be:
+
+> Will the trailing team tie or take the lead?
+
+Do not add dynamic game-state dependency if it requires substantial new infrastructure.
+
+---
+
+# 14. Settlement model
+
+Preserve the existing host settlement model for V1.
+
+Do not build an automated NFL stats provider in this task.
+
+The host should still be able to settle objective props through the existing Game Day host interface.
+
+Verify that each NFL prop has clear settlement choices matching its answer options.
+
+For each prop definition, ensure:
+
+* outcome choices are explicit
+* host can identify the correct answer quickly
+* no subjective interpretation is needed
+
+Document any prop that would be difficult to settle manually and remove it from the V1 default set.
+
+---
+
+# 15. Scoring
+
+Use the existing Game Day scoring model.
+
+Do not introduce NFL-specific scoring multipliers in V1 unless the existing engine already supports them cleanly.
+
+If Game Day currently awards:
+
+**10 SP per correct pick**
+
+preserve that.
+
+Confirm:
+
+* NFL picks score through the existing mechanism
+* leaderboard calculation remains unchanged
+* final standings remain unchanged
+
+---
+
+# 16. Creation flow — Swayger web app
+
+Update the normal Game Day creation experience so a host can create an NFL Game Day.
+
+The minimum V1 creation inputs should support:
+
+* sport = NFL
+* Team A
+* Team B
+* Team A star/player
+* Team B star/player
+* game label
+* game date/time if currently supported
+
+Use the existing creation UI architecture.
+
+Do not overbuild matchup selection yet.
+
+A host manually entering:
+
+* Bears
+* Packers
+* Caleb Williams
+* Jordan Love
+* Bears vs Packers — Sunday Night Football
+
+is acceptable for NFL V1.
+
+Automatic team rosters and schedule lookup are follow-ups.
+
+---
+
+# 17. Creation flow — Discord compatibility
+
+The existing Discord bot currently sends fields such as:
+
+* team_a_name
+* team_b_name
+* team_a_star
+* team_b_star
+* game_label
+
+Inspect whether the bot API currently sends a `sport` field.
+
+If it already supports sport, ensure `nfl` works.
+
+If the backend currently defaults bot-created rooms to NBA because no sport is supplied, we need a safe compatibility path.
+
+Do not modify the Discord bot repo in Replit.
+
+Instead:
+
+* make the backend capable of accepting/creating NFL rooms correctly
+* document the exact Discord bot API change Claude will need afterward
+
+Likely future bot requirement:
+
+`/swayger gameday create` needs a sport selection or an NFL-specific creation path.
+
+Do not silently change all Discord Game Day rooms to NFL.
+
+Existing NBA Discord behavior must remain possible.
+
+---
+
+# 18. NFL-specific labels and copy
+
+Audit the Game Day participant UI for sport-specific language.
+
+For NFL rooms, update relevant text such as:
+
+* tipoff → kickoff
+* court-specific language → football-neutral language
+* quarter terminology where appropriate
+
+Examples:
+
+NBA:
+
+> Make your picks before tipoff.
+
+NFL:
+
+> Make your picks before kickoff.
+
+Do not globally replace “tipoff” if NBA rooms rely on it.
+
+Use the room sport to choose the appropriate copy.
+
+Also inspect:
+
+* host instructions
+* countdown labels
+* phase headings
+* room cards
+* final standings language
+* share copy
+
+Only make sport-specific changes where needed.
+
+---
+
+# 19. Team/star placeholders
+
+Ensure NFL props render cleanly with participant-facing names.
+
+Examples:
+
+> Which QB throws more TD passes?
+
+Should render actual player names if available.
+
+> Will `{TEAM_A_STAR}` score a touchdown?
+
+Should not expose raw placeholder text.
+
+Test with disposable fixture data such as:
+
+* Team A: Chicago Bears
+* Team B: Green Bay Packers
+* Team A star: Caleb Williams
+* Team B star: Jordan Love
+
+The specific fixture names are for testing only.
+
+Do not hardcode them into the production template.
+
+---
+
+# 20. No betting language
+
+Maintain Swayger as social prediction/competition.
+
+Do not introduce:
+
+* sportsbook odds
+* moneylines
+* spreads
+* gambling slips
+* wagers
+* bets
+* payout language
+
+Threshold/range prediction props are acceptable, but phrase them as predictions.
+
+Example:
+
+Good:
+
+> Will the Bears score 3+ touchdowns?
+
+Avoid:
+
+> Bears team total over 2.5 TDs
+
+---
+
+# 21. Prop metadata
+
+Use the existing prop-library structure.
+
+If prop definitions support metadata, ensure NFL props identify:
+
+* sport
+* phase
+* prop ID
+* prompt/template
+* answer options
+* placeholder needs
+* display order/default-selection eligibility where applicable
+
+Give props stable IDs.
+
+Use clear prefixes, for example:
+
+* `nfl_pre_...`
+* `nfl_ht_...`
+* `nfl_4q_...`
+
+if consistent with the current prop library conventions.
+
+Do not rename existing NBA/soccer prop IDs.
+
+---
+
+# 22. Historical compatibility
+
+Existing rooms must continue rendering their stored prop/card definitions.
+
+Do not require old NBA or World Cup rooms to conform to NFL fields.
+
+Existing historical room links should remain valid.
+
+---
+
+# 23. Discord privacy must remain intact
+
+Task #45 established:
+
+> Discord-created Game Day rooms are unlisted by default.
+
+NFL Discord rooms must preserve that behavior.
+
+Verify:
+
+* bot-created NFL room has `is_private = true`
+* it does not appear in `/api/gameday/public-rooms`
+* direct link works
+* room code works
+* participants can join/play
+
+Do not make NFL rooms public merely because they use a new template.
+
+---
+
+# 24. Add NFL regression coverage
+
+Create a permanent NFL V1 regression suite using the existing testing approach.
+
+It should create disposable data and clean it up.
+
+At minimum verify:
+
+### Creation
+
+1. NFL web room can be created.
+2. Stored sport is NFL.
+3. Expected NFL cards exist:
+
+   * pregame
+   * halftime
+   * fourth/4Q
+
+### Copy/template
+
+4. NFL template contains no NBA-specific prompt such as `tipoff`.
+5. Pregame default card has the expected compact pick count.
+6. Halftime default card has the expected compact pick count.
+7. 4Q default card has the expected compact pick count.
+8. Placeholders render correctly.
+
+### Participation
+
+9. Guest can join.
+10. Authenticated participant can join.
+11. Pregame picks persist.
+12. Halftime picks work after opening.
+13. 4Q picks work after opening.
+
+### Settlement/scoring
+
+14. NFL props can be settled.
+15. Correct picks score using existing SP logic.
+16. Leaderboard updates.
+17. Room finalizes.
+18. Final standings work.
+
+### Privacy
+
+19. Discord-created NFL room defaults private/unlisted.
+20. It is absent from public discovery.
+21. Direct link/room code still works.
+
+Add additional assertions where useful.
+
+---
+
+# 25. Regression gates
+
+After implementation run:
+
+* new NFL Game Day regression suite
+* Discord visibility: **16/16**
+* Discord isolation: **23/23**
+* normal web Game Day: **25/25**
+* broader regression: **312/312, FAILED: 0**
+* server build
+
+Check explicit success markers.
+
+Do not rely solely on exit status.
+
+---
+
+# 26. Browser QA
+
+Use browser testing for at least one disposable NFL Game Day.
+
+Verify visually:
+
+### Host/create
+
+* NFL can be selected/created
+* Team/player fields make sense
+
+### Participant room
+
+* football-specific labels
+* no obvious NBA terminology
+* Pregame card renders cleanly
+* picks are easy to understand
+* compact number of props
+
+### Later phases
+
+* Halftime card renders
+* 4Q card renders
+
+### Final
+
+* leaderboard and final standings render normally
+
+Clean up disposable fixture data.
+
+---
+
+# 27. Do not add NFL schedule integration yet
+
+Do not call external sports APIs.
+
+Do not build:
+
+* automatic matchup lookup
+* current NFL schedule ingestion
+* kickoff synchronization
+* roster/player lookup
+* automatic stat settlement
+* automatic halftime detection
+* automatic fourth-quarter detection
+
+Design the V1 so those can be added later, but keep this build manual/template-driven.
+
+---
+
+# 28. Do not build Madden or College Football yet
+
+Do not add:
+
+* Madden league rewards
+* +1 attributes
+* dynasty rewards
+* EA account integration
+* College Football templates
+
+NFL Game Day is the underlying product layer.
+
+Madden Sunday Swayger and College Football Saturday Swayger come after this works.
+
+---
+
+# 29. Product acceptance criteria
+
+NFL Game Day V1 is successful if I can do this:
+
+1. Open Swayger.
+2. Create an NFL Game Day manually.
+3. Enter two NFL teams and representative players.
+4. Share the room.
+5. A guest joins.
+6. A signed-in user joins.
+7. Both make Pregame picks.
+8. Host opens Halftime.
+9. Participants make Halftime picks.
+10. Host opens 4Q.
+11. Participants make late-game picks.
+12. Host settles objective football props.
+13. Leaderboard reflects correct SP.
+14. Host finalizes.
+15. Final standings display.
+
+And separately:
+
+1. Discord bot creates an NFL-compatible room.
+2. Room is unlisted.
+3. Direct invite works.
+4. Participant experience is the same NFL template.
+
+If the Discord bot requires an API contract change to pass `sport=nfl`, document it for Claude rather than modifying the bot repo here.
+
+---
+
+# 30. Final report
+
+Return:
+
+## A. Executive summary
+
+What NFL functionality was added and whether V1 is playable end-to-end.
+
+## B. Existing architecture reused
+
+Explain how NFL fits into the current Game Day template/prop system.
+
+## C. Files changed
+
+For each:
+
+* what changed
+* why
+
+## D. NFL creation flow
+
+Describe the app-host creation experience.
+
+## E. NFL phase model
+
+Document:
+
+* Pregame
+* Halftime
+* 4Q
+
+and default prop counts.
+
+## F. NFL default props
+
+List the exact V1 default picks for each phase.
+
+## G. NFL prop library
+
+Summarize the larger available library and stable IDs.
+
+## H. Sport-specific UI/copy
+
+List NBA-specific text corrected for NFL without changing NBA rooms.
+
+## I. Settlement and scoring
+
+Confirm manual settlement and SP behavior.
+
+## J. Discord compatibility
+
+Explain:
+
+* what works now
+* whether the backend API supports NFL creation
+* exact Claude bot change required, if any
+
+## K. Privacy behavior
+
+Confirm Discord-created NFL rooms remain unlisted.
+
+## L. Test results
+
+Include exact counts for:
+
+* NFL regression
+* visibility
+* isolation
+* normal web
+* broader regression
+* build
+
+## M. Browser QA
+
+Summarize what was visually verified.
+
+## N. Remaining NFL V2 items
+
+Separate follow-ups such as:
+
+* automated schedule
+* team/player selection
+* game-state-aware props
+* automated phase timing
+* automated settlement
+
+Do not implement them now.
+
+## O. Pilot decision
+
+Answer:
+
+> Is NFL Game Day V1 ready for a controlled live NFL/Discord pilot?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+End with:
+
+**NFL GAMEDAY V1 STATUS: PASS / FAIL**
+
+Do not start Madden, College Football, schedule integration, or unrelated work after completing this task.
