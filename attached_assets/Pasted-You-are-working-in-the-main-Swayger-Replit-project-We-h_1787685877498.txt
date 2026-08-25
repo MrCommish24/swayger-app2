@@ -1,0 +1,551 @@
+You are working in the **main Swayger Replit project**.
+
+We have now successfully hardened the Game Day backend/database and verified that the existing Swayger Game Day web experience still works.
+
+The next task is a **product/access-control behavior change specifically for Discord-created Game Day rooms**.
+
+Do not redesign Game Day broadly.
+
+Do not change normal app-created Game Day behavior unless required for compatibility.
+
+Do not touch the Discord bot repo in this task.
+
+The objective is:
+
+> Game Day rooms created from Discord should be **unlisted by default**: accessible through the Discord invite/direct link, but not discoverable in the public Swayger Game Day directory/home experience.
+
+This is different from making the room strictly Discord-members-only.
+
+For this pilot, the desired model is:
+
+* **Public** = discoverable in Swayger and accessible normally
+* **Unlisted** = not discoverable in Swayger, but anyone with the direct link/room code can access and participate
+* **Restricted/member-verified** = not part of this task
+
+The Discord pilot should use **Unlisted** by default.
+
+---
+
+# 1. First inspect the existing visibility model
+
+Before changing code, determine exactly how Game Day visibility currently works.
+
+Inspect:
+
+* `gameday_rooms` schema
+* existing visibility/public/private fields
+* room creation routes
+* room update/visibility routes
+* `/api/gameday/public-rooms`
+* Game Day home/discovery queries
+* participant room loading
+* `/g/:roomCode`
+* room detail endpoint
+* host visibility controls
+* any archived/finalized visibility behavior
+
+Answer:
+
+* What field currently controls whether a room is publicly discoverable?
+* What values are currently supported?
+* Is there already a concept equivalent to `public`, `private`, or `unlisted`?
+* Does the current visibility field control discoverability only, or also direct-link access?
+* What does the host visibility toggle currently do?
+* Are public room listings filtered using this field today?
+
+Do not invent a new field if the existing model can support the desired behavior safely.
+
+---
+
+# 2. Preserve existing Swayger Game Day behavior
+
+This is a hard requirement.
+
+Normal Game Day rooms created through the existing Swayger web app have already worked successfully during prior NBA and World Cup use.
+
+Do not change the established default visibility or access behavior for ordinary app-created rooms.
+
+Specifically:
+
+### App-created Game Day
+
+A normal room created through the existing Swayger Game Day web flow should behave exactly as it does today unless an explicit existing host visibility setting changes it.
+
+### Discord-created Game Day
+
+A room created through the bot-authenticated Discord creation path should default to:
+
+**unlisted / non-discoverable**
+
+while remaining directly accessible.
+
+Do not make all Game Day rooms private just because Discord rooms need different defaults.
+
+---
+
+# 3. Define the intended Discord room behavior
+
+For any room created through the authenticated Discord bot path:
+
+* `source` should remain correctly identified as Discord.
+* `discord_guild_id` ownership must remain intact.
+* Discord authorization hardening must remain unchanged.
+* The room should not appear in general/public Swayger Game Day discovery.
+* The room should remain accessible through:
+
+  * its returned `public_link`
+  * `/g/:roomCode`
+  * direct room URL
+* Participants with the link should still be able to:
+
+  * load the room
+  * join
+  * make picks
+  * return later
+  * view leaderboard
+  * view final standings
+* Host/operator behavior should continue to work.
+* Finalization should **not automatically make the room public**.
+
+The desired rule is:
+
+> Discord-created Game Day rooms are community-distributed, not publicly discovered.
+
+---
+
+# 4. Use the existing visibility field if possible
+
+If the existing schema already supports a visibility state that means:
+
+* hidden from public discovery
+* direct-link accessible
+
+use that state.
+
+If the current field only has a boolean such as:
+
+`is_public`
+
+then determine whether:
+
+`false`
+
+already behaves like unlisted/direct-link-accessible.
+
+If so, use that rather than creating a new enum/state.
+
+Only introduce a new visibility value/schema change if the current model cannot express the desired behavior without breaking existing flows.
+
+If a schema change is truly required, stop and explain why before implementing it.
+
+---
+
+# 5. Update Discord room creation default
+
+Update the backend Discord creation path so bot-authenticated room creation defaults to the non-discoverable/unlisted state.
+
+The backend must determine this based on the authenticated creation path/source, not on blindly trusting caller-supplied visibility.
+
+Requirements:
+
+* A Discord bot-created room defaults unlisted.
+* A normal web-created room retains its current default.
+* The Discord bot should not need to explicitly send a new visibility value unless the current API architecture strongly requires it.
+* Do not allow a malicious bot request to spoof a web source in order to bypass the intended default.
+* Preserve current guild ownership checks.
+
+If the current creation logic already normalizes `source = "discord"` for bot-authenticated creation, use that trusted server-side distinction.
+
+---
+
+# 6. Exclude unlisted Discord rooms from public discovery
+
+Identify all public discovery surfaces.
+
+At minimum inspect:
+
+* `/api/gameday/public-rooms`
+* Game Day home screen
+* "More Rooms"
+* any home-page "Live Now" Game Day section
+* any public Game Day directory
+* any search/list endpoint used for discoverability
+
+Update them so unlisted rooms are excluded.
+
+Do not merely hide them visually in one frontend component while still returning them from the public directory API.
+
+The backend public discovery endpoint should enforce the filter.
+
+Expected behavior:
+
+> An unrelated Swayger user with no connection to the Discord room should not see that room merely by opening the Game Day home/discovery experience.
+
+---
+
+# 7. Preserve direct-link access
+
+This is critical.
+
+After the change, verify that an unlisted Discord room still works through:
+
+`/g/:roomCode`
+
+and through the returned `public_link`.
+
+Do not require Discord OAuth or server-membership verification in this task.
+
+Do not add a password.
+
+Do not add an allowlist.
+
+Do not require the participant to be signed in merely because the room is unlisted.
+
+The link is the distribution mechanism for the initial pilot.
+
+This is intentionally:
+
+**unlisted, not restricted.**
+
+---
+
+# 8. Preserve participant flows
+
+For an unlisted Discord-created room, verify:
+
+### Guest
+
+* direct link loads
+* guest can join if currently supported
+* guest can submit picks
+* guest picks persist
+* leaderboard works
+* final standings work
+
+### Authenticated Swayger user
+
+* direct link loads
+* user can join
+* picks work
+* leaderboard works
+* final standings work
+
+Do not change participant behavior simply because the room is not publicly discoverable.
+
+---
+
+# 9. Consider joined-room rediscovery separately
+
+Inspect whether Swayger currently has any concept such as:
+
+* My Game Days
+* recently joined Game Days
+* participant-specific room list
+* host-created room list
+
+Do not build a new "My Game Days" feature in this task.
+
+However, report whether an authenticated user who joined an unlisted Discord room would currently have any way to find it later without the original link.
+
+Classify this as:
+
+* Already supported
+* Not currently supported
+* Partially supported
+
+This is a product follow-up, not a blocker for the pilot.
+
+---
+
+# 10. Do not expose the room through public APIs accidentally
+
+Audit public endpoints that accept room code or ID.
+
+There is an important distinction:
+
+### Allowed
+
+Someone who already has the direct room code/link can:
+
+* resolve the room
+* load participant-safe data
+* join
+* view leaderboard/final standings where currently intended
+
+### Not allowed
+
+Someone browsing public discovery APIs should receive a list containing unlisted Discord rooms.
+
+Do not try to make room codes secret authorization credentials.
+
+Direct lookup by known code may remain supported.
+
+---
+
+# 11. Preserve security hardening
+
+Do not weaken any recently completed security controls.
+
+The following must remain intact:
+
+* verified Supabase host authentication
+* Discord guild-scoped operator authorization
+* `GAMEDAY_BOT_API_KEY`
+* `X-Discord-Guild-ID`
+* bot vs. human-host separation
+* locked-down direct Supabase access
+* service-role-only backend database path
+
+Run the existing security/regression suites after this change.
+
+---
+
+# 12. Update public-room response logic carefully
+
+If `/api/gameday/public-rooms` currently returns every active room regardless of visibility, change that query.
+
+Use the existing visibility field/state.
+
+Also inspect whether archived/finalized rooms are handled correctly.
+
+Do not accidentally hide normal public app-created Game Days.
+
+Acceptance examples:
+
+### Public app room
+
+Should still appear if it appears today.
+
+### Unlisted Discord room
+
+Must not appear.
+
+### Direct lookup of unlisted Discord room
+
+Must still work.
+
+---
+
+# 13. Test the exact scenario that exposed this issue
+
+Create a disposable Discord-owned Game Day room using the bot/API creation path.
+
+Use a clearly identifiable test room.
+
+Verify:
+
+### A. Creation
+
+* room created successfully
+* source = Discord
+* Discord guild metadata stored
+* visibility set to the intended unlisted/non-public state
+
+### B. Public discovery
+
+Call:
+
+`GET /api/gameday/public-rooms`
+
+Confirm the Discord test room is **not** present.
+
+### C. Game Day home/discovery
+
+Verify the room does not appear in the normal public "Live Now" / "More Rooms" experience for an unrelated user.
+
+### D. Direct access
+
+Open:
+
+`/g/:roomCode`
+
+Confirm redirect works.
+
+Open the actual Game Day room.
+
+Confirm it loads successfully.
+
+### E. Participation
+
+Join and make picks through the normal participant flow.
+
+### F. Leaderboard
+
+Confirm leaderboard remains available through the room experience.
+
+### G. Final standings
+
+Confirm final standings remain available after finalization.
+
+Clean up disposable test records when complete.
+
+---
+
+# 14. Add permanent regression coverage
+
+Add tests so future work cannot accidentally make Discord rooms publicly discoverable again.
+
+At minimum test:
+
+1. Discord-created room defaults to unlisted/non-public.
+2. App-created room retains current existing visibility default.
+3. `/api/gameday/public-rooms` excludes the Discord unlisted room.
+4. Direct room lookup still works.
+5. `/g/:roomCode` behavior remains valid.
+6. Participant-safe room load still works.
+7. Public leaderboard behavior for a known room link remains as intended.
+8. Existing normal web Game Day regression remains green.
+
+Use the existing testing approach rather than introducing a new framework.
+
+---
+
+# 15. Run existing regression gates
+
+After implementation, run:
+
+* server build
+* Discord isolation suite: explicit **23/23**
+* normal web Game Day regression: explicit **25/25**
+* broader regression: explicit **312/312, FAILED: 0**
+* production/public smoke checks where appropriate
+
+Also run the new visibility regression.
+
+Do not declare success based only on shell exit status.
+
+Check explicit test markers.
+
+---
+
+# 16. Do not change Discord bot copy in this task
+
+The Discord bot currently says:
+
+> "The public invite was posted in this channel."
+
+That copy should eventually change to:
+
+> "The Game Day invite was posted in this channel."
+
+But that belongs to the **Discord bot / Claude Code repo**, not this Replit backend task.
+
+Do not change Discord bot code here.
+
+At the end, explicitly list that copy update as a required Claude follow-up.
+
+---
+
+# 17. Do not build restricted Discord membership access yet
+
+Do not add:
+
+* Discord OAuth linking
+* member verification
+* guild membership validation
+* role-based participant access
+* passwords
+* invite approval
+* access-code infrastructure
+
+Those may be considered later if server owners require true member-only rooms.
+
+For the pilot, direct-link access is sufficient.
+
+---
+
+# 18. Final product rule
+
+Document this clearly:
+
+> **Discord-created Game Day rooms are unlisted by default. They are excluded from Swayger public discovery but remain accessible and playable through the invite/direct link.**
+
+Normal Swayger web-created Game Days retain their existing visibility behavior.
+
+---
+
+# 19. Final report
+
+Return:
+
+## A. Executive summary
+
+Explain the implemented visibility behavior.
+
+## B. Existing visibility model found
+
+Document the field/state used and why.
+
+## C. Files changed
+
+For each file:
+
+* what changed
+* why
+
+## D. Creation behavior
+
+Use a table:
+
+| Creation path      | Default visibility | Public discovery? | Direct link works? |
+| ------------------ | ------------------ | ----------------- | ------------------ |
+| Normal Swayger app |                    |                   |                    |
+| Discord bot        |                    |                   |                    |
+
+## E. Discovery changes
+
+List every discovery endpoint/component affected.
+
+## F. Direct-link behavior
+
+Confirm `/g/:roomCode` and room URL behavior.
+
+## G. Participant behavior
+
+Confirm guest/authenticated participant flows.
+
+## H. Existing-user rediscovery
+
+Explain whether someone who joined the unlisted room can currently find it later without the original link.
+
+Do not build anything new here.
+
+## I. Test results
+
+Include exact counts.
+
+## J. Security regression results
+
+Confirm existing authorization hardening remains intact.
+
+## K. Remaining issues
+
+Use P0 / P1 / P2 only where appropriate.
+
+## L. Claude follow-up
+
+State the exact Discord bot copy change still needed:
+
+Old:
+`The public invite was posted in this channel.`
+
+New:
+`The Game Day invite was posted in this channel.`
+
+## M. Pilot decision
+
+Answer:
+
+> Is the visibility/access model now appropriate for a controlled Discord Game Day pilot?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+End with:
+
+**DISCORD GAMEDAY VISIBILITY STATUS: PASS / FAIL**
+
+Do not begin unrelated implementation work after completing this task.
