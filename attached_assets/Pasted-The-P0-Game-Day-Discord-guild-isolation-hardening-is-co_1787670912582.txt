@@ -1,0 +1,295 @@
+The P0 Game Day / Discord guild-isolation hardening is complete and has passed its targeted tests.
+
+The Discord bot repository is now being updated separately to use the new API contract in `docs/gameday-discord-bot-api.md`.
+
+Before we begin the external Discord pilot, I want to close the remaining **Supabase RLS uncertainty** identified in your hardening report.
+
+This is primarily a **read-only verification task**.
+
+Do not make unrelated Game Day changes.
+
+Do not redesign the API.
+
+Do not modify the Discord contract that was just implemented.
+
+Do not change RLS policies until we understand the actual deployed state and whether changing them would break the application.
+
+## 1. Determine how Game Day accesses Supabase today
+
+Audit the current application and identify every way Game Day data is accessed.
+
+Separate access into:
+
+### Backend/service-role access
+
+Requests made through server-side code using the Supabase service-role key.
+
+### Authenticated browser/client access
+
+Direct browser-side Supabase requests using an authenticated user's token.
+
+### Anonymous browser/client access
+
+Direct browser-side Supabase requests using the anon key without a signed-in user.
+
+For Game Day specifically, determine whether frontend code directly queries any of these tables:
+
+* `gameday_rooms`
+* Game Day cards table
+* Game Day props table
+* participants table
+* picks table
+* settlement-related tables
+* any other Game Day table
+
+For every direct frontend/client query, identify:
+
+* file
+* table
+* operation (`select`, `insert`, `update`, `delete`)
+* whether the caller is authenticated
+* whether the operation could instead be going through the Express/API layer
+
+The critical question is:
+
+> Does the Game Day participant or host web experience currently depend on permissive Supabase RLS policies for direct client-table access?
+
+Answer explicitly.
+
+---
+
+## 2. Inspect the checked-in Game Day RLS definitions
+
+Review all migrations/schema files that define RLS or policies for Game Day tables.
+
+For every relevant table report:
+
+| Table | RLS enabled in source? | Policies in source | USING | WITH CHECK |
+| ----- | ---------------------- | ------------------ | ----- | ---------- |
+
+Flag any policy containing effectively unrestricted behavior such as:
+
+`USING (true)`
+
+or:
+
+`WITH CHECK (true)`
+
+Explain what access that policy would permit if it is active in production.
+
+Do not assume the migration reflects live production state.
+
+---
+
+## 3. Attempt a read-only inspection of the live Supabase policy state
+
+If this environment has an authorized, read-only way to inspect live PostgreSQL policies, use it.
+
+Do not alter anything.
+
+Preferred information:
+
+* table name
+* RLS enabled/disabled
+* policy name
+* command
+* roles
+* qual / `USING`
+* with_check / `WITH CHECK`
+
+If direct inspection of `pg_catalog.pg_policies` or `pg_policies` is unavailable from Replit, say so clearly.
+
+Do not guess.
+
+---
+
+## 4. If live inspection is unavailable, give me the exact SQL to run
+
+If you cannot query the live policy catalog yourself, produce a **read-only SQL query** I can paste into the Supabase SQL Editor.
+
+It should report the live RLS state for all Game Day tables.
+
+Include:
+
+* schema
+* table
+* row-security enabled state
+* policy name
+* command
+* roles
+* USING expression
+* WITH CHECK expression
+
+The query must not mutate anything.
+
+Also provide any second read-only query needed to identify Game Day tables if table names differ from what we expect.
+
+I will return the results to you for interpretation.
+
+---
+
+## 5. Evaluate whether permissive policies create a real bypass
+
+Do not classify `USING (true)` as dangerous merely because it looks permissive.
+
+Evaluate it against the actual architecture.
+
+Answer:
+
+> If an external user obtains the public Supabase URL and anon key used by the Swayger frontend, can that user directly read or modify Game Day database tables outside the protected Express/API routes?
+
+Consider:
+
+* anon role
+* authenticated role
+* service role
+* table grants
+* RLS policy roles
+* frontend Supabase usage
+
+Separate:
+
+### Read exposure
+
+Could a client enumerate or retrieve Game Day information directly?
+
+### Write exposure
+
+Could a client:
+
+* create rooms
+* change room state
+* alter cards
+* settle props
+* modify picks belonging to others
+* modify participants
+* finalize/archive/rename rooms
+* otherwise bypass the API authorization we just added?
+
+This is the key security question.
+
+---
+
+## 6. Verify the new API security cannot be bypassed through direct Supabase calls
+
+The new Discord authorization contract now protects API operations using:
+
+* bot API key
+* `X-Discord-Guild-ID`
+* stored room guild ownership
+
+Confirm whether direct Supabase access could bypass those checks.
+
+For example:
+
+> Could someone who cannot pass the Express guild authorization simply update a `gameday_rooms`, card, or prop row directly through Supabase instead?
+
+Use:
+
+* **YES**
+* **NO**
+* **DEPENDS ON LIVE RLS**
+
+and explain precisely.
+
+---
+
+## 7. Do not change policies yet unless clearly safe
+
+For this pass, default to **inspection and recommendation**.
+
+If existing live RLS is overly permissive, design the smallest safe remediation, but do not automatically apply it unless all of the following are true:
+
+1. You have verified the live policy state.
+2. You have mapped every direct frontend dependency on those policies.
+3. You can demonstrate that the replacement policies preserve required Game Day participant/host behavior.
+4. There is a realistic rollback path.
+5. Appropriate regression tests exist.
+
+Otherwise stop with a remediation proposal.
+
+I would rather perform one additional controlled change than break the Game Day web experience before the Discord pilot.
+
+---
+
+## 8. Review public participant exposure
+
+As part of the same audit, confirm that the recent public-response minimization is working as intended.
+
+Verify that public Game Day room responses no longer expose:
+
+* `discord_guild_id`
+* `discord_channel_id`
+* `discord_user_id`
+* `host_user_id`
+* other internal authorization metadata
+
+Confirm the participant UI still receives everything it needs.
+
+Do not redesign public Game Day access.
+
+Public join links and intentionally public participant leaderboards may remain public.
+
+---
+
+## 9. Give me the external pilot security gate
+
+At the end answer:
+
+> From the backend/database perspective, is Swayger Game Day now safe for a controlled 5–10 unrelated Discord-server pilot?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+Evaluate:
+
+* verified host authentication
+* API guild isolation
+* direct Supabase bypass risk
+* RLS
+* public response exposure
+
+Do not include unfinished Discord bot work in this determination; Claude is handling that separately.
+
+---
+
+## 10. Final report
+
+Return:
+
+### A. Executive summary
+
+### B. Game Day Supabase data-access architecture
+
+### C. Direct frontend Supabase accesses found
+
+### D. Source-code RLS policy table
+
+### E. Live RLS state
+
+Or clearly state that it could not be inspected.
+
+### F. Exact read-only Supabase SQL
+
+Only if I need to execute it manually.
+
+### G. Direct database bypass analysis
+
+### H. Public response verification
+
+### I. Remaining P0 / P1 / P2 issues
+
+### J. Recommended remediation
+
+Only if required.
+
+### K. Backend/database pilot status
+
+End with:
+
+**DATABASE / BACKEND PILOT STATUS: YES / YES WITH CONDITIONS / NO**
+
+Do not begin unrelated implementation work after completing this audit.
