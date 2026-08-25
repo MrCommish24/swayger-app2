@@ -7,6 +7,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { createClient } from "@supabase/supabase-js";
 import { sendNotificationEmail } from "./email";
+import {
+  getServiceSupabase,
+  isServiceSupabaseConfigured,
+} from "./supabase-service";
 
 const app = express();
 const log = console.log;
@@ -308,11 +312,7 @@ function configureExpoAndLanding(app: express.Application) {
   app.get("/g/:roomCode", async (req: Request, res: Response) => {
     const code = (req.params.roomCode ?? "").toUpperCase().trim();
     if (!code) { res.status(400).send("Missing room code"); return; }
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabase = createClient(
-      process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
-      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    const supabase = getServiceSupabase();
     const { data: room } = await supabase
       .from("gameday_rooms")
       .select("id")
@@ -582,6 +582,12 @@ async function runSettlementExpiry() {
 }
 
 (async () => {
+  if (!isServiceSupabaseConfigured()) {
+    console.error(
+      "[startup] Supabase service-role configuration is missing; Game Day and Fantasy database routes will return 503 rather than use anon access.",
+    );
+  }
+
   setupWwwRedirect(app);
   setupCors(app);
   setupBodyParsing(app);

@@ -32,9 +32,9 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { createClient } from "@supabase/supabase-js";
 import { createHash, randomBytes } from "crypto";
 import { settlePropCore } from "./gameday-settle-helper";
+import { getServiceSupabase } from "./supabase-service";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -59,14 +59,6 @@ function _computeAddMemberHash(
     teamName.trim().toLowerCase(),
   ].join("|");
   return createHash("sha256").update(raw).digest("hex");
-}
-
-function getServiceSupabase() {
-  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, key);
 }
 
 /**

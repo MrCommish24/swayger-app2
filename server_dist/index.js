@@ -2479,7 +2479,7 @@ import express from "express";
 init_email();
 import { createServer } from "node:http";
 import * as path3 from "path";
-import { createClient as createClient7 } from "@supabase/supabase-js";
+import { createClient as createClient6 } from "@supabase/supabase-js";
 
 // server/routes-mm-admin.ts
 init_email();
@@ -7395,7 +7395,6 @@ function registerPropsRoutes(app2) {
 
 // server/routes-gameday.ts
 import { createHash } from "crypto";
-import { createClient as createClient5 } from "@supabase/supabase-js";
 
 // server/gameday-template.ts
 var NBA_PLAYOFF_TEMPLATE = [
@@ -8334,6 +8333,47 @@ async function settlePropCore(supabase, { propId, cardId, correctAnswer }) {
   return { propId, cardId, cardAutoSettled };
 }
 
+// server/supabase-service.ts
+import { createClient as createClient5 } from "@supabase/supabase-js";
+var SERVICE_ROLE_CONFIGURATION_ERROR = "Supabase service-role configuration is required for server database access";
+var ServiceSupabaseConfigurationError = class extends Error {
+  status = 503;
+  constructor(message) {
+    super(message);
+    this.name = "ServiceSupabaseConfigurationError";
+  }
+};
+function assertServiceSupabaseConfigured() {
+  if (!process.env.EXPO_PUBLIC_SUPABASE_URL?.trim()) {
+    throw new ServiceSupabaseConfigurationError(
+      `${SERVICE_ROLE_CONFIGURATION_ERROR}: EXPO_PUBLIC_SUPABASE_URL is missing`
+    );
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    throw new ServiceSupabaseConfigurationError(
+      `${SERVICE_ROLE_CONFIGURATION_ERROR}: SUPABASE_SERVICE_ROLE_KEY is missing`
+    );
+  }
+}
+function isServiceSupabaseConfigured() {
+  return Boolean(
+    process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  );
+}
+function getServiceSupabase() {
+  assertServiceSupabaseConfigured();
+  return createClient5(
+    process.env.EXPO_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
+  );
+}
+
 // server/routes-gameday.ts
 var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
 function _tokenFingerprint(token) {
@@ -8590,11 +8630,6 @@ async function buildSettlementQueue(supabase) {
     total_manual: totalManual
   };
 }
-function getServiceSupabase() {
-  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  return createClient5(url, key);
-}
 var ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 var PUBLIC_ROOM_FIELDS = [
   "id",
@@ -8798,7 +8833,15 @@ async function logEvent(supabase, roomId, participantId, userId, eventType, meta
   }
 }
 function registerGamedayRoutes(app2) {
-  setImmediate(() => _recoverStaleSettleOps(getServiceSupabase()));
+  setImmediate(() => {
+    try {
+      _recoverStaleSettleOps(getServiceSupabase()).catch((error) => {
+        console.error("[settle-group] startup recovery error:", error instanceof Error ? error.message : error);
+      });
+    } catch (error) {
+      console.error("[settle-group] startup recovery unavailable:", error instanceof Error ? error.message : error);
+    }
+  });
   app2.use("/api/gameday", (req, res2, next) => {
     res2.setHeader("Cache-Control", "no-store");
     Object.defineProperty(req, "fresh", { get: () => false, configurable: true });
@@ -10899,7 +10942,6 @@ ${html.slice(0, 800)}`);
 }
 
 // server/routes-fantasy.ts
-import { createClient as createClient6 } from "@supabase/supabase-js";
 import { createHash as createHash2, randomBytes } from "crypto";
 function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, teamName) {
   const raw = [
@@ -10910,11 +10952,6 @@ function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, 
     teamName.trim().toLowerCase()
   ].join("|");
   return createHash2("sha256").update(raw).digest("hex");
-}
-function getServiceSupabase2() {
-  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  return createClient6(url, key);
 }
 async function _appendMemberToWeeklyCards(supabase, seasonId, seasonMemberId, teamId, displayName, teamName) {
   try {
@@ -11146,7 +11183,7 @@ function registerFantasyRoutes(app2) {
       res2.status(400).json({ error: "season_year must be an integer between 1900 and 2100" });
       return;
     }
-    const supabase = getServiceSupabase2();
+    const supabase = getServiceSupabase();
     const { data, error } = await supabase.rpc("setup_fantasy_league", {
       p_user_id: userId,
       p_league_name: league_name.trim(),
@@ -11175,7 +11212,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/participants",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(
         req,
         res2,
@@ -11277,7 +11314,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(
         req,
         res2,
@@ -11442,7 +11479,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId",
     async (req, res2) => {
       const { leagueId, seasonId, seasonMemberId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const { display_name, team_name } = req.body;
@@ -11483,7 +11520,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId",
     async (req, res2) => {
       const { leagueId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyLeagueCommissioner(req, res2, supabase, leagueId);
       if (!commissioner) return;
       const { league_name } = req.body;
@@ -11512,7 +11549,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/archive",
     async (req, res2) => {
       const { leagueId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requirePrimaryLeagueCommissioner(req, res2, supabase, leagueId);
       if (!commissioner) return;
       const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, is_active").eq("id", leagueId).maybeSingle();
@@ -11559,7 +11596,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/restore",
     async (req, res2) => {
       const { leagueId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requirePrimaryLeagueCommissioner(req, res2, supabase, leagueId);
       if (!commissioner) return;
       const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, is_active").eq("id", leagueId).maybeSingle();
@@ -11593,7 +11630,7 @@ function registerFantasyRoutes(app2) {
   app2.get("/api/fantasy/leagues", async (req, res2) => {
     const userId = requireFantasyAuth(req, res2);
     if (!userId) return;
-    const supabase = getServiceSupabase2();
+    const supabase = getServiceSupabase();
     const statusFilter = req.query.status?.toLowerCase();
     if (statusFilter === "archived") {
       const { data: claims2 } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
@@ -11654,7 +11691,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, sport, is_active").eq("id", leagueId).maybeSingle();
       if (!league) {
         res2.status(404).json({ error: "League not found" });
@@ -11716,7 +11753,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, sport, is_active").eq("id", leagueId).maybeSingle();
       if (!league || !league.is_active) {
@@ -11789,7 +11826,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "league_member_id is required" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       if (!await requireLeagueActive(supabase, leagueId, res2)) {
         return;
       }
@@ -11840,7 +11877,7 @@ function registerFantasyRoutes(app2) {
       }
       const gt = guest_token.trim();
       const lmId = league_member_id.trim();
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: guestClaim } = await supabase.from("fantasy_member_claims").select("id, league_member_id, user_id").eq("guest_token", gt).eq("league_member_id", lmId).eq("is_active", true).maybeSingle();
       if (guestClaim) {
         const claimUserId = guestClaim.user_id;
@@ -11935,7 +11972,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: season } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
       if (!season) {
         res2.status(404).json({ error: "Season not found" });
@@ -11980,7 +12017,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code, created_at").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).order("created_at", { ascending: true }).maybeSingle();
       if (!room) {
         res2.json(null);
@@ -12066,7 +12103,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/publish",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
@@ -12207,7 +12244,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const { selected_prop_ids } = req.body;
@@ -12357,7 +12394,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/lock",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
@@ -12392,7 +12429,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/unlock",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
@@ -12441,7 +12478,7 @@ function registerFantasyRoutes(app2) {
   app2.get(
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play",
     async (req, res2) => {
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { leagueId, seasonId } = req.params;
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
@@ -12557,7 +12594,7 @@ function registerFantasyRoutes(app2) {
   app2.post(
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks",
     async (req, res2) => {
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { leagueId, seasonId } = req.params;
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
@@ -12713,7 +12750,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settlement",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getDdRoomAndCard(supabase, seasonId);
@@ -12754,7 +12791,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settle",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const { prop_id, correct_answer } = req.body;
@@ -12835,7 +12872,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/finalize",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getDdRoomAndCard(supabase, seasonId);
@@ -12884,7 +12921,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const rc = await _getDdRoomAndCard(supabase, seasonId);
       if (!rc.ok) {
         res2.status(rc.status).json(rc.body);
@@ -13216,7 +13253,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: season } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(sport), default_reward_description, default_reward_amount_display").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
       if (!season) {
         res2.status(404).json({ error: "Season not found" });
@@ -13253,7 +13290,7 @@ function registerFantasyRoutes(app2) {
         res2.json({ template_ids: [], inactive_template_ids: [] });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: season } = await supabase.from("fantasy_league_seasons").select("id, fantasy_leagues(sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
       if (!season) {
         res2.status(404).json({ error: "Season not found" });
@@ -13301,7 +13338,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       if (!await requireLeagueActive(supabase, leagueId, res2)) return;
@@ -13440,7 +13477,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
@@ -13573,7 +13610,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", wn).eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
       if (!room) {
         res2.json(null);
@@ -13671,7 +13708,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
@@ -13704,7 +13741,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
@@ -13745,7 +13782,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
@@ -13822,7 +13859,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
@@ -13864,7 +13901,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/league-picks",
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
@@ -13915,7 +13952,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const identity = getCallerIdentity2(req);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
@@ -13990,7 +14027,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
@@ -14035,7 +14072,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const { prop_id, correct_answer } = req.body;
@@ -14104,7 +14141,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
@@ -14153,7 +14190,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "weekNumber must be a positive integer" });
         return;
       }
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
       if (!rc.ok) {
         res2.status(rc.status).json(rc.body);
@@ -14252,7 +14289,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { leagueId, seasonId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
       if (!season) {
         res2.status(404).json({ error: "Season not found" });
@@ -14271,7 +14308,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
     async (req, res2) => {
       const { leagueId, seasonId, memberId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       if (!await requireLeagueActive(supabase, leagueId, res2)) return;
@@ -14349,7 +14386,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: tokenRecord } = await supabase.from("fantasy_member_recovery_tokens").select("status, expires_at, league_id, league_season_id, league_member_id").eq("token_hash", tokenHash).maybeSingle();
       if (!tokenRecord) {
         res2.status(404).json({ error: "Recovery link not found or invalid", code: "not_found" });
@@ -14389,7 +14426,7 @@ function registerFantasyRoutes(app2) {
       const userId = requireFantasyAuth(req, res2);
       if (!userId) return;
       const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         "redeem_member_recovery_token",
         {
@@ -14440,7 +14477,7 @@ function registerFantasyRoutes(app2) {
     "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
     async (req, res2) => {
       const { leagueId, seasonId, memberId } = req.params;
-      const supabase = getServiceSupabase2();
+      const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
@@ -14465,7 +14502,7 @@ function registerFantasyRoutes(app2) {
 function getSupabase4() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  return createClient7(url, key);
+  return createClient6(url, key);
 }
 async function registerRoutes(app2) {
   app2.get("/promo", (_req, res2) => {
@@ -14678,15 +14715,15 @@ async function registerRoutes(app2) {
 init_email();
 import * as fs3 from "fs";
 import * as path4 from "path";
-import { createClient as createClient9 } from "@supabase/supabase-js";
+import { createClient as createClient8 } from "@supabase/supabase-js";
 
 // server/mm-auto-score.ts
-import { createClient as createClient8 } from "@supabase/supabase-js";
+import { createClient as createClient7 } from "@supabase/supabase-js";
 function getSupabase5() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient8(url, key);
+  return createClient7(url, key);
 }
 var GAME_WINDOWS = [
   { roundId: "round-64", startMs: (/* @__PURE__ */ new Date("2026-03-19T17:00:00Z")).getTime(), endMs: (/* @__PURE__ */ new Date("2026-03-21T05:00:00Z")).getTime() },
@@ -14963,7 +15000,7 @@ function getSupabase6() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient9(url, key);
+  return createClient8(url, key);
 }
 async function sendReminderBlast(label) {
   console.log(`[mm-scheduler] Firing pre-lock reminder blast: ${label}`);
@@ -15257,7 +15294,7 @@ async function tick() {
         console.log(`[mm-scheduler] Score emails paused \u2014 skipping morning blast: ${w.label}`);
       } else if (w.blastType === "r32wrapup") {
         console.log(`[mm-scheduler] Firing R32 wrapup blast: ${w.label}`);
-        const supabase = createClient9(
+        const supabase = createClient8(
           process.env.EXPO_PUBLIC_SUPABASE_URL,
           process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
         );
@@ -15328,12 +15365,12 @@ function startMMScheduler() {
 
 // server/routes-unsubscribe.ts
 init_email();
-import { createClient as createClient10 } from "@supabase/supabase-js";
+import { createClient as createClient9 } from "@supabase/supabase-js";
 function getSupabase7() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient10(url, key);
+  return createClient9(url, key);
 }
 var CONFIRMED_HTML = `<!DOCTYPE html>
 <html>
@@ -15420,7 +15457,7 @@ function registerUnsubscribeRoutes(app2) {
 init_email();
 import * as fs4 from "fs";
 import * as path5 from "path";
-import { createClient as createClient11 } from "@supabase/supabase-js";
+import { createClient as createClient10 } from "@supabase/supabase-js";
 var app = express();
 var log = console.log;
 function setupCors(app2) {
@@ -15662,11 +15699,7 @@ function configureExpoAndLanding(app2) {
       res2.status(400).send("Missing room code");
       return;
     }
-    const { createClient: createClient12 } = await import("@supabase/supabase-js");
-    const supabase = createClient12(
-      process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
-      process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-    );
+    const supabase = getServiceSupabase();
     const { data: room } = await supabase.from("gameday_rooms").select("id").eq("room_code", code).maybeSingle();
     if (!room) {
       res2.status(404).send("Room not found");
@@ -15755,7 +15788,7 @@ async function runSettlementExpiry() {
       return recs;
     };
     var buildRecipients = buildRecipients2;
-    const supabase = createClient11(supabaseUrl, supabaseKey);
+    const supabase = createClient10(supabaseUrl, supabaseKey);
     const now = /* @__PURE__ */ new Date();
     const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1e3).toISOString();
     const { data: expiringInvites } = await supabase.from("swaygers").select("id, title, category, stake_units, creator_id, opponent_id").eq("status", "pending_invite").lt("expires_at", now.toISOString());
@@ -15841,6 +15874,11 @@ async function runSettlementExpiry() {
   }
 }
 (async () => {
+  if (!isServiceSupabaseConfigured()) {
+    console.error(
+      "[startup] Supabase service-role configuration is missing; Game Day and Fantasy database routes will return 503 rather than use anon access."
+    );
+  }
   setupWwwRedirect(app);
   setupCors(app);
   setupBodyParsing(app);

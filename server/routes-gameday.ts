@@ -1,6 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createHash } from "crypto";
-import { createClient } from "@supabase/supabase-js";
 import {
   NBA_PLAYOFF_TEMPLATE,
   DEFAULT_PROP_IDS,
@@ -22,6 +21,7 @@ import {
   phaseLabel,
 } from "./gameday-normalize.js";
 import { settlePropCore } from "./gameday-settle-helper.js";
+import { getServiceSupabase } from "./supabase-service.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
 // Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
@@ -497,14 +497,6 @@ async function buildSettlementQueue(
   };
 }
 
-function getServiceSupabase() {
-  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-  return createClient(url, key);
-}
-
 /** Characters used in short room codes — avoids visually ambiguous 0/O and 1/I. */
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -837,7 +829,15 @@ async function logEvent(
 export function registerGamedayRoutes(app: Express) {
   // Startup recovery: non-blocking — abandon any in_progress settlement ops whose
   // lease has expired (i.e. server restarted before they could write a terminal status).
-  setImmediate(() => _recoverStaleSettleOps(getServiceSupabase()));
+  setImmediate(() => {
+    try {
+      _recoverStaleSettleOps(getServiceSupabase()).catch((error) => {
+        console.error("[settle-group] startup recovery error:", error instanceof Error ? error.message : error);
+      });
+    } catch (error) {
+      console.error("[settle-group] startup recovery unavailable:", error instanceof Error ? error.message : error);
+    }
+  });
 
   // Prevent browser/proxy caching for all gameday API responses.
   // Without this, Express's ETag freshness check returns 304 for unchanged
