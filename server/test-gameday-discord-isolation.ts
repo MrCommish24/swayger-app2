@@ -17,6 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
+const EXPECTED_ASSERTIONS = 23;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -37,10 +38,11 @@ type ApiResponse = { status: number; body: any };
 async function main() {
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   const botKey = process.env.GAMEDAY_BOT_API_KEY;
-  if (!supabaseUrl || !serviceKey || !botKey) {
+  if (!supabaseUrl || !serviceKey || !anonKey || !botKey) {
     throw new Error(
-      "EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and GAMEDAY_BOT_API_KEY are required",
+      "EXPO_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, EXPO_PUBLIC_SUPABASE_ANON_KEY, and GAMEDAY_BOT_API_KEY are required",
     );
   }
 
@@ -48,7 +50,16 @@ async function main() {
   const hostEmail = `${runId}-host@example.test`;
   const nonHostEmail = `${runId}-nonhost@example.test`;
   const password = `Test-${runId}-A1!`;
-  const supabase = createClient(supabaseUrl, serviceKey);
+  // Keep the service-role client isolated from user authentication. Calling
+  // signInWithPassword on a service-key client installs a user session on that
+  // client, so later table queries silently use the authenticated role instead
+  // of service_role. That worked before the RLS lockdown and failed afterward.
+  const service = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const auth = createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   // The route reads the allowlist at request time, letting this suite prove
   // acceptance of a genuine Supabase session without touching production config.
@@ -99,7 +110,7 @@ async function main() {
     }
 
     async function createAuthenticatedUser(email: string) {
-      const created = await supabase.auth.admin.createUser({
+      const created = await service.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
@@ -107,7 +118,7 @@ async function main() {
       if (created.error || !created.data.user) {
         throw new Error(`Could not create test user: ${created.error?.message ?? "unknown error"}`);
       }
-      const signedIn = await supabase.auth.signInWithPassword({ email, password });
+      const signedIn = await auth.auth.signInWithPassword({ email, password });
       if (signedIn.error || !signedIn.data.session) {
         throw new Error(`Could not sign in test user: ${signedIn.error?.message ?? "unknown error"}`);
       }
@@ -192,12 +203,15 @@ async function main() {
         !("discord_user_id" in publicRoom.body.room),
     );
 
-    const { data: appCard } = await supabase
+    const { data: appCard, error: appCardError } = await service
       .from("gameday_pick_cards")
       .select("id")
       .eq("room_id", appRoom.body.room_id)
       .eq("phase", "halftime")
       .single();
+    if (appCardError) {
+      throw new Error(`Web fixture halftime-card lookup failed: ${appCardError.message}`);
+    }
     if (!appCard?.id) throw new Error("Web fixture did not create a halftime card");
     const botOnWebRoom = await request(`/api/gameday/cards/${appCard.id}/open`, {
       method: "PATCH",
@@ -206,21 +220,27 @@ async function main() {
     });
     expect("bot cannot operate an ordinary web-hosted room", botOnWebRoom.status === 403, String(botOnWebRoom.status));
 
-    const { data: cards } = await supabase
+    const { data: cards, error: cardsError } = await service
       .from("gameday_pick_cards")
       .select("id, phase")
       .eq("room_id", discordRoomId)
       .eq("phase", "halftime")
       .single();
+    if (cardsError) {
+      throw new Error(`Discord fixture halftime-card lookup failed: ${cardsError.message}`);
+    }
     if (!cards?.id) throw new Error("Discord fixture did not create a halftime card");
     const halftimeCardId = cards.id;
-    const { data: props } = await supabase
+    const { data: props, error: propsError } = await service
       .from("gameday_props")
       .select("id, answer_options")
       .eq("card_id", halftimeCardId)
       .order("display_order")
       .limit(1)
       .single();
+    if (propsError) {
+      throw new Error(`Discord fixture prop lookup failed: ${propsError.message}`);
+    }
     if (!props?.id || !Array.isArray(props.answer_options) || !props.answer_options[0]) {
       throw new Error("Discord fixture did not create a settleable prop");
     }
@@ -310,15 +330,22 @@ async function main() {
     expect("GUILD_A can read its own final standings", sameGuildStandings.status === 200);
   } finally {
     if (roomIds.length > 0) {
-      await supabase.from("gameday_rooms").delete().in("id", roomIds);
+      await service.from("gameday_rooms").delete().in("id", roomIds);
     }
-    if (hostUserId) await supabase.auth.admin.deleteUser(hostUserId);
-    if (nonHostUserId) await supabase.auth.admin.deleteUser(nonHostUserId);
+    if (hostUserId) await service.auth.admin.deleteUser(hostUserId);
+    if (nonHostUserId) await service.auth.admin.deleteUser(nonHostUserId);
     if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
   }
 
-  console.log(`\n${passed}/${passed + failed} assertions passed`);
-  if (failed > 0) process.exitCode = 1;
+  const total = passed + failed;
+  if (failed === 0 && passed === EXPECTED_ASSERTIONS) {
+    console.log(`\n${EXPECTED_ASSERTIONS}/${EXPECTED_ASSERTIONS} assertions passed`);
+  } else {
+    console.error(
+      `\nDiscord isolation gate failed: ${passed}/${total} assertions passed; expected ${EXPECTED_ASSERTIONS}/${EXPECTED_ASSERTIONS}`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main()
