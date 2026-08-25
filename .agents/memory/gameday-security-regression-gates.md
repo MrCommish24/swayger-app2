@@ -16,3 +16,7 @@ did not complete.
 live-state rollback transaction and record the pre-change markers. Afterward,
 inspect the test output for the complete normal-web and Discord success counts;
 roll back immediately if either suite reports a failure or lacks its marker.
+For a completed lockdown, also require direct Supabase table denial for both
+anon and an ordinary authenticated client across every present target table;
+public API smoke checks must continue to pass through the server service-role
+path.
