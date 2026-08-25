@@ -9019,7 +9019,7 @@ function registerGamedayRoutes(app2) {
     } catch (e) {
       console.warn("[gameday] room_code generation skipped:", e);
     }
-    const resolvedIsPrivate = is_private ?? (botAuthed ? false : true);
+    const resolvedIsPrivate = botAuthed ? true : is_private ?? true;
     const insertPayload = {
       room_name: room_name.trim(),
       team_a_name: team_a_name.trim(),
@@ -15458,6 +15458,26 @@ init_email();
 import * as fs4 from "fs";
 import * as path5 from "path";
 import { createClient as createClient10 } from "@supabase/supabase-js";
+
+// server/gameday-short-link.ts
+function registerGamedayShortLink(app2) {
+  app2.get("/g/:roomCode", async (req, res2) => {
+    const code = (req.params.roomCode ?? "").toUpperCase().trim();
+    if (!code) {
+      res2.status(400).send("Missing room code");
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: room } = await supabase.from("gameday_rooms").select("id").eq("room_code", code).maybeSingle();
+    if (!room) {
+      res2.status(404).send("Room not found");
+      return;
+    }
+    res2.redirect(302, `/gameday/${room.id}`);
+  });
+}
+
+// server/index.ts
 var app = express();
 var log = console.log;
 function setupCors(app2) {
@@ -15693,20 +15713,7 @@ function configureExpoAndLanding(app2) {
     res2.setHeader("Service-Worker-Allowed", "/");
     res2.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
   });
-  app2.get("/g/:roomCode", async (req, res2) => {
-    const code = (req.params.roomCode ?? "").toUpperCase().trim();
-    if (!code) {
-      res2.status(400).send("Missing room code");
-      return;
-    }
-    const supabase = getServiceSupabase();
-    const { data: room } = await supabase.from("gameday_rooms").select("id").eq("room_code", code).maybeSingle();
-    if (!room) {
-      res2.status(404).send("Room not found");
-      return;
-    }
-    res2.redirect(302, `/gameday/${room.id}`);
-  });
+  registerGamedayShortLink(app2);
   registerUnsubscribeRoutes(app2);
   log("Serving static Expo files with dynamic manifest routing");
   app2.use((req, res2, next) => {

@@ -11,6 +11,7 @@ import {
   getServiceSupabase,
   isServiceSupabaseConfigured,
 } from "./supabase-service";
+import { registerGamedayShortLink } from "./gameday-short-link";
 
 const app = express();
 const log = console.log;
@@ -307,20 +308,9 @@ function configureExpoAndLanding(app: express.Application) {
   });
 
   // ── Short room code redirect (/g/:code → /gameday/:roomId) ───────────────
-  // Used by Discord bot public_link. Resolves GDS-XXXXX to the full room UUID
-  // and redirects server-side so the Expo SPA receives a known deep-link path.
-  app.get("/g/:roomCode", async (req: Request, res: Response) => {
-    const code = (req.params.roomCode ?? "").toUpperCase().trim();
-    if (!code) { res.status(400).send("Missing room code"); return; }
-    const supabase = getServiceSupabase();
-    const { data: room } = await supabase
-      .from("gameday_rooms")
-      .select("id")
-      .eq("room_code", code)
-      .maybeSingle();
-    if (!room) { res.status(404).send("Room not found"); return; }
-    res.redirect(302, `/gameday/${(room as any).id}`);
-  });
+  // Used by Discord bot public_link. Private rooms intentionally remain
+  // resolvable here because privacy controls discovery, not invite access.
+  registerGamedayShortLink(app);
 
   registerUnsubscribeRoutes(app);
 

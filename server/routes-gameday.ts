@@ -1110,10 +1110,11 @@ export function registerGamedayRoutes(app: Express) {
       console.warn("[gameday] room_code generation skipped:", e);
     }
 
-    // Discord/bot rooms default to public (is_private: false) so guests can
-    // join via the public link without being redirected to the join screen.
-    // The bot can override by passing is_private: true explicitly.
-    const resolvedIsPrivate = is_private ?? (botAuthed ? false : true);
+    // Discord rooms are always unlisted. The bot caller cannot make a room
+    // discoverable by passing is_private=false; direct invite access remains
+    // available through the returned public_link and room code.
+    // Normal app-created rooms preserve their existing default.
+    const resolvedIsPrivate = botAuthed ? true : (is_private ?? true);
 
     const insertPayload: Record<string, unknown> = {
       room_name: room_name.trim(),
