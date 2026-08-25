@@ -18,7 +18,7 @@ import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
-type Sport = "nba" | "soccer";
+type Sport = "nba" | "soccer" | "nfl";
 
 interface TemplateResponse {
   template: GDPropTemplate[];
@@ -45,6 +45,16 @@ const SOCCER_PHASES: Array<{
   { key: "halftime",   label: "Halftime Picks",         range: "3–4 recommended" },
   { key: "final_push", label: "Final Push Picks 🔥",    range: "3–4 recommended" },
   { key: "penalties",  label: "Penalty Shootout ⚽",    range: "All 6 (optional)" },
+];
+
+const NFL_PHASES: Array<{
+  key: "pregame" | "halftime" | "fourth";
+  label: string;
+  range: string;
+}> = [
+  { key: "pregame",  label: "Pregame Picks",    range: "6 default picks" },
+  { key: "halftime", label: "Halftime Picks",   range: "4 default picks" },
+  { key: "fourth",   label: "4Q / Clutch Picks", range: "3 default picks" },
 ];
 
 // ── CDT time string → ISO UTC string ────────────────────────────────────────
@@ -203,7 +213,9 @@ export default function CreateGameDayRoom() {
     }
   };
 
-  const phases = sport === "soccer" ? SOCCER_PHASES : NBA_PHASES;
+  const phases =
+    sport === "soccer" ? SOCCER_PHASES : sport === "nfl" ? NFL_PHASES : NBA_PHASES;
+  const isNfl = sport === "nfl";
 
   if (isHost === null) {
     return (
@@ -254,7 +266,7 @@ export default function CreateGameDayRoom() {
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>SPORT</Text>
         <View style={styles.sportRow}>
-          {(["nba", "soccer"] as Sport[]).map((s) => (
+          {(["nba", "nfl", "soccer"] as Sport[]).map((s) => (
             <TouchableOpacity
               key={s}
               style={[styles.sportBtn, sport === s && styles.sportBtnActive]}
@@ -262,7 +274,7 @@ export default function CreateGameDayRoom() {
               activeOpacity={0.75}
             >
               <Text style={[styles.sportBtnText, sport === s && styles.sportBtnTextActive]}>
-                {s === "nba" ? "🏀 NBA" : "⚽ Soccer"}
+                {s === "nba" ? "🏀 NBA" : s === "nfl" ? "🏈 NFL" : "⚽ Soccer"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -274,7 +286,7 @@ export default function CreateGameDayRoom() {
         <Text style={styles.sectionLabel}>ROOM DETAILS</Text>
         <TextInput
           style={styles.input}
-          placeholder="Room name (e.g. Thunder vs Spurs — Game 2)"
+          placeholder={isNfl ? "Room name (e.g. Bears vs Packers)" : "Room name (e.g. Thunder vs Spurs — Game 2)"}
           placeholderTextColor={C.textMuted}
           value={roomName}
           onChangeText={setRoomName}
@@ -298,14 +310,14 @@ export default function CreateGameDayRoom() {
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.half]}
-            placeholder="Star player A"
+            placeholder={isNfl ? "Starting QB A" : "Star player A"}
             placeholderTextColor={C.textMuted}
             value={starA}
             onChangeText={setStarA}
           />
           <TextInput
             style={[styles.input, styles.half]}
-            placeholder="Star player B"
+            placeholder={isNfl ? "Starting QB B" : "Star player B"}
             placeholderTextColor={C.textMuted}
             value={starB}
             onChangeText={setStarB}

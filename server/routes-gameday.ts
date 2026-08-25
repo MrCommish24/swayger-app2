@@ -5,6 +5,8 @@ import {
   DEFAULT_PROP_IDS,
   FIFA_TEMPLATE,
   FIFA_DEFAULT_PROP_IDS,
+  NFL_TEMPLATE,
+  NFL_DEFAULT_PROP_IDS,
   resolvePlaceholders,
 } from "./gameday-template.js";
 import {
@@ -513,6 +515,7 @@ const PUBLIC_ROOM_FIELDS = [
   "is_private",
   "archived_at",
   "source",
+  "sport",
   "countdown_phase",
   "countdown_type",
   "countdown_ends_at",
@@ -982,15 +985,18 @@ export function registerGamedayRoutes(app: Express) {
   // Reads from gameday_prop_library table. Falls back to hardcoded templates
   // if the table is empty or unavailable (safe during migration).
   app.get("/api/gameday/template", async (req: Request, res: Response) => {
-    const sportParam = (req.query.sport as string) ?? "nba";
-    const isSoccer = sportParam === "soccer";
+    const sportParam = ((req.query.sport as string) ?? "nba").trim().toLowerCase();
+    if (!["nba", "soccer", "nfl"].includes(sportParam)) {
+      res.status(400).json({ error: "sport must be nba, soccer, or nfl" });
+      return;
+    }
     const supabase = getServiceSupabase();
 
     try {
       const { data: libraryProps, error } = await supabase
         .from("gameday_prop_library")
         .select("id, phase, question, answer_options, settlement_window, is_default")
-        .eq("sport", isSoccer ? "soccer" : "nba")
+        .eq("sport", sportParam)
         .eq("is_active", true)
         .order("display_order", { ascending: true });
 
@@ -1013,10 +1019,13 @@ export function registerGamedayRoutes(app: Express) {
     }
 
     // Fallback to hardcoded templates
-    res.json({
-      template: isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE,
-      defaultPropIds: isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS,
-    });
+    const fallback =
+      sportParam === "soccer"
+        ? { template: FIFA_TEMPLATE, defaultPropIds: FIFA_DEFAULT_PROP_IDS }
+        : sportParam === "nfl"
+        ? { template: NFL_TEMPLATE, defaultPropIds: NFL_DEFAULT_PROP_IDS }
+        : { template: NBA_PLAYOFF_TEMPLATE, defaultPropIds: DEFAULT_PROP_IDS };
+    res.json(fallback);
   });
 
   // ── POST /api/gameday/rooms ─────────────────────────────────────────────
@@ -1060,7 +1069,7 @@ export function registerGamedayRoutes(app: Express) {
       discord_channel_id?: string;
       discord_user_id?: string;
       is_private?: boolean;
-      sport?: "nba" | "soccer";
+      sport?: "nba" | "soccer" | "nfl";
       game_start_time?: string;
       card_schedules?: Record<string, { open_at?: string; lock_at?: string }>;
     };
@@ -1095,9 +1104,23 @@ export function registerGamedayRoutes(app: Express) {
       return;
     }
 
-    const isSoccer = sport === "soccer";
-    const activeTemplate = isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
-    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
+    const normalizedSport = (sport ?? "nba").trim().toLowerCase();
+    if (!["nba", "soccer", "nfl"].includes(normalizedSport)) {
+      res.status(400).json({ error: "sport must be nba, soccer, or nfl" });
+      return;
+    }
+    const isSoccer = normalizedSport === "soccer";
+    const isNfl = normalizedSport === "nfl";
+    const activeTemplate = isSoccer
+      ? FIFA_TEMPLATE
+      : isNfl
+      ? NFL_TEMPLATE
+      : NBA_PLAYOFF_TEMPLATE;
+    const defaultPropIds = isSoccer
+      ? FIFA_DEFAULT_PROP_IDS
+      : isNfl
+      ? NFL_DEFAULT_PROP_IDS
+      : DEFAULT_PROP_IDS;
     const propIds = selected_prop_ids ?? defaultPropIds;
     const supabase = getServiceSupabase();
 
@@ -1134,7 +1157,8 @@ export function registerGamedayRoutes(app: Express) {
       if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
       if (discord_user_id)    insertPayload.discord_user_id    = discord_user_id;
     }
-    if (sport)             insertPayload.sport              = isSoccer ? "soccer" : "nba";
+    // Preserve historical omitted-sport rooms while storing every explicit choice.
+    if (sport !== undefined) insertPayload.sport = normalizedSport;
     if (game_start_time)   insertPayload.game_start_time    = game_start_time;
 
     let { data: room, error: roomError } = await supabase
@@ -1190,7 +1214,7 @@ export function registerGamedayRoutes(app: Express) {
 
     for (const cardDef of cardPhases) {
       const cardSchedule = card_schedules?.[cardDef.phase] ?? {};
-      const { data: card } = await supabase
+      const { data: card, error: cardError } = await supabase
         .from("gameday_pick_cards")
         .insert({
           room_id: room.id,
@@ -1202,7 +1226,12 @@ export function registerGamedayRoutes(app: Express) {
         .select()
         .single();
 
-      if (!card) continue;
+      if (cardError || !card) {
+        await supabase.from("gameday_rooms").delete().eq("id", room.id);
+        console.error("[gameday] create card error:", cardError);
+        res.status(500).json({ error: "Could not create all pick cards" });
+        return;
+      }
 
       const templateProps = activeTemplate.filter(
         (p) => p.phase === cardDef.phase && propIds.includes(p.id)
@@ -1210,7 +1239,7 @@ export function registerGamedayRoutes(app: Express) {
 
       for (let i = 0; i < templateProps.length; i++) {
         const tmpl = templateProps[i];
-        await supabase.from("gameday_props").insert({
+        const { error: propError } = await supabase.from("gameday_props").insert({
           card_id: card.id,
           question: resolvePlaceholders(tmpl.question, vars),
           answer_options: tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
@@ -1218,6 +1247,12 @@ export function registerGamedayRoutes(app: Express) {
           status: "pending",
           template_prop_id: tmpl.id,
         });
+        if (propError) {
+          await supabase.from("gameday_rooms").delete().eq("id", room.id);
+          console.error("[gameday] create prop error:", propError);
+          res.status(500).json({ error: "Could not create all pick props" });
+          return;
+        }
       }
     }
 
@@ -2014,7 +2049,7 @@ export function registerGamedayRoutes(app: Express) {
       // ── 1. Fetch source room ──────────────────────────────────────────────
       const { data: srcRoom } = await supabase
         .from("gameday_rooms")
-        .select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private")
+        .select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, game_start_time, sport, is_private")
         .eq("id", roomId)
         .single();
 
@@ -2027,7 +2062,7 @@ export function registerGamedayRoutes(app: Express) {
       // ── 2. Fetch source cards + props ─────────────────────────────────────
       const { data: srcCards } = await supabase
         .from("gameday_pick_cards")
-        .select("phase, title, display_order, gameday_props(question, answer_options, display_order)")
+        .select("phase, title, display_order, scheduled_open_at, scheduled_lock_at, gameday_props(question, answer_options, display_order, template_prop_id)")
         .eq("room_id", roomId)
         .order("display_order");
 
@@ -2059,11 +2094,13 @@ export function registerGamedayRoutes(app: Express) {
         team_a_star:  (srcRoom as any).team_a_star,
         team_b_star:  (srcRoom as any).team_b_star,
         game_date:    (srcRoom as any).game_date ?? null,
+        game_start_time: (srcRoom as any).game_start_time ?? null,
         host_user_id: hostId,
         status:       "active",
         source:       "app",
         is_private:   (srcRoom as any).is_private ?? true,
       };
+      if ((srcRoom as any).sport) newRoomPayload.sport = (srcRoom as any).sport;
       if (roomCode) newRoomPayload.room_code = roomCode;
 
       const { data: newRoom, error: roomErr } = await supabase
@@ -2088,6 +2125,8 @@ export function registerGamedayRoutes(app: Express) {
             title:         srcCard.title,
             display_order: srcCard.display_order,
             status:        "closed",
+            scheduled_open_at: srcCard.scheduled_open_at ?? null,
+            scheduled_lock_at: srcCard.scheduled_lock_at ?? null,
           })
           .select()
           .single();
@@ -2106,6 +2145,7 @@ export function registerGamedayRoutes(app: Express) {
             display_order: srcProp.display_order,
             status:        "pending",
             correct_answer: null,
+            template_prop_id: srcProp.template_prop_id ?? null,
           });
         }
       }

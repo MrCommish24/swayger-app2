@@ -63,7 +63,8 @@ interface Room {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was created */
   source?: string | null;
-  countdown_phase?: "pregame" | "halftime" | "fourth" | null;
+  sport?: "nba" | "soccer" | "nfl" | null;
+  countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;
   countdown_started_at?: string | null;
@@ -525,15 +526,20 @@ export default function HostControlRoom() {
 
   const copyShareText = (phase: string) => {
     const url = getShareUrl();
-    const roomIsSoccer = (hostData?.cards ?? []).some(
+    const inferredSoccer = (hostData?.cards ?? []).some(
       (c) => c.phase === "final_push" || c.phase === "penalties"
     );
+    const roomSport = hostData?.room.sport ?? (inferredSoccer ? "soccer" : "nba");
     const texts: Record<string, string> = {
-      pregame: roomIsSoccer
+      pregame: roomSport === "soccer"
         ? `Game Day Swayger room is live for ${hostData?.room.room_name ?? "the match"}. Make your picks before kickoff:\n${url}`
+        : roomSport === "nfl"
+        ? `Game Day Swayger is live for ${hostData?.room.room_name ?? "the game"}. Make your picks before kickoff and track the leaderboard here:\n${url}`
         : `Game Day Swayger is live. Make your picks before tipoff and track the leaderboard here:\n${url}`,
       halftime: `Halftime picks are live. Same room:\n${url}`,
-      fourth: `4Q picks are live. Lock in here:\n${url}`,
+      fourth: roomSport === "nfl"
+        ? `4Q / Clutch picks are live. Lock in here:\n${url}`
+        : `4Q picks are live. Lock in here:\n${url}`,
       final_push: `Final Push picks are live — last window before receipts drop. Lock in here:\n${url}`,
       penalties: `Penalty Shootout picks are live. Pick your winner now:\n${url}`,
       final: `Final Game Day Swayger standings are ready. See who won and who has receipts:\n${url}`,

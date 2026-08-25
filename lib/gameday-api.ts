@@ -54,6 +54,8 @@ export interface GDRoom {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was originally created */
   source?: string | null;
+  /** "nba" | "soccer" | "nfl"; absent on rooms created before sport support. */
+  sport?: "nba" | "soccer" | "nfl" | null;
   countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;

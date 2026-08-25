@@ -842,6 +842,121 @@ export const FIFA_DEFAULT_PROP_IDS: string[] = [
   "fifa_pen_clean_sweep",
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NFL template — 3 phases: pregame, halftime, 4Q / clutch.
+// All picks are objective and settle from the game result; no betting language.
+// ─────────────────────────────────────────────────────────────────────────────
+export const NFL_TEMPLATE: PropTemplate[] = [
+  {
+    id: "nfl_pre_winner",
+    phase: "pregame",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_pre_first_score",
+    phase: "pregame",
+    question: "Which team scores first?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "Opening Drive",
+  },
+  {
+    id: "nfl_pre_halftime_leader",
+    phase: "pregame",
+    question: "Who leads at halftime?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Tied"],
+    settlement_window: "Halftime",
+  },
+  {
+    id: "nfl_pre_qb_td_passes",
+    phase: "pregame",
+    question: "Which QB throws more touchdown passes?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Tied"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_pre_qb_interception",
+    phase: "pregame",
+    question: "Will either starting QB throw an interception?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_pre_total_touchdowns",
+    phase: "pregame",
+    question: "How many total touchdowns are scored?",
+    answers: ["0–3", "4–5", "6+"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_ht_winner",
+    phase: "halftime",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_ht_first_second_half_score",
+    phase: "halftime",
+    question: "Which team scores first in the second half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No second-half score"],
+    settlement_window: "Third Quarter",
+  },
+  {
+    id: "nfl_ht_second_half_points",
+    phase: "halftime",
+    question: "Which team scores more points in the second half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Tied"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_ht_fourth_lead_change",
+    phase: "halftime",
+    question: "Will the lead change in the fourth quarter?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_4q_winner",
+    phase: "fourth",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_4q_next_score",
+    phase: "fourth",
+    question: "Which team scores next?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No more scores"],
+    settlement_window: "End Game",
+  },
+  {
+    id: "nfl_4q_another_touchdown",
+    phase: "fourth",
+    question: "Will there be another touchdown?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game",
+  },
+];
+
+// Pregame: 6 | Halftime: 4 | 4Q / Clutch: 3
+export const NFL_DEFAULT_PROP_IDS: string[] = [
+  "nfl_pre_winner",
+  "nfl_pre_first_score",
+  "nfl_pre_halftime_leader",
+  "nfl_pre_qb_td_passes",
+  "nfl_pre_qb_interception",
+  "nfl_pre_total_touchdowns",
+  "nfl_ht_winner",
+  "nfl_ht_first_second_half_score",
+  "nfl_ht_second_half_points",
+  "nfl_ht_fourth_lead_change",
+  "nfl_4q_winner",
+  "nfl_4q_next_score",
+  "nfl_4q_another_touchdown",
+];
+
 export function resolvePlaceholders(
   text: string,
   vars: { TEAM_A: string; TEAM_B: string; STAR_A: string; STAR_B: string }

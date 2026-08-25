@@ -65,7 +65,8 @@ function computeTimeline(cards: GDCard[], isFinalized: boolean): TimelineItem[] 
 function getNextWindow(
   cards: GDCard[],
   isFinalized: boolean,
-  myPicks: Record<string, string>
+  myPicks: Record<string, string>,
+  sport?: string | null,
 ): { headline: string; sub: string } {
   if (isFinalized) return { headline: "🏆 Receipts are in.", sub: "View final standings below." };
 
@@ -74,7 +75,7 @@ function getNextWindow(
   if (openCard) {
     const sub =
       openCard.phase === "pregame"
-        ? "Lock in your picks before kickoff / tipoff."
+        ? `Lock in your picks before ${sport === "nba" ? "tipoff" : "kickoff"}.`
         : openCard.phase === "penalties"
         ? "Pick your shootout winner now!"
         : "Make your calls now — window closes soon.";
@@ -118,7 +119,8 @@ function getCountdownCopy(
   phase: string,
   type: string,
   secsLeft: number,
-  expired: boolean
+  expired: boolean,
+  sport?: string | null,
 ): { headline: string; sub: string; timer: string } {
   const PHASE_LABELS: Record<string, string> = {
     pregame: "Pregame Picks",
@@ -147,7 +149,7 @@ function getCountdownCopy(
     headline: `${pl} lock soon.`,
     sub:
       phase === "pregame"
-        ? "Get your picks in before kickoff."
+        ? `Get your picks in before ${sport === "nba" ? "tipoff" : "kickoff"}.`
         : phase === "halftime"
         ? "Get your second-half picks in now."
         : phase === "penalties"
@@ -771,7 +773,7 @@ export default function GameDayRoomScreen() {
         if (!cdPhase || !cdType || !cdEndsAt || isFinalized) return null;
         if (countdownSecsLeft < -120) return null;
         const expired = countdownSecsLeft <= 0;
-        const { headline, sub, timer } = getCountdownCopy(cdPhase, cdType, countdownSecsLeft, expired);
+        const { headline, sub, timer } = getCountdownCopy(cdPhase, cdType, countdownSecsLeft, expired, room?.sport);
         const isUrgent = cdType === "locks_soon" && !expired;
         return (
           <View style={[styles.cdBanner, isUrgent ? styles.cdBannerUrgent : styles.cdBannerInfo]}>
@@ -837,7 +839,7 @@ export default function GameDayRoomScreen() {
 
       {/* Next Pick Window callout — shown when no card is open */}
       {!openCard && !isFinalized ? (() => {
-        const nw = getNextWindow(cards, isFinalized, my_picks);
+        const nw = getNextWindow(cards, isFinalized, my_picks, room?.sport);
         return (
           <View style={styles.nextWindowCard}>
             <Text style={styles.nextWindowHeadline}>{nw.headline}</Text>

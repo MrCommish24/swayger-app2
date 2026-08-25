@@ -8230,6 +8230,114 @@ var FIFA_DEFAULT_PROP_IDS = [
   "fifa_pen_star_scores",
   "fifa_pen_clean_sweep"
 ];
+var NFL_TEMPLATE = [
+  {
+    id: "nfl_pre_winner",
+    phase: "pregame",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_pre_first_score",
+    phase: "pregame",
+    question: "Which team scores first?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "Opening Drive"
+  },
+  {
+    id: "nfl_pre_halftime_leader",
+    phase: "pregame",
+    question: "Who leads at halftime?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Tied"],
+    settlement_window: "Halftime"
+  },
+  {
+    id: "nfl_pre_qb_td_passes",
+    phase: "pregame",
+    question: "Which QB throws more touchdown passes?",
+    answers: ["{{STAR_A}}", "{{STAR_B}}", "Tied"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_pre_qb_interception",
+    phase: "pregame",
+    question: "Will either starting QB throw an interception?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_pre_total_touchdowns",
+    phase: "pregame",
+    question: "How many total touchdowns are scored?",
+    answers: ["0\u20133", "4\u20135", "6+"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_ht_winner",
+    phase: "halftime",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_ht_first_second_half_score",
+    phase: "halftime",
+    question: "Which team scores first in the second half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No second-half score"],
+    settlement_window: "Third Quarter"
+  },
+  {
+    id: "nfl_ht_second_half_points",
+    phase: "halftime",
+    question: "Which team scores more points in the second half?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "Tied"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_ht_fourth_lead_change",
+    phase: "halftime",
+    question: "Will the lead change in the fourth quarter?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_4q_winner",
+    phase: "fourth",
+    question: "Who wins the game?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_4q_next_score",
+    phase: "fourth",
+    question: "Which team scores next?",
+    answers: ["{{TEAM_A}}", "{{TEAM_B}}", "No more scores"],
+    settlement_window: "End Game"
+  },
+  {
+    id: "nfl_4q_another_touchdown",
+    phase: "fourth",
+    question: "Will there be another touchdown?",
+    answers: ["Yes", "No"],
+    settlement_window: "End Game"
+  }
+];
+var NFL_DEFAULT_PROP_IDS = [
+  "nfl_pre_winner",
+  "nfl_pre_first_score",
+  "nfl_pre_halftime_leader",
+  "nfl_pre_qb_td_passes",
+  "nfl_pre_qb_interception",
+  "nfl_pre_total_touchdowns",
+  "nfl_ht_winner",
+  "nfl_ht_first_second_half_score",
+  "nfl_ht_second_half_points",
+  "nfl_ht_fourth_lead_change",
+  "nfl_4q_winner",
+  "nfl_4q_next_score",
+  "nfl_4q_another_touchdown"
+];
 function resolvePlaceholders(text, vars) {
   return text.replace(/\{\{TEAM_A\}\}/g, vars.TEAM_A).replace(/\{\{TEAM_B\}\}/g, vars.TEAM_B).replace(/\{\{STAR_A\}\}/g, vars.STAR_A).replace(/\{\{STAR_B\}\}/g, vars.STAR_B);
 }
@@ -8644,6 +8752,7 @@ var PUBLIC_ROOM_FIELDS = [
   "is_private",
   "archived_at",
   "source",
+  "sport",
   "countdown_phase",
   "countdown_type",
   "countdown_ends_at",
@@ -8932,11 +9041,14 @@ function registerGamedayRoutes(app2) {
     });
   });
   app2.get("/api/gameday/template", async (req, res2) => {
-    const sportParam = req.query.sport ?? "nba";
-    const isSoccer = sportParam === "soccer";
+    const sportParam = (req.query.sport ?? "nba").trim().toLowerCase();
+    if (!["nba", "soccer", "nfl"].includes(sportParam)) {
+      res2.status(400).json({ error: "sport must be nba, soccer, or nfl" });
+      return;
+    }
     const supabase = getServiceSupabase();
     try {
-      const { data: libraryProps, error } = await supabase.from("gameday_prop_library").select("id, phase, question, answer_options, settlement_window, is_default").eq("sport", isSoccer ? "soccer" : "nba").eq("is_active", true).order("display_order", { ascending: true });
+      const { data: libraryProps, error } = await supabase.from("gameday_prop_library").select("id, phase, question, answer_options, settlement_window, is_default").eq("sport", sportParam).eq("is_active", true).order("display_order", { ascending: true });
       if (!error && libraryProps && libraryProps.length > 0) {
         const template = libraryProps.map((p) => ({
           id: p.id,
@@ -8952,10 +9064,8 @@ function registerGamedayRoutes(app2) {
     } catch (e) {
       console.warn("[gameday] prop library query failed, falling back to hardcoded:", e);
     }
-    res2.json({
-      template: isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE,
-      defaultPropIds: isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS
-    });
+    const fallback = sportParam === "soccer" ? { template: FIFA_TEMPLATE, defaultPropIds: FIFA_DEFAULT_PROP_IDS } : sportParam === "nfl" ? { template: NFL_TEMPLATE, defaultPropIds: NFL_DEFAULT_PROP_IDS } : { template: NBA_PLAYOFF_TEMPLATE, defaultPropIds: DEFAULT_PROP_IDS };
+    res2.json(fallback);
   });
   app2.post("/api/gameday/rooms", async (req, res2) => {
     let hostId = null;
@@ -9008,9 +9118,15 @@ function registerGamedayRoutes(app2) {
       res2.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
       return;
     }
-    const isSoccer = sport === "soccer";
-    const activeTemplate = isSoccer ? FIFA_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
-    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
+    const normalizedSport = (sport ?? "nba").trim().toLowerCase();
+    if (!["nba", "soccer", "nfl"].includes(normalizedSport)) {
+      res2.status(400).json({ error: "sport must be nba, soccer, or nfl" });
+      return;
+    }
+    const isSoccer = normalizedSport === "soccer";
+    const isNfl = normalizedSport === "nfl";
+    const activeTemplate = isSoccer ? FIFA_TEMPLATE : isNfl ? NFL_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
+    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : isNfl ? NFL_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
     const propIds = selected_prop_ids ?? defaultPropIds;
     const supabase = getServiceSupabase();
     let roomCode;
@@ -9038,7 +9154,7 @@ function registerGamedayRoutes(app2) {
       if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
       if (discord_user_id) insertPayload.discord_user_id = discord_user_id;
     }
-    if (sport) insertPayload.sport = isSoccer ? "soccer" : "nba";
+    if (sport !== void 0) insertPayload.sport = normalizedSport;
     if (game_start_time) insertPayload.game_start_time = game_start_time;
     let { data: room, error: roomError } = await supabase.from("gameday_rooms").insert(insertPayload).select().single();
     if (roomError && roomCode && roomError.message?.includes("room_code")) {
@@ -9073,20 +9189,25 @@ function registerGamedayRoutes(app2) {
     };
     for (const cardDef of cardPhases) {
       const cardSchedule = card_schedules?.[cardDef.phase] ?? {};
-      const { data: card } = await supabase.from("gameday_pick_cards").insert({
+      const { data: card, error: cardError } = await supabase.from("gameday_pick_cards").insert({
         room_id: room.id,
         ...cardDef,
         status: "closed",
         ...cardSchedule.open_at ? { scheduled_open_at: cardSchedule.open_at } : {},
         ...cardSchedule.lock_at ? { scheduled_lock_at: cardSchedule.lock_at } : {}
       }).select().single();
-      if (!card) continue;
+      if (cardError || !card) {
+        await supabase.from("gameday_rooms").delete().eq("id", room.id);
+        console.error("[gameday] create card error:", cardError);
+        res2.status(500).json({ error: "Could not create all pick cards" });
+        return;
+      }
       const templateProps = activeTemplate.filter(
         (p) => p.phase === cardDef.phase && propIds.includes(p.id)
       );
       for (let i = 0; i < templateProps.length; i++) {
         const tmpl = templateProps[i];
-        await supabase.from("gameday_props").insert({
+        const { error: propError } = await supabase.from("gameday_props").insert({
           card_id: card.id,
           question: resolvePlaceholders(tmpl.question, vars),
           answer_options: tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
@@ -9094,6 +9215,12 @@ function registerGamedayRoutes(app2) {
           status: "pending",
           template_prop_id: tmpl.id
         });
+        if (propError) {
+          await supabase.from("gameday_rooms").delete().eq("id", room.id);
+          console.error("[gameday] create prop error:", propError);
+          res2.status(500).json({ error: "Could not create all pick props" });
+          return;
+        }
       }
     }
     if (botAuthed || insertPayload.source === "discord") {
@@ -9599,13 +9726,13 @@ function registerGamedayRoutes(app2) {
       const { roomId } = req.params;
       const { room_name: customName } = req.body;
       const supabase = getServiceSupabase();
-      const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private").eq("id", roomId).single();
+      const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, game_start_time, sport, is_private").eq("id", roomId).single();
       if (!srcRoom) {
         res2.status(404).json({ error: "Source room not found" });
         return;
       }
       if (!requireOwnedHumanRoom(res2, srcRoom.host_user_id, hostId)) return;
-      const { data: srcCards } = await supabase.from("gameday_pick_cards").select("phase, title, display_order, gameday_props(question, answer_options, display_order)").eq("room_id", roomId).order("display_order");
+      const { data: srcCards } = await supabase.from("gameday_pick_cards").select("phase, title, display_order, scheduled_open_at, scheduled_lock_at, gameday_props(question, answer_options, display_order, template_prop_id)").eq("room_id", roomId).order("display_order");
       if (!srcCards || srcCards.length === 0) {
         res2.status(400).json({ error: "Source room has no cards to duplicate" });
         return;
@@ -9628,11 +9755,13 @@ function registerGamedayRoutes(app2) {
         team_a_star: srcRoom.team_a_star,
         team_b_star: srcRoom.team_b_star,
         game_date: srcRoom.game_date ?? null,
+        game_start_time: srcRoom.game_start_time ?? null,
         host_user_id: hostId,
         status: "active",
         source: "app",
         is_private: srcRoom.is_private ?? true
       };
+      if (srcRoom.sport) newRoomPayload.sport = srcRoom.sport;
       if (roomCode) newRoomPayload.room_code = roomCode;
       const { data: newRoom, error: roomErr } = await supabase.from("gameday_rooms").insert(newRoomPayload).select().single();
       if (roomErr || !newRoom) {
@@ -9646,7 +9775,9 @@ function registerGamedayRoutes(app2) {
           phase: srcCard.phase,
           title: srcCard.title,
           display_order: srcCard.display_order,
-          status: "closed"
+          status: "closed",
+          scheduled_open_at: srcCard.scheduled_open_at ?? null,
+          scheduled_lock_at: srcCard.scheduled_lock_at ?? null
         }).select().single();
         if (!newCard) continue;
         const props = [...srcCard.gameday_props ?? []].sort(
@@ -9659,7 +9790,8 @@ function registerGamedayRoutes(app2) {
             answer_options: srcProp.answer_options,
             display_order: srcProp.display_order,
             status: "pending",
-            correct_answer: null
+            correct_answer: null,
+            template_prop_id: srcProp.template_prop_id ?? null
           });
         }
       }
