@@ -144,6 +144,12 @@ async function main() {
         !JSON.stringify(cards).includes("{{STAR_A}}"),
       JSON.stringify(cards),
     );
+    const publicRoom = await request(`/api/gameday/rooms/${roomId}`);
+    expect(
+      "public NFL room exposes its sport for correct guest copy",
+      publicRoom.status === 200 && publicRoom.body.room?.sport === "nfl",
+      JSON.stringify(publicRoom.body),
+    );
 
     const joinedAuthed = await request(`/api/gameday/rooms/${roomId}/join`, {
       method: "POST", token: player.token, body: {},

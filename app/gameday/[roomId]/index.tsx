@@ -633,7 +633,8 @@ export default function GameDayRoomScreen() {
           {room.team_a_name} vs {room.team_b_name}
         </Text>
         <Text style={styles.joinSub}>
-          Make NBA picks, track the leaderboard, and see who walks away with the receipts.
+          Make {room.sport === "nfl" ? "NFL" : room.sport === "soccer" ? "soccer" : "NBA"} picks,
+          track the leaderboard, and see who walks away with the receipts.
         </Text>
 
         {joinStep === "choose" && (
