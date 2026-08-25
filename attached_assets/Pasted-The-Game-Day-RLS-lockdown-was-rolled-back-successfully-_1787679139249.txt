@@ -1,0 +1,218 @@
+The Game Day RLS lockdown was rolled back successfully after the post-change Discord isolation suite stopped with:
+
+`Security suite failed: Web fixture did not create a halftime card`
+
+The system is now restored to the exact pre-lockdown database state.
+
+Do not reapply the lockdown.
+
+Do not change RLS, grants, schema, room codes, Discord commands, Game Day behavior, or unrelated code.
+
+Your task is to perform a focused root-cause analysis of the Discord isolation regression suite and determine why the test failed to create or detect the expected halftime card during the lockdown run.
+
+## 1. Reproduce from restored baseline
+
+Run the current Discord isolation suite against the restored pre-lockdown state.
+
+Confirm whether it returns:
+
+**23/23 passed**
+
+If it does not, stop and report the baseline failure before changing anything.
+
+If it does, continue.
+
+## 2. Trace the exact halftime-card fixture path
+
+Inspect `server/test-gameday-discord-isolation.ts` and identify exactly how the test expects a halftime card to come into existence.
+
+Document:
+
+* how the test creates the web fixture room
+* which room/template is used
+* how pick cards are created
+* whether halftime is inserted during room creation
+* whether it depends on template data
+* whether it queries `gameday_pick_cards` directly
+* whether it calls an Express endpoint
+* whether it relies on service-role Supabase access
+* how it identifies the halftime card
+* exact expected phase/name/type values
+
+Answer:
+
+> Is the halftime card created by application behavior, test fixture setup, template cloning, or a direct Supabase test helper?
+
+## 3. Determine why lockdown could affect this path
+
+Compare the path used by the failing fixture against the lockdown migration.
+
+Specifically investigate whether the test helper or fixture setup uses:
+
+* anon Supabase client
+* authenticated Supabase client
+* service-role client
+* direct PostgREST/table access
+* Express API
+* a helper that silently uses the wrong Supabase client
+
+Look for any fixture/test-only code that bypasses the new `getServiceSupabase()` fail-closed helper.
+
+The production app is API-mediated and stayed green 25/25, so pay special attention to the possibility that the **test fixture itself**, rather than production code, relies on direct anon/authenticated table access.
+
+## 4. Inspect template/card creation behavior
+
+Determine whether a normal Game Day template currently guarantees a halftime card.
+
+Check:
+
+* template data source
+* prop/card generation
+* phase values
+* any sport-specific or legacy NBA/World Cup assumptions
+* ordering logic
+* whether the test expects a card that is not always generated
+
+If the suite searches for something like `phase === "halftime"`, verify the actual stored values.
+
+Do not change product behavior to satisfy a brittle test.
+
+## 5. Compare test fixture with the 25/25 web regression
+
+The normal web regression passed during lockdown.
+
+Compare how `server/test-gameday-web-regression.ts` creates its room/cards with how `server/test-gameday-discord-isolation.ts` creates its web fixture.
+
+Identify all differences in:
+
+* authentication
+* Supabase client
+* room creation path
+* template/card creation
+* direct DB setup
+* cleanup
+* lookup logic
+
+This comparison is likely high-value because one suite stayed green while the other failed.
+
+## 6. Check for timing/race conditions
+
+Determine whether the fixture:
+
+* creates the room
+* immediately queries cards
+* assumes synchronous template/card creation
+* depends on eventual consistency
+* uses fixed sleeps
+* has retry logic
+
+Assess whether the failure could have been transient rather than authorization-related.
+
+If so, reproduce it repeatedly before concluding.
+
+## 7. Run repeated baseline reproductions
+
+Run the Discord isolation suite multiple times against the restored state.
+
+At minimum:
+
+* 5 consecutive runs
+
+Report each result.
+
+If all 5 are 23/23, that suggests the original failure may be conditional on lockdown or timing.
+
+If intermittent failures appear even without lockdown, classify the test as flaky and diagnose that before another migration attempt.
+
+## 8. Improve failure signaling
+
+The previous combined runner returned a success exit status even though the suite printed a security failure.
+
+Fix the test runner so:
+
+* any failed assertion or fixture setup failure exits nonzero
+* the process cannot report shell success unless the suite reaches the explicit 23/23 success condition
+* fixture-creation failures are treated as hard failures
+
+Add a test or explicit verification of this behavior if practical.
+
+This is in scope and should be committed.
+
+## 9. Do not weaken the acceptance gate
+
+Do not modify the suite merely to make it pass.
+
+Do not:
+
+* remove the halftime-card assertion
+* skip guild-isolation assertions
+* convert hard failures to warnings
+* reduce expected assertions
+* bypass the fixture problem with a hardcoded card ID
+* change production Game Day logic without evidence it is wrong
+
+The objective is to understand the failure, not hide it.
+
+## 10. If the root cause is test-only direct DB access
+
+If you determine the Discord isolation test fixture depends on direct anon/authenticated Supabase table access that the production app does not use, update the test fixture to use the intended server-side/service-role or Express path.
+
+Only make that change if you can prove:
+
+* it is test infrastructure, not product behavior
+* production behavior is already correct
+* the updated fixture still tests the same security invariants
+
+Then rerun:
+
+* Discord isolation suite
+* web regression 25/25
+* broader regression 312/312
+* server build
+
+Do not reapply RLS yet.
+
+## 11. If the root cause is production code
+
+If you find that real production Game Day behavior—not just test setup—depends on the permissive database access, stop and report it.
+
+Do not patch around it without review.
+
+## 12. Final report
+
+Return:
+
+### A. Baseline reproduction
+
+* number of runs
+* exact results
+
+### B. How the halftime card is created
+
+### C. Root cause
+
+Use one of:
+
+* TEST FIXTURE BUG
+* TEST FLAKINESS / RACE
+* PRODUCTION CODE DEPENDENCY
+* TEMPLATE/DATA ASSUMPTION
+* OTHER
+
+### D. Why lockdown exposed it
+
+### E. Files changed
+
+If any
+
+### F. Failure-signaling fix
+
+### G. Regression results after any test-only fix
+
+### H. Recommendation for second lockdown attempt
+
+End with:
+
+**SAFE TO RETRY RLS LOCKDOWN: YES / YES WITH CONDITIONS / NO**
+
+Do not reapply the migration in this task.
