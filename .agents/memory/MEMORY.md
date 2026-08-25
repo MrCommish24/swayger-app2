@@ -23,3 +23,4 @@
 - [Gameday Fantasy Phase 6E](gameday-fantasy-phase6e.md) — safe league archive: is_active flag, primary-comm-only, write guard pattern, archived list branch, frontend restore banner, 281/281 tests.
 - [Gameday Fantasy Phase 6F](gameday-fantasy-phase6f.md) — QR invite: FantasyInviteSheet, buildFantasyInviteUrl, hub/manage/bulk-import entry points, weekly QR, claim endpoint=/claim (NOT /claim/guest), 312/312 tests.
 - [FK Preservation Invariant](fk-preservation-invariant.md) — gameday_participants.season_member_id → fantasy_season_members ON DELETE SET NULL (verified safe, never change to CASCADE).
+- [Game Day Discord isolation](gameday-discord-isolation.md) — Discord bot room operations are guild-scoped; public participant reads remain intentionally separate.

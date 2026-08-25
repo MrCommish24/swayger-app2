@@ -2479,7 +2479,7 @@ import express from "express";
 init_email();
 import { createServer } from "node:http";
 import * as path3 from "path";
-import { createClient as createClient6 } from "@supabase/supabase-js";
+import { createClient as createClient7 } from "@supabase/supabase-js";
 
 // server/routes-mm-admin.ts
 init_email();
@@ -7394,6 +7394,7 @@ function registerPropsRoutes(app2) {
 }
 
 // server/routes-gameday.ts
+import { createHash } from "crypto";
 import { createClient as createClient5 } from "@supabase/supabase-js";
 
 // server/gameday-template.ts
@@ -8335,25 +8336,83 @@ async function settlePropCore(supabase, { propId, cardId, correctAnswer }) {
 
 // server/routes-gameday.ts
 var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
-var _idemCache = /* @__PURE__ */ new Map();
-var _IDEM_TTL_MS = 24 * 60 * 60 * 1e3;
-function _checkIdem(key) {
-  const entry = _idemCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > _IDEM_TTL_MS) {
-    _idemCache.delete(key);
-    return null;
-  }
-  return entry.payload;
+function _tokenFingerprint(token) {
+  return createHash("sha256").update(token).digest("hex").slice(0, 16);
 }
-function _storeIdem(key, payload) {
-  for (const [k, v] of _idemCache) {
-    if (Date.now() - v.ts > _IDEM_TTL_MS) _idemCache.delete(k);
-  }
-  _idemCache.set(key, { ts: Date.now(), payload });
+function _computeRequestHash(group_key, canonical_answer_normalized, prop_ids, expected_count, operatorFingerprint) {
+  const sorted = [...prop_ids].sort().join(",");
+  const raw = [group_key, canonical_answer_normalized, sorted, String(expected_count), operatorFingerprint].join("|");
+  return createHash("sha256").update(raw).digest("hex");
 }
 function _genOpId() {
   return `gso-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+async function _readSettleOp(sb, idem_key) {
+  const { data } = await sb.from("gameday_settlement_operations").select("id, idempotency_key, request_hash, operation_id, status, response_status_code, result_json, partial_results_json, error_json, lease_expires_at").eq("idempotency_key", idem_key).maybeSingle();
+  return data ?? null;
+}
+async function _isSettleOpActive(sb, idem_key, op_id) {
+  const { data } = await sb.from("gameday_settlement_operations").select("status, lease_expires_at").eq("idempotency_key", idem_key).eq("operation_id", op_id).maybeSingle();
+  if (!data) return false;
+  const row = data;
+  return row.status === "in_progress" && new Date(row.lease_expires_at).getTime() > Date.now();
+}
+async function _refreshSettleLease(sb, idem_key, op_id) {
+  const newLease = new Date(Date.now() + 10 * 60 * 1e3).toISOString();
+  const { data } = await sb.from("gameday_settlement_operations").update({ updated_at: (/* @__PURE__ */ new Date()).toISOString(), lease_expires_at: newLease }).eq("idempotency_key", idem_key).eq("operation_id", op_id).eq("status", "in_progress").select("id");
+  return (data?.length ?? 0) > 0;
+}
+async function _finalizeSettleOp(sb, params) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const upd = {
+    status: params.status,
+    response_status_code: params.response_status_code,
+    updated_at: now,
+    completed_at: now,
+    room_count: params.room_count
+  };
+  if (params.result_json !== void 0) upd.result_json = params.result_json;
+  if (params.error_json !== void 0) upd.error_json = params.error_json;
+  if (params.partial_results_json !== void 0) upd.partial_results_json = params.partial_results_json;
+  const { data: updated } = await sb.from("gameday_settlement_operations").update(upd).eq("idempotency_key", params.idempotency_key).eq("operation_id", params.operation_id).eq("status", "in_progress").select("id");
+  if ((updated?.length ?? 0) > 0) return { updated: true };
+  const row = await _readSettleOp(sb, params.idempotency_key);
+  return { updated: false, row };
+}
+function _buildSettleReplay(row) {
+  const code = row.response_status_code ?? 200;
+  if (row.status === "completed") return { statusCode: code, payload: row.result_json };
+  if (row.status === "partial_success") return { statusCode: code, payload: row.partial_results_json };
+  if (row.status === "failed") return { statusCode: code, payload: row.error_json };
+  return {
+    statusCode: 409,
+    payload: {
+      error: "This operation was previously abandoned. Retry with a new idempotency_key.",
+      code: "OPERATION_ABANDONED",
+      ...typeof row.error_json === "object" && row.error_json !== null ? row.error_json : {}
+    }
+  };
+}
+async function _recoverStaleSettleOps(sb) {
+  try {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const { data, error } = await sb.from("gameday_settlement_operations").update({
+      status: "abandoned",
+      error_json: { code: "PROCESS_RESTART", message: "Server restarted before operation completed" },
+      updated_at: now,
+      completed_at: now
+    }).eq("status", "in_progress").lt("lease_expires_at", now).select("operation_id");
+    if (error) {
+      if (error.code !== "42P01") {
+        console.warn("[settle-group] startup recovery error:", error.message);
+      }
+      return;
+    }
+    const n = data?.length ?? 0;
+    if (n > 0) console.log(`[settle-group] startup recovery: abandoned ${n} stale operation(s)`);
+  } catch (e) {
+    console.warn("[settle-group] startup recovery exception:", e.message);
+  }
 }
 var _PHASE_ORDER = {
   pregame: 0,
@@ -8368,7 +8427,7 @@ async function buildSettlementQueue(supabase) {
        gameday_pick_cards(
          id, phase, status, room_id,
          gameday_rooms(
-           id, room_code, room_name, status,
+           id, room_code, room_name, status, experience_type,
            team_a_name, team_b_name, team_a_star, team_b_star,
            game_date, sport
          )
@@ -8379,7 +8438,7 @@ async function buildSettlementQueue(supabase) {
   const eligible2 = props.filter((p) => {
     const card = p.gameday_pick_cards;
     const room = card?.gameday_rooms;
-    return card?.status === "locked" && room?.status === "active";
+    return card?.status === "locked" && room?.status === "active" && room?.experience_type !== "fantasy";
   });
   const eventMap = /* @__PURE__ */ new Map();
   const LEGACY_KEY = "__legacy__";
@@ -8536,18 +8595,25 @@ function getServiceSupabase() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   return createClient5(url, key);
 }
-function decodeJwtPayload(token) {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64 + "==".slice(0, (4 - b64.length % 4) % 4);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));
-  } catch {
-    return null;
-  }
-}
 var ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+var PUBLIC_ROOM_FIELDS = [
+  "id",
+  "room_name",
+  "team_a_name",
+  "team_b_name",
+  "team_a_star",
+  "team_b_star",
+  "game_date",
+  "status",
+  "room_code",
+  "is_private",
+  "archived_at",
+  "source",
+  "countdown_phase",
+  "countdown_type",
+  "countdown_ends_at",
+  "countdown_started_at"
+].join(", ");
 async function generateUniqueRoomCode(supabase) {
   for (let attempt = 0; attempt < 10; attempt++) {
     let suffix = "";
@@ -8592,24 +8658,36 @@ function parseGameDate(raw) {
   const year = parts[2] ? parts[2].replace(/\D/g, "") : currentYearCDT();
   return `${year}-${month}-${day}`;
 }
-async function requireGamedayHost(req, res2) {
+function getAllowedGamedayEmails() {
+  return (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+}
+function getAllowedGamedayAdminEmails() {
+  return (process.env.GAMEDAY_ADMIN_EMAILS ?? process.env.GAMEDAY_HOST_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+}
+async function getVerifiedGamedayUser(req) {
   const auth = req.headers.authorization;
-  if (!auth?.startsWith("Bearer ")) {
-    res2.status(401).json({ error: "Unauthorized" });
+  if (!auth?.startsWith("Bearer ")) return null;
+  const token = auth.slice(7).trim();
+  if (!token) return null;
+  const supabase = getServiceSupabase();
+  const {
+    data: { user },
+    error
+  } = await supabase.auth.getUser(token);
+  if (error || !user?.id || !user.email) return null;
+  return { id: user.id, email: user.email };
+}
+async function requireGamedayHost(req, res2) {
+  const user = await getVerifiedGamedayUser(req);
+  if (!user) {
+    res2.status(401).json({ error: "Invalid or expired Supabase token" });
     return null;
   }
-  const token = auth.slice(7);
-  const payload = decodeJwtPayload(token);
-  if (!payload?.sub) {
-    res2.status(401).json({ error: "Invalid token" });
-    return null;
-  }
-  const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (!allowedEmails.includes((payload.email ?? "").toLowerCase())) {
+  if (!getAllowedGamedayEmails().includes(user.email.toLowerCase())) {
     res2.status(403).json({ error: "Not authorized as Game Day host" });
     return null;
   }
-  return payload.sub;
+  return user.id;
 }
 var APP_URL2 = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
 function isBotApiKeyValid(req) {
@@ -8622,6 +8700,70 @@ function isBotApiKeyValid(req) {
   const xApiKey = req.headers["x-api-key"];
   if (typeof xApiKey === "string") return xApiKey.trim() === botKey;
   return false;
+}
+function normalizeDiscordGuildId(value) {
+  if (typeof value !== "string") return null;
+  const guildId = value.trim();
+  if (!guildId || guildId.length > 128 || /[\u0000-\u001f\u007f]/.test(guildId)) {
+    return null;
+  }
+  return guildId;
+}
+function getRequestedDiscordGuildId(req, body) {
+  return normalizeDiscordGuildId(
+    req.header("x-discord-guild-id") ?? body?.discord_guild_id
+  );
+}
+async function requireDiscordGuildRoom(req, res2, supabase, roomId) {
+  if (!isBotApiKeyValid(req)) {
+    res2.status(401).json({ error: "Valid Game Day bot credentials are required" });
+    return null;
+  }
+  const guildId = getRequestedDiscordGuildId(req);
+  if (!guildId) {
+    res2.status(400).json({
+      error: "X-Discord-Guild-ID is required for Discord operator requests"
+    });
+    return null;
+  }
+  const { data: room } = await supabase.from("gameday_rooms").select("id, source, discord_guild_id").eq("id", roomId).maybeSingle();
+  if (!room) {
+    res2.status(404).json({ error: "Room not found" });
+    return null;
+  }
+  const storedGuildId = normalizeDiscordGuildId(
+    room.discord_guild_id
+  );
+  if (room.source !== "discord" || !storedGuildId || storedGuildId !== guildId) {
+    res2.status(403).json({ error: "Discord guild is not authorized for this room" });
+    return null;
+  }
+  return { roomId, guildId };
+}
+function requireOwnedHumanRoom(res2, storedHostId, hostId) {
+  if (!storedHostId || storedHostId !== hostId) {
+    res2.status(403).json({ error: "Not your room" });
+    return false;
+  }
+  return true;
+}
+async function requireGamedayRoomOperator(req, res2, supabase, roomId) {
+  if (isBotApiKeyValid(req)) {
+    const discordAccess = await requireDiscordGuildRoom(req, res2, supabase, roomId);
+    if (!discordAccess) return null;
+    return { kind: "discord", hostId: null, guildId: discordAccess.guildId };
+  }
+  const hostId = await requireGamedayHost(req, res2);
+  if (!hostId) return null;
+  const { data: room } = await supabase.from("gameday_rooms").select("host_user_id").eq("id", roomId).maybeSingle();
+  if (!room) {
+    res2.status(404).json({ error: "Room not found" });
+    return null;
+  }
+  if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) {
+    return null;
+  }
+  return { kind: "web", hostId, guildId: null };
 }
 function isUuidLike(s) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -8656,34 +8798,23 @@ async function logEvent(supabase, roomId, participantId, userId, eventType, meta
   }
 }
 function registerGamedayRoutes(app2) {
+  setImmediate(() => _recoverStaleSettleOps(getServiceSupabase()));
   app2.use("/api/gameday", (req, res2, next) => {
     res2.setHeader("Cache-Control", "no-store");
     Object.defineProperty(req, "fresh", { get: () => false, configurable: true });
     next();
   });
-  app2.get("/api/gameday/is-host", (req, res2) => {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res2.json({ isHost: false });
-      return;
-    }
-    const payload = decodeJwtPayload(auth.slice(7));
-    const email = payload?.email ?? "";
-    const allowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-    const isHost = allowedEmails.includes(email.toLowerCase());
-    console.log(`[gameday] is-host: jwt_email="${email}" allowed=${JSON.stringify(allowedEmails)} \u2192 ${isHost}`);
+  app2.get("/api/gameday/is-host", async (req, res2) => {
+    const user = await getVerifiedGamedayUser(req);
+    const email = user?.email ?? "";
+    const isHost = !!user && getAllowedGamedayEmails().includes(email.toLowerCase());
+    console.log(`[gameday] is-host: verified_email="${email}" allowed=${JSON.stringify(getAllowedGamedayEmails())} \u2192 ${isHost}`);
     res2.json({ isHost });
   });
-  app2.get("/api/admin/is-admin", (req, res2) => {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res2.json({ isAdmin: false });
-      return;
-    }
-    const payload = decodeJwtPayload(auth.slice(7));
-    const email = (payload?.email ?? "").toLowerCase();
-    const adminEmails = (process.env.GAMEDAY_ADMIN_EMAILS ?? process.env.GAMEDAY_HOST_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-    res2.json({ isAdmin: adminEmails.includes(email) });
+  app2.get("/api/admin/is-admin", async (req, res2) => {
+    const user = await getVerifiedGamedayUser(req);
+    const email = (user?.email ?? "").toLowerCase();
+    res2.json({ isAdmin: !!user && getAllowedGamedayAdminEmails().includes(email) });
   });
   app2.get("/api/gameday/public-rooms", async (req, res2) => {
     const supabase = getServiceSupabase();
@@ -8696,26 +8827,24 @@ function registerGamedayRoutes(app2) {
     res2.json({ rooms: rooms ?? [] });
   });
   app2.get("/api/gameday/rooms", async (req, res2) => {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res2.status(401).json({ error: "Unauthorized" });
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res2.status(401).json({ error: "Invalid or expired Supabase token" });
       return;
     }
-    const payload = decodeJwtPayload(auth.slice(7));
-    if (!payload?.sub) {
-      res2.status(401).json({ error: "Invalid token" });
+    if (!getAllowedGamedayEmails().includes(user.email.toLowerCase())) {
+      res2.status(403).json({ error: "Not authorized as Game Day host" });
       return;
     }
     const supabase = getServiceSupabase();
-    const listAllowedEmails = (process.env.GAMEDAY_HOST_EMAILS ?? "darius@leagueswype.com").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-    const isAdminUser = listAllowedEmails.includes((payload.email ?? "").toLowerCase());
+    const isAdminUser = getAllowedGamedayAdminEmails().includes(user.email.toLowerCase());
     let baseQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at").order("created_at", { ascending: false });
-    if (!isAdminUser) baseQuery = baseQuery.eq("host_user_id", payload.sub);
+    if (!isAdminUser) baseQuery = baseQuery.eq("host_user_id", user.id);
     let { data: rooms, error } = await baseQuery;
     if (error) {
       console.warn("[gameday] rooms list with room_code/source failed, retrying without:", error.message);
       let retryQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at").order("created_at", { ascending: false });
-      if (!isAdminUser) retryQuery = retryQuery.eq("host_user_id", payload.sub);
+      if (!isAdminUser) retryQuery = retryQuery.eq("host_user_id", user.id);
       const retry = await retryQuery;
       if (retry.error) {
         res2.status(500).json({ error: retry.error.message });
@@ -8811,6 +8940,27 @@ function registerGamedayRoutes(app2) {
       card_schedules
     } = req.body;
     const room_name = _room_name ?? game_label;
+    const requestedSource = typeof source === "string" ? source.trim().toLowerCase() : "";
+    const discordGuildId = normalizeDiscordGuildId(discord_guild_id);
+    if (botAuthed) {
+      if (!discordGuildId) {
+        res2.status(400).json({
+          error: "discord_guild_id is required for Discord-created rooms"
+        });
+        return;
+      }
+      if (requestedSource && requestedSource !== "discord") {
+        res2.status(400).json({
+          error: "Discord bot room creation must use source=discord"
+        });
+        return;
+      }
+    } else if (requestedSource === "discord" || discordGuildId || discord_channel_id || discord_user_id) {
+      res2.status(400).json({
+        error: "Discord metadata can only be supplied by the Game Day bot"
+      });
+      return;
+    }
     if (!room_name || !team_a_name || !team_b_name || !team_a_star || !team_b_star) {
       res2.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
       return;
@@ -8836,13 +8986,15 @@ function registerGamedayRoutes(app2) {
       game_date: parseGameDate(game_date),
       host_user_id: botAuthed ? null : hostId,
       status: "active",
-      source: source ?? (botAuthed ? "discord" : "app"),
+      source: botAuthed ? "discord" : "app",
       is_private: resolvedIsPrivate
     };
     if (roomCode) insertPayload.room_code = roomCode;
-    if (discord_guild_id) insertPayload.discord_guild_id = discord_guild_id;
-    if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
-    if (discord_user_id) insertPayload.discord_user_id = discord_user_id;
+    if (botAuthed) {
+      insertPayload.discord_guild_id = discordGuildId;
+      if (discord_channel_id) insertPayload.discord_channel_id = discord_channel_id;
+      if (discord_user_id) insertPayload.discord_user_id = discord_user_id;
+    }
     if (sport) insertPayload.sport = isSoccer ? "soccer" : "nba";
     if (game_start_time) insertPayload.game_start_time = game_start_time;
     let { data: room, error: roomError } = await supabase.from("gameday_rooms").insert(insertPayload).select().single();
@@ -8941,12 +9093,14 @@ function registerGamedayRoutes(app2) {
     async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
-      const { data: room, error } = await supabase.from("gameday_rooms").select("*").eq("id", roomId).single();
+      const { data: room, error } = await supabase.from("gameday_rooms").select(PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
       if (error || !room) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      const { data: rawCards } = await supabase.from("gameday_pick_cards").select("*, gameday_props(*)").eq("room_id", roomId).order("display_order");
+      const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
+        "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, status, display_order)"
+      ).eq("room_id", roomId).order("display_order");
       const cards = (rawCards ?? []).map((card) => ({
         ...card,
         gameday_props: [...card.gameday_props ?? []].sort(
@@ -8959,10 +9113,10 @@ function registerGamedayRoutes(app2) {
       );
       let participant = null;
       if (userId) {
-        const { data } = await supabase.from("gameday_participants").select("*").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
+        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         participant = data;
       } else if (guestSessionId) {
-        const { data } = await supabase.from("gameday_participants").select("*").eq("guest_session_id", guestSessionId).maybeSingle();
+        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("guest_session_id", guestSessionId).maybeSingle();
         participant = data;
       }
       console.log(
@@ -9111,24 +9265,20 @@ function registerGamedayRoutes(app2) {
   app2.patch(
     "/api/gameday/cards/:cardId/open",
     async (req, res2) => {
-      const hostId = await requireGamedayHost(req, res2);
-      if (!hostId) return;
       const { cardId } = req.params;
       const supabase = getServiceSupabase();
-      const { data: card } = await supabase.from("gameday_pick_cards").select("*, gameday_rooms(host_user_id)").eq("id", cardId).single();
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, room_id, gameday_rooms(host_user_id)").eq("id", cardId).single();
       if (!card) {
         res2.status(404).json({ error: "Card not found" });
         return;
       }
-      const openCardRoomHost = card.gameday_rooms?.host_user_id;
-      if (openCardRoomHost !== null && openCardRoomHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      const operator = await requireGamedayRoomOperator(req, res2, supabase, card.room_id);
+      if (!operator) return;
       await supabase.from("gameday_pick_cards").update({ status: "closed", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("room_id", card.room_id).eq("status", "open");
       await supabase.from("gameday_pick_cards").update({ status: "open", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", cardId);
-      await logEvent(supabase, card.room_id, null, hostId, "card_opened", {
-        card_id: cardId
+      await logEvent(supabase, card.room_id, null, operator.hostId, "card_opened", {
+        card_id: cardId,
+        operator: operator.kind
       });
       res2.json({ ok: true });
     }
@@ -9136,23 +9286,19 @@ function registerGamedayRoutes(app2) {
   app2.patch(
     "/api/gameday/cards/:cardId/lock",
     async (req, res2) => {
-      const hostId = await requireGamedayHost(req, res2);
-      if (!hostId) return;
       const { cardId } = req.params;
       const supabase = getServiceSupabase();
-      const { data: card } = await supabase.from("gameday_pick_cards").select("*, gameday_rooms(host_user_id)").eq("id", cardId).single();
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, room_id, gameday_rooms(host_user_id)").eq("id", cardId).single();
       if (!card) {
         res2.status(404).json({ error: "Card not found" });
         return;
       }
-      const lockCardRoomHost = card.gameday_rooms?.host_user_id;
-      if (lockCardRoomHost !== null && lockCardRoomHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      const operator = await requireGamedayRoomOperator(req, res2, supabase, card.room_id);
+      if (!operator) return;
       await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", cardId);
-      await logEvent(supabase, card.room_id, null, hostId, "card_locked", {
-        card_id: cardId
+      await logEvent(supabase, card.room_id, null, operator.hostId, "card_locked", {
+        card_id: cardId,
+        operator: operator.kind
       });
       res2.json({ ok: true });
     }
@@ -9226,8 +9372,6 @@ function registerGamedayRoutes(app2) {
   app2.patch(
     "/api/gameday/props/:propId/settle",
     async (req, res2) => {
-      const hostId = await requireGamedayHost(req, res2);
-      if (!hostId) return;
       const { propId } = req.params;
       const { correct_answer } = req.body;
       if (!correct_answer) {
@@ -9236,7 +9380,7 @@ function registerGamedayRoutes(app2) {
       }
       const supabase = getServiceSupabase();
       const { data: prop } = await supabase.from("gameday_props").select(
-        "*, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
+        "id, answer_options, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
       ).eq("id", propId).single();
       if (!prop) {
         res2.status(404).json({ error: "Prop not found" });
@@ -9244,10 +9388,8 @@ function registerGamedayRoutes(app2) {
       }
       const card = prop.gameday_pick_cards;
       const gdRoom = card?.gameday_rooms;
-      if (gdRoom?.host_user_id !== null && gdRoom?.host_user_id !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      const operator = await requireGamedayRoomOperator(req, res2, supabase, card?.room_id);
+      if (!operator) return;
       if (gdRoom?.status === "finalized") {
         res2.status(400).json({ error: "Room is finalized \u2014 results are read-only" });
         return;
@@ -9259,11 +9401,12 @@ function registerGamedayRoutes(app2) {
       }
       await settlePropCore(supabase, { propId, cardId: card.id, correctAnswer: correct_answer });
       const roomId = card?.room_id;
-      await logEvent(supabase, roomId, null, hostId, "prop_settled", {
+      await logEvent(supabase, roomId, null, operator.hostId, "prop_settled", {
         prop_id: propId,
         card_id: card?.id,
         phase: card?.phase,
-        correct_answer
+        correct_answer,
+        operator: operator.kind
       });
       res2.json({ ok: true });
     }
@@ -9271,8 +9414,6 @@ function registerGamedayRoutes(app2) {
   app2.patch(
     "/api/gameday/rooms/:roomId/finalize",
     async (req, res2) => {
-      const hostId = await requireGamedayHost(req, res2);
-      if (!hostId) return;
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status").eq("id", roomId).single();
@@ -9280,16 +9421,14 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      const operator = await requireGamedayRoomOperator(req, res2, supabase, roomId);
+      if (!operator) return;
       if (room.status === "finalized") {
         console.log(`[gameday] finalize: room ${roomId} already finalized`);
         res2.json({ ok: true, already: true });
         return;
       }
-      console.log(`[gameday] finalize: attempting to write status=finalized for room ${roomId}, hostId=${hostId}, stored host_user_id=${room.host_user_id}`);
+      console.log(`[gameday] finalize: attempting to write status=finalized for room ${roomId}, operator=${operator.kind}, stored host_user_id=${room.host_user_id}`);
       const { error: updateError } = await supabase.from("gameday_rooms").update({ status: "finalized" }).eq("id", roomId);
       if (updateError) {
         console.error(`[gameday] finalize: DB update FAILED for room ${roomId}:`, updateError.message, updateError);
@@ -9298,7 +9437,9 @@ function registerGamedayRoutes(app2) {
       }
       const { data: verify } = await supabase.from("gameday_rooms").select("status").eq("id", roomId).single();
       console.log(`[gameday] finalize: write confirmed, status is now: ${verify?.status}`);
-      await logEvent(supabase, roomId, null, hostId, "room_finalized", {});
+      await logEvent(supabase, roomId, null, operator.hostId, "room_finalized", {
+        operator: operator.kind
+      });
       res2.json({ ok: true });
     }
   );
@@ -9314,10 +9455,7 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
       if (room.status === "finalized") {
         res2.status(400).json({
           error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
@@ -9364,10 +9502,7 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
       if (room.archived_at) {
         res2.status(400).json({ error: "Archived rooms cannot be renamed" });
         return;
@@ -9402,10 +9537,7 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      if (room.host_user_id !== null && room.host_user_id !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
       const { error: updateError } = await supabase.from("gameday_rooms").update({ is_private }).eq("id", roomId);
       if (updateError) {
         console.error("[gameday] visibility update error:", updateError.message);
@@ -9424,11 +9556,12 @@ function registerGamedayRoutes(app2) {
       const { roomId } = req.params;
       const { room_name: customName } = req.body;
       const supabase = getServiceSupabase();
-      const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private").eq("id", roomId).single();
+      const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, is_private").eq("id", roomId).single();
       if (!srcRoom) {
         res2.status(404).json({ error: "Source room not found" });
         return;
       }
+      if (!requireOwnedHumanRoom(res2, srcRoom.host_user_id, hostId)) return;
       const { data: srcCards } = await supabase.from("gameday_pick_cards").select("phase, title, display_order, gameday_props(question, answer_options, display_order)").eq("room_id", roomId).order("display_order");
       if (!srcCards || srcCards.length === 0) {
         res2.status(400).json({ error: "Source room has no cards to duplicate" });
@@ -9503,6 +9636,10 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
+      if (isBotApiKeyValid(req)) {
+        const discordAccess = await requireDiscordGuildRoom(req, res2, supabase, roomId);
+        if (!discordAccess) return;
+      }
       const { data: roomMeta } = await supabase.from("gameday_rooms").select("archived_at").eq("id", roomId).single();
       if (roomMeta?.archived_at) {
         res2.status(410).json({
@@ -9558,6 +9695,10 @@ function registerGamedayRoutes(app2) {
       if (!roomId) {
         res2.status(404).json({ error: "Room not found" });
         return;
+      }
+      if (isBotApiKeyValid(req)) {
+        const discordAccess = await requireDiscordGuildRoom(req, res2, supabase, roomId);
+        if (!discordAccess) return;
       }
       const { data: room } = await supabase.from("gameday_rooms").select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date").eq("id", roomId).single();
       if (!room) {
@@ -9662,11 +9803,11 @@ function registerGamedayRoutes(app2) {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("*").eq("id", roomId).single();
-      const hdRoomHost = room.host_user_id;
-      if (!room || hdRoomHost !== null && hdRoomHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
+      if (!room) {
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
+      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
       if (!room.room_code) {
         try {
           const newCode = await generateUniqueRoomCode(supabase);
@@ -9749,11 +9890,11 @@ function registerGamedayRoutes(app2) {
       }
       const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id").eq("id", roomId).single();
-      const spRoomHost = room.host_user_id;
-      if (!room || spRoomHost !== null && spRoomHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
+      if (!room) {
+        res2.status(404).json({ error: "Room not found" });
         return;
       }
+      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
       await supabase.from("gameday_rooms").update({ status, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", roomId);
       res2.json({ ok: true });
     }
@@ -9786,11 +9927,7 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      const cdHost = cdRoom.host_user_id;
-      if (cdHost !== null && cdHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      if (!requireOwnedHumanRoom(res2, cdRoom.host_user_id, hostId)) return;
       if (cdRoom.archived_at || cdRoom.status === "finalized") {
         res2.status(400).json({ error: "Cannot set countdown on archived or finalized room" });
         return;
@@ -9827,12 +9964,8 @@ function registerGamedayRoutes(app2) {
         res2.status(404).json({ ok: false, error: "Room not found" });
         return;
       }
-      let userId = null;
-      const authHeader = req.headers.authorization ?? "";
-      if (authHeader.startsWith("Bearer ")) {
-        const payload = decodeJwtPayload(authHeader.slice(7));
-        userId = payload?.sub ?? null;
-      }
+      const verifiedUser = await getVerifiedGamedayUser(req);
+      const userId = verifiedUser?.id ?? null;
       const { error: insertError } = await supabase.from("gameday_next_room_interest").insert({
         room_id: roomId,
         room_code: room_code ?? rm.room_code ?? null,
@@ -10110,11 +10243,7 @@ ${html.slice(0, 800)}`);
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      const clrHost = clrRoom.host_user_id;
-      if (clrHost !== null && clrHost !== hostId) {
-        res2.status(403).json({ error: "Not your room" });
-        return;
-      }
+      if (!requireOwnedHumanRoom(res2, clrRoom.host_user_id, hostId)) return;
       await supabase.from("gameday_rooms").update({
         countdown_phase: null,
         countdown_type: null,
@@ -10294,6 +10423,8 @@ ${html.slice(0, 800)}`);
       return;
     }
     if (!checkPropLibraryAdmin(req, res2)) return;
+    const adminToken = req.header("x-admin-token") ?? "";
+    const operatorFingerprint = _tokenFingerprint(adminToken);
     const supabase = getServiceSupabase();
     const {
       group_key,
@@ -10314,9 +10445,59 @@ ${html.slice(0, 800)}`);
       res2.status(400).json({ error: `prop_ids.length (${prop_ids.length}) \u2260 expected_count (${expected_count}).` });
       return;
     }
-    const cached = _checkIdem(idempotency_key);
-    if (cached) {
-      res2.json(cached);
+    const requestHash = _computeRequestHash(
+      group_key,
+      canonical_answer_normalized,
+      prop_ids,
+      expected_count,
+      operatorFingerprint
+    );
+    const opId = _genOpId();
+    const existingRow = await _readSettleOp(supabase, idempotency_key);
+    if (existingRow) {
+      if (existingRow.request_hash !== requestHash) {
+        res2.status(409).json({
+          error: "Idempotency key reused with a different request payload.",
+          code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST"
+        });
+        return;
+      }
+      if (existingRow.status === "in_progress") {
+        const leaseExpiredMs = new Date(existingRow.lease_expires_at).getTime();
+        if (leaseExpiredMs < Date.now()) {
+          const { data: abandonedRows } = await supabase.from("gameday_settlement_operations").update({
+            status: "abandoned",
+            error_json: {
+              code: "LEASE_EXPIRED",
+              message: "Prior operation timed out \u2014 server may have restarted or crashed"
+            },
+            updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+            completed_at: (/* @__PURE__ */ new Date()).toISOString()
+          }).eq("idempotency_key", idempotency_key).eq("status", "in_progress").lt("lease_expires_at", (/* @__PURE__ */ new Date()).toISOString()).select("id");
+          if ((abandonedRows?.length ?? 0) > 0) {
+            res2.status(409).json({
+              error: "The prior operation for this key timed out. Use a new idempotency_key to retry.",
+              code: "OPERATION_ABANDONED_BY_LEASE_EXPIRY",
+              operation_id: existingRow.operation_id
+            });
+            return;
+          }
+          const reread = await _readSettleOp(supabase, idempotency_key);
+          if (reread && reread.status !== "in_progress") {
+            const replay2 = _buildSettleReplay(reread);
+            res2.status(replay2.statusCode).json(replay2.payload);
+            return;
+          }
+        }
+        res2.status(409).json({
+          error: "A settlement for this idempotency_key is already in progress. Wait and retry.",
+          code: "OPERATION_IN_PROGRESS",
+          operation_id: existingRow.operation_id
+        });
+        return;
+      }
+      const replay = _buildSettleReplay(existingRow);
+      res2.status(replay.statusCode).json(replay.payload);
       return;
     }
     const queue = await buildSettlementQueue(supabase);
@@ -10325,10 +10506,12 @@ ${html.slice(0, 800)}`);
       return;
     }
     let liveGroup = null;
+    let liveEventKey = null;
     for (const ev of queue.events) {
       for (const g of ev.groups) {
         if (g.group_key === group_key) {
           liveGroup = g;
+          liveEventKey = ev.event_key ?? null;
           break;
         }
       }
@@ -10395,23 +10578,71 @@ ${html.slice(0, 800)}`);
       }
       settleSpecs.push({ propId: row.id, cardId: card?.id, roomId: card?.room_id, correctAnswer: storedAnswer });
     }
-    const opId = _genOpId();
+    let dbIdemActive = true;
+    const { error: insertErr } = await supabase.from("gameday_settlement_operations").insert({
+      idempotency_key,
+      request_hash: requestHash,
+      operation_id: opId,
+      operator_token_fingerprint: operatorFingerprint,
+      group_key,
+      event_key: liveEventKey,
+      phase: liveGroup.phase,
+      canonical_answer_normalized,
+      prop_count: expected_count,
+      room_count: liveGroup.room_count,
+      status: "in_progress",
+      lease_expires_at: new Date(Date.now() + 10 * 60 * 1e3).toISOString()
+    });
+    if (insertErr) {
+      if (insertErr.code === "23505") {
+        const concurrent = await _readSettleOp(supabase, idempotency_key);
+        if (concurrent?.request_hash !== requestHash) {
+          res2.status(409).json({ error: "Idempotency key reused with a different request payload.", code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST" });
+          return;
+        }
+        res2.status(409).json({
+          error: "A concurrent settlement for this key is already in progress.",
+          code: "OPERATION_IN_PROGRESS",
+          operation_id: concurrent?.operation_id
+        });
+        return;
+      }
+      if (insertErr.code === "42P01") {
+        console.warn("[settle-group] \u26A0  gameday_settlement_operations table missing. Apply migration 001 from server/migrations/. Proceeding without DB idempotency.");
+        dbIdemActive = false;
+      } else {
+        console.error("[settle-group] DB INSERT error:", insertErr.message, insertErr.code);
+        res2.status(500).json({ error: "Failed to claim settlement operation slot.", code: "DB_ERROR", detail: insertErr.message });
+        return;
+      }
+    }
     const settleResults = [];
+    const partialErrors = [];
     const affectedRoomIds = /* @__PURE__ */ new Set();
-    for (const spec of settleSpecs) {
+    if (dbIdemActive) await _refreshSettleLease(supabase, idempotency_key, opId);
+    for (let i = 0; i < settleSpecs.length; i++) {
+      const spec = settleSpecs[i];
+      if (dbIdemActive && i > 0 && i % 20 === 0) {
+        const active = await _isSettleOpActive(supabase, idempotency_key, opId);
+        if (!active) {
+          console.warn(`[settle-group] op=${opId} externally abandoned at prop index ${i}`);
+          res2.status(409).json({
+            error: "Settlement was abandoned externally (lease expired or concurrent request).",
+            code: "OPERATION_ABANDONED_MID_FLIGHT",
+            operation_id: opId,
+            settled_so_far: settleResults.length
+          });
+          return;
+        }
+        await _refreshSettleLease(supabase, idempotency_key, opId);
+      }
       try {
         const r = await settlePropCore(supabase, spec);
         settleResults.push(r);
         affectedRoomIds.add(spec.roomId);
       } catch (e) {
-        console.error(`[settle-group] op=${opId} settlePropCore error for prop ${spec.propId}:`, e);
-        res2.status(500).json({
-          error: `Settlement failed mid-operation after ${settleResults.length}/${settleSpecs.length} props. Op: ${opId}. Check DB state.`,
-          code: "PARTIAL_SETTLE_ERROR",
-          operation_id: opId,
-          settled_so_far: settleResults.length
-        });
-        return;
+        partialErrors.push({ propId: spec.propId, roomId: spec.roomId, error: e?.message ?? String(e) });
+        console.error(`[settle-group] op=${opId} prop ${spec.propId} failed:`, e?.message);
       }
     }
     for (const roomId of affectedRoomIds) {
@@ -10421,22 +10652,60 @@ ${html.slice(0, 800)}`);
         canonical_answer_normalized,
         settled_prop_ids: settleSpecs.filter((s) => s.roomId === roomId).map((s) => s.propId),
         total_prop_count: settleSpecs.length,
-        total_room_count: affectedRoomIds.size
+        total_room_count: affectedRoomIds.size,
+        partial_failures: partialErrors.length
       });
     }
-    console.log(
-      `[settle-group] op=${opId} settled=${settleResults.length} rooms=${affectedRoomIds.size} group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`
-    );
+    const allFailed = settleResults.length === 0 && partialErrors.length > 0;
+    const isPartial = partialErrors.length > 0 && settleResults.length > 0;
+    const finalStatus = allFailed ? "failed" : isPartial ? "partial_success" : "completed";
+    const finalCode = allFailed ? 500 : isPartial ? 207 : 200;
     const response = {
-      ok: true,
+      ok: !allFailed,
       operation_id: opId,
       settled_count: settleResults.length,
       rooms_count: affectedRoomIds.size,
       cards_auto_settled: settleResults.filter((r) => r.cardAutoSettled).length,
       canonical_answer_normalized
     };
-    _storeIdem(idempotency_key, response);
-    res2.json(response);
+    if (partialErrors.length > 0) {
+      response.partial_errors = partialErrors;
+      response.failed_count = partialErrors.length;
+    }
+    console.log(
+      `[settle-group] op=${opId} status=${finalStatus} settled=${settleResults.length} failed=${partialErrors.length} rooms=${affectedRoomIds.size} group="${group_key.slice(0, 40)}" answer="${canonical_answer_normalized}"`
+    );
+    if (dbIdemActive) {
+      const finalized = await _finalizeSettleOp(supabase, {
+        idempotency_key,
+        operation_id: opId,
+        status: finalStatus,
+        response_status_code: finalCode,
+        room_count: affectedRoomIds.size,
+        ...allFailed ? { error_json: { ...response } } : {},
+        ...isPartial ? { partial_results_json: { ...response } } : {},
+        ...!allFailed && !isPartial ? { result_json: { ...response } } : {}
+      });
+      if (!finalized.updated) {
+        const cur = finalized.row;
+        if (cur?.status === "abandoned") {
+          res2.status(409).json({
+            error: "Settlement was abandoned (lease expired during processing).",
+            code: "OPERATION_ABANDONED_MID_FLIGHT",
+            operation_id: opId,
+            partial_settle_count: settleResults.length
+          });
+          return;
+        }
+        if (cur) {
+          const replay = _buildSettleReplay(cur);
+          res2.status(replay.statusCode).json(replay.payload);
+          return;
+        }
+        console.error(`[settle-group] op=${opId} terminal UPDATE found 0 rows and no current row \u2014 state may be inconsistent`);
+      }
+    }
+    res2.status(finalCode).json(response);
   });
   if (false) {
     const eventMap = /* @__PURE__ */ new Map();
@@ -10629,11 +10898,3574 @@ ${html.slice(0, 800)}`);
   process.once("SIGINT", () => clearInterval(_cardSchedulerInterval));
 }
 
+// server/routes-fantasy.ts
+import { createClient as createClient6 } from "@supabase/supabase-js";
+import { createHash as createHash2, randomBytes } from "crypto";
+function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, teamName) {
+  const raw = [
+    leagueId,
+    seasonId,
+    operatorUserId,
+    displayName.trim().toLowerCase(),
+    teamName.trim().toLowerCase()
+  ].join("|");
+  return createHash2("sha256").update(raw).digest("hex");
+}
+function getServiceSupabase2() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  return createClient6(url, key);
+}
+async function _appendMemberToWeeklyCards(supabase, seasonId, seasonMemberId, teamId, displayName, teamName) {
+  try {
+    const { data: weeklyRooms, error: roomErr } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("experience_type", "fantasy").is("archived_at", null);
+    if (roomErr || !weeklyRooms || weeklyRooms.length === 0) return;
+    const roomIds = weeklyRooms.map((r) => r.id);
+    const { data: openCards, error: cardErr } = await supabase.from("gameday_pick_cards").select("id, roster_revision").in("room_id", roomIds).eq("phase", "weekly").eq("status", "open");
+    if (cardErr || !openCards || openCards.length === 0) return;
+    for (const card of openCards) {
+      const cardId = card.id;
+      const rosterRevision = card.roster_revision ?? 0;
+      const { data: props } = await supabase.from("gameday_props").select("id, answer_target_type, answer_options").eq("card_id", cardId).in("answer_target_type", ["season_member", "fantasy_team"]);
+      if (!props || props.length === 0) continue;
+      let anyAppended = false;
+      for (const prop of props) {
+        const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+        const isSmProp = prop.answer_target_type === "season_member";
+        const memberId = isSmProp ? seasonMemberId : teamId;
+        if (opts.some((o) => o.id === memberId)) continue;
+        const newOpt = isSmProp ? { id: seasonMemberId, label: displayName.trim(), type: "season_member" } : { id: teamId, label: teamName.trim(), type: "fantasy_team" };
+        const { error: updateErr } = await supabase.from("gameday_props").update({ answer_options: [...opts, newOpt] }).eq("id", prop.id);
+        if (!updateErr) anyAppended = true;
+      }
+      if (anyAppended) {
+        await supabase.from("gameday_pick_cards").update({ roster_revision: rosterRevision + 1 }).eq("id", cardId);
+      }
+    }
+  } catch (err) {
+    console.error("[fantasy] _appendMemberToWeeklyCards error (non-fatal):", err?.message ?? err);
+  }
+}
+function decodeJwtPayload(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "==".slice(0, (4 - b64.length % 4) % 4);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+function requireFantasyAuth(req, res2) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) {
+    res2.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  const payload = decodeJwtPayload(auth.slice(7));
+  if (!payload?.sub) {
+    res2.status(401).json({ error: "Invalid token" });
+    return null;
+  }
+  return payload.sub;
+}
+function getCallerIdentity2(req) {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith("Bearer ")) {
+    const payload = decodeJwtPayload(auth.slice(7));
+    if (payload?.sub) return { userId: payload.sub };
+  }
+  const guestToken = req.headers["x-fantasy-guest-token"];
+  if (guestToken?.trim()) return { guestToken: guestToken.trim() };
+  return {};
+}
+async function requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId) {
+  const userId = requireFantasyAuth(req, res2);
+  if (!userId) return null;
+  const { data: claims } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
+  if (!claims?.length) {
+    res2.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+  const memberIds = claims.map((c) => c.league_member_id);
+  const { data: leagueMember } = await supabase.from("fantasy_league_members").select("id").eq("league_id", leagueId).eq("is_active", true).in("id", memberIds).maybeSingle();
+  if (!leagueMember) {
+    res2.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+  const { data: seasonMember } = await supabase.from("fantasy_season_members").select("id, role").eq("league_season_id", seasonId).eq("league_member_id", leagueMember.id).eq("is_active", true).in("role", ["commissioner", "co_commissioner"]).maybeSingle();
+  if (!seasonMember) {
+    res2.status(403).json({ error: "Commissioner authority required for this season" });
+    return null;
+  }
+  return {
+    userId,
+    leagueMemberId: leagueMember.id,
+    seasonMemberId: seasonMember.id
+  };
+}
+async function requireFantasyLeagueCommissioner(req, res2, supabase, leagueId) {
+  const userId = requireFantasyAuth(req, res2);
+  if (!userId) return null;
+  const { data: claims } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
+  if (!claims?.length) {
+    res2.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+  const memberIds = claims.map((c) => c.league_member_id);
+  const { data: leagueMember } = await supabase.from("fantasy_league_members").select("id").eq("league_id", leagueId).eq("is_active", true).in("id", memberIds).maybeSingle();
+  if (!leagueMember) {
+    res2.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+  const { data: seasonMember } = await supabase.from("fantasy_season_members").select("id").eq("league_member_id", leagueMember.id).eq("is_active", true).in("role", ["commissioner", "co_commissioner"]).maybeSingle();
+  if (!seasonMember) {
+    res2.status(403).json({ error: "Commissioner authority required" });
+    return null;
+  }
+  return { userId, leagueMemberId: leagueMember.id };
+}
+async function requirePrimaryLeagueCommissioner(req, res2, supabase, leagueId) {
+  const userId = requireFantasyAuth(req, res2);
+  if (!userId) return null;
+  const { data: claims } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
+  if (!claims?.length) {
+    res2.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+  const memberIds = claims.map((c) => c.league_member_id);
+  const { data: leagueMember } = await supabase.from("fantasy_league_members").select("id").eq("league_id", leagueId).eq("is_active", true).in("id", memberIds).maybeSingle();
+  if (!leagueMember) {
+    res2.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+  const { data: seasonMember } = await supabase.from("fantasy_season_members").select("id").eq("league_member_id", leagueMember.id).eq("is_active", true).eq("role", "commissioner").maybeSingle();
+  if (!seasonMember) {
+    res2.status(403).json({ error: "Primary commissioner authority required for this operation" });
+    return null;
+  }
+  return { userId, leagueMemberId: leagueMember.id };
+}
+async function requireLeagueActive(supabase, leagueId, res2) {
+  const { data: league } = await supabase.from("fantasy_leagues").select("is_active").eq("id", leagueId).maybeSingle();
+  if (!league) {
+    res2.status(404).json({ error: "League not found" });
+    return false;
+  }
+  if (!league.is_active) {
+    res2.status(409).json({
+      error: "This league is archived. Restore it before making changes.",
+      code: "LEAGUE_ARCHIVED"
+    });
+    return false;
+  }
+  return true;
+}
+async function resolveViewer(supabase, identity, seasonId, leagueId) {
+  if (!identity.userId && !identity.guestToken) return null;
+  const claimQuery = supabase.from("fantasy_member_claims").select("league_member_id").eq("is_active", true);
+  const { data: claim } = identity.userId ? await claimQuery.eq("user_id", identity.userId).maybeSingle() : await claimQuery.eq("guest_token", identity.guestToken).maybeSingle();
+  if (!claim) return null;
+  const lmId = claim.league_member_id;
+  const { data: lm } = await supabase.from("fantasy_league_members").select("id, display_name").eq("id", lmId).eq("league_id", leagueId).eq("is_active", true).maybeSingle();
+  if (!lm) return null;
+  const { data: sm } = await supabase.from("fantasy_season_members").select("id, role, draft_day_eligible").eq("league_season_id", seasonId).eq("league_member_id", lmId).eq("is_active", true).maybeSingle();
+  if (!sm) return null;
+  const { data: mgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(id, team_name)").eq("season_member_id", sm.id).eq("is_active", true).maybeSingle();
+  const teamName = mgr?.fantasy_teams?.team_name ?? null;
+  const fantasyTeamId = mgr?.fantasy_teams?.id ?? null;
+  return {
+    league_member_id: lmId,
+    season_member_id: sm.id,
+    display_name: lm.display_name ?? null,
+    team_name: teamName,
+    fantasy_team_id: fantasyTeamId,
+    role: sm.role,
+    draft_day_eligible: sm.draft_day_eligible ?? true
+  };
+}
+async function ensureFantasyParticipant(supabase, roomId, viewer) {
+  const { data: existing } = await supabase.from("gameday_participants").select("id").eq("room_id", roomId).eq("season_member_id", viewer.season_member_id).maybeSingle();
+  if (existing) return { participant_id: existing.id };
+  const insertPayload = {
+    room_id: roomId,
+    season_member_id: viewer.season_member_id,
+    // display_name is NOT NULL in gameday_participants; display_name comes from
+    // fantasy_league_members.display_name (NOT NULL), so null is unexpected but
+    // we provide a safe fallback to avoid a schema error.
+    display_name: viewer.display_name ?? viewer.team_name ?? "Fantasy Member",
+    team_name: viewer.team_name
+  };
+  if (viewer.fantasy_team_id) insertPayload.fantasy_team_id = viewer.fantasy_team_id;
+  const { data: inserted, error: insertErr } = await supabase.from("gameday_participants").insert(insertPayload).select("id").single();
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      const { data: race } = await supabase.from("gameday_participants").select("id").eq("room_id", roomId).eq("season_member_id", viewer.season_member_id).maybeSingle();
+      if (race) return { participant_id: race.id };
+    }
+    throw new Error(`Failed to create participant: ${insertErr.message}`);
+  }
+  return { participant_id: inserted.id };
+}
+var VALID_SPORTS = ["football", "basketball", "baseball"];
+function registerFantasyRoutes(app2) {
+  app2.use("/api/fantasy", (_req, res2, next) => {
+    res2.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    next();
+  });
+  app2.post("/api/fantasy/leagues/setup", async (req, res2) => {
+    const userId = requireFantasyAuth(req, res2);
+    if (!userId) return;
+    const {
+      league_name,
+      sport,
+      display_name,
+      team_name,
+      season_year,
+      reward_description,
+      reward_amount_display
+    } = req.body;
+    if (!league_name?.trim()) {
+      res2.status(400).json({ error: "league_name is required" });
+      return;
+    }
+    if (!sport || !VALID_SPORTS.includes(sport)) {
+      res2.status(400).json({ error: `sport must be one of: ${VALID_SPORTS.join(", ")}` });
+      return;
+    }
+    if (!display_name?.trim()) {
+      res2.status(400).json({ error: "display_name is required" });
+      return;
+    }
+    if (!team_name?.trim()) {
+      res2.status(400).json({ error: "team_name is required" });
+      return;
+    }
+    if (season_year === void 0 || !Number.isInteger(season_year) || season_year < 1900 || season_year > 2100) {
+      res2.status(400).json({ error: "season_year must be an integer between 1900 and 2100" });
+      return;
+    }
+    const supabase = getServiceSupabase2();
+    const { data, error } = await supabase.rpc("setup_fantasy_league", {
+      p_user_id: userId,
+      p_league_name: league_name.trim(),
+      p_sport: sport,
+      p_display_name: display_name.trim(),
+      p_team_name: team_name.trim(),
+      p_season_year: season_year,
+      p_reward_description: reward_description?.trim() || null,
+      p_reward_amount_display: reward_amount_display?.trim() || null
+    });
+    if (error) {
+      console.error("[fantasy] setup_fantasy_league error:", error.message);
+      const isValidationError = error.message.includes("Invalid sport") || error.message.includes("cannot be empty") || error.message.includes("year must be");
+      res2.status(isValidationError ? 400 : 500).json({
+        error: isValidationError ? error.message : "Failed to create Fantasy league"
+      });
+      return;
+    }
+    const result = data;
+    console.log(
+      `[fantasy] League created: league=${result.league_id?.slice(0, 8)}\u2026 season=${result.season_id?.slice(0, 8)}\u2026 by user=${userId.slice(0, 8)}\u2026`
+    );
+    res2.status(201).json(result);
+  });
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/participants",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(
+        req,
+        res2,
+        supabase,
+        leagueId,
+        seasonId
+      );
+      if (!commissioner) return;
+      if (!await requireLeagueActive(supabase, leagueId, res2)) return;
+      const { display_name, team_name } = req.body;
+      if (!display_name?.trim()) {
+        res2.status(400).json({ error: "display_name is required" });
+        return;
+      }
+      if (!team_name?.trim()) {
+        res2.status(400).json({ error: "team_name is required" });
+        return;
+      }
+      const idempotencyKey = req.headers["idempotency-key"]?.trim();
+      if (!idempotencyKey) {
+        res2.status(400).json({
+          error: "Idempotency-Key header is required for this operation.",
+          code: "IDEMPOTENCY_KEY_REQUIRED"
+        });
+        return;
+      }
+      const requestHash = _computeAddMemberHash(
+        leagueId,
+        seasonId,
+        commissioner.userId,
+        display_name,
+        team_name
+      );
+      const { data: seasonCheck } = await supabase.from("fantasy_league_seasons").select("league_id").eq("id", seasonId).maybeSingle();
+      if (!seasonCheck || seasonCheck.league_id !== leagueId) {
+        res2.status(400).json({ error: "Season does not belong to this league" });
+        return;
+      }
+      const { data: ddRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      let eligible2 = true;
+      let roomIdForSnapshot = null;
+      if (ddRoom) {
+        const ddRoomId = ddRoom.id;
+        const { data: ddCard } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", ddRoomId).eq("phase", "draft_day").maybeSingle();
+        if (ddCard) {
+          const cardStatus = ddCard.status;
+          if (cardStatus === "locked" || cardStatus === "settled") {
+            eligible2 = false;
+          } else if (cardStatus === "open") {
+            eligible2 = true;
+            roomIdForSnapshot = ddRoomId;
+          }
+        }
+      }
+      const { data, error } = await supabase.rpc("add_fantasy_season_participant_idempotent", {
+        p_league_id: leagueId,
+        p_league_season_id: seasonId,
+        p_display_name: display_name.trim(),
+        p_team_name: team_name.trim(),
+        p_draft_day_eligible: eligible2,
+        p_room_id: roomIdForSnapshot,
+        p_idempotency_key: idempotencyKey,
+        p_operator_user_id: commissioner.userId,
+        p_request_hash: requestHash
+      });
+      if (error) {
+        if (error.message.includes("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")) {
+          res2.status(409).json({
+            error: "Idempotency key was used with a different request. Generate a new key for a different add-member operation.",
+            code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST"
+          });
+          return;
+        }
+        console.error("[fantasy] add_fantasy_season_participant_idempotent error:", error.message);
+        const isValidationError = error.message.includes("not found") || error.message.includes("does not belong") || error.message.includes("cannot be empty");
+        res2.status(isValidationError ? 400 : 500).json({
+          error: isValidationError ? error.message : "Failed to add participant"
+        });
+        return;
+      }
+      const result = data;
+      console.log(
+        `[fantasy] Participant added: season=${seasonId.slice(0, 8)}\u2026 member=${result.league_member_id?.slice(0, 8)}\u2026 team=${result.team_id?.slice(0, 8)}\u2026 eligible=${result.draft_day_eligible} already_exists=${result.already_exists}`
+      );
+      if (!result.already_exists) {
+        await _appendMemberToWeeklyCards(
+          supabase,
+          seasonId,
+          result.season_member_id,
+          result.team_id,
+          display_name.trim(),
+          team_name.trim()
+        );
+      }
+      res2.status(result.already_exists ? 200 : 201).json(result);
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/participants/batch",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(
+        req,
+        res2,
+        supabase,
+        leagueId,
+        seasonId
+      );
+      if (!commissioner) return;
+      if (!await requireLeagueActive(supabase, leagueId, res2)) return;
+      const { batch_key, members } = req.body;
+      if (!batch_key?.trim()) {
+        res2.status(400).json({ error: "batch_key is required" });
+        return;
+      }
+      const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRx.test(batch_key.trim())) {
+        res2.status(400).json({ error: "batch_key must be a valid UUID" });
+        return;
+      }
+      if (!Array.isArray(members) || members.length === 0) {
+        res2.status(400).json({ error: "members must be a non-empty array" });
+        return;
+      }
+      const validationErrors = [];
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        if (!m?.display_name?.trim()) {
+          validationErrors.push({ index: i, field: "display_name", error: "display_name is required" });
+        }
+        if (!m?.team_name?.trim()) {
+          validationErrors.push({ index: i, field: "team_name", error: "team_name is required" });
+        }
+      }
+      if (validationErrors.length > 0) {
+        res2.status(400).json({
+          error: "Batch validation failed \u2014 fix all rows before submitting",
+          validation_errors: validationErrors
+        });
+        return;
+      }
+      const { data: seasonCheck } = await supabase.from("fantasy_league_seasons").select("league_id").eq("id", seasonId).maybeSingle();
+      if (!seasonCheck || seasonCheck.league_id !== leagueId) {
+        res2.status(400).json({ error: "Season does not belong to this league" });
+        return;
+      }
+      const { data: ddRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      let eligible2 = true;
+      let roomIdForSnapshot = null;
+      if (ddRoom) {
+        const ddRoomId = ddRoom.id;
+        const { data: ddCard } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", ddRoomId).eq("phase", "draft_day").maybeSingle();
+        if (ddCard) {
+          const cs = ddCard.status;
+          if (cs === "locked" || cs === "settled") {
+            eligible2 = false;
+          } else if (cs === "open") {
+            eligible2 = true;
+            roomIdForSnapshot = ddRoomId;
+          }
+        }
+      }
+      const results = [];
+      let created_count = 0;
+      let replayed_count = 0;
+      let failed_count = 0;
+      const bk = batch_key.trim();
+      const allRowKeys = members.map((_, i) => `${bk}:${i}`);
+      const { data: existingOps } = await supabase.from("fantasy_participant_operations").select("idempotency_key").eq("operator_user_id", commissioner.userId).in("idempotency_key", allRowKeys);
+      const alreadyRecordedKeys = new Set(
+        (existingOps ?? []).map((op) => op.idempotency_key)
+      );
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
+        const displayName = m.display_name.trim();
+        const teamName = m.team_name.trim();
+        const idempotencyKey = `${bk}:${i}`;
+        const isReplay = alreadyRecordedKeys.has(idempotencyKey);
+        const requestHash = _computeAddMemberHash(
+          leagueId,
+          seasonId,
+          commissioner.userId,
+          displayName,
+          teamName
+        );
+        const { data, error } = await supabase.rpc(
+          "add_fantasy_season_participant_idempotent",
+          {
+            p_league_id: leagueId,
+            p_league_season_id: seasonId,
+            p_display_name: displayName,
+            p_team_name: teamName,
+            p_draft_day_eligible: eligible2,
+            p_room_id: roomIdForSnapshot,
+            p_idempotency_key: idempotencyKey,
+            p_operator_user_id: commissioner.userId,
+            p_request_hash: requestHash
+          }
+        );
+        if (error) {
+          let msg = "Failed to add member";
+          if (error.message.includes("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_REQUEST")) {
+            msg = "Row was previously submitted with different content \u2014 generate a new import batch to change this row.";
+          } else if (error.message.includes("not found") || error.message.includes("does not belong") || error.message.includes("cannot be empty")) {
+            msg = error.message;
+          }
+          results.push({
+            index: i,
+            status: "failed",
+            display_name: displayName,
+            team_name: teamName,
+            league_member_id: null,
+            season_member_id: null,
+            fantasy_team_id: null,
+            draft_day_eligible: null,
+            error: msg
+          });
+          failed_count++;
+        } else {
+          const r = data;
+          const status = isReplay ? "replayed" : "created";
+          if (status === "created") created_count++;
+          else replayed_count++;
+          results.push({
+            index: i,
+            status,
+            display_name: displayName,
+            team_name: teamName,
+            league_member_id: r.league_member_id ?? null,
+            season_member_id: r.season_member_id ?? null,
+            fantasy_team_id: r.team_id ?? null,
+            draft_day_eligible: r.draft_day_eligible ?? null,
+            error: null
+          });
+        }
+      }
+      const newlyCreatedResults = results.filter((r) => r.status === "created");
+      for (const r of newlyCreatedResults) {
+        if (r.season_member_id && r.fantasy_team_id) {
+          await _appendMemberToWeeklyCards(
+            supabase,
+            seasonId,
+            r.season_member_id,
+            r.fantasy_team_id,
+            r.display_name,
+            r.team_name
+          );
+        }
+      }
+      console.log(
+        `[fantasy] Batch import: season=${seasonId.slice(0, 8)}\u2026 created=${created_count} replayed=${replayed_count} failed=${failed_count} weekly_updated=${newlyCreatedResults.length}`
+      );
+      const httpStatus = failed_count > 0 && created_count === 0 && replayed_count === 0 ? 400 : 200;
+      res2.status(httpStatus).json({
+        results,
+        created_count,
+        replayed_count,
+        failed_count
+      });
+    }
+  );
+  app2.patch(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:seasonMemberId",
+    async (req, res2) => {
+      const { leagueId, seasonId, seasonMemberId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const { display_name, team_name } = req.body;
+      if (!display_name?.trim()) {
+        res2.status(400).json({ error: "display_name is required" });
+        return;
+      }
+      if (!team_name?.trim()) {
+        res2.status(400).json({ error: "team_name is required" });
+        return;
+      }
+      const { data: smCheck } = await supabase.from("fantasy_season_members").select("id").eq("id", seasonMemberId).eq("league_season_id", seasonId).maybeSingle();
+      if (!smCheck) {
+        res2.status(404).json({ error: "Member not found in this season" });
+        return;
+      }
+      const { data, error } = await supabase.rpc("update_fantasy_member", {
+        p_season_member_id: seasonMemberId,
+        p_display_name: display_name.trim(),
+        p_team_name: team_name.trim(),
+        p_season_id: seasonId
+      });
+      if (error) {
+        console.error("[fantasy] update_fantasy_member error:", error.message);
+        const isValidation = error.message.includes("cannot be empty") || error.message.includes("not found");
+        res2.status(isValidation ? 400 : 500).json({
+          error: isValidation ? error.message : "Failed to update member"
+        });
+        return;
+      }
+      console.log(
+        `[fantasy] Member renamed: season=${seasonId.slice(0, 8)}\u2026 sm=${seasonMemberId.slice(0, 8)}\u2026 props_updated=${data?.props_updated} participant_updated=${data?.participant_updated}`
+      );
+      res2.json(data);
+    }
+  );
+  app2.patch(
+    "/api/fantasy/leagues/:leagueId",
+    async (req, res2) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyLeagueCommissioner(req, res2, supabase, leagueId);
+      if (!commissioner) return;
+      const { league_name } = req.body;
+      const trimmed = league_name?.trim();
+      if (!trimmed) {
+        res2.status(400).json({ error: "league_name is required and cannot be blank" });
+        return;
+      }
+      if (trimmed.length > 100) {
+        res2.status(400).json({ error: "league_name too long (max 100 characters)" });
+        return;
+      }
+      const { data, error } = await supabase.from("fantasy_leagues").update({ league_name: trimmed, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", leagueId).select("id, league_name").single();
+      if (error) {
+        console.error("[fantasy] PATCH /leagues/:leagueId error:", error.message);
+        res2.status(500).json({ error: "Failed to update league name" });
+        return;
+      }
+      console.log(
+        `[fantasy] League renamed: id=${leagueId.slice(0, 8)}\u2026 new_name="${trimmed}"`
+      );
+      res2.json({ id: data.id, league_name: data.league_name });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/archive",
+    async (req, res2) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requirePrimaryLeagueCommissioner(req, res2, supabase, leagueId);
+      if (!commissioner) return;
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, is_active").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      if (!league.is_active) {
+        res2.json({
+          archived: true,
+          already_archived: true,
+          league_id: leagueId,
+          league_name: league.league_name
+        });
+        return;
+      }
+      const { data: seasons } = await supabase.from("fantasy_league_seasons").select("id").eq("league_id", leagueId);
+      const seasonIds = (seasons ?? []).map((s) => s.id);
+      if (seasonIds.length > 0) {
+        const { data: unresolvedRooms } = await supabase.from("gameday_rooms").select("id, status").in("league_season_id", seasonIds).eq("experience_type", "fantasy").is("archived_at", null).not("status", "eq", "finalized").limit(1);
+        if ((unresolvedRooms ?? []).length > 0) {
+          res2.status(409).json({
+            error: "Finish or finalize the current Swayger before archiving this league.",
+            code: "UNRESOLVED_COMPETITION"
+          });
+          return;
+        }
+      }
+      const { error: updateError } = await supabase.from("fantasy_leagues").update({ is_active: false, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", leagueId);
+      if (updateError) {
+        console.error("[fantasy] archive league error:", updateError.message);
+        res2.status(500).json({ error: "Failed to archive league" });
+        return;
+      }
+      console.log(`[fantasy] League archived: id=${leagueId.slice(0, 8)}\u2026 name="${league.league_name}"`);
+      res2.json({
+        archived: true,
+        league_id: leagueId,
+        league_name: league.league_name
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/restore",
+    async (req, res2) => {
+      const { leagueId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requirePrimaryLeagueCommissioner(req, res2, supabase, leagueId);
+      if (!commissioner) return;
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, is_active").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      if (league.is_active) {
+        res2.json({
+          restored: true,
+          already_active: true,
+          league_id: leagueId,
+          league_name: league.league_name
+        });
+        return;
+      }
+      const { error: updateError } = await supabase.from("fantasy_leagues").update({ is_active: true, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", leagueId);
+      if (updateError) {
+        console.error("[fantasy] restore league error:", updateError.message);
+        res2.status(500).json({ error: "Failed to restore league" });
+        return;
+      }
+      console.log(`[fantasy] League restored: id=${leagueId.slice(0, 8)}\u2026 name="${league.league_name}"`);
+      res2.json({
+        restored: true,
+        league_id: leagueId,
+        league_name: league.league_name
+      });
+    }
+  );
+  app2.get("/api/fantasy/leagues", async (req, res2) => {
+    const userId = requireFantasyAuth(req, res2);
+    if (!userId) return;
+    const supabase = getServiceSupabase2();
+    const statusFilter = req.query.status?.toLowerCase();
+    if (statusFilter === "archived") {
+      const { data: claims2 } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
+      if (!claims2?.length) {
+        res2.json({ leagues: [] });
+        return;
+      }
+      const memberIds2 = claims2.map((c) => c.league_member_id);
+      const { data: leagueMembers2 } = await supabase.from("fantasy_league_members").select("league_id").in("id", memberIds2).eq("is_active", true);
+      if (!leagueMembers2?.length) {
+        res2.json({ leagues: [] });
+        return;
+      }
+      const leagueIds2 = [
+        ...new Set(leagueMembers2.map((lm) => lm.league_id))
+      ];
+      const { data: leagues2, error: error2 } = await supabase.from("fantasy_leagues").select(
+        "id, league_name, sport, is_active, created_at, fantasy_league_seasons(id, season_year, status)"
+      ).in("id", leagueIds2).eq("is_active", false).order("created_at", { ascending: false });
+      if (error2) {
+        console.error("[fantasy] GET /leagues?status=archived error:", error2.message);
+        res2.status(500).json({ error: "Failed to fetch archived leagues" });
+        return;
+      }
+      res2.json({ leagues: leagues2 ?? [] });
+      return;
+    }
+    const { data: claims } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", userId).eq("is_active", true);
+    if (!claims?.length) {
+      res2.json({ leagues: [] });
+      return;
+    }
+    const memberIds = claims.map((c) => c.league_member_id);
+    const { data: leagueMembers } = await supabase.from("fantasy_league_members").select("league_id").in("id", memberIds).eq("is_active", true);
+    if (!leagueMembers?.length) {
+      res2.json({ leagues: [] });
+      return;
+    }
+    const leagueIds = [
+      ...new Set(leagueMembers.map((lm) => lm.league_id))
+    ];
+    const { data: leagues, error } = await supabase.from("fantasy_leagues").select(
+      "id, league_name, sport, is_active, created_at, fantasy_league_seasons(id, season_year, status)"
+    ).in("id", leagueIds).eq("is_active", true).order("created_at", { ascending: false });
+    if (error) {
+      console.error("[fantasy] GET /leagues error:", error.message);
+      res2.status(500).json({ error: "Failed to fetch leagues" });
+      return;
+    }
+    res2.json({ leagues: leagues ?? [] });
+  });
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, sport, is_active").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select(
+        "id, season_year, status, default_reward_description, default_reward_amount_display"
+      ).eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const { data: seasonMembers } = await supabase.from("fantasy_season_members").select("id, role, is_active, fantasy_league_members(id, display_name)").eq("league_season_id", seasonId).eq("is_active", true);
+      const { data: teams } = await supabase.from("fantasy_teams").select(
+        "id, team_name, is_active, fantasy_team_managers(id, season_member_id, role, is_active)"
+      ).eq("league_season_id", seasonId).eq("is_active", true);
+      const participants = (seasonMembers ?? []).map((sm) => {
+        const lm = sm.fantasy_league_members;
+        const managedTeam = (teams ?? []).find(
+          (t) => (t.fantasy_team_managers ?? []).some(
+            (mgr) => mgr.season_member_id === sm.id && mgr.is_active
+          )
+        );
+        const managedMgr = managedTeam ? (managedTeam.fantasy_team_managers ?? []).find(
+          (mgr) => mgr.season_member_id === sm.id && mgr.is_active
+        ) : null;
+        return {
+          season_member_id: sm.id,
+          league_member_id: lm?.id ?? null,
+          display_name: lm?.display_name ?? null,
+          role: sm.role,
+          team_id: managedTeam?.id ?? null,
+          team_name: managedTeam?.team_name ?? null,
+          manager_id: managedMgr?.id ?? null,
+          manager_role: managedMgr?.role ?? null
+        };
+      });
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      const lmIds = participants.map((p) => p.league_member_id).filter(Boolean);
+      const { data: activeClaims } = lmIds.length ? await supabase.from("fantasy_member_claims").select("league_member_id, user_id, guest_token").in("league_member_id", lmIds).eq("is_active", true) : { data: [] };
+      const claimedMemberIds = new Set(
+        (activeClaims ?? []).map((c) => c.league_member_id)
+      );
+      const claimTypeByMemberId = {};
+      for (const c of activeClaims ?? []) {
+        claimTypeByMemberId[c.league_member_id] = c.user_id ? "account" : "guest";
+      }
+      const isCommissioner = viewer && (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+      const participantsWithClaims = participants.map((p) => ({
+        ...p,
+        is_claimed: p.league_member_id ? claimedMemberIds.has(p.league_member_id) : false,
+        // Commissioner-only: how the seat was claimed (guest token vs linked account).
+        ...isCommissioner && p.league_member_id ? { claim_type: claimTypeByMemberId[p.league_member_id] ?? null } : {}
+      }));
+      res2.json({ league, season, participants: participantsWithClaims, viewer });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name, sport, is_active").eq("id", leagueId).maybeSingle();
+      if (!league || !league.is_active) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select(
+        "id, season_year, status, default_reward_description, default_reward_amount_display"
+      ).eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const { data: seasonMembers } = await supabase.from("fantasy_season_members").select("id, role, fantasy_league_members(id, display_name)").eq("league_season_id", seasonId).eq("is_active", true);
+      const { data: teams } = await supabase.from("fantasy_teams").select("id, team_name, fantasy_team_managers(season_member_id, is_active)").eq("league_season_id", seasonId).eq("is_active", true);
+      const smIds = (seasonMembers ?? []).map((sm) => sm.id);
+      const lmIds = (seasonMembers ?? []).map((sm) => sm.fantasy_league_members?.id).filter(Boolean);
+      const { data: activeClaims } = lmIds.length ? await supabase.from("fantasy_member_claims").select("league_member_id").in("league_member_id", lmIds).eq("is_active", true) : { data: [] };
+      const claimedMemberIds = new Set(
+        (activeClaims ?? []).map((c) => c.league_member_id)
+      );
+      const viewer = identity.userId || identity.guestToken ? await resolveViewer(supabase, identity, seasonId, leagueId) : null;
+      const seats = (seasonMembers ?? []).map((sm) => {
+        const lm = sm.fantasy_league_members;
+        const memberTeam = (teams ?? []).find(
+          (t) => (t.fantasy_team_managers ?? []).some(
+            (mgr) => mgr.season_member_id === sm.id && mgr.is_active
+          )
+        );
+        const lmId = lm?.id ?? null;
+        const isClaimed = lmId ? claimedMemberIds.has(lmId) : false;
+        const isMine = viewer ? viewer.league_member_id === lmId : false;
+        return {
+          season_member_id: sm.id,
+          league_member_id: lmId,
+          display_name: lm?.display_name ?? null,
+          team_name: memberTeam?.team_name ?? null,
+          role: sm.role,
+          is_claimed: isClaimed,
+          is_mine: isMine
+        };
+      });
+      seats.sort((a, b) => {
+        if (a.role === "commissioner") return -1;
+        if (b.role === "commissioner") return 1;
+        return (a.display_name ?? "").localeCompare(b.display_name ?? "");
+      });
+      console.log(
+        `[fantasy] join-info: league=${leagueId.slice(0, 8)}\u2026 season=${seasonId.slice(0, 8)}\u2026 seats=${seats.length} caller=${identity.userId?.slice(0, 8) ?? identity.guestToken?.slice(0, 8) ?? "anon"}`
+      );
+      res2.json({
+        league,
+        season,
+        seats,
+        my_seat: viewer ?? null
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/claim",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized \u2014 provide Bearer token or X-Fantasy-Guest-Token" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const { league_member_id } = req.body;
+      if (!league_member_id?.trim()) {
+        res2.status(400).json({ error: "league_member_id is required" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      if (!await requireLeagueActive(supabase, leagueId, res2)) {
+        return;
+      }
+      const { data, error } = await supabase.rpc("claim_fantasy_seat", {
+        p_league_id: leagueId,
+        p_season_id: seasonId,
+        p_member_id: league_member_id.trim(),
+        p_user_id: identity.userId ?? null,
+        p_guest_token: identity.guestToken ?? null
+      });
+      if (error) {
+        console.error("[fantasy] claim_fantasy_seat error:", error.message);
+        if (error.message.includes("seat_already_claimed")) {
+          res2.status(409).json({ error: "This seat has already been claimed by someone else." });
+          return;
+        }
+        if (error.message.includes("member_not_found")) {
+          res2.status(403).json({ error: "Member not found in this league/season." });
+          return;
+        }
+        if (error.message.includes("season_not_found")) {
+          res2.status(403).json({ error: "Season does not belong to this league." });
+          return;
+        }
+        res2.status(500).json({ error: "Failed to claim seat" });
+        return;
+      }
+      const result = data;
+      console.log(
+        `[fantasy] Seat claimed: league=${leagueId.slice(0, 8)}\u2026 member=${result.league_member_id?.slice(0, 8)}\u2026 by=${identity.userId?.slice(0, 8) ?? "guest"}\u2026 already_existed=${result.already_existed}`
+      );
+      res2.status(result.already_existed ? 200 : 201).json(result);
+    }
+  );
+  app2.post(
+    "/api/fantasy/claim/upgrade",
+    async (req, res2) => {
+      const userId = requireFantasyAuth(req, res2);
+      if (!userId) return;
+      const { guest_token, league_member_id } = req.body;
+      if (!guest_token?.trim()) {
+        res2.status(400).json({ error: "guest_token is required" });
+        return;
+      }
+      if (!league_member_id?.trim()) {
+        res2.status(400).json({ error: "league_member_id is required" });
+        return;
+      }
+      const gt = guest_token.trim();
+      const lmId = league_member_id.trim();
+      const supabase = getServiceSupabase2();
+      const { data: guestClaim } = await supabase.from("fantasy_member_claims").select("id, league_member_id, user_id").eq("guest_token", gt).eq("league_member_id", lmId).eq("is_active", true).maybeSingle();
+      if (guestClaim) {
+        const claimUserId = guestClaim.user_id;
+        if (claimUserId !== null) {
+          if (claimUserId === userId) {
+            res2.json({ already_upgraded: true, claim_id: guestClaim.id });
+            return;
+          }
+          res2.status(409).json({ error: "This seat is already claimed by a different user." });
+          return;
+        }
+        const { data: updated, error } = await supabase.from("fantasy_member_claims").update({ user_id: userId, guest_token: null }).eq("id", guestClaim.id).select("id, league_member_id").maybeSingle();
+        if (error) {
+          console.error("[fantasy] claim upgrade error:", error.message);
+          res2.status(500).json({ error: "Failed to upgrade claim" });
+          return;
+        }
+        console.log(
+          `[fantasy] Claim upgraded: member=${lmId.slice(0, 8)}\u2026 user=${userId.slice(0, 8)}\u2026`
+        );
+        res2.json({
+          claim_id: updated.id,
+          league_member_id: updated.league_member_id,
+          upgraded: true
+        });
+        return;
+      }
+      const { data: existingAuth } = await supabase.from("fantasy_member_claims").select("id, user_id").eq("league_member_id", lmId).eq("user_id", userId).eq("is_active", true).maybeSingle();
+      if (existingAuth) {
+        res2.json({ already_upgraded: true, claim_id: existingAuth.id });
+        return;
+      }
+      res2.status(404).json({
+        error: "No active guest claim found for the provided token and seat."
+      });
+    }
+  );
+  async function generateFantasyRoomCode(supabase) {
+    const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    for (let i = 0; i < 30; i++) {
+      const code = Array.from(
+        { length: 6 },
+        () => CHARS[Math.floor(Math.random() * CHARS.length)]
+      ).join("");
+      const { data } = await supabase.from("gameday_rooms").select("id").eq("room_code", code).maybeSingle();
+      if (!data) return code;
+    }
+    throw new Error("Could not generate unique room code after 30 attempts");
+  }
+  function buildAnswerOptions(targetType, seasonMembers, teams, staticOptions, supportsNoOne = false) {
+    const NO_ONE = { id: "no_one", label: "No one", type: "static" };
+    switch (targetType) {
+      case "season_member": {
+        const opts = seasonMembers.map((sm) => ({
+          id: sm.id,
+          label: sm.display_name ?? "Unknown",
+          type: "season_member"
+        }));
+        if (supportsNoOne) opts.push(NO_ONE);
+        return opts;
+      }
+      case "fantasy_team": {
+        const opts = teams.map((t) => ({
+          id: t.id,
+          label: t.team_name ?? "Unknown Team",
+          type: "fantasy_team"
+        }));
+        if (supportsNoOne) opts.push(NO_ONE);
+        return opts;
+      }
+      case "yes_no":
+        return [
+          { id: "yes", label: "Yes", type: "yes_no" },
+          { id: "no", label: "No", type: "yes_no" }
+        ];
+      case "static":
+        return (staticOptions ?? []).map((opt, i) => ({
+          id: typeof opt === "string" ? opt.toLowerCase().replace(/\s+/g, "_") : `opt_${i}`,
+          label: typeof opt === "string" ? opt : String(opt),
+          type: "static"
+        }));
+      default:
+        return [];
+    }
+  }
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/templates",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const sport = season.fantasy_leagues?.sport ?? "football";
+      let templates = null;
+      let templateError = null;
+      const tmplResult = await supabase.from("gameday_prop_library").select(
+        "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order, supports_no_one"
+      ).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true).order("display_order", { ascending: true });
+      if (tmplResult.error?.message?.includes("supports_no_one")) {
+        console.warn("[fantasy] supports_no_one column missing \u2014 fetching templates without it");
+        const fallback = await supabase.from("gameday_prop_library").select(
+          "id, question, scoring_scope, point_value, answer_target_type, settlement_window, is_default, display_order"
+        ).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true).order("display_order", { ascending: true });
+        templates = (fallback.data ?? []).map((t) => ({ ...t, supports_no_one: false }));
+        templateError = fallback.error;
+      } else {
+        templates = tmplResult.data ?? [];
+        templateError = tmplResult.error;
+      }
+      if (templateError) {
+        console.error("[fantasy] draft-day templates error:", templateError.message);
+        res2.status(500).json({ error: "Failed to fetch templates" });
+        return;
+      }
+      const rows = templates ?? [];
+      res2.json({
+        sport,
+        competition: rows.filter((t) => t.scoring_scope === "competition"),
+        season: rows.filter((t) => t.scoring_scope === "season")
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code, created_at").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).order("created_at", { ascending: true }).maybeSingle();
+      if (!room) {
+        res2.json(null);
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
+      if (!card) {
+        res2.json(null);
+        return;
+      }
+      const { data: props } = await supabase.from("gameday_props").select("id, template_prop_id, scoring_scope, point_value, display_order, status").eq("card_id", card.id).order("display_order", { ascending: true });
+      const propList = props ?? [];
+      const propIds = propList.map((p) => p.id);
+      const competitionCount = propList.filter((p) => p.scoring_scope === "competition").length;
+      const seasonCount = propList.filter((p) => p.scoring_scope === "season").length;
+      const settledCompetitionCount = propList.filter(
+        (p) => p.scoring_scope === "competition" && p.status === "settled"
+      ).length;
+      let pickCount = 0;
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds);
+          pickCount = count ?? 0;
+        } catch {
+          pickCount = 0;
+        }
+      }
+      const templatePropIds = propList.map((p) => p.template_prop_id).filter(Boolean);
+      let libraryMap = {};
+      if (templatePropIds.length > 0) {
+        const { data: libRows } = await supabase.from("gameday_prop_library").select("id, question, is_active, supports_no_one").in("id", templatePropIds);
+        for (const row of libRows ?? []) {
+          libraryMap[row.id] = {
+            question: row.question ?? "",
+            is_active: row.is_active ?? true,
+            supports_no_one: row.supports_no_one ?? false
+          };
+        }
+      }
+      const currentProps = propList.map((p) => {
+        const lib = libraryMap[p.template_prop_id] ?? { question: "", is_active: true, supports_no_one: false };
+        return {
+          template_prop_id: p.template_prop_id,
+          question: lib.question,
+          scoring_scope: p.scoring_scope,
+          point_value: p.point_value,
+          is_active: lib.is_active,
+          supports_no_one: lib.supports_no_one
+        };
+      });
+      let myPickCount = 0;
+      try {
+        const viewerIdentity = getCallerIdentity2(req);
+        if ((viewerIdentity.userId || viewerIdentity.guestToken) && propIds.length > 0) {
+          const viewerData = await resolveViewer(supabase, viewerIdentity, seasonId, leagueId);
+          if (viewerData) {
+            const { data: vParticipant } = await supabase.from("gameday_participants").select("id").eq("room_id", room.id).eq("season_member_id", viewerData.season_member_id).maybeSingle();
+            if (vParticipant) {
+              const { count: myCount } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds).eq("participant_id", vParticipant.id);
+              myPickCount = myCount ?? 0;
+            }
+          }
+        }
+      } catch {
+        myPickCount = 0;
+      }
+      res2.json({
+        room_id: room.id,
+        card_id: card.id,
+        room_code: room.room_code ?? null,
+        room_status: room.status,
+        card_status: card.status,
+        prop_counts: { competition: competitionCount, season: seasonCount },
+        settled_competition_count: settledCompetitionCount,
+        pick_count: pickCount,
+        my_pick_count: myPickCount,
+        current_props: currentProps,
+        created_at: room.created_at
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/publish",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+      if (!await requireLeagueActive(supabase, leagueId, res2)) return;
+      const { selected_prop_ids } = req.body;
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res2.status(400).json({ error: "select at least one question" });
+        return;
+      }
+      const MAX_DRAFT_DAY_QUESTIONS = 15;
+      if (selected_prop_ids.length > MAX_DRAFT_DAY_QUESTIONS) {
+        res2.status(400).json({
+          error: `Too many questions selected. Maximum is ${MAX_DRAFT_DAY_QUESTIONS}.`,
+          max: MAX_DRAFT_DAY_QUESTIONS,
+          selected: selected_prop_ids.length
+        });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year, fantasy_leagues(id, league_name, sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const league = season.fantasy_leagues;
+      const sport = league.sport;
+      const leagueName = league.league_name;
+      const roomName = `${leagueName} \u2014 ${season.season_year} Draft Day`;
+      let templates = null;
+      const tmplFull = await supabase.from("gameday_prop_library").select(
+        "id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one"
+      ).in("id", selected_prop_ids).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true);
+      if (tmplFull.error?.message?.includes("supports_no_one")) {
+        console.warn("[fantasy] publish: supports_no_one column missing \u2014 inserting without it");
+        const tmplFallback = await supabase.from("gameday_prop_library").select(
+          "id, question, scoring_scope, point_value, answer_target_type, answer_options"
+        ).in("id", selected_prop_ids).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true);
+        templates = (tmplFallback.data ?? []).map((t) => ({ ...t, supports_no_one: false }));
+        if (tmplFallback.error) {
+          res2.status(400).json({ error: "No valid templates found for selection" });
+          return;
+        }
+      } else {
+        templates = tmplFull.data ?? [];
+        if (tmplFull.error) {
+          res2.status(400).json({ error: "No valid templates found for selection" });
+          return;
+        }
+      }
+      if (!templates || templates.length === 0) {
+        res2.status(400).json({ error: "No valid templates found for selection" });
+        return;
+      }
+      const { data: seasonMembers } = await supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true).order("created_at", { ascending: true });
+      const { data: teams } = await supabase.from("fantasy_teams").select("id, team_name").eq("league_season_id", seasonId);
+      const memberList = (seasonMembers ?? []).map((sm) => ({
+        id: sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null
+      }));
+      const teamList = teams ?? [];
+      const propsPayload = templates.map((tmpl, i) => ({
+        library_id: tmpl.id,
+        question: tmpl.question,
+        answer_options: buildAnswerOptions(
+          tmpl.answer_target_type,
+          memberList,
+          teamList,
+          tmpl.answer_options,
+          tmpl.supports_no_one ?? false
+        ),
+        scoring_scope: tmpl.scoring_scope,
+        point_value: tmpl.point_value,
+        answer_target_type: tmpl.answer_target_type ?? null,
+        display_order: i
+      }));
+      let roomCode = null;
+      try {
+        roomCode = await generateFantasyRoomCode(supabase);
+      } catch (e) {
+        console.warn("[fantasy] room_code generation skipped:", e.message);
+      }
+      const { data: existingRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (existingRoom) {
+        const { data: existingCard } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", existingRoom.id).maybeSingle();
+        console.log(
+          `[fantasy] Draft Day already exists: room=${String(existingRoom.id).slice(0, 8)}\u2026 (idempotent)`
+        );
+        res2.status(200).json({
+          room_id: existingRoom.id,
+          card_id: existingCard?.id ?? null,
+          room_code: null,
+          already_existed: true
+        });
+        return;
+      }
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "publish_fantasy_draft_day",
+        {
+          p_league_season_id: seasonId,
+          p_room_name: roomName,
+          p_sport: sport,
+          p_room_code: roomCode,
+          p_host_user_id: userId,
+          p_props: propsPayload
+        }
+      );
+      if (rpcError || !rpcResult) {
+        console.error("[fantasy] publish_fantasy_draft_day RPC error:", rpcError?.message);
+        res2.status(500).json({ error: "Failed to publish Draft Day" });
+        return;
+      }
+      const newRoomId = rpcResult.room_id;
+      const newCardId = rpcResult.card_id;
+      const alreadyExisted = rpcResult.already_existed;
+      if (alreadyExisted) {
+        console.log(
+          `[fantasy] Draft Day already exists (RPC idempotent): room=${String(newRoomId).slice(0, 8)}\u2026`
+        );
+        res2.status(200).json({
+          room_id: newRoomId,
+          card_id: newCardId,
+          room_code: null,
+          already_existed: true
+        });
+        return;
+      }
+      console.log(
+        `[fantasy] Draft Day published via RPC: season=${seasonId.slice(0, 8)}\u2026 room=${newRoomId.slice(0, 8)}\u2026 props=${propsPayload.length}`
+      );
+      res2.status(201).json({
+        room_id: newRoomId,
+        card_id: newCardId,
+        room_code: roomCode,
+        already_existed: false
+      });
+    }
+  );
+  app2.patch(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/props",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const { selected_prop_ids } = req.body;
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res2.status(400).json({ error: "select at least one question" });
+        return;
+      }
+      const MAX_DRAFT_DAY_QUESTIONS = 15;
+      if (selected_prop_ids.length > MAX_DRAFT_DAY_QUESTIONS) {
+        res2.status(400).json({
+          error: `Too many questions selected. Maximum is ${MAX_DRAFT_DAY_QUESTIONS}.`,
+          max: MAX_DRAFT_DAY_QUESTIONS,
+          selected: selected_prop_ids.length
+        });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).maybeSingle();
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+      const cardStatus = card.status;
+      const cardId = card.id;
+      if (cardStatus !== "open") {
+        res2.status(409).json({
+          error: cardStatus === "locked" ? "Draft Day picks are locked. Unlock picks before making changes." : "Draft Day has been finalized and cannot be changed.",
+          card_status: cardStatus
+        });
+        return;
+      }
+      const { data: existingCardPropsForGuard } = await supabase.from("gameday_props").select("id").eq("card_id", cardId);
+      const guardPropIds = (existingCardPropsForGuard ?? []).map((p) => p.id);
+      let pickCount = 0;
+      if (guardPropIds.length > 0) {
+        try {
+          const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", guardPropIds);
+          pickCount = count ?? 0;
+        } catch {
+          pickCount = 0;
+        }
+      }
+      if (pickCount > 0) {
+        res2.status(409).json({
+          error: "Members have already submitted picks. Draft Day questions cannot be changed.",
+          pick_count: pickCount
+        });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year, fantasy_leagues(id, league_name, sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const sport = season.fantasy_leagues.sport;
+      const { data: existingProps } = await supabase.from("gameday_props").select("template_prop_id").eq("card_id", cardId);
+      const existingIds = new Set((existingProps ?? []).map((p) => p.template_prop_id));
+      const grandfatheredIds = selected_prop_ids.filter((id) => existingIds.has(id));
+      const newIds = selected_prop_ids.filter((id) => !existingIds.has(id));
+      let grandfatheredTemplates = [];
+      if (grandfatheredIds.length > 0) {
+        const { data: gfData } = await supabase.from("gameday_prop_library").select("id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one").in("id", grandfatheredIds).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport);
+        grandfatheredTemplates = gfData ?? [];
+        if (grandfatheredTemplates.length !== grandfatheredIds.length) {
+          const found = new Set(grandfatheredTemplates.map((t) => t.id));
+          const missing = grandfatheredIds.filter((id) => !found.has(id));
+          res2.status(400).json({ error: `Existing templates not found in library: ${missing.join(", ")}` });
+          return;
+        }
+      }
+      let newTemplates = [];
+      if (newIds.length > 0) {
+        const newFull = await supabase.from("gameday_prop_library").select("id, question, scoring_scope, point_value, answer_target_type, answer_options, supports_no_one").in("id", newIds).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true);
+        if (newFull.error?.message?.includes("supports_no_one")) {
+          const fb = await supabase.from("gameday_prop_library").select("id, question, scoring_scope, point_value, answer_target_type, answer_options").in("id", newIds).eq("experience_type", "fantasy").eq("competition_type", "draft_day").eq("sport", sport).eq("is_active", true);
+          newTemplates = (fb.data ?? []).map((t) => ({ ...t, supports_no_one: false }));
+        } else {
+          newTemplates = newFull.data ?? [];
+        }
+        if (newTemplates.length !== newIds.length) {
+          const found = new Set(newTemplates.map((t) => t.id));
+          const invalid = newIds.filter((id) => !found.has(id));
+          res2.status(400).json({
+            error: `Some templates are not available: ${invalid.join(", ")}`,
+            invalid_ids: invalid
+          });
+          return;
+        }
+      }
+      const templateById = {};
+      for (const t of [...grandfatheredTemplates, ...newTemplates]) templateById[t.id] = t;
+      const [membersResult, teamsResult] = await Promise.all([
+        supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true).order("created_at", { ascending: true }),
+        supabase.from("fantasy_teams").select("id, team_name").eq("league_season_id", seasonId)
+      ]);
+      const memberList = (membersResult.data ?? []).map((sm) => ({
+        id: sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null
+      }));
+      const teamList = teamsResult.data ?? [];
+      const propsPayload = selected_prop_ids.map((id, i) => {
+        const tmpl = templateById[id];
+        return {
+          library_id: tmpl.id,
+          question: tmpl.question,
+          answer_options: buildAnswerOptions(
+            tmpl.answer_target_type,
+            memberList,
+            teamList,
+            tmpl.answer_options,
+            tmpl.supports_no_one ?? false
+          ),
+          scoring_scope: tmpl.scoring_scope,
+          point_value: tmpl.point_value,
+          answer_target_type: tmpl.answer_target_type ?? null,
+          display_order: i
+        };
+      });
+      const { error: rpcError } = await supabase.rpc(
+        "update_fantasy_draft_day_props",
+        { p_card_id: cardId, p_props: propsPayload }
+      );
+      if (rpcError) {
+        console.error("[fantasy] update_fantasy_draft_day_props RPC error:", rpcError.message);
+        res2.status(500).json({ error: "Failed to update Draft Day questions. Is the Phase 4A.2 SQL applied?" });
+        return;
+      }
+      const { data: updatedProps } = await supabase.from("gameday_props").select("scoring_scope").eq("card_id", cardId);
+      const updatedList = updatedProps ?? [];
+      const compCount = updatedList.filter((p) => p.scoring_scope === "competition").length;
+      const seasCount = updatedList.filter((p) => p.scoring_scope === "season").length;
+      console.log(
+        `[fantasy] Draft Day props updated: card=${cardId.slice(0, 8)}\u2026 props=${propsPayload.length}`
+      );
+      res2.json({
+        card_id: cardId,
+        room_id: room.id,
+        prop_counts: { competition: compCount, season: seasCount }
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/lock",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+      const { data: room } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).maybeSingle();
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+      const currentStatus = card.status;
+      if (currentStatus === "locked" || currentStatus === "settled") {
+        res2.json({ card_status: currentStatus, already_locked: true });
+        return;
+      }
+      const { error } = await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
+      if (error) {
+        console.error("[fantasy] draft-day lock error:", error.message);
+        res2.status(500).json({ error: "Failed to lock Draft Day" });
+        return;
+      }
+      console.log(
+        `[fantasy] Draft Day locked: card=${String(card.id).slice(0, 8)}\u2026 by=${userId.slice(0, 8)}\u2026`
+      );
+      res2.json({ card_status: "locked", already_locked: false });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/unlock",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const userId = commissioner.userId;
+      const { data: room } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).maybeSingle();
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+      const currentStatus = card.status;
+      if (currentStatus === "settled") {
+        res2.status(409).json({
+          error: "Cannot unlock a finalized Draft Day competition",
+          card_status: currentStatus
+        });
+        return;
+      }
+      const { count: settledCount } = await supabase.from("gameday_props").select("id", { count: "exact", head: true }).eq("card_id", card.id).eq("status", "settled");
+      if ((settledCount ?? 0) > 0) {
+        res2.status(409).json({
+          error: "Cannot unlock after settlement has started",
+          settled_props: settledCount
+        });
+        return;
+      }
+      if (currentStatus === "open" || currentStatus === "closed") {
+        res2.json({ card_status: currentStatus, already_unlocked: true });
+        return;
+      }
+      const { error } = await supabase.from("gameday_pick_cards").update({ status: "open", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
+      if (error) {
+        console.error("[fantasy] draft-day unlock error:", error.message);
+        res2.status(500).json({ error: "Failed to unlock Draft Day" });
+        return;
+      }
+      console.log(
+        `[fantasy] Draft Day unlocked: card=${String(card.id).slice(0, 8)}\u2026 by=${userId.slice(0, 8)}\u2026`
+      );
+      res2.json({ card_status: "open", already_unlocked: false });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/play",
+    async (req, res2) => {
+      const supabase = getServiceSupabase2();
+      const { leagueId, seasonId } = req.params;
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code").eq("league_season_id", seasonId).eq("experience_type", "fantasy").eq("competition_type", "draft_day").maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No Draft Day competition found for this season." });
+        return;
+      }
+      const roomId = room.id;
+      let card = null;
+      let migration002Applied = false;
+      {
+        const { data: d1, error: e1 } = await supabase.from("gameday_pick_cards").select("id, status, roster_revision").eq("room_id", roomId).eq("phase", "draft_day").maybeSingle();
+        if (!e1) {
+          card = d1;
+          migration002Applied = true;
+        } else {
+          const { data: d2 } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", roomId).eq("phase", "draft_day").maybeSingle();
+          card = d2;
+        }
+      }
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day card not found." });
+        return;
+      }
+      const cardStatus = card.status;
+      const cardRosterRevision = card.roster_revision ?? 0;
+      if (!viewer.draft_day_eligible) {
+        res2.status(403).json({
+          error: "You are not eligible for this Draft Day competition.",
+          draft_day_eligible: false
+        });
+        return;
+      }
+      const { participant_id: participantId } = await ensureFantasyParticipant(
+        supabase,
+        roomId,
+        viewer
+      );
+      const { data: rawProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
+      const publishedProps = (rawProps ?? []).map((p) => ({
+        id: p.id,
+        question: p.question,
+        scoring_scope: p.scoring_scope,
+        point_value: p.point_value,
+        answer_target_type: p.answer_target_type,
+        // answer_options is the authoritative published snapshot; correct_answer excluded
+        answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
+        display_order: p.display_order
+      }));
+      const propIds = publishedProps.map((p) => p.id);
+      const totalProps = publishedProps.length;
+      const rosterTargetPropIds = new Set(
+        publishedProps.filter((p) => p.answer_target_type === "season_member" || p.answer_target_type === "fantasy_team").map((p) => p.id)
+      );
+      let rawPicks = [];
+      if (propIds.length > 0) {
+        const { data: rp1, error: rpErr } = await supabase.from("gameday_picks").select("prop_id, selected_answer, answer_universe_revision").in("prop_id", propIds).eq("participant_id", participantId);
+        if (!rpErr) {
+          rawPicks = rp1 ?? [];
+        } else {
+          const { data: rp2 } = await supabase.from("gameday_picks").select("prop_id, selected_answer").in("prop_id", propIds).eq("participant_id", participantId);
+          rawPicks = rp2 ?? [];
+        }
+      }
+      const myPicks = {};
+      const stalePropIds = [];
+      for (const pick of rawPicks ?? []) {
+        const propId = pick.prop_id;
+        const pickRev = pick.answer_universe_revision ?? 0;
+        myPicks[propId] = pick.selected_answer;
+        if (rosterTargetPropIds.has(propId) && pickRev < cardRosterRevision) {
+          stalePropIds.push(propId);
+        }
+      }
+      const myPickCount = Object.keys(myPicks).length;
+      let globalPickCount = 0;
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds);
+          globalPickCount = count ?? 0;
+        } catch {
+          globalPickCount = 0;
+        }
+      }
+      const { data: seasonRow } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
+      const leagueName = seasonRow?.fantasy_leagues?.league_name ?? null;
+      res2.json({
+        room_id: roomId,
+        card_id: card.id,
+        room_code: room.room_code ?? null,
+        card_status: cardStatus,
+        roster_revision: cardRosterRevision,
+        stale_pick_prop_ids: stalePropIds,
+        participant_id: participantId,
+        props: publishedProps,
+        my_picks: myPicks,
+        my_pick_count: myPickCount,
+        total_props: totalProps,
+        pick_count: globalPickCount,
+        league_name: leagueName
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/picks",
+    async (req, res2) => {
+      const supabase = getServiceSupabase2();
+      const { leagueId, seasonId } = req.params;
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { prop_id, selected_answer } = req.body ?? {};
+      if (!prop_id || typeof prop_id !== "string") {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (!selected_answer || typeof selected_answer !== "string") {
+        res2.status(400).json({ error: "selected_answer is required" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      if (!viewer.draft_day_eligible) {
+        res2.status(403).json({
+          error: "You are not eligible for this Draft Day competition.",
+          draft_day_eligible: false
+        });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("experience_type", "fantasy").eq("competition_type", "draft_day").maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No Draft Day competition found." });
+        return;
+      }
+      const roomId = room.id;
+      let card = null;
+      let migration002Applied = false;
+      {
+        const { data: d1, error: e1 } = await supabase.from("gameday_pick_cards").select("id, status, roster_revision").eq("room_id", roomId).eq("phase", "draft_day").maybeSingle();
+        if (!e1) {
+          card = d1;
+          migration002Applied = true;
+        } else {
+          const { data: d2 } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", roomId).eq("phase", "draft_day").maybeSingle();
+          card = d2;
+        }
+      }
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day card not found." });
+        return;
+      }
+      const cardStatus = card.status;
+      const cardRosterRevision = card.roster_revision ?? 0;
+      if (cardStatus !== "open") {
+        res2.status(409).json({
+          error: "Picks are locked. No more changes accepted.",
+          card_status: cardStatus
+        });
+        return;
+      }
+      const { data: prop } = await supabase.from("gameday_props").select("id, answer_options").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      if (!prop) {
+        res2.status(400).json({ error: "Prop not found on this Draft Day card." });
+        return;
+      }
+      const answerOptions = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const validAnswerIds = new Set(answerOptions.map((o) => o.id));
+      if (!validAnswerIds.has(selected_answer)) {
+        res2.status(400).json({
+          error: "Invalid answer. selected_answer must match a published answer option ID.",
+          valid_answer_ids: Array.from(validAnswerIds)
+        });
+        return;
+      }
+      const { participant_id: participantId } = await ensureFantasyParticipant(
+        supabase,
+        roomId,
+        viewer
+      );
+      const pickPayload = {
+        prop_id,
+        participant_id: participantId,
+        selected_answer,
+        submitted_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (migration002Applied) {
+        pickPayload.answer_universe_revision = cardRosterRevision;
+      }
+      const { data: upserted, error: upsertErr } = await supabase.from("gameday_picks").upsert(pickPayload, { onConflict: "prop_id,participant_id" }).select("id, prop_id, selected_answer").single();
+      if (upsertErr) {
+        console.error("[fantasy] pick upsert error:", upsertErr.message);
+        res2.status(500).json({ error: "Failed to save pick. Please try again." });
+        return;
+      }
+      res2.json({
+        pick_id: upserted.id,
+        prop_id: upserted.prop_id,
+        selected_answer: upserted.selected_answer
+      });
+    }
+  );
+  async function _getDdRoomAndCard(supabase, seasonId) {
+    const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+    if (!room) return { ok: false, status: 404, body: { error: "No published Draft Day found for this season" } };
+    const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
+    if (!card) return { ok: false, status: 404, body: { error: "Draft Day pick card not found" } };
+    return { ok: true, room, card };
+  }
+  async function _buildLeaderboard(supabase, roomId, competitionProps) {
+    const competitionPropIds = competitionProps.map((p) => p.id);
+    const pointValueMap = {};
+    for (const p of competitionProps) pointValueMap[p.id] = p.point_value ?? 0;
+    const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, season_member_id").eq("room_id", roomId);
+    const participantList = participants ?? [];
+    let allPicks = [];
+    if (participantList.length > 0 && competitionPropIds.length > 0) {
+      const { data: picks } = await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("prop_id", competitionPropIds).in("participant_id", participantList.map((p) => p.id));
+      allPicks = picks ?? [];
+    }
+    const seasonMemberIds = participantList.map((p) => p.season_member_id).filter(Boolean);
+    const teamMap = {};
+    if (seasonMemberIds.length > 0) {
+      const { data: managers } = await supabase.from("fantasy_team_managers").select("season_member_id, fantasy_teams(team_name)").in("season_member_id", seasonMemberIds);
+      for (const m of managers ?? []) {
+        if (m.fantasy_teams?.team_name) {
+          teamMap[m.season_member_id] = m.fantasy_teams.team_name;
+        }
+      }
+    }
+    const scores = participantList.map((p) => {
+      const correctPicks = allPicks.filter(
+        (pk) => pk.participant_id === p.id && pk.is_correct === true
+      );
+      const points = correctPicks.reduce(
+        (sum, pk) => sum + (pointValueMap[pk.prop_id] ?? 0),
+        0
+      );
+      return {
+        participant_id: p.id,
+        season_member_id: p.season_member_id,
+        display_name: p.display_name,
+        team_name: p.season_member_id ? teamMap[p.season_member_id] ?? null : null,
+        points,
+        correct_count: correctPicks.length
+      };
+    });
+    scores.sort((a, b) => b.points - a.points || b.correct_count - a.correct_count);
+    return scores.map((s) => {
+      const rank = scores.filter((x) => x.points > s.points).length + 1;
+      const tieCount = scores.filter((x) => x.points === s.points).length;
+      return { ...s, rank, rank_label: tieCount > 1 ? `T-${rank}` : String(rank) };
+    });
+  }
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settlement",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer").eq("card_id", card.id).order("display_order", { ascending: true });
+      const propList = allProps ?? [];
+      const competitionProps = propList.filter((p) => p.scoring_scope === "competition");
+      const totalCompCount = competitionProps.length;
+      const settledCount = competitionProps.filter((p) => p.status === "settled").length;
+      const previewLeaderboard = settledCount > 0 ? await _buildLeaderboard(supabase, room.id, competitionProps) : [];
+      res2.json({
+        room_id: room.id,
+        card_id: card.id,
+        card_status: card.status,
+        room_status: room.status,
+        competition_props: competitionProps.map((p) => ({
+          id: p.id,
+          question: p.question,
+          display_order: p.display_order,
+          point_value: p.point_value,
+          scoring_scope: p.scoring_scope,
+          status: p.status,
+          correct_answer: p.correct_answer ?? null,
+          answer_options: Array.isArray(p.answer_options) ? p.answer_options : []
+        })),
+        settled_count: settledCount,
+        total_competition_count: totalCompCount,
+        all_settled: totalCompCount > 0 && settledCount === totalCompCount,
+        preview_leaderboard: previewLeaderboard
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/settle",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const { prop_id, correct_answer } = req.body;
+      if (!prop_id) {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (!correct_answer) {
+        res2.status(400).json({ error: "correct_answer is required" });
+        return;
+      }
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (card.status !== "locked") {
+        res2.status(409).json({
+          error: "Draft Day picks must be locked before settling results",
+          card_status: card.status
+        });
+        return;
+      }
+      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, answer_options, question").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      if (!prop) {
+        res2.status(404).json({ error: "Prop not found on this Draft Day card" });
+        return;
+      }
+      if (prop.scoring_scope === "competition" && room.status === "finalized") {
+        res2.status(409).json({
+          error: "Draft Day competition results are finalized and cannot be changed.",
+          room_status: "finalized"
+        });
+        return;
+      }
+      const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const validIds = new Set(opts.map((o) => o.id));
+      if (!validIds.has(correct_answer)) {
+        res2.status(400).json({
+          error: "correct_answer must be a valid published answer option ID",
+          valid_answer_ids: Array.from(validIds)
+        });
+        return;
+      }
+      const wasAlreadySettled = prop.status === "settled";
+      if (wasAlreadySettled && prop.correct_answer === correct_answer) {
+        res2.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+        return;
+      }
+      const result = await settlePropCore(supabase, {
+        propId: prop_id,
+        cardId: card.id,
+        correctAnswer: correct_answer
+      });
+      if (result.cardAutoSettled && room.status === "finalized") {
+        await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
+        console.log(
+          `[fantasy] settle \u2014 card auto-settle suppressed (room finalized), card_status reset to locked`
+        );
+      }
+      console.log(
+        `[fantasy] settle prop=${prop_id.slice(0, 8)}\u2026 scope=${prop.scoring_scope} answer=${correct_answer} by=${commissioner.userId.slice(0, 8)}\u2026 card_auto_settled=${result.cardAutoSettled}`
+      );
+      res2.json({
+        ok: true,
+        idempotent: false,
+        was_correction: wasAlreadySettled,
+        // true = changed existing result (mirrors Game Day re-settle)
+        prop_id,
+        correct_answer,
+        scoring_scope: prop.scoring_scope,
+        card_auto_settled: result.cardAutoSettled
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/finalize",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (room.status === "finalized") {
+        res2.json({ ok: true, already_finalized: true });
+        return;
+      }
+      if (card.status !== "locked") {
+        res2.status(409).json({
+          error: "Draft Day picks must be locked before finalizing",
+          card_status: card.status
+        });
+        return;
+      }
+      const { data: unsettled } = await supabase.from("gameday_props").select("id").eq("card_id", card.id).eq("scoring_scope", "competition").neq("status", "settled");
+      if ((unsettled?.length ?? 0) > 0) {
+        res2.status(409).json({
+          error: "All Draft Day competition questions must be resolved before finalizing",
+          unsettled_competition_count: unsettled?.length ?? 0
+        });
+        return;
+      }
+      const { error: finalizeErr } = await supabase.from("gameday_rooms").update({ status: "finalized" }).eq("id", room.id);
+      if (finalizeErr) {
+        console.error("[fantasy] finalize error:", finalizeErr.message);
+        res2.status(500).json({ error: "Failed to finalize Draft Day" });
+        return;
+      }
+      console.log(
+        `[fantasy] Draft Day finalized: room=${String(room.id).slice(0, 8)}\u2026 by=${commissioner.userId.slice(0, 8)}\u2026`
+      );
+      res2.json({ ok: true, already_finalized: false });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/results",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const rc = await _getDdRoomAndCard(supabase, seasonId);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (room.status !== "finalized") {
+        res2.json({ finalized: false });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options").eq("card_id", card.id).order("display_order", { ascending: true });
+      const propList = allProps ?? [];
+      const competitionProps = propList.filter((p) => p.scoring_scope === "competition");
+      const seasonProps = propList.filter((p) => p.scoring_scope === "season");
+      const answerLabelMap = {};
+      for (const p of propList) {
+        answerLabelMap[p.id] = {};
+        for (const opt of Array.isArray(p.answer_options) ? p.answer_options : []) {
+          if (opt?.id && opt?.label) answerLabelMap[p.id][opt.id] = opt.label;
+        }
+      }
+      const leaderboard = await _buildLeaderboard(supabase, room.id, competitionProps);
+      const topPoints = leaderboard[0]?.points ?? 0;
+      const winners = leaderboard.filter((e) => e.points === topPoints);
+      let myCompPicks = [];
+      let myTotalPoints = 0;
+      let myCorrectCount = 0;
+      let mySeasonPickCount = 0;
+      try {
+        const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
+        if (viewerData) {
+          const { data: vParticipant } = await supabase.from("gameday_participants").select("id").eq("room_id", room.id).eq("season_member_id", viewerData.season_member_id).maybeSingle();
+          if (vParticipant) {
+            const vId = vParticipant.id;
+            const compPropIds = competitionProps.map((p) => p.id);
+            const pointValueMap = {};
+            for (const p of competitionProps) pointValueMap[p.id] = p.point_value ?? 0;
+            if (compPropIds.length > 0) {
+              const { data: picks } = await supabase.from("gameday_picks").select("prop_id, selected_answer, is_correct").eq("participant_id", vId).in("prop_id", compPropIds);
+              const pickByProp = {};
+              for (const pk of picks ?? []) pickByProp[pk.prop_id] = pk;
+              myCompPicks = competitionProps.map((prop) => {
+                const pick = pickByProp[prop.id] ?? null;
+                const myAnswerId = pick?.selected_answer ?? null;
+                const correctId = prop.correct_answer ?? null;
+                const isCorrect = pick?.is_correct ?? null;
+                const pointsEarned = isCorrect === true ? pointValueMap[prop.id] ?? 0 : 0;
+                if (isCorrect === true) {
+                  myTotalPoints += pointsEarned;
+                  myCorrectCount++;
+                }
+                return {
+                  prop_id: prop.id,
+                  question: prop.question,
+                  display_order: prop.display_order,
+                  point_value: prop.point_value,
+                  my_answer_id: myAnswerId,
+                  my_answer_label: myAnswerId ? answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId : null,
+                  correct_answer_id: correctId,
+                  correct_answer_label: correctId ? answerLabelMap[prop.id]?.[correctId] ?? correctId : null,
+                  is_correct: isCorrect,
+                  points_earned: pointsEarned
+                };
+              });
+            }
+            const seasonPropIds = seasonProps.map((p) => p.id);
+            if (seasonPropIds.length > 0) {
+              const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).eq("participant_id", vId).in("prop_id", seasonPropIds);
+              mySeasonPickCount = count ?? 0;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[fantasy] results viewer lookup:", e.message);
+      }
+      res2.json({
+        finalized: true,
+        league_name: season?.fantasy_leagues?.league_name ?? null,
+        season_year: season?.season_year ?? null,
+        winners: winners.map((w) => ({
+          display_name: w.display_name,
+          team_name: w.team_name,
+          points: w.points,
+          rank_label: w.rank_label
+        })),
+        leaderboard,
+        my_competition_picks: myCompPicks,
+        my_total_points: myTotalPoints,
+        my_correct_count: myCorrectCount,
+        my_season_pick_count: mySeasonPickCount,
+        season_props_pending_count: seasonProps.filter((p) => p.status === "pending").length,
+        total_competition_props: competitionProps.length
+      });
+    }
+  );
+  async function _getWeeklyRoomAndCard(supabase, seasonId, weekNumber) {
+    const { data: room } = await supabase.from("gameday_rooms").select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", weekNumber).eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+    if (!room)
+      return { ok: false, status: 404, body: { error: `No published Week ${weekNumber} competition found for this season` } };
+    const { data: card } = await supabase.from("gameday_pick_cards").select("id, status, roster_revision").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
+    if (!card)
+      return { ok: false, status: 404, body: { error: `Week ${weekNumber} pick card not found` } };
+    return { ok: true, room, card };
+  }
+  async function _buildLeaguePicks(supabase, roomId, cardId, cardStatus, viewerSeasonMemberId, scopeFilter) {
+    const { data: rawParticipants } = await supabase.from("gameday_participants").select("id, display_name, team_name, season_member_id").eq("room_id", roomId);
+    const participantList = rawParticipants ?? [];
+    const eligibleCount = participantList.length;
+    const participantMap = /* @__PURE__ */ new Map();
+    let viewerParticipantId = null;
+    for (const p of participantList) {
+      participantMap.set(p.id, {
+        display_name: p.display_name ?? "Unknown",
+        team_name: p.team_name ?? null
+      });
+      if (viewerSeasonMemberId && p.season_member_id === viewerSeasonMemberId) {
+        viewerParticipantId = p.id;
+      }
+    }
+    let propQuery = supabase.from("gameday_props").select("id, question, answer_options, answer_target_type, correct_answer, display_order, scoring_scope, point_value").eq("card_id", cardId).order("display_order", { ascending: true });
+    if (scopeFilter) propQuery = propQuery.eq("scoring_scope", scopeFilter);
+    const { data: rawProps } = await propQuery;
+    const propList = rawProps ?? [];
+    if (propList.length === 0) {
+      return { eligible_count: eligibleCount, viewer_participant_id: viewerParticipantId, props: [] };
+    }
+    const propIds = propList.map((p) => p.id);
+    const { data: rawPicks } = await supabase.from("gameday_picks").select("prop_id, participant_id, selected_answer").in("prop_id", propIds);
+    const pickList = rawPicks ?? [];
+    const picksByProp = /* @__PURE__ */ new Map();
+    for (const pick of pickList) {
+      const propId = pick.prop_id;
+      const answerId = pick.selected_answer;
+      const participantId = pick.participant_id;
+      if (!picksByProp.has(propId)) picksByProp.set(propId, /* @__PURE__ */ new Map());
+      const byAnswer = picksByProp.get(propId);
+      if (!byAnswer.has(answerId)) byAnswer.set(answerId, []);
+      byAnswer.get(answerId).push(participantId);
+    }
+    const responseProps = propList.map((prop) => {
+      const propId = prop.id;
+      const correctId = prop.correct_answer ?? null;
+      const isPropSettled = correctId !== null;
+      const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const picksByAnswer = picksByProp.get(propId) ?? /* @__PURE__ */ new Map();
+      const validIds = new Set(opts.map((o) => o.id));
+      let totalPicks = 0;
+      for (const [aid, pickers] of picksByAnswer.entries()) {
+        if (validIds.has(aid)) totalPicks += pickers.length;
+      }
+      const abstentions = eligibleCount - totalPicks;
+      const answerRows = opts.map((opt, idx) => {
+        const pickers = picksByAnswer.get(opt.id) ?? [];
+        return { _idx: idx, answer_id: opt.id, label: opt.label, pickers };
+      });
+      answerRows.sort(
+        (a, b) => b.pickers.length !== a.pickers.length ? b.pickers.length - a.pickers.length : a._idx - b._idx
+      );
+      const filtered = answerRows.filter((a) => {
+        if (a.pickers.length > 0) return true;
+        if (isPropSettled && a.answer_id === correctId) return true;
+        return false;
+      });
+      const answers = filtered.map((a) => {
+        const count = a.pickers.length;
+        const percentage = totalPicks > 0 ? Math.round(count / totalPicks * 1e3) / 10 : 0;
+        const isCorrect = correctId !== null ? a.answer_id === correctId : null;
+        const viewerPicked = viewerParticipantId !== null && a.pickers.includes(viewerParticipantId);
+        const pickerDetails = a.pickers.map((pid) => {
+          const p = participantMap.get(pid);
+          return {
+            display_name: p?.display_name ?? "Unknown",
+            team_name: p?.team_name ?? null
+          };
+        });
+        return {
+          answer_id: a.answer_id,
+          label: a.label,
+          count,
+          percentage,
+          is_correct: isCorrect,
+          viewer_picked: viewerPicked,
+          pickers: pickerDetails
+        };
+      });
+      return {
+        prop_id: propId,
+        question: prop.question,
+        answer_target_type: prop.answer_target_type,
+        display_order: prop.display_order,
+        scoring_scope: prop.scoring_scope,
+        point_value: prop.point_value,
+        total_picks: totalPicks,
+        abstentions,
+        correct_answer_id: correctId,
+        answers
+      };
+    });
+    return { eligible_count: eligibleCount, viewer_participant_id: viewerParticipantId, props: responseProps };
+  }
+  async function _buildSeasonStandings(supabase, seasonId) {
+    const { data: rooms } = await supabase.from("gameday_rooms").select("id, competition_type, week_number, status").eq("league_season_id", seasonId).eq("experience_type", "fantasy").eq("status", "finalized").is("archived_at", null).order("created_at", { ascending: true });
+    const roomList = rooms ?? [];
+    if (!roomList.length) return { standings: [], finalized_competitions: [] };
+    const roomIds = roomList.map((r) => r.id);
+    const { data: cards } = await supabase.from("gameday_pick_cards").select("id, room_id").in("room_id", roomIds);
+    const cardByRoom = {};
+    const roomByCard = {};
+    for (const c of cards ?? []) {
+      cardByRoom[c.room_id] = c.id;
+      roomByCard[c.id] = c.room_id;
+    }
+    const cardIds = Object.values(cardByRoom);
+    let propList = [];
+    if (cardIds.length > 0) {
+      const { data: compPropsRaw } = await supabase.from("gameday_props").select("id, card_id, point_value").in("card_id", cardIds).eq("scoring_scope", "competition");
+      propList = compPropsRaw ?? [];
+    }
+    const propMap = {};
+    for (const p of propList)
+      propMap[p.id] = { cardId: p.card_id, pointValue: p.point_value ?? 0 };
+    const allPropIds = propList.map((p) => p.id);
+    const { data: smRaw } = await supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true);
+    const smList = smRaw ?? [];
+    const smIds = smList.map((sm) => sm.id);
+    const teamMap = {};
+    if (smIds.length > 0) {
+      const { data: mgrs } = await supabase.from("fantasy_team_managers").select("season_member_id, fantasy_teams(id, team_name)").in("season_member_id", smIds).eq("is_active", true);
+      for (const m of mgrs ?? []) {
+        const team = m.fantasy_teams;
+        if (team) teamMap[m.season_member_id] = { id: team.id, name: team.team_name ?? null };
+      }
+    }
+    const { data: partsRaw } = await supabase.from("gameday_participants").select("id, room_id, season_member_id").in("room_id", roomIds).not("season_member_id", "is", null);
+    const partList = partsRaw ?? [];
+    const partIds = partList.map((p) => p.id);
+    const partByRoomAndSm = {};
+    for (const p of partList)
+      partByRoomAndSm[`${p.room_id}:${p.season_member_id}`] = p.id;
+    let allPicks = [];
+    if (partIds.length > 0 && allPropIds.length > 0) {
+      const { data: picksRaw } = await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("prop_id", allPropIds).in("participant_id", partIds);
+      allPicks = picksRaw ?? [];
+    }
+    const roomStats = {};
+    for (const r of roomList) roomStats[r.id] = {};
+    for (const pick of allPicks) {
+      const propInfo = propMap[pick.prop_id];
+      if (!propInfo) continue;
+      const rId = roomByCard[propInfo.cardId];
+      if (!rId || !roomStats[rId]) continue;
+      const pId = pick.participant_id;
+      if (!roomStats[rId][pId]) roomStats[rId][pId] = { points: 0, pickCount: 0 };
+      roomStats[rId][pId].pickCount++;
+      if (pick.is_correct === true) roomStats[rId][pId].points += propInfo.pointValue;
+    }
+    const weeklyMaxPts = {};
+    for (const r of roomList) {
+      if (r.competition_type !== "weekly") continue;
+      let mx = 0;
+      for (const ps of Object.values(roomStats[r.id])) {
+        if (ps.pickCount > 0 && ps.points > mx) mx = ps.points;
+      }
+      weeklyMaxPts[r.id] = mx;
+    }
+    const smStatsMap = {};
+    for (const sm of smList) {
+      smStatsMap[sm.id] = {
+        season_member_id: sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+        fantasy_team_id: teamMap[sm.id]?.id ?? null,
+        team_name: teamMap[sm.id]?.name ?? null,
+        total_points: 0,
+        draft_day_points: 0,
+        weekly_points: 0,
+        competitions_played: 0,
+        weekly_wins: 0
+      };
+    }
+    for (const r of roomList) {
+      const rid = r.id;
+      const rStats = roomStats[rid];
+      const ctype = r.competition_type;
+      for (const sm of smList) {
+        const smId = sm.id;
+        const pId = partByRoomAndSm[`${rid}:${smId}`];
+        if (!pId) continue;
+        const ps = rStats[pId];
+        if (!ps || ps.pickCount === 0) continue;
+        const entry = smStatsMap[smId];
+        if (!entry) continue;
+        entry.total_points += ps.points;
+        entry.competitions_played++;
+        if (ctype === "draft_day") entry.draft_day_points += ps.points;
+        else if (ctype === "weekly") entry.weekly_points += ps.points;
+        if (ctype === "weekly") {
+          const mx = weeklyMaxPts[rid] ?? 0;
+          if (mx > 0 && ps.points === mx) entry.weekly_wins++;
+        }
+      }
+    }
+    const active = Object.values(smStatsMap).filter((s) => s.competitions_played > 0);
+    active.sort((a, b) => b.total_points - a.total_points);
+    const standings = active.map((s) => {
+      const rank = active.filter((x) => x.total_points > s.total_points).length + 1;
+      const tieCount = active.filter((x) => x.total_points === s.total_points).length;
+      return { ...s, rank, rank_label: tieCount > 1 ? `T-${rank}` : String(rank) };
+    });
+    const finalized_competitions = roomList.map((r) => ({
+      room_id: r.id,
+      competition_type: r.competition_type,
+      week_number: r.week_number ?? null,
+      label: r.competition_type === "draft_day" ? "Draft Day" : r.competition_type === "weekly" ? `Week ${r.week_number}` : r.competition_type
+    }));
+    return { standings, finalized_competitions };
+  }
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/templates",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(sport), default_reward_description, default_reward_amount_display").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const sport = season.fantasy_leagues?.sport ?? "football";
+      const { data: templates, error: tmplErr } = await supabase.from("gameday_prop_library").select("id, question, point_value, answer_target_type, settlement_window, is_default, display_order, supports_no_one").eq("experience_type", "fantasy").eq("competition_type", "weekly").eq("sport", sport).eq("is_active", true).order("display_order", { ascending: true });
+      if (tmplErr) {
+        console.error("[fantasy/weekly] templates error:", tmplErr.message);
+        res2.status(500).json({ error: "Failed to fetch weekly templates" });
+        return;
+      }
+      res2.json({
+        sport,
+        week_number: wn,
+        default_reward_description: season.default_reward_description ?? null,
+        default_reward_amount_display: season.default_reward_amount_display ?? null,
+        // Weekly props are all competition-scope
+        templates: (templates ?? []).map((t) => ({ ...t, scoring_scope: "competition" }))
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/last-week-templates",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 2) {
+        res2.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, fantasy_leagues(sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const sport = season.fantasy_leagues?.sport ?? "football";
+      const { data: lastRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", wn - 1).maybeSingle();
+      if (!lastRoom) {
+        res2.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", lastRoom.id).maybeSingle();
+      if (!card) {
+        res2.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+      const { data: props, error: propsErr } = await supabase.from("gameday_props").select("template_prop_id, display_order").eq("card_id", card.id).not("template_prop_id", "is", null).order("display_order", { ascending: true });
+      if (propsErr) {
+        console.error("[fantasy/last-week-templates] props error:", propsErr.message);
+        res2.status(500).json({ error: "Failed to fetch last week templates" });
+        return;
+      }
+      if (!props || props.length === 0) {
+        res2.json({ template_ids: [], inactive_template_ids: [] });
+        return;
+      }
+      const allTemplateIds = props.map((p) => p.template_prop_id).filter(Boolean);
+      const { data: activeLibrary } = await supabase.from("gameday_prop_library").select("id").in("id", allTemplateIds).eq("experience_type", "fantasy").eq("competition_type", "weekly").eq("sport", sport).eq("is_active", true);
+      const activeIds = new Set((activeLibrary ?? []).map((t) => t.id));
+      const inactiveTemplateIds = allTemplateIds.filter((id) => !activeIds.has(id));
+      res2.json({
+        template_ids: allTemplateIds,
+        // all last-week template IDs, display order
+        inactive_template_ids: inactiveTemplateIds
+        // subset no longer active/recommended
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/publish",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      if (!await requireLeagueActive(supabase, leagueId, res2)) return;
+      if (wn > 1) {
+        const { data: existingThisWeekRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", wn).is("archived_at", null).maybeSingle();
+        if (!existingThisWeekRoom) {
+          const { data: latestRoom } = await supabase.from("gameday_rooms").select("week_number, status").eq("league_season_id", seasonId).eq("competition_type", "weekly").is("archived_at", null).order("week_number", { ascending: false }).limit(1).maybeSingle();
+          const maxExisting = latestRoom?.week_number ?? 0;
+          const latestStatus = latestRoom?.status ?? null;
+          if (wn > maxExisting + 1) {
+            res2.status(409).json({ error: `Week ${wn - 1} must be created first.` });
+            return;
+          }
+          if (maxExisting < wn - 1) {
+            res2.status(409).json({ error: `Week ${wn - 1} must be created first.` });
+            return;
+          }
+          if (latestStatus !== "finalized") {
+            res2.status(409).json({ error: `Finalize Week ${maxExisting} before creating Week ${wn}.` });
+            return;
+          }
+        }
+      }
+      const publishBody = req.body;
+      const { selected_prop_ids } = publishBody;
+      const hasRewardKeys = "reward_description" in publishBody || "reward_amount_display" in publishBody;
+      const effectiveRewardDesc = hasRewardKeys ? publishBody.reward_description?.trim() || null : void 0;
+      const effectiveRewardAmount = hasRewardKeys ? publishBody.reward_amount_display?.trim() || null : void 0;
+      if (!Array.isArray(selected_prop_ids) || selected_prop_ids.length === 0) {
+        res2.status(400).json({ error: "Select at least one question" });
+        return;
+      }
+      const MAX_WEEKLY_QUESTIONS = 8;
+      if (selected_prop_ids.length > MAX_WEEKLY_QUESTIONS) {
+        res2.status(400).json({
+          error: `Too many questions. Maximum is ${MAX_WEEKLY_QUESTIONS}.`,
+          max: MAX_WEEKLY_QUESTIONS,
+          selected: selected_prop_ids.length
+        });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year, fantasy_leagues(id, league_name, sport)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const league = season.fantasy_leagues;
+      const sport = league.sport;
+      const leagueName = league.league_name;
+      const roomName = `${leagueName} \u2014 Week ${wn} Swayger`;
+      const { data: templates, error: tmplErr } = await supabase.from("gameday_prop_library").select("id, question, point_value, answer_target_type, answer_options, supports_no_one").in("id", selected_prop_ids).eq("experience_type", "fantasy").eq("competition_type", "weekly").eq("sport", sport).eq("is_active", true);
+      if (tmplErr || !templates?.length) {
+        res2.status(400).json({ error: "No valid weekly templates found for selection" });
+        return;
+      }
+      const [{ data: smRaw }, { data: teamsRaw }] = await Promise.all([
+        supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true).order("created_at", { ascending: true }),
+        supabase.from("fantasy_teams").select("id, team_name").eq("league_season_id", seasonId)
+      ]);
+      const memberList = (smRaw ?? []).map((sm) => ({
+        id: sm.id,
+        display_name: sm.fantasy_league_members?.display_name ?? null
+      }));
+      const teamList = teamsRaw ?? [];
+      const propsPayload = templates.map((tmpl, i) => ({
+        library_id: tmpl.id,
+        question: tmpl.question,
+        answer_options: buildAnswerOptions(
+          tmpl.answer_target_type,
+          memberList,
+          teamList,
+          tmpl.answer_options,
+          tmpl.supports_no_one ?? false
+        ),
+        scoring_scope: "competition",
+        // weekly always competition-scope
+        point_value: tmpl.point_value,
+        answer_target_type: tmpl.answer_target_type ?? null,
+        display_order: i
+      }));
+      let roomCode = null;
+      try {
+        roomCode = await generateFantasyRoomCode(supabase);
+      } catch {
+      }
+      const { data: existingRoom } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", wn).eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (existingRoom) {
+        const { data: existingCard } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", existingRoom.id).maybeSingle();
+        if (hasRewardKeys) {
+          await supabase.from("gameday_rooms").update({ reward_description: effectiveRewardDesc, reward_amount_display: effectiveRewardAmount }).eq("id", existingRoom.id);
+        }
+        console.log(`[fantasy/weekly] Week ${wn} already exists (idempotent)`);
+        res2.status(200).json({
+          room_id: existingRoom.id,
+          card_id: existingCard?.id ?? null,
+          room_code: null,
+          already_existed: true,
+          week_number: wn
+        });
+        return;
+      }
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("publish_fantasy_weekly", {
+        p_league_season_id: seasonId,
+        p_week_number: wn,
+        p_room_name: roomName,
+        p_sport: sport,
+        p_room_code: roomCode,
+        p_host_user_id: commissioner.userId,
+        p_props: propsPayload
+      });
+      if (rpcError || !rpcResult) {
+        console.error(`[fantasy/weekly] publish_fantasy_weekly RPC error:`, rpcError?.message);
+        if (rpcError?.message?.includes("unique") || rpcError?.message?.includes("idx_gameday_rooms_weekly")) {
+          res2.status(409).json({ error: `Week ${wn} already exists for this season`, already_existed: true });
+          return;
+        }
+        res2.status(500).json({ error: `Failed to publish Week ${wn} competition` });
+        return;
+      }
+      console.log(
+        `[fantasy/weekly] Week ${wn} published: season=${seasonId.slice(0, 8)}\u2026 room=${String(rpcResult.room_id).slice(0, 8)}\u2026 props=${propsPayload.length}`
+      );
+      if (hasRewardKeys) {
+        await supabase.from("gameday_rooms").update({ reward_description: effectiveRewardDesc, reward_amount_display: effectiveRewardAmount }).eq("id", rpcResult.room_id);
+      }
+      res2.status(201).json({
+        room_id: rpcResult.room_id,
+        card_id: rpcResult.card_id,
+        room_code: roomCode,
+        already_existed: rpcResult.already_existed ?? false,
+        week_number: wn
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weekly-summary",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { data: rooms } = await supabase.from("gameday_rooms").select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").is("archived_at", null).order("week_number", { ascending: true });
+      const roomList = rooms ?? [];
+      if (roomList.length === 0) {
+        res2.json({
+          current_week: null,
+          past_weeks: [],
+          next_week_number: 1,
+          can_create_next: true
+        });
+        return;
+      }
+      const roomIds = roomList.map((r) => r.id);
+      const { data: cards } = await supabase.from("gameday_pick_cards").select("id, status, room_id").in("room_id", roomIds);
+      const cardByRoom = {};
+      for (const c of cards ?? []) cardByRoom[c.room_id] = c;
+      const cardIds = Object.values(cardByRoom).map((c) => c.id);
+      const propCountsByCard = {};
+      if (cardIds.length > 0) {
+        const { data: props } = await supabase.from("gameday_props").select("id, card_id, status, scoring_scope").in("card_id", cardIds);
+        for (const p of props ?? []) {
+          if (!propCountsByCard[p.card_id]) propCountsByCard[p.card_id] = { total: 0, settled: 0, ids: [] };
+          propCountsByCard[p.card_id].total++;
+          propCountsByCard[p.card_id].ids.push(p.id);
+          if (p.status === "settled") propCountsByCard[p.card_id].settled++;
+        }
+      }
+      const allPropIds = Object.values(propCountsByCard).flatMap((c) => c.ids);
+      const pickCountByProp = {};
+      if (allPropIds.length > 0) {
+        const { data: allPicks } = await supabase.from("gameday_picks").select("prop_id").in("prop_id", allPropIds);
+        for (const pk of allPicks ?? []) {
+          pickCountByProp[pk.prop_id] = (pickCountByProp[pk.prop_id] ?? 0) + 1;
+        }
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId).catch(() => null);
+      const isCommissioner = viewer && (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+      const { data: smRows } = await supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true);
+      const smList = smRows ?? [];
+      const eligibleCount = smList.length;
+      const latestRoom = roomList[roomList.length - 1];
+      const latestCard = cardByRoom[latestRoom.id];
+      const latestProps = latestCard ? propCountsByCard[latestCard.id] ?? { total: 0, settled: 0, ids: [] } : { total: 0, settled: 0, ids: [] };
+      const latestPropIds = latestProps.ids;
+      const playedSmIds = /* @__PURE__ */ new Set();
+      let myPickCount = 0;
+      if (latestPropIds.length > 0) {
+        const { data: latestParts } = await supabase.from("gameday_participants").select("id, season_member_id").eq("room_id", latestRoom.id);
+        const latestPartList = latestParts ?? [];
+        if (latestPartList.length > 0) {
+          const partIds = latestPartList.map((p) => p.id);
+          const { data: latestPicks } = await supabase.from("gameday_picks").select("participant_id").in("participant_id", partIds).in("prop_id", latestPropIds);
+          const playedPartIds = new Set((latestPicks ?? []).map((p) => p.participant_id));
+          for (const part of latestPartList) {
+            if (playedPartIds.has(part.id)) playedSmIds.add(part.season_member_id);
+          }
+        }
+        if (viewer) {
+          const { data: vPart } = await supabase.from("gameday_participants").select("id").eq("room_id", latestRoom.id).eq("season_member_id", viewer.season_member_id).maybeSingle();
+          if (vPart) {
+            const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", latestPropIds).eq("participant_id", vPart.id);
+            myPickCount = count ?? 0;
+          }
+        }
+      }
+      const latestPickCount = latestPropIds.reduce((sum, id) => sum + (pickCountByProp[id] ?? 0), 0);
+      const buildItem = (room, isCurrent) => {
+        const card = cardByRoom[room.id];
+        const cardStatus = card?.status ?? "closed";
+        const pc = card ? propCountsByCard[card.id] ?? { total: 0, settled: 0, ids: [] } : { total: 0, settled: 0, ids: [] };
+        const allSettled = pc.total > 0 && pc.settled === pc.total;
+        const item = {
+          room_id: room.id,
+          card_id: card?.id ?? null,
+          room_code: room.room_code ?? null,
+          room_status: room.status,
+          card_status: cardStatus,
+          week_number: room.week_number,
+          prop_count: pc.total,
+          settled_count: pc.settled,
+          all_settled: allSettled,
+          pick_count: pc.ids.reduce((s, id) => s + (pickCountByProp[id] ?? 0), 0),
+          reward_description: room.reward_description ?? null,
+          reward_amount_display: room.reward_amount_display ?? null,
+          created_at: room.created_at
+        };
+        if (isCurrent) {
+          item.my_pick_count = myPickCount;
+          item.eligible_count = eligibleCount;
+          item.played_count = playedSmIds.size;
+          item.waiting_count = eligibleCount - playedSmIds.size;
+          if (isCommissioner) {
+            item.participants_status = smList.map((sm) => ({
+              season_member_id: sm.id,
+              display_name: sm.fantasy_league_members?.display_name ?? null,
+              has_played: playedSmIds.has(sm.id)
+            }));
+          }
+        }
+        return item;
+      };
+      const allItems = roomList.map((room, idx) => buildItem(room, idx === roomList.length - 1));
+      const currentWeek = allItems[allItems.length - 1];
+      const pastWeeks = allItems.slice(0, -1);
+      const canCreateNext = latestRoom.status === "finalized";
+      const nextWeekNumber = latestRoom.week_number + 1;
+      res2.json({
+        current_week: currentWeek,
+        past_weeks: pastWeeks,
+        next_week_number: nextWeekNumber,
+        can_create_next: canCreateNext
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", wn).eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+      if (!room) {
+        res2.json(null);
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).maybeSingle();
+      if (!card) {
+        res2.json(null);
+        return;
+      }
+      const { data: props } = await supabase.from("gameday_props").select("id, scoring_scope, status").eq("card_id", card.id);
+      const propList = (props ?? []).filter((p) => p.scoring_scope === "competition");
+      const propIds = (props ?? []).map((p) => p.id);
+      const settledCount = propList.filter((p) => p.status === "settled").length;
+      let pickCount = 0;
+      if (propIds.length > 0) {
+        try {
+          const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds);
+          pickCount = count ?? 0;
+        } catch {
+          pickCount = 0;
+        }
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId).catch(() => null);
+      const isCallerCommissioner = viewer && (viewer.role === "commissioner" || viewer.role === "co_commissioner");
+      let myPickCount = 0;
+      if (viewer && propIds.length > 0) {
+        try {
+          const { data: vPart } = await supabase.from("gameday_participants").select("id").eq("room_id", room.id).eq("season_member_id", viewer.season_member_id).maybeSingle();
+          if (vPart) {
+            const { count } = await supabase.from("gameday_picks").select("id", { count: "exact", head: true }).in("prop_id", propIds).eq("participant_id", vPart.id);
+            myPickCount = count ?? 0;
+          }
+        } catch {
+          myPickCount = 0;
+        }
+      }
+      const { data: smRows } = await supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true);
+      const smList = smRows ?? [];
+      const eligibleCount = smList.length;
+      const compPropIds = propList.map((p) => p.id);
+      const playedSmIds = /* @__PURE__ */ new Set();
+      if (compPropIds.length > 0 && smList.length > 0) {
+        const { data: parts } = await supabase.from("gameday_participants").select("id, season_member_id").eq("room_id", room.id);
+        const partList = parts ?? [];
+        if (partList.length > 0) {
+          const partIds = partList.map((p) => p.id);
+          const { data: picksRows } = await supabase.from("gameday_picks").select("participant_id").in("participant_id", partIds).in("prop_id", compPropIds);
+          const playedPartIds = new Set(
+            (picksRows ?? []).map((p) => p.participant_id)
+          );
+          for (const part of partList) {
+            if (playedPartIds.has(part.id)) playedSmIds.add(part.season_member_id);
+          }
+        }
+      }
+      const playedCount = playedSmIds.size;
+      const waitingCount = eligibleCount - playedCount;
+      let participantsStatus;
+      if (isCallerCommissioner) {
+        participantsStatus = smList.map((sm) => ({
+          season_member_id: sm.id,
+          display_name: sm.fantasy_league_members?.display_name ?? null,
+          has_played: playedSmIds.has(sm.id)
+        }));
+      }
+      res2.json({
+        room_id: room.id,
+        card_id: card.id,
+        room_code: room.room_code ?? null,
+        room_status: room.status,
+        card_status: card.status,
+        week_number: wn,
+        prop_count: propList.length,
+        settled_count: settledCount,
+        all_settled: propList.length > 0 && settledCount === propList.length,
+        pick_count: pickCount,
+        my_pick_count: myPickCount,
+        eligible_count: eligibleCount,
+        played_count: playedCount,
+        waiting_count: waitingCount,
+        reward_description: room.reward_description ?? null,
+        reward_amount_display: room.reward_amount_display ?? null,
+        ...participantsStatus !== void 0 && { participants_status: participantsStatus },
+        created_at: room.created_at
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/lock",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { card } = rc;
+      const cs = card.status;
+      if (cs === "locked" || cs === "settled") {
+        res2.json({ card_status: cs, already_locked: true });
+        return;
+      }
+      const { error } = await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
+      if (error) {
+        console.error(`[fantasy/weekly] Week ${wn} lock error:`, error.message);
+        res2.status(500).json({ error: `Failed to lock Week ${wn}` });
+        return;
+      }
+      console.log(`[fantasy/weekly] Week ${wn} locked by ${commissioner.userId.slice(0, 8)}\u2026`);
+      res2.json({ card_status: "locked", already_locked: false });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/unlock",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { card } = rc;
+      const cs = card.status;
+      if (cs === "settled") {
+        res2.status(409).json({ error: "Cannot unlock a finalized competition", card_status: cs });
+        return;
+      }
+      const { count: settledCnt } = await supabase.from("gameday_props").select("id", { count: "exact", head: true }).eq("card_id", card.id).eq("status", "settled");
+      if ((settledCnt ?? 0) > 0) {
+        res2.status(409).json({ error: "Cannot unlock after settlement has started", settled_props: settledCnt });
+        return;
+      }
+      if (cs === "open" || cs === "closed") {
+        res2.json({ card_status: cs, already_unlocked: true });
+        return;
+      }
+      const { error } = await supabase.from("gameday_pick_cards").update({ status: "open", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
+      if (error) {
+        console.error(`[fantasy/weekly] Week ${wn} unlock error:`, error.message);
+        res2.status(500).json({ error: `Failed to unlock Week ${wn}` });
+        return;
+      }
+      res2.json({ card_status: "open", already_unlocked: false });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/play",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const roomId = room.id;
+      const cardStatus = card.status;
+      const cardRosterRevision = card.roster_revision ?? 0;
+      const { participant_id: participantId } = await ensureFantasyParticipant(supabase, roomId, viewer);
+      const { data: rawProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
+      const publishedProps = (rawProps ?? []).map((p) => ({
+        id: p.id,
+        question: p.question,
+        scoring_scope: p.scoring_scope,
+        point_value: p.point_value,
+        answer_target_type: p.answer_target_type,
+        answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
+        display_order: p.display_order
+      }));
+      const propIds = publishedProps.map((p) => p.id);
+      const rosterTargetPropIds = new Set(
+        publishedProps.filter((p) => p.answer_target_type === "season_member" || p.answer_target_type === "fantasy_team").map((p) => p.id)
+      );
+      let rawPicks = [];
+      if (propIds.length > 0) {
+        const { data: rp } = await supabase.from("gameday_picks").select("prop_id, selected_answer, answer_universe_revision").in("prop_id", propIds).eq("participant_id", participantId);
+        rawPicks = rp ?? [];
+      }
+      const myPicks = {};
+      const stalePropIds = [];
+      for (const pick of rawPicks) {
+        const propId = pick.prop_id;
+        const pickRev = pick.answer_universe_revision ?? 0;
+        myPicks[propId] = pick.selected_answer;
+        if (rosterTargetPropIds.has(propId) && pickRev < cardRosterRevision) stalePropIds.push(propId);
+      }
+      const { data: seasonRow } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
+      const leagueName = seasonRow?.fantasy_leagues?.league_name ?? null;
+      res2.json({
+        room_id: roomId,
+        card_id: card.id,
+        room_code: room.room_code ?? null,
+        room_status: room.status,
+        card_status: cardStatus,
+        week_number: wn,
+        roster_revision: cardRosterRevision,
+        stale_pick_prop_ids: stalePropIds,
+        participant_id: participantId,
+        props: publishedProps,
+        my_picks: myPicks,
+        my_pick_count: Object.keys(myPicks).length,
+        total_props: publishedProps.length,
+        league_name: leagueName
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/league-picks",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const cardStatus = card.status;
+      if (cardStatus === "open") {
+        res2.json({ revealed: false, card_status: cardStatus });
+        return;
+      }
+      const distribution = await _buildLeaguePicks(
+        supabase,
+        room.id,
+        card.id,
+        cardStatus,
+        viewer.season_member_id
+      );
+      res2.json({
+        revealed: true,
+        card_status: cardStatus,
+        room_status: room.status,
+        week_number: wn,
+        ...distribution
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/league-picks",
+    async (req, res2) => {
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status, room_code").eq("league_season_id", seasonId).eq("experience_type", "fantasy").eq("competition_type", "draft_day").maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No Draft Day competition found for this season." });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id, status").eq("room_id", room.id).eq("phase", "draft_day").maybeSingle();
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day card not found." });
+        return;
+      }
+      const cardStatus = card.status;
+      if (cardStatus === "open") {
+        res2.json({ revealed: false, card_status: cardStatus });
+        return;
+      }
+      const distribution = await _buildLeaguePicks(
+        supabase,
+        room.id,
+        card.id,
+        cardStatus,
+        viewer.season_member_id,
+        "competition"
+      );
+      res2.json({
+        revealed: true,
+        card_status: cardStatus,
+        room_status: room.status,
+        ...distribution
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/picks",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { prop_id, selected_answer } = req.body ?? {};
+      if (!prop_id || typeof prop_id !== "string") {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (!selected_answer || typeof selected_answer !== "string") {
+        res2.status(400).json({ error: "selected_answer is required" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const cardRosterRevision = card.roster_revision ?? 0;
+      if (card.status !== "open") {
+        res2.status(409).json({ error: "Picks are locked. No more changes accepted.", card_status: card.status });
+        return;
+      }
+      const { data: prop } = await supabase.from("gameday_props").select("id, answer_options").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      if (!prop) {
+        res2.status(400).json({ error: `Prop not found on this Week ${wn} card.` });
+        return;
+      }
+      const validIds = new Set(
+        (Array.isArray(prop.answer_options) ? prop.answer_options : []).map((o) => o.id)
+      );
+      if (!validIds.has(selected_answer)) {
+        res2.status(400).json({
+          error: "Invalid answer. selected_answer must match a published answer option ID.",
+          valid_answer_ids: Array.from(validIds)
+        });
+        return;
+      }
+      const { participant_id: participantId } = await ensureFantasyParticipant(supabase, room.id, viewer);
+      const { data: upserted, error: upsertErr } = await supabase.from("gameday_picks").upsert({
+        prop_id,
+        participant_id: participantId,
+        selected_answer,
+        submitted_at: (/* @__PURE__ */ new Date()).toISOString(),
+        answer_universe_revision: cardRosterRevision
+      }, { onConflict: "prop_id,participant_id" }).select("id, prop_id, selected_answer").single();
+      if (upsertErr) {
+        console.error(`[fantasy/weekly] Week ${wn} pick upsert error:`, upsertErr.message);
+        res2.status(500).json({ error: "Failed to save pick. Please try again." });
+        return;
+      }
+      res2.json({
+        pick_id: upserted.id,
+        prop_id: upserted.prop_id,
+        selected_answer: upserted.selected_answer
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settlement",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const propList = allProps ?? [];
+      const settledCount = propList.filter((p) => p.status === "settled").length;
+      const previewLeaderboard = settledCount > 0 ? await _buildLeaderboard(supabase, room.id, propList) : [];
+      res2.json({
+        room_id: room.id,
+        card_id: card.id,
+        card_status: card.status,
+        room_status: room.status,
+        week_number: wn,
+        competition_props: propList.map((p) => ({
+          id: p.id,
+          question: p.question,
+          display_order: p.display_order,
+          point_value: p.point_value,
+          scoring_scope: p.scoring_scope,
+          status: p.status,
+          correct_answer: p.correct_answer ?? null,
+          answer_options: Array.isArray(p.answer_options) ? p.answer_options : []
+        })),
+        settled_count: settledCount,
+        total_competition_count: propList.length,
+        all_settled: propList.length > 0 && settledCount === propList.length,
+        preview_leaderboard: previewLeaderboard
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/settle",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const { prop_id, correct_answer } = req.body;
+      if (!prop_id) {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (!correct_answer) {
+        res2.status(400).json({ error: "correct_answer is required" });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (!["locked", "settled"].includes(card.status)) {
+        res2.status(409).json({ error: "Week picks must be locked before settling results", card_status: card.status });
+        return;
+      }
+      if (room.status === "finalized") {
+        res2.status(409).json({ error: "Week results are finalized and cannot be changed.", room_status: "finalized" });
+        return;
+      }
+      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, answer_options").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      if (!prop) {
+        res2.status(404).json({ error: "Prop not found on this Week competition card" });
+        return;
+      }
+      const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const validIds = new Set(opts.map((o) => o.id));
+      if (!validIds.has(correct_answer)) {
+        res2.status(400).json({ error: "correct_answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
+        return;
+      }
+      const wasAlreadySettled = prop.status === "settled";
+      if (wasAlreadySettled && prop.correct_answer === correct_answer) {
+        res2.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+        return;
+      }
+      const result = await settlePropCore(supabase, {
+        propId: prop_id,
+        cardId: card.id,
+        correctAnswer: correct_answer
+      });
+      console.log(
+        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}\u2026 week=${wn} answer=${correct_answer} correction=${wasAlreadySettled} by=${commissioner.userId.slice(0, 8)}\u2026`
+      );
+      res2.json({
+        ok: true,
+        idempotent: false,
+        was_correction: wasAlreadySettled,
+        prop_id,
+        correct_answer,
+        card_auto_settled: result.cardAutoSettled
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/finalize",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (room.status === "finalized") {
+        res2.json({ ok: true, already_finalized: true });
+        return;
+      }
+      if (!["locked", "settled"].includes(card.status)) {
+        res2.status(409).json({ error: `Week ${wn} picks must be locked before finalizing`, card_status: card.status });
+        return;
+      }
+      const { data: unsettled } = await supabase.from("gameday_props").select("id").eq("card_id", card.id).eq("scoring_scope", "competition").neq("status", "settled");
+      if ((unsettled?.length ?? 0) > 0) {
+        res2.status(409).json({
+          error: `All Week ${wn} questions must be resolved before finalizing`,
+          unsettled_competition_count: unsettled?.length ?? 0
+        });
+        return;
+      }
+      const { error: finalizeErr } = await supabase.from("gameday_rooms").update({ status: "finalized" }).eq("id", room.id);
+      if (finalizeErr) {
+        console.error(`[fantasy/weekly] Week ${wn} finalize error:`, finalizeErr.message);
+        res2.status(500).json({ error: `Failed to finalize Week ${wn}` });
+        return;
+      }
+      console.log(`[fantasy/weekly] Week ${wn} finalized: room=${String(room.id).slice(0, 8)}\u2026 by=${commissioner.userId.slice(0, 8)}\u2026`);
+      res2.json({ ok: true, already_finalized: false });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/results",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase2();
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (room.status !== "finalized") {
+        res2.json({ finalized: false });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const competitionProps = allProps ?? [];
+      const answerLabelMap = {};
+      for (const p of competitionProps) {
+        answerLabelMap[p.id] = {};
+        for (const opt of Array.isArray(p.answer_options) ? p.answer_options : []) {
+          if (opt?.id && opt?.label) answerLabelMap[p.id][opt.id] = opt.label;
+        }
+      }
+      const leaderboard = await _buildLeaderboard(supabase, room.id, competitionProps);
+      const topPoints = leaderboard[0]?.points ?? 0;
+      const winners = leaderboard.filter((e) => e.points === topPoints);
+      let myCompPicks = [];
+      let myTotalPoints = 0;
+      let myCorrectCount = 0;
+      try {
+        const viewerData = await resolveViewer(supabase, identity, seasonId, leagueId);
+        if (viewerData) {
+          const { data: vPart } = await supabase.from("gameday_participants").select("id").eq("room_id", room.id).eq("season_member_id", viewerData.season_member_id).maybeSingle();
+          if (vPart) {
+            const vId = vPart.id;
+            const cpIds = competitionProps.map((p) => p.id);
+            const pvMap = {};
+            for (const p of competitionProps) pvMap[p.id] = p.point_value ?? 0;
+            if (cpIds.length > 0) {
+              const { data: picks } = await supabase.from("gameday_picks").select("prop_id, selected_answer, is_correct").eq("participant_id", vId).in("prop_id", cpIds);
+              const pickByProp = {};
+              for (const pk of picks ?? []) pickByProp[pk.prop_id] = pk;
+              myCompPicks = competitionProps.map((prop) => {
+                const pick = pickByProp[prop.id] ?? null;
+                const myAnswerId = pick?.selected_answer ?? null;
+                const correctId = prop.correct_answer ?? null;
+                const isCorrect = pick?.is_correct ?? null;
+                const pointsEarned = isCorrect === true ? pvMap[prop.id] ?? 0 : 0;
+                if (isCorrect === true) {
+                  myTotalPoints += pointsEarned;
+                  myCorrectCount++;
+                }
+                return {
+                  prop_id: prop.id,
+                  question: prop.question,
+                  display_order: prop.display_order,
+                  point_value: prop.point_value,
+                  my_answer_id: myAnswerId,
+                  my_answer_label: myAnswerId ? answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId : null,
+                  correct_answer_id: correctId,
+                  correct_answer_label: correctId ? answerLabelMap[prop.id]?.[correctId] ?? correctId : null,
+                  is_correct: isCorrect,
+                  points_earned: pointsEarned
+                };
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[fantasy/weekly] results viewer lookup:", e.message);
+      }
+      res2.json({
+        finalized: true,
+        week_number: wn,
+        league_name: season?.fantasy_leagues?.league_name ?? null,
+        season_year: season?.season_year ?? null,
+        reward_description: room.reward_description ?? null,
+        reward_amount_display: room.reward_amount_display ?? null,
+        winners: winners.map((w) => ({
+          display_name: w.display_name,
+          team_name: w.team_name,
+          points: w.points,
+          rank_label: w.rank_label
+        })),
+        leaderboard,
+        my_competition_picks: myCompPicks,
+        my_total_points: myTotalPoints,
+        my_correct_count: myCorrectCount,
+        total_competition_props: competitionProps.length
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/standings",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase2();
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const { standings, finalized_competitions } = await _buildSeasonStandings(supabase, seasonId);
+      res2.json({
+        league_name: season?.fantasy_leagues?.league_name ?? null,
+        season_year: season?.season_year ?? null,
+        finalized_competitions,
+        standings
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
+    async (req, res2) => {
+      const { leagueId, seasonId, memberId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      if (!await requireLeagueActive(supabase, leagueId, res2)) return;
+      const { data: targetMember } = await supabase.from("fantasy_league_members").select("id, display_name").eq("id", memberId).eq("league_id", leagueId).eq("is_active", true).maybeSingle();
+      if (!targetMember) {
+        res2.status(404).json({ error: "Member not found in this league" });
+        return;
+      }
+      const { data: activeClaim } = await supabase.from("fantasy_member_claims").select("user_id, guest_token").eq("league_member_id", memberId).eq("is_active", true).maybeSingle();
+      if (!activeClaim) {
+        res2.status(400).json({
+          error: "This member has not yet claimed their seat. Use the normal invite flow instead.",
+          code: "unclaimed"
+        });
+        return;
+      }
+      if (activeClaim.user_id !== null) {
+        res2.status(400).json({
+          error: "This member already has a Swayger account linked. They should sign in to recover access.",
+          code: "already_account_claimed"
+        });
+        return;
+      }
+      let teamName = null;
+      const { data: seasonMember } = await supabase.from("fantasy_season_members").select("id").eq("league_season_id", seasonId).eq("league_member_id", memberId).eq("is_active", true).maybeSingle();
+      if (seasonMember) {
+        const { data: teamMgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(team_name)").eq("season_member_id", seasonMember.id).eq("is_active", true).maybeSingle();
+        teamName = teamMgr?.fantasy_teams?.team_name ?? null;
+      }
+      const rawToken = randomBytes(32).toString("hex");
+      const tokenHash = createHash2("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "create_member_recovery_token",
+        {
+          p_league_id: leagueId,
+          p_season_id: seasonId,
+          p_league_member_id: memberId,
+          p_created_by_user_id: commissioner.userId,
+          p_token_hash: tokenHash,
+          p_expires_at: expiresAt
+        }
+      );
+      if (rpcError) {
+        const msg = rpcError.message ?? "";
+        if (msg.includes("not_guest_claimed")) {
+          res2.status(400).json({
+            error: "This member no longer has a guest claim. Recovery is not available.",
+            code: msg
+          });
+          return;
+        }
+        console.error("[fantasy/recovery] create_member_recovery_token RPC error:", msg);
+        res2.status(500).json({ error: "Failed to create recovery token" });
+        return;
+      }
+      console.log(
+        `[fantasy/recovery] Token created: member=${memberId.slice(0, 8)}\u2026 commissioner=${commissioner.userId.slice(0, 8)}\u2026 expires=${expiresAt}`
+        // raw_token intentionally NOT logged
+      );
+      res2.json({
+        raw_token: rawToken,
+        expires_at: expiresAt,
+        display_name: targetMember.display_name,
+        team_name: teamName
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/recover/:token",
+    async (req, res2) => {
+      const { token } = req.params;
+      if (!token?.trim()) {
+        res2.status(400).json({ error: "Token required" });
+        return;
+      }
+      const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
+      const supabase = getServiceSupabase2();
+      const { data: tokenRecord } = await supabase.from("fantasy_member_recovery_tokens").select("status, expires_at, league_id, league_season_id, league_member_id").eq("token_hash", tokenHash).maybeSingle();
+      if (!tokenRecord) {
+        res2.status(404).json({ error: "Recovery link not found or invalid", code: "not_found" });
+        return;
+      }
+      const rec = tokenRecord;
+      const effectiveStatus = rec.status === "pending" && /* @__PURE__ */ new Date() > new Date(rec.expires_at) ? "expired" : rec.status;
+      const [memberResult, leagueResult] = await Promise.all([
+        supabase.from("fantasy_league_members").select("display_name").eq("id", rec.league_member_id).maybeSingle(),
+        supabase.from("fantasy_leagues").select("league_name").eq("id", rec.league_id).maybeSingle()
+      ]);
+      let teamName = null;
+      if (rec.league_season_id) {
+        const { data: sm } = await supabase.from("fantasy_season_members").select("id").eq("league_season_id", rec.league_season_id).eq("league_member_id", rec.league_member_id).eq("is_active", true).maybeSingle();
+        if (sm) {
+          const { data: tmgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(team_name)").eq("season_member_id", sm.id).eq("is_active", true).maybeSingle();
+          teamName = tmgr?.fantasy_teams?.team_name ?? null;
+        }
+      }
+      res2.json({
+        status: effectiveStatus,
+        display_name: memberResult.data?.display_name ?? null,
+        team_name: teamName,
+        league_name: leagueResult.data?.league_name ?? null,
+        expires_at: rec.expires_at
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/recover/:token",
+    async (req, res2) => {
+      const { token } = req.params;
+      if (!token?.trim()) {
+        res2.status(400).json({ error: "Token required" });
+        return;
+      }
+      const userId = requireFantasyAuth(req, res2);
+      if (!userId) return;
+      const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
+      const supabase = getServiceSupabase2();
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "redeem_member_recovery_token",
+        {
+          p_token_hash: tokenHash,
+          p_redeeming_user_id: userId
+          // verified from JWT — cannot be spoofed
+        }
+      );
+      if (rpcError) {
+        const msg = rpcError.message ?? "";
+        if (msg.includes("token_not_found"))
+          return void res2.status(404).json({ error: "Recovery link not found or invalid", code: "not_found" });
+        if (msg.includes("token_not_pending:redeemed"))
+          return void res2.status(410).json({ error: "This recovery link has already been used.", code: "already_redeemed" });
+        if (msg.includes("token_not_pending:revoked"))
+          return void res2.status(410).json({ error: "This recovery link has been revoked. Ask your commissioner to generate a new one.", code: "revoked" });
+        if (msg.includes("token_expired"))
+          return void res2.status(410).json({ error: "This recovery link has expired. Ask your commissioner to generate a new one.", code: "expired" });
+        if (msg.includes("no_active_claim"))
+          return void res2.status(409).json({ error: "This seat no longer has an active guest claim.", code: "no_active_claim" });
+        if (msg.includes("already_account_claimed"))
+          return void res2.status(409).json({ error: "This seat is already linked to a Swayger account.", code: "already_account_claimed" });
+        if (msg.includes("wrong_account_already_member"))
+          return void res2.status(409).json({
+            error: "This Swayger account is already connected to another member in this league. Sign in with a different account.",
+            code: "wrong_account_already_member"
+          });
+        console.error("[fantasy/recovery] redeem_member_recovery_token RPC error:", msg);
+        return void res2.status(500).json({ error: "Failed to redeem recovery token" });
+      }
+      const result = rpcResult;
+      console.log(
+        `[fantasy/recovery] Redeemed: member=${String(result.league_member_id).slice(0, 8)}\u2026 user=${userId.slice(0, 8)}\u2026 idempotent=${result.already_redeemed_by_you ?? false}`
+      );
+      res2.json({
+        redeemed: result.redeemed ?? false,
+        already_redeemed_by_you: result.already_redeemed_by_you ?? false,
+        league_member_id: result.league_member_id,
+        display_name: result.display_name,
+        team_name: result.team_name,
+        league_name: result.league_name,
+        league_id: result.league_id,
+        season_id: result.season_id
+      });
+    }
+  );
+  app2.delete(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/members/:memberId/recovery-token",
+    async (req, res2) => {
+      const { leagueId, seasonId, memberId } = req.params;
+      const supabase = getServiceSupabase2();
+      const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const { data: rpcResult, error: rpcError } = await supabase.rpc(
+        "revoke_member_recovery_token",
+        { p_league_member_id: memberId }
+      );
+      if (rpcError) {
+        console.error("[fantasy/recovery] revoke_member_recovery_token RPC error:", rpcError.message);
+        res2.status(500).json({ error: "Failed to revoke recovery token" });
+        return;
+      }
+      const result = rpcResult;
+      console.log(
+        `[fantasy/recovery] Revoked: member=${memberId.slice(0, 8)}\u2026 count=${result?.revoked_count ?? 0} by=${commissioner.userId.slice(0, 8)}\u2026`
+      );
+      res2.json({ revoked: true, revoked_count: result?.revoked_count ?? 0 });
+    }
+  );
+}
+
 // server/routes.ts
 function getSupabase4() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  return createClient6(url, key);
+  return createClient7(url, key);
 }
 async function registerRoutes(app2) {
   app2.get("/promo", (_req, res2) => {
@@ -10837,6 +14669,7 @@ async function registerRoutes(app2) {
   registerNBARoutes(app2);
   registerPropsRoutes(app2);
   registerGamedayRoutes(app2);
+  registerFantasyRoutes(app2);
   const httpServer = createServer(app2);
   return httpServer;
 }
@@ -10845,15 +14678,15 @@ async function registerRoutes(app2) {
 init_email();
 import * as fs3 from "fs";
 import * as path4 from "path";
-import { createClient as createClient8 } from "@supabase/supabase-js";
+import { createClient as createClient9 } from "@supabase/supabase-js";
 
 // server/mm-auto-score.ts
-import { createClient as createClient7 } from "@supabase/supabase-js";
+import { createClient as createClient8 } from "@supabase/supabase-js";
 function getSupabase5() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient7(url, key);
+  return createClient8(url, key);
 }
 var GAME_WINDOWS = [
   { roundId: "round-64", startMs: (/* @__PURE__ */ new Date("2026-03-19T17:00:00Z")).getTime(), endMs: (/* @__PURE__ */ new Date("2026-03-21T05:00:00Z")).getTime() },
@@ -11130,7 +14963,7 @@ function getSupabase6() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient8(url, key);
+  return createClient9(url, key);
 }
 async function sendReminderBlast(label) {
   console.log(`[mm-scheduler] Firing pre-lock reminder blast: ${label}`);
@@ -11424,7 +15257,7 @@ async function tick() {
         console.log(`[mm-scheduler] Score emails paused \u2014 skipping morning blast: ${w.label}`);
       } else if (w.blastType === "r32wrapup") {
         console.log(`[mm-scheduler] Firing R32 wrapup blast: ${w.label}`);
-        const supabase = createClient8(
+        const supabase = createClient9(
           process.env.EXPO_PUBLIC_SUPABASE_URL,
           process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
         );
@@ -11495,12 +15328,12 @@ function startMMScheduler() {
 
 // server/routes-unsubscribe.ts
 init_email();
-import { createClient as createClient9 } from "@supabase/supabase-js";
+import { createClient as createClient10 } from "@supabase/supabase-js";
 function getSupabase7() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("Supabase env vars missing");
-  return createClient9(url, key);
+  return createClient10(url, key);
 }
 var CONFIRMED_HTML = `<!DOCTYPE html>
 <html>
@@ -11587,7 +15420,7 @@ function registerUnsubscribeRoutes(app2) {
 init_email();
 import * as fs4 from "fs";
 import * as path5 from "path";
-import { createClient as createClient10 } from "@supabase/supabase-js";
+import { createClient as createClient11 } from "@supabase/supabase-js";
 var app = express();
 var log = console.log;
 function setupCors(app2) {
@@ -11611,7 +15444,10 @@ function setupCors(app2) {
         "Access-Control-Allow-Methods",
         "GET, POST, PUT, PATCH, DELETE, OPTIONS"
       );
-      res2.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Session, x-admin-token");
+      res2.header(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Guest-Session, X-Discord-Guild-ID, x-api-key, x-admin-token, X-Fantasy-Guest-Token, Idempotency-Key"
+      );
       res2.header("Access-Control-Allow-Credentials", "true");
     }
     if (req.method === "OPTIONS") {
@@ -11826,8 +15662,8 @@ function configureExpoAndLanding(app2) {
       res2.status(400).send("Missing room code");
       return;
     }
-    const { createClient: createClient11 } = await import("@supabase/supabase-js");
-    const supabase = createClient11(
+    const { createClient: createClient12 } = await import("@supabase/supabase-js");
+    const supabase = createClient12(
       process.env.EXPO_PUBLIC_SUPABASE_URL ?? "",
       process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
     );
@@ -11919,7 +15755,7 @@ async function runSettlementExpiry() {
       return recs;
     };
     var buildRecipients = buildRecipients2;
-    const supabase = createClient10(supabaseUrl, supabaseKey);
+    const supabase = createClient11(supabaseUrl, supabaseKey);
     const now = /* @__PURE__ */ new Date();
     const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1e3).toISOString();
     const { data: expiringInvites } = await supabase.from("swaygers").select("id, title, category, stake_units, creator_id, opponent_id").eq("status", "pending_invite").lt("expires_at", now.toISOString());
