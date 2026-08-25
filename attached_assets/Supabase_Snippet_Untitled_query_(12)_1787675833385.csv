@@ -1,0 +1,12 @@
+schema_name,table_name,relkind,rls_enabled,force_rls
+public,gameday_email_sends,r,true,false
+public,gameday_events,r,true,false
+public,gameday_final_standings,r,true,false
+public,gameday_next_room_interest,r,true,false
+public,gameday_participants,r,true,false
+public,gameday_pick_cards,r,true,false
+public,gameday_picks,r,true,false
+public,gameday_prop_library,r,true,false
+public,gameday_props,r,true,false
+public,gameday_rooms,r,true,false
+public,settlement_proposals,r,true,false

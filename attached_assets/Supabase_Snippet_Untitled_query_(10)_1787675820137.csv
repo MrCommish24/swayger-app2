@@ -1,0 +1,12 @@
+schema_name,table_name,rls_enabled,force_rls,policyname,permissive,roles,cmd,using_expression,with_check_expression
+public,gameday_email_sends,true,false,null,null,null,null,null,null
+public,gameday_events,true,false,gd_events_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_final_standings,true,false,gd_standings_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_next_room_interest,true,false,null,null,null,null,null,null
+public,gameday_participants,true,false,gd_participants_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_pick_cards,true,false,gd_cards_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_picks,true,false,gd_picks_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_prop_library,true,false,gd_prop_library_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_props,true,false,gd_props_all,PERMISSIVE,{public},ALL,true,true
+public,gameday_rooms,true,false,gd_rooms_all,PERMISSIVE,{public},ALL,true,true
+null,null,null,null,null,null,null,null,null,null
