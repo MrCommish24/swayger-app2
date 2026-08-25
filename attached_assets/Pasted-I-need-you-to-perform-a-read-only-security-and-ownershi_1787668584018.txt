@@ -1,0 +1,227 @@
+I need you to perform a **read-only security and ownership audit** of the Swayger Game Day backend in this Replit project.
+
+Do **not** make any code changes yet.
+
+This audit is specifically to determine whether Swayger Game Day correctly isolates Discord Game Day rooms by Discord server/guild.
+
+The Discord bot audit found that the bot currently sends a shared `x-api-key` to the Game Day API, but for leaderboard/final-standings requests it does **not** send a `discord_guild_id`. I need to know whether the backend itself prevents one Discord server from querying or operating another server's Game Day room.
+
+## 1. Identify all Discord Game Day API routes
+
+Find all relevant routes for Game Day rooms, especially anything equivalent to:
+
+* `POST /api/gameday/rooms`
+* `GET /api/gameday/rooms/:roomRef/leaderboard`
+* halftime/open-next-card routes
+* 4Q / late-game routes
+* final/final-standings routes
+* room lookup routes
+* any route that accepts a room code or room ID
+
+List the actual route paths and handler files/functions.
+
+## 2. Trace room ownership data
+
+Determine whether Game Day rooms store:
+
+* `discord_guild_id`
+* `discord_channel_id`
+* `discord_user_id`
+* room ID
+* room code
+* source (`discord`, web, etc.)
+
+Show where those values are written during room creation.
+
+Confirm whether `discord_guild_id` is persisted in Supabase/database for Discord-created rooms.
+
+## 3. Audit API authentication
+
+Determine exactly how the Discord bot authenticates to these endpoints.
+
+Specifically:
+
+* Is `GAMEDAY_BOT_API_KEY` or equivalent used?
+* Is it one shared bot-wide API key?
+* Is it scoped to a particular Discord guild?
+* Does the backend derive guild identity from the API key?
+* Are there any per-server credentials?
+
+Do not expose any secret values. Variable names only.
+
+## 4. Audit leaderboard authorization
+
+Trace the leaderboard endpoint end-to-end.
+
+Answer:
+
+> If Server A creates Game Day room ABC123, and Server B somehow learns room code ABC123, can Server B's Discord bot request the leaderboard for that room using the same shared bot API key?
+
+Determine whether the backend:
+
+* looks up the room by room code
+* checks its stored `discord_guild_id`
+* receives a requesting `discord_guild_id`
+* compares the request guild against the room guild
+* rejects mismatches
+* treats possession of the room code plus shared API key as sufficient authorization
+
+Be explicit.
+
+Use one of:
+
+* **PROTECTED**
+* **NOT PROTECTED**
+* **PARTIALLY PROTECTED**
+* **NOT ENOUGH INFORMATION**
+
+Explain exactly why.
+
+## 5. Audit every lifecycle endpoint for the same issue
+
+Repeat the same authorization analysis for:
+
+* leaderboard
+* halftime
+* 4Q / late-game
+* final
+* final standings
+* any room-management endpoint
+
+For each route, report whether another Discord guild could invoke it if it knows the room code/reference.
+
+Use a table:
+
+| Endpoint | Guild ownership enforced? | How? | Risk |
+| -------- | ------------------------- | ---- | ---- |
+
+## 6. Check room-code security
+
+Determine:
+
+* how room codes are generated
+* code length
+* character set
+* randomness/entropy source
+* whether codes are sequential or predictable
+* whether collisions are checked
+* whether a room can be looked up solely from the code
+
+Do not claim room-code secrecy is equivalent to authorization.
+
+Even if the code is hard to guess, tell me whether the API still relies on possession of that code as part of its security model.
+
+## 7. Check public Game Day links
+
+Determine how `public_link` is generated.
+
+Answer:
+
+* Is the link intentionally public?
+* Is joining a room intended to require only the link/code?
+* Does the public participant experience expose leaderboard information?
+* Does a public room link grant participant access only, or any operator/admin capability?
+* Is there any distinction between participant access and Discord-admin lifecycle access?
+
+This is important because a public join link may be intentionally shareable while administrative Game Day operations should still remain guild-scoped.
+
+## 8. Check create behavior
+
+For Discord-created Game Days, inspect the create endpoint and confirm:
+
+* `discord_guild_id` is accepted
+* whether it is required for source=`discord`
+* whether it is validated
+* whether it is stored
+* whether an existing guild-specific room mapping is created
+* whether channel/user ownership is stored
+
+Flag any missing validation.
+
+## 9. Determine the correct security model
+
+Based on the current architecture, tell me what the backend **should** require for Discord operator requests.
+
+For example, should Discord lifecycle requests include:
+
+* shared bot API key
+* requesting `discord_guild_id`
+* room code / room ID
+
+and should the backend then verify:
+
+`room.discord_guild_id === requesting_discord_guild_id`
+
+Do not implement this yet. Just tell me whether that is the appropriate model for this architecture.
+
+Also identify whether additional checking of `discord_channel_id` is advisable or unnecessarily restrictive.
+
+## 10. Pilot decision
+
+At the end, answer this exact question:
+
+> Can I safely install the Swayger Discord bot in 5–10 unrelated external Discord servers without one server being able to retrieve or operate another server's Game Day through the Game Day API?
+
+Use one of:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+Then classify findings:
+
+### P0 — Must fix before external multi-server pilot
+
+Anything that allows cross-guild access, unauthorized lifecycle actions, or other meaningful isolation failure.
+
+### P1 — Strongly recommended
+
+Defense-in-depth or hardening that should be addressed soon but does not make the pilot unsafe.
+
+### P2 — Can wait
+
+Polish or low-risk improvements.
+
+## 11. Evidence table
+
+For every major conclusion, cite:
+
+* file
+* function/route
+* approximate line range if practical
+* relevant database field/table
+* relevant environment variable name
+
+Use:
+
+| Finding | Evidence | Status |
+| ------- | -------- | ------ |
+
+## 12. Stop after the audit
+
+Do not:
+
+* modify code
+* change database schema
+* deploy
+* rotate API keys
+* update environment variables
+* alter Supabase policies
+* change Game Day behavior
+
+I want the current state first.
+
+Return:
+
+1. Executive summary
+2. Current security model
+3. Discord ownership fields
+4. Leaderboard audit
+5. Lifecycle endpoint audit
+6. Room-code audit
+7. Public-link audit
+8. Cross-guild risk
+9. P0 / P1 / P2 findings
+10. Pilot recommendation
+11. Exact recommended fix, if one is needed
+12. Files inspected
