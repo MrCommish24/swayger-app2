@@ -1,0 +1,302 @@
+Before making any Supabase RLS or table-grant changes, I want to protect the existing **Swayger Game Day web application**.
+
+Swayger Game Day has already been used successfully during NBA and World Cup activations through the main Swayger app, independent of Discord.
+
+Discord is a new distribution/integration layer. We must not break the existing Game Day product while hardening the database.
+
+Do **not** make RLS, grant, schema, or application changes in this task.
+
+This is a pre-change regression and implementation-safety gate.
+
+## Primary requirement
+
+Establish and verify this invariant:
+
+> A Game Day created, operated, joined, played, settled, and finalized entirely through the normal Swayger web application must behave the same before and after the eventual Supabase security remediation.
+
+The existing Swayger Game Day experience takes priority over the new Discord integration.
+
+## 1. Reconfirm the web data-access architecture
+
+The previous audit concluded that Game Day frontend data access is Express/API-mediated and that the browser does not directly query Game Day tables through Supabase.
+
+Reconfirm this comprehensively, including:
+
+* room creation
+* room loading
+* public room loading
+* room-code lookup
+* participant joining
+* guest joining
+* participant picks
+* leaderboard
+* host-data
+* card open
+* card lock
+* prop settlement
+* finalization
+* final standings
+* rename
+* archive
+* duplicate
+* visibility
+* countdown
+* Game Day room listing
+
+Also specifically search for:
+
+* `supabase.from(...)`
+* `supabase.rpc(...)`
+* Supabase realtime subscriptions
+* Storage dependencies
+* client-side functions or hooks that indirectly query Game Day tables
+
+If any current Game Day browser behavior depends directly on table privileges for `anon` or `authenticated`, stop and report it before recommending RLS changes.
+
+## 2. Establish the current Game Day regression baseline
+
+Using the existing application and existing test infrastructure, verify the normal non-Discord Swayger Game Day flow.
+
+Test as much of this sequence as the current environment safely permits:
+
+### Host
+
+1. Sign in as an authorized Game Day host.
+2. View Game Day dashboard/list.
+3. Create a normal web-hosted Game Day.
+4. Confirm the room loads correctly.
+5. Confirm the room/share link works.
+6. Open and lock cards using the existing host experience.
+7. Settle objective props.
+8. Finalize the room.
+9. View final standings.
+
+### Participant
+
+1. Open the normal public Game Day link.
+2. Join as a guest if currently supported.
+3. Join/sign in through the normal authenticated path if supported.
+4. View room/cards.
+5. Make picks.
+6. Confirm picks persist.
+7. View leaderboard.
+8. Return during later Game Day stages.
+9. View final standings.
+
+### Existing supporting functionality
+
+Verify where supported:
+
+* room code redirects
+* public room loading
+* public leaderboards
+* countdown
+* rename
+* visibility
+* duplicate
+* archive
+* next-room-interest
+* event/analytics recording
+* existing templates
+* existing historical Game Day rooms can still load appropriately
+
+Do not modify historical production data as part of testing.
+
+Use disposable test rooms or existing safe test fixtures.
+
+## 3. Specifically test non-Discord rooms
+
+This is critical.
+
+Create/test a room through the normal Swayger Game Day web flow where:
+
+* `source` is the normal web-hosted source
+* there is no Discord guild ownership
+* human host ownership works normally
+
+Confirm that none of the recently added Discord authorization code accidentally requires:
+
+* `GAMEDAY_BOT_API_KEY`
+* `X-Discord-Guild-ID`
+* `discord_guild_id`
+
+for ordinary web Game Day behavior.
+
+Discord authorization must remain a distinct path.
+
+## 4. Verify host authentication regression
+
+The recent P0 hardening changed Game Day host JWT verification.
+
+Confirm that legitimate existing host flows still work:
+
+* valid authenticated host
+* authorized host listing
+* create room
+* operate owned room
+* host-data
+* card lifecycle
+* settlement
+* finalize
+* room management
+
+Confirm that removing the old `host_user_id = null` bypass has not broken legitimate web-hosted rooms.
+
+If there are historical rooms with unexpected/null `host_user_id` values that legitimate Swayger hosts still need to manage, identify them and explain the migration/backward-compatibility risk.
+
+Do not mutate those records during this audit.
+
+## 5. Analyze existing historical room compatibility
+
+Inspect the schema/data patterns safely enough to answer:
+
+> Would tightening Game Day RLS/grants prevent the Express service-role backend from reading or operating existing NBA/World Cup-era Game Day rooms?
+
+Because service-role access normally bypasses RLS, the expected answer may be no, but verify the actual server client configuration and code path rather than assuming.
+
+Also identify whether any historical Game Day functionality was ever implemented through direct anon/authenticated Supabase access that is no longer obvious in the current frontend.
+
+## 6. Confirm service-role configuration
+
+Verify that the deployed backend currently has a valid:
+
+`SUPABASE_SERVICE_ROLE_KEY`
+
+Do not reveal its value.
+
+Confirm that the Game Day Express API actually uses the service-role client in the current deployed environment.
+
+This matters because the proposed RLS hardening assumes:
+
+Browser
+→ Express API
+→ service-role Supabase client
+→ Game Day tables
+
+If the live backend is currently falling back to the anon key, **do not apply RLS changes yet.**
+
+Report that as a blocker.
+
+## 7. Design a pre/post RLS regression suite
+
+Before changing RLS, define the exact tests that must run:
+
+### Before the change
+
+Record the current passing baseline.
+
+### Immediately after the change
+
+Run the identical suite again.
+
+At minimum cover:
+
+* web-host room creation
+* host room listing
+* public room load
+* authenticated join
+* guest join
+* picks
+* leaderboard
+* card open
+* card lock
+* settlement
+* finalize
+* final standings
+* share link / room-code redirect
+
+Discord isolation tests should also run, but they are secondary to ensuring the existing web product works.
+
+## 8. Establish rollback before implementation
+
+Provide the exact rollback strategy for the proposed RLS/grant remediation.
+
+Before any policy changes are later applied, we must know how to restore:
+
+* previous table grants
+* previous policy definitions
+
+if the Game Day application experiences regression.
+
+Do not execute the rollback.
+
+Simply make it ready.
+
+## 9. Identify highest-risk areas
+
+Tell me which existing Game Day functionality is most likely to break when we revoke direct `anon`/`authenticated` Game Day table access.
+
+Use:
+
+* HIGH
+* MEDIUM
+* LOW
+
+for each major flow.
+
+Explain why.
+
+Pay special attention to any use of:
+
+* service-role fallback
+* direct PostgREST
+* realtime
+* background jobs
+* settlement recovery
+* email jobs
+* old/historical routes
+
+## 10. Give me a go/no-go recommendation for the RLS change
+
+At the end answer:
+
+> Can we safely proceed with locking down direct `anon` and `authenticated` access to Game Day tables without materially changing the existing Swayger Game Day web experience?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+Do not answer YES unless:
+
+1. Current web Game Day regression tests pass.
+2. No direct browser table dependency exists.
+3. The live backend has a working service-role key.
+4. Existing host flows work after the recent auth changes.
+5. Existing/historical Game Day room compatibility has been considered.
+6. A rollback plan exists.
+
+## Final report
+
+Return:
+
+### A. Executive summary
+
+### B. Current Game Day web architecture
+
+### C. Current regression baseline and exact test results
+
+### D. Normal web-host flow verification
+
+### E. Participant flow verification
+
+### F. Historical room compatibility
+
+### G. Live service-role verification
+
+### H. Highest-risk RLS regression areas
+
+### I. Proposed pre/post change regression suite
+
+### J. Rollback plan
+
+### K. Remaining concerns
+
+### L. RLS-change recommendation
+
+End with:
+
+**SAFE TO PROCEED WITH RLS HARDENING: YES / YES WITH CONDITIONS / NO**
+
+Do not make the RLS/grant changes yet.
