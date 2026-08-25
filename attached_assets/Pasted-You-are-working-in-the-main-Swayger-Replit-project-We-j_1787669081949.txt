@@ -1,0 +1,665 @@
+You are working in the **main Swayger Replit project**.
+
+We just completed a read-only security audit of the Swayger Game Day backend. That audit identified several **P0 authorization issues that must be fixed before we install the Swayger Discord bot in unrelated external Discord servers**.
+
+Your task now is to implement a **tightly scoped P0 security-hardening pass**.
+
+Do not redesign Game Day.
+
+Do not refactor unrelated code.
+
+Do not change the participant experience unless required for security.
+
+Do not build new product features.
+
+The objective is:
+
+> Make the existing Game Day backend safe for a controlled 5–10 external Discord-server pilot.
+
+---
+
+# 1. Confirm current state before modifying anything
+
+Before making changes, re-read and confirm the current implementation of:
+
+* `requireGamedayHost()`
+* `decodeJwtPayload()`
+* `isBotApiKeyValid()`
+* `POST /api/gameday/rooms`
+* `GET /api/gameday/rooms/:roomRef/leaderboard`
+* `GET /api/gameday/rooms/:roomRef/final-standings`
+* generic card open/lock routes
+* prop settlement route
+* finalize route
+* host-data route
+* room status/rename/archive/visibility/countdown routes
+* duplicate route
+* `resolveRoomRef()`
+* Game Day Supabase migrations and RLS policies
+
+The prior audit found:
+
+1. leaderboard and final standings are public and not guild-scoped
+2. `discord_guild_id` is stored but not used as an authorization boundary
+3. the shared bot API key is global, not guild-specific
+4. lifecycle routes use host JWT authentication rather than the bot key
+5. `requireGamedayHost()` decodes JWT claims but does not cryptographically verify the token
+6. Discord-created rooms have `host_user_id = null`
+7. source migration files appear to contain permissive Game Day RLS policies
+
+Confirm these findings against the current code before implementing.
+
+If any finding has already changed in the current branch, report that before proceeding and adapt the implementation accordingly.
+
+---
+
+# 2. Fix Game Day host JWT verification
+
+This is the first required change.
+
+The current host authentication must not trust an unverified JWT payload.
+
+Replace the current decode-only authentication path with **verified Supabase authentication**.
+
+Use the project's existing verified caller/auth pattern if one already exists, such as `getCallerIdentity()` or equivalent.
+
+Requirements:
+
+* Extract the bearer token from the request.
+* Verify the token using Supabase Auth.
+* Do not trust locally decoded email/user claims before verification.
+* Reject:
+
+  * malformed tokens
+  * unsigned/fabricated JWT-shaped strings
+  * expired tokens
+  * tokens Supabase does not recognize
+* Obtain `user.id` and email only from the verified Supabase Auth response.
+* Apply `GAMEDAY_HOST_EMAILS` / host allowlist only **after** token verification.
+* Preserve the existing intended host/admin authorization behavior wherever possible.
+
+Do not expose secret values.
+
+Do not weaken authentication for any existing route.
+
+## Required negative tests
+
+Add tests proving that:
+
+* a fabricated JWT-shaped token with an allowlisted email is rejected
+* an invalid bearer token is rejected
+* a valid authenticated user who is not an allowed Game Day host is rejected where host authorization is required
+* a valid authenticated allowed host is accepted
+
+If the repo has no existing test framework for these route handlers, use the smallest maintainable test approach already compatible with the project.
+
+Do not introduce a large testing framework migration solely for this task.
+
+---
+
+# 3. Add a guild-bound Discord operator authorization model
+
+We need an explicit backend authorization boundary for operations initiated by the Swayger Discord bot.
+
+For Discord operator requests, the intended contract should be:
+
+1. Valid shared `GAMEDAY_BOT_API_KEY`
+2. Requesting `discord_guild_id`
+3. Room reference / room ID / card or prop that resolves to a room
+4. Backend verifies:
+
+`room.discord_guild_id === requestingDiscordGuildId`
+
+The shared API key authenticates the **Swayger bot service**.
+
+The guild ID authorizes the **specific Discord server** to operate the room.
+
+The shared API key alone must never imply access to all Discord rooms.
+
+---
+
+# 4. Create a reusable Discord Game Day authorization helper
+
+Do not duplicate the same authorization logic across many routes.
+
+Create a small reusable helper appropriate to the current codebase that can:
+
+* validate the bot API key
+* read the requesting Discord guild ID
+* load/resolve the relevant Game Day room
+* confirm the room is a Discord-owned room where appropriate
+* confirm the stored `discord_guild_id` exists
+* compare stored guild ID to requesting guild ID
+* reject mismatches
+
+Use clear status codes.
+
+Recommended behavior:
+
+### 401 Unauthorized
+
+Use when:
+
+* bot API key missing
+* bot API key invalid
+
+### 400 Bad Request
+
+Use when:
+
+* a Discord operator request is missing required `discord_guild_id`
+
+### 403 Forbidden
+
+Use when:
+
+* room has a different `discord_guild_id`
+* the caller is authenticated as the bot but is not authorized for that room
+
+### 404 Not Found
+
+Preserve existing room-not-found behavior where appropriate.
+
+Avoid returning unnecessary details that help enumerate other guilds' rooms.
+
+---
+
+# 5. Harden Discord room creation
+
+Update `POST /api/gameday/rooms`.
+
+For requests authenticated with the Discord bot API key:
+
+* require `discord_guild_id`
+* require or validate `source = "discord"` rather than blindly trusting arbitrary caller-defined source metadata
+* validate that `discord_guild_id` is a non-empty string
+* validate `discord_channel_id` and `discord_user_id` if supplied using reasonable Discord snowflake/string validation already available in the project, if practical
+* persist the guild/channel/user metadata exactly as needed for later authorization
+
+The bot's shared API key should not be able to create a Discord-origin room without an owning guild.
+
+Preserve legitimate non-Discord room creation flows.
+
+Do not accidentally require `discord_guild_id` for ordinary web-hosted Game Day rooms.
+
+---
+
+# 6. Add guild-scoped bot access for leaderboard
+
+The Discord bot needs to retrieve Game Day leaderboard data.
+
+The current public leaderboard endpoint may still be necessary for participant-facing web rooms.
+
+Do **not** break the participant web experience.
+
+Instead, clearly separate:
+
+### Public participant leaderboard access
+
+Existing public behavior may remain if it is part of the intended product.
+
+But it must be treated as public participant functionality, not Discord-server authorization.
+
+### Discord operator leaderboard access
+
+Add or adapt an endpoint/path that requires:
+
+* valid bot API key
+* requesting `discord_guild_id`
+* room reference
+
+and verifies the room belongs to that guild.
+
+Prefer a clean, explicit contract over adding optional auth branches that are difficult to reason about.
+
+Examples of acceptable architecture include:
+
+* a dedicated Discord bot route such as a `/discord/...` operator endpoint
+* or an existing route with an explicit bot-authenticated branch
+
+Choose the implementation that best fits the current route architecture with the least duplication.
+
+The important invariant is:
+
+> Server B's bot request must not retrieve Server A's Discord-owned Game Day leaderboard through the bot/operator API.
+
+---
+
+# 7. Add guild-scoped bot access for final standings
+
+Apply the same security model to final standings.
+
+The Discord bot must be able to retrieve final standings using:
+
+* bot API key
+* requesting guild ID
+* room reference
+
+The backend must verify room ownership.
+
+Again, preserve any intentionally public participant-facing final-standings behavior separately.
+
+---
+
+# 8. Support Discord lifecycle/operator actions safely
+
+The Discord bot currently operates Game Day lifecycle commands such as:
+
+* halftime
+* 4Q
+* final
+
+The bot audit showed that these commands ultimately need backend operations, while the current backend lifecycle routes rely on web-host JWT authorization.
+
+We need a clean bot-authorized path for the Discord-managed Game Day lifecycle.
+
+Identify exactly which backend operations the current Discord bot performs for:
+
+* opening halftime card
+* opening 4Q card
+* leaderboard retrieval
+* finalization / final standings
+* any settlement action initiated by the Discord bot
+
+For each operation initiated by the bot, support authorization via:
+
+* valid bot API key
+* requesting `discord_guild_id`
+* ownership check against the room
+
+Do not grant the bot API key unrestricted access to arbitrary web-hosted rooms.
+
+Do not remove web-host JWT authorization for human-hosted Game Day flows.
+
+The intended model is:
+
+### Web host
+
+Verified Supabase user JWT
++
+existing host ownership/allowlist rules
+
+### Discord bot
+
+Shared bot API key
++
+requesting Discord guild ID
++
+room belongs to same guild
+
+These should be distinct authorization paths.
+
+---
+
+# 9. Protect nested resources through their room
+
+For routes that operate on:
+
+* card ID
+* prop ID
+* countdown
+* settlement
+* archive
+* rename
+* visibility
+* status
+* duplicate
+
+do not authorize based solely on the card/prop/resource ID.
+
+When a request uses Discord bot authorization:
+
+1. resolve the nested resource
+2. resolve its owning room
+3. compare the room's stored `discord_guild_id` to the requesting guild ID
+
+A card or prop belonging to Server A must not be operable by Server B even if Server B somehow learns the resource ID.
+
+Only modify routes actually needed by the current Discord Game Day lifecycle now.
+
+If some routes are not used by the Discord bot, document them rather than unnecessarily expanding the bot API surface.
+
+---
+
+# 10. Do not use channel ID as the primary security boundary
+
+Use `discord_guild_id` as the required ownership boundary.
+
+Do **not** require `discord_channel_id` equality as the primary authorization rule.
+
+A Game Day may legitimately be:
+
+* created in one channel
+* operated from another moderator channel
+* announced in another location later
+
+You may preserve channel metadata for logging, analytics, or future defense-in-depth.
+
+But for this pilot:
+
+> Guild ownership is the authorization boundary.
+
+---
+
+# 11. Minimize public Game Day room data
+
+The audit found that the public room endpoint uses `.select("*")` and may expose Discord metadata unnecessarily.
+
+Fix the public room response so participant-facing endpoints return an explicit safe projection.
+
+Do not expose fields such as:
+
+* `discord_guild_id`
+* `discord_channel_id`
+* `discord_user_id`
+* internal `host_user_id`
+* other internal authorization or administrative metadata
+
+Return only fields actually needed by the public Game Day participant UI.
+
+Before changing the projection:
+
+* inspect all frontend callers of this endpoint
+* identify every field they currently consume
+* preserve those required fields
+
+Do not break the public room UI.
+
+Add a regression test if practical.
+
+---
+
+# 12. Verify live Supabase Game Day RLS policies
+
+The prior audit found source migration policies that appear to use:
+
+`FOR ALL USING (true) WITH CHECK (true)`
+
+for Game Day tables.
+
+Do not assume the live database has the same policies.
+
+Inspect the **actual deployed Supabase policy state** if this Replit environment has authorized access to do so safely.
+
+This should be a read-only inspection.
+
+Report for each Game Day table:
+
+* RLS enabled or disabled
+* policy names
+* commands covered
+* `USING` expression
+* `WITH CHECK` expression
+* roles affected
+
+Relevant tables likely include the Game Day room/card/prop/participant/pick tables.
+
+## Important
+
+Do **not** change live RLS policies automatically as part of this task unless the application's current architecture clearly relies on direct client access and you can prove the safe replacement policy without breaking the product.
+
+First classify the result.
+
+If live RLS is dangerously permissive and represents a direct bypass of the API security model:
+
+* mark it as a remaining **P0**
+* explain the exact exposure
+* propose the smallest safe remediation
+* stop before changing production RLS unless it is clearly covered by existing project conventions and tests
+
+I want security fixes, but I do not want to accidentally break the participant application with an unvalidated RLS rewrite.
+
+---
+
+# 13. Add mandatory cross-guild negative tests
+
+Create automated tests for the new Discord authorization behavior.
+
+Use at least two fictional Discord guild IDs:
+
+* `GUILD_A`
+* `GUILD_B`
+
+Create or mock a Discord-owned Game Day room belonging to `GUILD_A`.
+
+Then prove:
+
+### Allowed
+
+* valid bot API key + `GUILD_A` can retrieve bot-authorized leaderboard
+* valid bot API key + `GUILD_A` can retrieve bot-authorized final standings when appropriate
+* valid bot API key + `GUILD_A` can execute each Discord lifecycle action the bot currently requires
+
+### Rejected
+
+* valid bot API key + `GUILD_B` cannot retrieve `GUILD_A` bot-authorized leaderboard
+* valid bot API key + `GUILD_B` cannot retrieve `GUILD_A` bot-authorized final standings
+* valid bot API key + `GUILD_B` cannot open/lock cards belonging to `GUILD_A`
+* valid bot API key + `GUILD_B` cannot settle props belonging to `GUILD_A` if bot settlement exists
+* valid bot API key + `GUILD_B` cannot finalize `GUILD_A`
+* missing guild ID is rejected
+* missing bot API key is rejected
+* incorrect bot API key is rejected
+
+Also test:
+
+* a Discord bot creation request without `discord_guild_id` is rejected
+* a normal non-Discord/web Game Day creation flow still works as before
+
+Do not rely only on happy-path tests.
+
+The purpose of these tests is specifically to prevent future cross-guild regressions.
+
+---
+
+# 14. Preserve public participant behavior intentionally
+
+There is an important product distinction:
+
+A Discord room's public join link is meant to be shareable so community members can participate.
+
+Therefore:
+
+* public join may remain public
+* public participant room loading may remain public
+* public leaderboard visibility may remain public if that is required by the current Game Day web experience
+
+Do not confuse public participant access with Discord operator access.
+
+Our requirement is:
+
+> One Discord server must not gain **operator privileges or bot-scoped access** to another Discord server's Game Day.
+
+If leaderboard data is intentionally public to anyone with the link, document that clearly after the build.
+
+Do not claim "leaderboard is guild-private" if the product intentionally keeps it public.
+
+What must become guild-private is the bot/operator authorization path.
+
+---
+
+# 15. Do not redesign room codes in this pass
+
+The audit found:
+
+* `GDS-XXXXX`
+* ~25 bits nominal space
+* `Math.random()`
+* codes are not cryptographic secrets
+
+Do not treat room codes as authentication.
+
+That is the key security fix.
+
+Do **not** spend this pass redesigning the room-code system unless a tiny implementation change is required by another fix.
+
+Longer/cryptographic room codes can remain a follow-up P2 after the authorization model is correct.
+
+---
+
+# 16. Do not address dependency upgrades in this pass unless directly required
+
+The audit reported dependency vulnerabilities.
+
+Do not initiate a broad dependency-upgrade project during this security pass.
+
+If one of the authorization fixes requires upgrading a specific package, explain why and keep it minimal.
+
+Otherwise report dependency remediation separately as follow-up work.
+
+---
+
+# 17. Update internal documentation for the API contract
+
+After implementing the security model, update the appropriate developer documentation so the Discord bot developer knows exactly what requests must now send.
+
+Document for every bot-facing Game Day request:
+
+* method
+* endpoint
+* required headers
+* required guild identifier location
+* body/query/path fields
+* success response
+* relevant 400/401/403/404 responses
+
+Do not include secret values.
+
+This documentation will be passed to Claude Code so the Discord bot repo can be updated to match the new backend contract.
+
+---
+
+# 18. Run regression testing
+
+After implementation:
+
+* run the new security tests
+* run the existing Game Day tests
+* run the broader applicable test suite
+* confirm TypeScript/build/lint status where appropriate
+* check for unexpected participant-web regressions
+
+Do not declare success if existing Game Day flows are broken.
+
+If a test fails because the old behavior depended on insecure authorization, update the test to the intended new security contract rather than weakening the fix.
+
+---
+
+# 19. Final pilot gate
+
+At the end, answer this exact question:
+
+> From the backend side, can I now install the Swayger Discord bot in 5–10 unrelated external Discord servers without Server B being able to use the Discord bot/operator API to retrieve or operate Server A's Game Day?
+
+Use:
+
+* **YES**
+* **YES, WITH CONDITIONS**
+* **NO**
+
+Do not answer YES unless the negative cross-guild tests pass.
+
+Also separately state:
+
+> Are participant-facing public Game Day links intentionally still public?
+
+Answer clearly so we do not confuse public participant visibility with Discord operator isolation.
+
+---
+
+# 20. Stop conditions
+
+Do not:
+
+* redesign Game Day
+* modify unrelated features
+* add premium/reward functionality
+* add NFL-specific functionality
+* change Discord commands
+* modify the Discord bot repo
+* create onboarding flows
+* alter room timing
+* change props
+* rebuild deployment infrastructure
+* rotate secrets unless an existing secret is demonstrably compromised
+* rewrite all Supabase policies without first proving the safe replacement
+
+If you encounter something that materially prevents safe implementation, stop that portion and report it instead of guessing.
+
+---
+
+# 21. Final report format
+
+Return a concise but complete report with:
+
+## A. Executive summary
+
+What was fixed and whether the backend is pilot-ready.
+
+## B. Files changed
+
+For each file:
+
+* what changed
+* why
+
+## C. Authentication changes
+
+Explain the old vs new host-token verification.
+
+## D. Discord guild authorization model
+
+Document the exact new contract.
+
+## E. Endpoint changes
+
+Use a table:
+
+| Endpoint | Auth method | Guild check | Purpose |
+| -------- | ----------- | ----------- | ------- |
+
+## F. Public participant behavior
+
+Explain what remains intentionally public.
+
+## G. Public-response data minimization
+
+List fields removed from public responses, if any.
+
+## H. Supabase RLS verification
+
+Report actual live policy state if inspected.
+
+Clearly distinguish:
+
+* verified live state
+* migration/source-code state
+* anything not verified
+
+## I. Tests added
+
+List the negative and positive security tests.
+
+## J. Test results
+
+Include exact pass/fail totals if available.
+
+## K. Remaining P0 / P1 / P2 issues
+
+Do not relabel unresolved P0s as minor.
+
+## L. Discord bot changes now required
+
+Give me the exact API contract changes Claude Code must implement in the Discord bot repo.
+
+Be specific enough that I can paste your response into Claude without reinterpretation.
+
+## M. Pilot decision
+
+End with:
+
+**BACKEND PILOT STATUS: YES / YES WITH CONDITIONS / NO**
+
+and a one-paragraph explanation.
+
+Do not begin unrelated follow-up work after completing this scope.
