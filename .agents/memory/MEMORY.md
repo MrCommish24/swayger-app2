@@ -24,3 +24,4 @@
 - [Gameday Fantasy Phase 6F](gameday-fantasy-phase6f.md) — QR invite: FantasyInviteSheet, buildFantasyInviteUrl, hub/manage/bulk-import entry points, weekly QR, claim endpoint=/claim (NOT /claim/guest), 312/312 tests.
 - [FK Preservation Invariant](fk-preservation-invariant.md) — gameday_participants.season_member_id → fantasy_season_members ON DELETE SET NULL (verified safe, never change to CASCADE).
 - [Game Day Discord isolation](gameday-discord-isolation.md) — Discord bot room operations are guild-scoped; public participant reads remain intentionally separate.
+- [Game Day security regression gates](gameday-security-regression-gates.md) — Treat the Discord suite’s explicit 23/23 marker as the acceptance gate, not its process exit code.
