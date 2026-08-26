@@ -8338,6 +8338,25 @@ var NFL_DEFAULT_PROP_IDS = [
   "nfl_4q_next_score",
   "nfl_4q_another_touchdown"
 ];
+var NFL_SUNDAY_SLATE_TEMPLATE = [
+  { id: "nfl_slate_early_qb_passing_yards", phase: "pregame", question: "Which Early Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_rushing_yards", phase: "pregame", question: "Which Early Slate RB has the most rushing yards?", answers: ["{{SLATE_RBS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_receiving_yards", phase: "pregame", question: "Which Early Slate WR/TE has the most receiving yards?", answers: ["{{SLATE_RECEIVERS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_team_points", phase: "pregame", question: "Which Early Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_fewest_points_allowed", phase: "pregame", question: "Which Early Slate team allows the fewest points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_highest_total_game", phase: "pregame", question: "Which Early Slate game has the highest combined score?", answers: ["{{SLATE_EARLY_GAMES}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_closest_game", phase: "pregame", question: "Which Early Slate game has the closest final margin?", answers: ["{{SLATE_EARLY_GAMES}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_close_games_count", phase: "pregame", question: "How many Early Slate games finish within 7 points?", answers: ["0\u20132", "3\u20135", "6+", "Tie / Multiple tied"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_late_qb_passing_yards", phase: "halftime", question: "Which Late Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_team_points", phase: "halftime", question: "Which Late Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_highest_total_game", phase: "halftime", question: "Which Late Slate game has the highest combined score?", answers: ["{{SLATE_LATE_GAMES}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_overtime", phase: "halftime", question: "Will any Late Slate game go to overtime?", answers: ["Yes", "No"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_fewest_points_allowed", phase: "halftime", question: "Which Late Slate team allows the fewest points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_snf_winner", phase: "fourth", question: "Who wins Sunday Night Football?", answers: ["{{TEAM_A}}", "{{TEAM_B}}"], settlement_window: "End Game" },
+  { id: "nfl_slate_snf_first_score", phase: "fourth", question: "Which team scores first on Sunday Night?", answers: ["{{TEAM_A}}", "{{TEAM_B}}"], settlement_window: "Opening Drive" },
+  { id: "nfl_slate_snf_margin", phase: "fourth", question: "What is the Sunday Night final margin?", answers: ["1\u20137", "8\u201314", "15+", "Tie / Multiple tied"], settlement_window: "End Game" }
+];
+var NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS = NFL_SUNDAY_SLATE_TEMPLATE.map((prop) => prop.id);
 function resolvePlaceholders(text, vars) {
   return text.replace(/\{\{TEAM_A\}\}/g, vars.TEAM_A).replace(/\{\{TEAM_B\}\}/g, vars.TEAM_B).replace(/\{\{STAR_A\}\}/g, vars.STAR_A).replace(/\{\{STAR_B\}\}/g, vars.STAR_B);
 }
@@ -8753,6 +8772,27 @@ var PUBLIC_ROOM_FIELDS = [
   "archived_at",
   "source",
   "sport",
+  "template_type",
+  "slate_config",
+  "countdown_phase",
+  "countdown_type",
+  "countdown_ends_at",
+  "countdown_started_at"
+].join(", ");
+var LEGACY_PUBLIC_ROOM_FIELDS = [
+  "id",
+  "room_name",
+  "team_a_name",
+  "team_b_name",
+  "team_a_star",
+  "team_b_star",
+  "game_date",
+  "status",
+  "room_code",
+  "is_private",
+  "archived_at",
+  "source",
+  "sport",
   "countdown_phase",
   "countdown_type",
   "countdown_ends_at",
@@ -8941,6 +8981,51 @@ async function logEvent(supabase, roomId, participantId, userId, eventType, meta
   } catch {
   }
 }
+function normalizeSlateList(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(
+    value.filter((item) => typeof item === "string").map((item) => item.replace(/[\u0000-\u001f\u007f]/g, "").trim()).filter((item) => item.length > 0 && item.length <= 100)
+  )].slice(0, 32);
+}
+function normalizeSundaySlateConfig(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value;
+  const teams = normalizeSlateList(raw.sunday_night_teams);
+  const earlyMatchups = normalizeSlateList(raw.early_matchups);
+  const lateMatchups = normalizeSlateList(raw.late_matchups);
+  const config = {
+    early_matchups: earlyMatchups,
+    late_matchups: lateMatchups,
+    sunday_night_teams: [teams[0] ?? "", teams[1] ?? ""],
+    qb_candidates: normalizeSlateList(raw.qb_candidates),
+    rb_candidates: normalizeSlateList(raw.rb_candidates),
+    receiver_candidates: normalizeSlateList(raw.receiver_candidates),
+    team_candidates: normalizeSlateList(raw.team_candidates),
+    game_candidates: normalizeSlateList(raw.game_candidates)
+  };
+  if (!config.sunday_night_teams[0] || !config.sunday_night_teams[1] || !config.early_matchups.length || !config.late_matchups.length || !config.qb_candidates.length || !config.rb_candidates.length || !config.receiver_candidates.length || !config.team_candidates.length) return null;
+  if (!config.game_candidates.length) {
+    config.game_candidates = [.../* @__PURE__ */ new Set([...earlyMatchups, ...lateMatchups])];
+  }
+  return config;
+}
+function withUniqueOutcomeOptions(options, includeOther = true) {
+  const next = [...options];
+  if (includeOther && !next.includes("Other")) next.push("Other");
+  if (!next.includes("Tie / Multiple tied")) next.push("Tie / Multiple tied");
+  return next;
+}
+function resolveSundaySlateAnswers(answers, vars, slate) {
+  const tokenOptions = {
+    "{{SLATE_QBS}}": withUniqueOutcomeOptions(slate.qb_candidates),
+    "{{SLATE_RBS}}": withUniqueOutcomeOptions(slate.rb_candidates),
+    "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(slate.receiver_candidates),
+    "{{SLATE_TEAMS}}": withUniqueOutcomeOptions(slate.team_candidates),
+    "{{SLATE_EARLY_GAMES}}": withUniqueOutcomeOptions(slate.early_matchups, false),
+    "{{SLATE_LATE_GAMES}}": withUniqueOutcomeOptions(slate.late_matchups, false)
+  };
+  return answers.flatMap((answer) => tokenOptions[answer] ?? [resolvePlaceholders(answer, vars)]);
+}
 function registerGamedayRoutes(app2) {
   setImmediate(() => {
     try {
@@ -9042,13 +9127,28 @@ function registerGamedayRoutes(app2) {
   });
   app2.get("/api/gameday/template", async (req, res2) => {
     const sportParam = (req.query.sport ?? "nba").trim().toLowerCase();
+    const templateType = (req.query.template_type ?? "").trim().toLowerCase();
     if (!["nba", "soccer", "nfl"].includes(sportParam)) {
       res2.status(400).json({ error: "sport must be nba, soccer, or nfl" });
       return;
     }
+    if (templateType === "nfl_sunday_slate") {
+      if (sportParam !== "nfl") {
+        res2.status(400).json({ error: "nfl_sunday_slate is only available for NFL rooms" });
+        return;
+      }
+      res2.json({ template: NFL_SUNDAY_SLATE_TEMPLATE, defaultPropIds: NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS });
+      return;
+    }
     const supabase = getServiceSupabase();
     try {
-      const { data: libraryProps, error } = await supabase.from("gameday_prop_library").select("id, phase, question, answer_options, settlement_window, is_default").eq("sport", sportParam).eq("is_active", true).order("display_order", { ascending: true });
+      let libraryQuery = supabase.from("gameday_prop_library").select("id, phase, question, answer_options, settlement_window, is_default").eq("sport", sportParam).eq("is_active", true).order("display_order", { ascending: true });
+      if (sportParam === "nfl" && templateType === "nfl_single_game") {
+        libraryQuery = libraryQuery.eq("template_type", "nfl_single_game");
+      } else if (sportParam === "nfl" && !templateType) {
+        libraryQuery = libraryQuery.or("template_type.is.null,template_type.eq.nfl_single_game");
+      }
+      const { data: libraryProps, error } = await libraryQuery;
       if (!error && libraryProps && libraryProps.length > 0) {
         const template = libraryProps.map((p) => ({
           id: p.id,
@@ -9089,6 +9189,8 @@ function registerGamedayRoutes(app2) {
       discord_user_id,
       is_private,
       sport,
+      template_type,
+      slate_config,
       game_start_time,
       card_schedules
     } = req.body;
@@ -9114,10 +9216,6 @@ function registerGamedayRoutes(app2) {
       });
       return;
     }
-    if (!room_name || !team_a_name || !team_b_name || !team_a_star || !team_b_star) {
-      res2.status(400).json({ error: "Missing required fields: room_name (or game_label), team_a_name, team_b_name, team_a_star, team_b_star" });
-      return;
-    }
     const normalizedSport = (sport ?? "nba").trim().toLowerCase();
     if (!["nba", "soccer", "nfl"].includes(normalizedSport)) {
       res2.status(400).json({ error: "sport must be nba, soccer, or nfl" });
@@ -9125,8 +9223,33 @@ function registerGamedayRoutes(app2) {
     }
     const isSoccer = normalizedSport === "soccer";
     const isNfl = normalizedSport === "nfl";
-    const activeTemplate = isSoccer ? FIFA_TEMPLATE : isNfl ? NFL_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
-    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : isNfl ? NFL_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
+    const requestedTemplateType = typeof template_type === "string" ? template_type.trim().toLowerCase() : "";
+    if (requestedTemplateType && !["nfl_single_game", "nfl_sunday_slate"].includes(requestedTemplateType)) {
+      res2.status(400).json({ error: "template_type must be nfl_single_game or nfl_sunday_slate" });
+      return;
+    }
+    if (requestedTemplateType && !isNfl) {
+      res2.status(400).json({ error: "template_type is only supported for NFL rooms" });
+      return;
+    }
+    const isSundaySlate = isNfl && requestedTemplateType === "nfl_sunday_slate";
+    const normalizedSlateConfig = isSundaySlate ? normalizeSundaySlateConfig(slate_config) : null;
+    if (isSundaySlate && !normalizedSlateConfig) {
+      res2.status(400).json({
+        error: "Sunday Slate needs Early and Late matchups, Sunday Night teams, and QB, RB, WR/TE, and team candidates."
+      });
+      return;
+    }
+    const effectiveTeamA = isSundaySlate ? normalizedSlateConfig.sunday_night_teams[0] : team_a_name?.trim();
+    const effectiveTeamB = isSundaySlate ? normalizedSlateConfig.sunday_night_teams[1] : team_b_name?.trim();
+    const effectiveStarA = isSundaySlate ? normalizedSlateConfig.qb_candidates[0] : team_a_star?.trim();
+    const effectiveStarB = isSundaySlate ? normalizedSlateConfig.qb_candidates[1] ?? normalizedSlateConfig.qb_candidates[0] : team_b_star?.trim();
+    if (!room_name || !effectiveTeamA || !effectiveTeamB || !effectiveStarA || !effectiveStarB) {
+      res2.status(400).json({ error: "Missing required room details." });
+      return;
+    }
+    const activeTemplate = isSoccer ? FIFA_TEMPLATE : isSundaySlate ? NFL_SUNDAY_SLATE_TEMPLATE : isNfl ? NFL_TEMPLATE : NBA_PLAYOFF_TEMPLATE;
+    const defaultPropIds = isSoccer ? FIFA_DEFAULT_PROP_IDS : isSundaySlate ? NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS : isNfl ? NFL_DEFAULT_PROP_IDS : DEFAULT_PROP_IDS;
     const propIds = selected_prop_ids ?? defaultPropIds;
     const supabase = getServiceSupabase();
     let roomCode;
@@ -9138,10 +9261,10 @@ function registerGamedayRoutes(app2) {
     const resolvedIsPrivate = botAuthed ? true : is_private ?? true;
     const insertPayload = {
       room_name: room_name.trim(),
-      team_a_name: team_a_name.trim(),
-      team_b_name: team_b_name.trim(),
-      team_a_star: team_a_star.trim(),
-      team_b_star: team_b_star.trim(),
+      team_a_name: effectiveTeamA,
+      team_b_name: effectiveTeamB,
+      team_a_star: effectiveStarA,
+      team_b_star: effectiveStarB,
       game_date: parseGameDate(game_date),
       host_user_id: botAuthed ? null : hostId,
       status: "active",
@@ -9155,6 +9278,10 @@ function registerGamedayRoutes(app2) {
       if (discord_user_id) insertPayload.discord_user_id = discord_user_id;
     }
     if (sport !== void 0) insertPayload.sport = normalizedSport;
+    if (isSundaySlate || requestedTemplateType) {
+      insertPayload.template_type = isSundaySlate ? "nfl_sunday_slate" : "nfl_single_game";
+    }
+    if (normalizedSlateConfig) insertPayload.slate_config = normalizedSlateConfig;
     if (game_start_time) insertPayload.game_start_time = game_start_time;
     let { data: room, error: roomError } = await supabase.from("gameday_rooms").insert(insertPayload).select().single();
     if (roomError && roomCode && roomError.message?.includes("room_code")) {
@@ -9176,16 +9303,20 @@ function registerGamedayRoutes(app2) {
       { title: "Halftime Picks", phase: "halftime", display_order: 1 },
       { title: "Final Push \u{1F525}", phase: "final_push", display_order: 2 },
       { title: "Penalty Shootout \u26BD", phase: "penalties", display_order: 3 }
+    ] : isSundaySlate ? [
+      { title: "Early Slate Picks", phase: "pregame", display_order: 0 },
+      { title: "Late Slate Picks", phase: "halftime", display_order: 1 },
+      { title: "Sunday Night Picks", phase: "fourth", display_order: 2 }
     ] : [
       { title: "Pregame Picks", phase: "pregame", display_order: 0 },
       { title: "Halftime Picks", phase: "halftime", display_order: 1 },
       { title: "4Q Clutch Picks", phase: "fourth", display_order: 2 }
     ];
     const vars = {
-      TEAM_A: team_a_name.trim(),
-      TEAM_B: team_b_name.trim(),
-      STAR_A: team_a_star.trim(),
-      STAR_B: team_b_star.trim()
+      TEAM_A: effectiveTeamA,
+      TEAM_B: effectiveTeamB,
+      STAR_A: effectiveStarA,
+      STAR_B: effectiveStarB
     };
     for (const cardDef of cardPhases) {
       const cardSchedule = card_schedules?.[cardDef.phase] ?? {};
@@ -9210,7 +9341,7 @@ function registerGamedayRoutes(app2) {
         const { error: propError } = await supabase.from("gameday_props").insert({
           card_id: card.id,
           question: resolvePlaceholders(tmpl.question, vars),
-          answer_options: tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
+          answer_options: isSundaySlate ? resolveSundaySlateAnswers(tmpl.answers, vars, normalizedSlateConfig) : tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
           display_order: i,
           status: "pending",
           template_prop_id: tmpl.id
@@ -9263,7 +9394,12 @@ function registerGamedayRoutes(app2) {
     async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
-      const { data: room, error } = await supabase.from("gameday_rooms").select(PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
+      let { data: room, error } = await supabase.from("gameday_rooms").select(PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
+      if (error?.message?.includes("template_type") || error?.message?.includes("slate_config")) {
+        const legacy = await supabase.from("gameday_rooms").select(LEGACY_PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
+        room = legacy.data;
+        error = legacy.error;
+      }
       if (error || !room) {
         res2.status(404).json({ error: "Room not found" });
         return;
@@ -9726,8 +9862,15 @@ function registerGamedayRoutes(app2) {
       const { roomId } = req.params;
       const { room_name: customName } = req.body;
       const supabase = getServiceSupabase();
-      const { data: srcRoom } = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, game_start_time, sport, is_private").eq("id", roomId).single();
-      if (!srcRoom) {
+      const sourceRoomResult = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, game_start_time, sport, template_type, slate_config, is_private").eq("id", roomId).single();
+      let srcRoom = sourceRoomResult.data;
+      let srcRoomError = sourceRoomResult.error;
+      if (srcRoomError?.message?.includes("template_type") || srcRoomError?.message?.includes("slate_config")) {
+        const legacy = await supabase.from("gameday_rooms").select("id, host_user_id, room_name, team_a_name, team_b_name, team_a_star, team_b_star, game_date, game_start_time, sport, is_private").eq("id", roomId).single();
+        srcRoom = legacy.data;
+        srcRoomError = legacy.error;
+      }
+      if (srcRoomError || !srcRoom) {
         res2.status(404).json({ error: "Source room not found" });
         return;
       }
@@ -9762,6 +9905,8 @@ function registerGamedayRoutes(app2) {
         is_private: srcRoom.is_private ?? true
       };
       if (srcRoom.sport) newRoomPayload.sport = srcRoom.sport;
+      if (srcRoom.template_type) newRoomPayload.template_type = srcRoom.template_type;
+      if (srcRoom.slate_config) newRoomPayload.slate_config = srcRoom.slate_config;
       if (roomCode) newRoomPayload.room_code = roomCode;
       const { data: newRoom, error: roomErr } = await supabase.from("gameday_rooms").insert(newRoomPayload).select().single();
       if (roomErr || !newRoom) {

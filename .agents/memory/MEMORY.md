@@ -25,3 +25,4 @@
 - [FK Preservation Invariant](fk-preservation-invariant.md) — gameday_participants.season_member_id → fantasy_season_members ON DELETE SET NULL (verified safe, never change to CASCADE).
 - [Game Day Discord isolation](gameday-discord-isolation.md) — Discord bot room operations are guild-scoped; public participant reads remain intentionally separate.
 - [Game Day security regression gates](gameday-security-regression-gates.md) — Treat the Discord suite’s explicit 23/23 marker as the acceptance gate, not its process exit code.
+- [NFL Sunday Slate format](gameday-nfl-sunday-slate.md) — additive candidate-driven NFL multi-game format; legacy NFL stays Single Game until format data exists.

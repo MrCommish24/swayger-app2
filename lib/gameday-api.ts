@@ -56,6 +56,19 @@ export interface GDRoom {
   source?: string | null;
   /** "nba" | "soccer" | "nfl"; absent on rooms created before sport support. */
   sport?: "nba" | "soccer" | "nfl" | null;
+  /** NFL rooms are either legacy-compatible single games or the Sunday Slate format. */
+  template_type?: "nfl_single_game" | "nfl_sunday_slate" | null;
+  /** Public Slate candidate context; resolved options are always stored on each prop. */
+  slate_config?: {
+    early_matchups?: string[];
+    late_matchups?: string[];
+    sunday_night_teams?: [string, string];
+    qb_candidates?: string[];
+    rb_candidates?: string[];
+    receiver_candidates?: string[];
+    team_candidates?: string[];
+    game_candidates?: string[];
+  } | null;
   countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;
@@ -114,7 +127,7 @@ export interface GDRoomResponse {
 
 export interface GDPropTemplate {
   id: string;
-  phase: "pregame" | "halftime" | "fourth";
+  phase: "pregame" | "halftime" | "fourth" | "final_push" | "penalties";
   question: string;
   answers: string[];
   settlement_window?: string;

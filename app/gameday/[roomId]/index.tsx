@@ -67,6 +67,7 @@ function getNextWindow(
   isFinalized: boolean,
   myPicks: Record<string, string>,
   sport?: string | null,
+  templateType?: string | null,
 ): { headline: string; sub: string } {
   if (isFinalized) return { headline: "🏆 Receipts are in.", sub: "View final standings below." };
 
@@ -75,7 +76,9 @@ function getNextWindow(
   if (openCard) {
     const sub =
       openCard.phase === "pregame"
-        ? `Lock in your picks before ${sport === "nba" ? "tipoff" : "kickoff"}.`
+        ? templateType === "nfl_sunday_slate"
+          ? "Lock in your Early Slate calls before the first kickoffs."
+          : `Lock in your picks before ${sport === "nba" ? "tipoff" : "kickoff"}.`
         : openCard.phase === "penalties"
         ? "Pick your shootout winner now!"
         : "Make your calls now — window closes soon.";
@@ -121,11 +124,12 @@ function getCountdownCopy(
   secsLeft: number,
   expired: boolean,
   sport?: string | null,
+  templateType?: string | null,
 ): { headline: string; sub: string; timer: string } {
   const PHASE_LABELS: Record<string, string> = {
-    pregame: "Pregame Picks",
-    halftime: "Halftime Picks",
-    fourth: "4Q Clutch Picks",
+    pregame: templateType === "nfl_sunday_slate" ? "Early Slate Picks" : "Pregame Picks",
+    halftime: templateType === "nfl_sunday_slate" ? "Late Slate Picks" : "Halftime Picks",
+    fourth: templateType === "nfl_sunday_slate" ? "Sunday Night Picks" : "4Q Clutch Picks",
     final_push: "Final Push Picks",
     penalties: "Penalty Shootout Picks",
   };
@@ -149,9 +153,11 @@ function getCountdownCopy(
     headline: `${pl} lock soon.`,
     sub:
       phase === "pregame"
-        ? `Get your picks in before ${sport === "nba" ? "tipoff" : "kickoff"}.`
+        ? templateType === "nfl_sunday_slate"
+          ? "Get your Early Slate calls in before the first kickoffs."
+          : `Get your picks in before ${sport === "nba" ? "tipoff" : "kickoff"}.`
         : phase === "halftime"
-        ? "Get your second-half picks in now."
+        ? templateType === "nfl_sunday_slate" ? "Get your Late Slate calls in now." : "Get your second-half picks in now."
         : phase === "penalties"
         ? "Pick your shootout winner before the window closes."
         : "Get your picks in before the window closes.",
@@ -774,7 +780,7 @@ export default function GameDayRoomScreen() {
         if (!cdPhase || !cdType || !cdEndsAt || isFinalized) return null;
         if (countdownSecsLeft < -120) return null;
         const expired = countdownSecsLeft <= 0;
-        const { headline, sub, timer } = getCountdownCopy(cdPhase, cdType, countdownSecsLeft, expired, room?.sport);
+        const { headline, sub, timer } = getCountdownCopy(cdPhase, cdType, countdownSecsLeft, expired, room?.sport, room?.template_type);
         const isUrgent = cdType === "locks_soon" && !expired;
         return (
           <View style={[styles.cdBanner, isUrgent ? styles.cdBannerUrgent : styles.cdBannerInfo]}>
@@ -840,7 +846,7 @@ export default function GameDayRoomScreen() {
 
       {/* Next Pick Window callout — shown when no card is open */}
       {!openCard && !isFinalized ? (() => {
-        const nw = getNextWindow(cards, isFinalized, my_picks, room?.sport);
+        const nw = getNextWindow(cards, isFinalized, my_picks, room?.sport, room?.template_type);
         return (
           <View style={styles.nextWindowCard}>
             <Text style={styles.nextWindowHeadline}>{nw.headline}</Text>

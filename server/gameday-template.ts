@@ -957,6 +957,36 @@ export const NFL_DEFAULT_PROP_IDS: string[] = [
   "nfl_4q_another_touchdown",
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NFL Sunday Slate — a separate format from NFL Single Game.
+// Candidate tokens are expanded from room.slate_config when a host creates the
+// room. The "Other" option keeps leader props settleable when a surprise player
+// or team wins a category.
+// ─────────────────────────────────────────────────────────────────────────────
+export const NFL_SUNDAY_SLATE_TEMPLATE: PropTemplate[] = [
+  { id: "nfl_slate_early_qb_passing_yards", phase: "pregame", question: "Which Early Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_rushing_yards", phase: "pregame", question: "Which Early Slate RB has the most rushing yards?", answers: ["{{SLATE_RBS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_receiving_yards", phase: "pregame", question: "Which Early Slate WR/TE has the most receiving yards?", answers: ["{{SLATE_RECEIVERS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_team_points", phase: "pregame", question: "Which Early Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_fewest_points_allowed", phase: "pregame", question: "Which Early Slate team allows the fewest points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_highest_total_game", phase: "pregame", question: "Which Early Slate game has the highest combined score?", answers: ["{{SLATE_EARLY_GAMES}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_closest_game", phase: "pregame", question: "Which Early Slate game has the closest final margin?", answers: ["{{SLATE_EARLY_GAMES}}"], settlement_window: "End Early Slate" },
+  { id: "nfl_slate_early_close_games_count", phase: "pregame", question: "How many Early Slate games finish within 7 points?", answers: ["0–2", "3–5", "6+", "Tie / Multiple tied"], settlement_window: "End Early Slate" },
+
+  { id: "nfl_slate_late_qb_passing_yards", phase: "halftime", question: "Which Late Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_team_points", phase: "halftime", question: "Which Late Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_highest_total_game", phase: "halftime", question: "Which Late Slate game has the highest combined score?", answers: ["{{SLATE_LATE_GAMES}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_overtime", phase: "halftime", question: "Will any Late Slate game go to overtime?", answers: ["Yes", "No"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_fewest_points_allowed", phase: "halftime", question: "Which Late Slate team allows the fewest points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
+
+  { id: "nfl_slate_snf_winner", phase: "fourth", question: "Who wins Sunday Night Football?", answers: ["{{TEAM_A}}", "{{TEAM_B}}"], settlement_window: "End Game" },
+  { id: "nfl_slate_snf_first_score", phase: "fourth", question: "Which team scores first on Sunday Night?", answers: ["{{TEAM_A}}", "{{TEAM_B}}"], settlement_window: "Opening Drive" },
+  { id: "nfl_slate_snf_margin", phase: "fourth", question: "What is the Sunday Night final margin?", answers: ["1–7", "8–14", "15+", "Tie / Multiple tied"], settlement_window: "End Game" },
+];
+
+// Early Slate: 8 | Late Slate: 5 | Sunday Night: 3
+export const NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS = NFL_SUNDAY_SLATE_TEMPLATE.map((prop) => prop.id);
+
 export function resolvePlaceholders(
   text: string,
   vars: { TEAM_A: string; TEAM_B: string; STAR_A: string; STAR_B: string }

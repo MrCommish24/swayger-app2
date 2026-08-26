@@ -60,10 +60,12 @@ interface Room {
   game_date?: string | null;
   status: string;
   room_code?: string | null;
+  is_private?: boolean;
   archived_at?: string | null;
   /** "app" | "discord" — how the room was created */
   source?: string | null;
   sport?: "nba" | "soccer" | "nfl" | null;
+  template_type?: "nfl_single_game" | "nfl_sunday_slate" | null;
   countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;
@@ -530,14 +532,19 @@ export default function HostControlRoom() {
       (c) => c.phase === "final_push" || c.phase === "penalties"
     );
     const roomSport = hostData?.room.sport ?? (inferredSoccer ? "soccer" : "nba");
+    const isSundaySlate = hostData?.room.template_type === "nfl_sunday_slate";
     const texts: Record<string, string> = {
       pregame: roomSport === "soccer"
         ? `Game Day Swayger room is live for ${hostData?.room.room_name ?? "the match"}. Make your picks before kickoff:\n${url}`
+        : isSundaySlate
+        ? `NFL Sunday Slate is live. Lock in your Early Slate calls before the first kickoffs:\n${url}`
         : roomSport === "nfl"
         ? `Game Day Swayger is live for ${hostData?.room.room_name ?? "the game"}. Make your picks before kickoff and track the leaderboard here:\n${url}`
         : `Game Day Swayger is live. Make your picks before tipoff and track the leaderboard here:\n${url}`,
-      halftime: `Halftime picks are live. Same room:\n${url}`,
-      fourth: roomSport === "nfl"
+      halftime: isSundaySlate ? `Late Slate picks are live. Same room:\n${url}` : `Halftime picks are live. Same room:\n${url}`,
+      fourth: isSundaySlate
+        ? `Sunday Night picks are live. Lock in here:\n${url}`
+        : roomSport === "nfl"
         ? `4Q / Clutch picks are live. Lock in here:\n${url}`
         : `4Q picks are live. Lock in here:\n${url}`,
       final_push: `Final Push picks are live — last window before receipts drop. Lock in here:\n${url}`,
@@ -591,6 +598,7 @@ export default function HostControlRoom() {
   }
 
   const { room, cards, pick_counts, participant_count, leaderboard } = hostData;
+  const isSundaySlate = room.template_type === "nfl_sunday_slate";
 
   // ── Finalize readiness ───────────────────────────────────────────────────
   // A card must be locked or settled before finalization. Closed cards (not
@@ -665,7 +673,7 @@ export default function HostControlRoom() {
         {room.team_a_name} vs {room.team_b_name}
       </Text>
       <Text style={styles.stars}>
-        {room.team_a_star} · {room.team_b_star}
+        {isSundaySlate ? "Sunday Night Football" : `${room.team_a_star} · ${room.team_b_star}`}
       </Text>
 
       {/* Room link */}
@@ -758,13 +766,13 @@ export default function HostControlRoom() {
           style={styles.reminderBtn}
           onPress={() => copyShareText("pregame")}
         >
-          <Text style={styles.reminderBtnText}>Copy Pregame Invite</Text>
+          <Text style={styles.reminderBtnText}>{isSundaySlate ? "Copy Early Slate Invite" : "Copy Pregame Invite"}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.reminderBtn}
           onPress={() => copyShareText("halftime")}
         >
-          <Text style={styles.reminderBtnText}>Copy Halftime Reminder</Text>
+          <Text style={styles.reminderBtnText}>{isSundaySlate ? "Copy Late Slate Reminder" : "Copy Halftime Reminder"}</Text>
         </TouchableOpacity>
         {cards.some((c) => c.phase === "final_push") ? (
           <TouchableOpacity
@@ -778,7 +786,7 @@ export default function HostControlRoom() {
             style={styles.reminderBtn}
             onPress={() => copyShareText("fourth")}
           >
-            <Text style={styles.reminderBtnText}>Copy 4Q Reminder</Text>
+              <Text style={styles.reminderBtnText}>{isSundaySlate ? "Copy Sunday Night Reminder" : "Copy 4Q Reminder"}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -841,7 +849,7 @@ export default function HostControlRoom() {
               <Text style={styles.cdActiveBannerLabel}>
                 {room.countdown_type === "locks_soon" ? "⏱ Locks Soon" : "📣 Opens Soon"}
                 {" — "}
-                {room.countdown_phase === "pregame" ? "Pregame" : room.countdown_phase === "halftime" ? "Halftime" : room.countdown_phase === "final_push" ? "Final Push" : room.countdown_phase === "penalties" ? "Penalties" : "4Q"}
+                {room.countdown_phase === "pregame" ? (isSundaySlate ? "Early Slate" : "Pregame") : room.countdown_phase === "halftime" ? (isSundaySlate ? "Late Slate" : "Halftime") : room.countdown_phase === "final_push" ? "Final Push" : room.countdown_phase === "penalties" ? "Penalties" : isSundaySlate ? "Sunday Night" : "4Q"}
               </Text>
               <Text style={styles.cdActiveBannerTimer}>
                 {countdownSecsLeft > 0 ? `${fmtMmSs(countdownSecsLeft)} remaining` : "Expired — grace window"}
@@ -860,9 +868,9 @@ export default function HostControlRoom() {
           <View style={styles.cdSegRow}>
             {(() => {
               const PHASE_SHORT: Record<string, string> = {
-                pregame: "Pregame",
-                halftime: "Halftime",
-                fourth: "4Q",
+                pregame: isSundaySlate ? "Early" : "Pregame",
+                halftime: isSundaySlate ? "Late" : "Halftime",
+                fourth: isSundaySlate ? "SNF" : "4Q",
                 final_push: "Final Push",
                 penalties: "Penalties",
               };

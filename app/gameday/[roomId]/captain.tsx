@@ -68,7 +68,7 @@ function getPublicLink(room: { room_code?: string | null; id: string }): string 
   return room.room_code ? `${BASE_URL}/g/${room.room_code}` : `${BASE_URL}/gameday/${room.id}`;
 }
 
-function getCadenceCards(publicLink: string, winner?: GDLeaderboardEntry): CadenceCard[] {
+function getCadenceCards(publicLink: string, winner?: GDLeaderboardEntry, isSundaySlate = false): CadenceCard[] {
   const winnerMsg = winner
     ? `Receipts are in.\n\n🏆 Tonight's Game Day Champ: ${winner.display_name} — ${winner.game_day_sp} SP\n\nFull standings:\n${publicLink}`
     : `Receipts are almost in. Final standings will show here after the room is finalized.`;
@@ -77,37 +77,39 @@ function getCadenceCards(publicLink: string, winner?: GDLeaderboardEntry): Caden
     {
       id: "pregame_invite",
       type: "pregame_invite",
-      label: "🏀 Pregame Invite",
-      timing: "15–30 min before tipoff",
-      message: `Pregame is live. Make your Game Day Swayger picks before tipoff.\n\nTrack the leaderboard and collect receipts here:\n${publicLink}`,
+      label: isSundaySlate ? "🏈 Early Slate Invite" : "🏀 Pregame Invite",
+      timing: isSundaySlate ? "Before early kickoffs" : "15–30 min before tipoff",
+      message: isSundaySlate
+        ? `Early Slate picks are live. Make your NFL calls before the first kickoffs.\n\nTrack the leaderboard and collect receipts here:\n${publicLink}`
+        : `Pregame is live. Make your Game Day Swayger picks before tipoff.\n\nTrack the leaderboard and collect receipts here:\n${publicLink}`,
     },
     {
       id: "halftime_heads_up",
       type: "halftime_heads_up",
-      label: "⚡ Halftime Heads-Up",
-      timing: "Near end of 2Q",
-      message: `Heads up — Halftime picks are coming soon.\n\nDon't fall off the board.`,
+      label: isSundaySlate ? "⚡ Late Slate Heads-Up" : "⚡ Halftime Heads-Up",
+      timing: isSundaySlate ? "Near the late window" : "Near end of 2Q",
+      message: isSundaySlate ? `Heads up — Late Slate picks are coming soon.\n\nDon't fall off the board.` : `Heads up — Halftime picks are coming soon.\n\nDon't fall off the board.`,
     },
     {
       id: "halftime_live",
       type: "halftime_live",
-      label: "🕐 Halftime Picks Live",
-      timing: "Halftime",
-      message: `Halftime picks are live.\n\nMake your second-half calls and see who moves up:\n<${publicLink}>`,
+      label: isSundaySlate ? "🕐 Late Slate Picks Live" : "🕐 Halftime Picks Live",
+      timing: isSundaySlate ? "Late window" : "Halftime",
+      message: isSundaySlate ? `Late Slate picks are live.\n\nMake your calls and see who moves up:\n<${publicLink}>` : `Halftime picks are live.\n\nMake your second-half calls and see who moves up:\n<${publicLink}>`,
     },
     {
       id: "fourth_heads_up",
       type: "fourth_heads_up",
-      label: "⏰ 4Q Heads-Up",
-      timing: "Near end of 3Q",
-      message: `4Q Clutch picks are coming soon.\n\nLast window to move up before receipts drop.`,
+      label: isSundaySlate ? "⏰ Sunday Night Heads-Up" : "⏰ 4Q Heads-Up",
+      timing: isSundaySlate ? "Before Sunday Night Football" : "Near end of 3Q",
+      message: isSundaySlate ? `Sunday Night picks are coming soon.\n\nLast window to move up before receipts drop.` : `4Q Clutch picks are coming soon.\n\nLast window to move up before receipts drop.`,
     },
     {
       id: "fourth_live",
       type: "fourth_live",
-      label: "🔥 4Q Picks Live",
-      timing: "Start of 4Q",
-      message: `4Q Clutch picks are live.\n\nLock in here:\n<${publicLink}>`,
+      label: isSundaySlate ? "🔥 Sunday Night Picks Live" : "🔥 4Q Picks Live",
+      timing: isSundaySlate ? "Sunday Night kickoff" : "Start of 4Q",
+      message: isSundaySlate ? `Sunday Night picks are live.\n\nLock in here:\n<${publicLink}>` : `4Q Clutch picks are live.\n\nLock in here:\n<${publicLink}>`,
     },
     {
       id: "final_standings",
@@ -430,6 +432,10 @@ export default function CaptainCenter() {
   // ── Derived state ────────────────────────────────────────────────────────────
 
   const { room, cards, participant_count } = roomData;
+  const isSundaySlate = room.template_type === "nfl_sunday_slate";
+  const isSoccer = room.sport === "soccer" || cards.some(
+    (card) => card.phase === "final_push" || card.phase === "penalties"
+  );
   const isArchived = !!room.archived_at;
   const isFinalized = room.status === "finalized";
   const publicLink = getPublicLink(room);
@@ -442,7 +448,7 @@ export default function CaptainCenter() {
   const settledPropCount = allProps.filter((p) => p.status === "settled").length;
   const pendingPropCount = allProps.filter((p) => p.status === "pending").length;
 
-  const cadenceCards = getCadenceCards(publicLink, leader);
+  const cadenceCards = getCadenceCards(publicLink, leader, isSundaySlate);
   const suggestedMoments = getSuggestedMoments(
     room.status,
     isArchived,
@@ -451,9 +457,9 @@ export default function CaptainCenter() {
   );
 
   const phaseLabel = (phase: string) => {
-    if (phase === "pregame") return "Pregame Picks";
-    if (phase === "halftime") return "Halftime Picks";
-    if (phase === "fourth") return "4Q Clutch Picks";
+    if (phase === "pregame") return isSundaySlate ? "Early Slate Picks" : "Pregame Picks";
+    if (phase === "halftime") return isSundaySlate ? "Late Slate Picks" : "Halftime Picks";
+    if (phase === "fourth") return isSundaySlate ? "Sunday Night Picks" : "4Q Clutch Picks";
     return phase;
   };
 
@@ -528,7 +534,7 @@ export default function CaptainCenter() {
       {!isArchived && (
         <TouchableOpacity style={styles.enterRoomBtn} onPress={enterRoom}>
           <Text style={styles.enterRoomBtnText}>
-            {isFinalized ? "🏆 View Final Standings" : isSoccer ? "⚽ Enter Game Day Room" : "🏀 Enter Game Day Room"}
+            {isFinalized ? "🏆 View Final Standings" : isSundaySlate ? "🏈 Enter Sunday Slate" : isSoccer ? "⚽ Enter Game Day Room" : "🏀 Enter Game Day Room"}
           </Text>
         </TouchableOpacity>
       )}
@@ -542,9 +548,9 @@ export default function CaptainCenter() {
         if (countdownSecsLeft < -120) return null;
         const expired = countdownSecsLeft <= 0;
         const PHASE_LABELS: Record<string, string> = {
-          pregame: "Pregame Picks",
-          halftime: "Halftime Picks",
-          fourth: "4Q Clutch Picks",
+          pregame: isSundaySlate ? "Early Slate Picks" : "Pregame Picks",
+          halftime: isSundaySlate ? "Late Slate Picks" : "Halftime Picks",
+          fourth: isSundaySlate ? "Sunday Night Picks" : "4Q Clutch Picks",
           final_push: "Final Push",
           penalties: "Penalty Shootout",
         };
@@ -559,7 +565,7 @@ export default function CaptainCenter() {
         const sub = expired
           ? "Check the room — the host is opening or locking the window."
           : isLocksType
-          ? (cdPhase === "pregame" ? (isSoccer ? "Get your picks in before kickoff." : "Get your picks in before tipoff.") : cdPhase === "halftime" ? "Get your second-half picks in now." : "Get your picks in before the window closes.")
+          ? (cdPhase === "pregame" ? (isSundaySlate ? "Get your Early Slate calls in before the first kickoffs." : isSoccer ? "Get your picks in before kickoff." : "Get your picks in before tipoff.") : cdPhase === "halftime" ? (isSundaySlate ? "Get your Late Slate calls in now." : "Get your second-half picks in now.") : "Get your picks in before the window closes.")
           : "Host is opening this window soon. Stay close — picks are coming.";
         const timer = expired ? null : isLocksType ? `${timerStr} left to submit your picks` : `Expected in ~${timerStr}`;
         const isUrgent = isLocksType && !expired;

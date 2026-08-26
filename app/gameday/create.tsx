@@ -19,6 +19,7 @@ import { Analytics } from "@/lib/posthog";
 const C = Colors.dark;
 
 type Sport = "nba" | "soccer" | "nfl";
+type NflTemplateType = "nfl_single_game" | "nfl_sunday_slate";
 
 interface TemplateResponse {
   template: GDPropTemplate[];
@@ -57,6 +58,20 @@ const NFL_PHASES: Array<{
   { key: "fourth",   label: "4Q / Clutch Picks", range: "3 default picks" },
 ];
 
+const NFL_SUNDAY_SLATE_PHASES: Array<{
+  key: "pregame" | "halftime" | "fourth";
+  label: string;
+  range: string;
+}> = [
+  { key: "pregame", label: "Early Slate Picks", range: "8 default picks" },
+  { key: "halftime", label: "Late Slate Picks", range: "5 default picks" },
+  { key: "fourth", label: "Sunday Night Picks", range: "3 default picks" },
+];
+
+function candidateList(text: string): string[] {
+  return [...new Set(text.split(/[\n,|]+/).map((value) => value.trim()).filter(Boolean))];
+}
+
 // ── CDT time string → ISO UTC string ────────────────────────────────────────
 // Mirrors the admin.tsx conversion. CDT = UTC−5.
 function cdtToISO(dateStr: string, timeStr: string): string | null {
@@ -84,6 +99,7 @@ export default function CreateGameDayRoom() {
 
   const [isHost, setIsHost] = useState<boolean | null>(null);
   const [sport, setSport] = useState<Sport>("nba");
+  const [nflTemplateType, setNflTemplateType] = useState<NflTemplateType>("nfl_single_game");
 
   const [template, setTemplate] = useState<GDPropTemplate[]>([]);
   const [defaultPropIds, setDefaultPropIds] = useState<string[]>([]);
@@ -96,6 +112,13 @@ export default function CreateGameDayRoom() {
   const [starA, setStarA] = useState("");
   const [starB, setStarB] = useState("");
   const [gameDate, setGameDate] = useState("");
+  const [earlyMatchups, setEarlyMatchups] = useState("");
+  const [lateMatchups, setLateMatchups] = useState("");
+  const [qbCandidates, setQbCandidates] = useState("");
+  const [rbCandidates, setRbCandidates] = useState("");
+  const [receiverCandidates, setReceiverCandidates] = useState("");
+  const [teamCandidates, setTeamCandidates] = useState("");
+  const [gameCandidates, setGameCandidates] = useState("");
 
   // Card schedules: phase key → { openAt, lockAt } in "H:MM AM/PM" CDT format
   const [schedules, setSchedules] = useState<Record<string, { openAt: string; lockAt: string }>>({});
@@ -112,10 +135,14 @@ export default function CreateGameDayRoom() {
       .catch(() => setIsHost(false));
   }, [authLoading, session?.access_token]);
 
-  // Fetch template whenever sport changes.
+  const isNfl = sport === "nfl";
+  const isSundaySlate = isNfl && nflTemplateType === "nfl_sunday_slate";
+
+  // Fetch template whenever sport or NFL format changes.
   useEffect(() => {
     setTemplateLoading(true);
-    gamedayFetch<TemplateResponse>(`/api/gameday/template?sport=${sport}`)
+    const templateQuery = isNfl ? `&template_type=${nflTemplateType}` : "";
+    gamedayFetch<TemplateResponse>(`/api/gameday/template?sport=${sport}${templateQuery}`)
       .then((r) => {
         setTemplate(r.template);
         setDefaultPropIds(r.defaultPropIds);
@@ -123,7 +150,7 @@ export default function CreateGameDayRoom() {
       })
       .catch(() => {})
       .finally(() => setTemplateLoading(false));
-  }, [sport]);
+  }, [sport, isNfl, nflTemplateType]);
 
   const toggleProp = useCallback((id: string) => {
     setSelectedPropIds((prev) => {
@@ -141,7 +168,30 @@ export default function CreateGameDayRoom() {
   }
 
   const handleCreate = async () => {
-    if (!roomName.trim() || !teamA.trim() || !teamB.trim() || !starA.trim() || !starB.trim()) {
+    const slate_config = isSundaySlate ? {
+      early_matchups: candidateList(earlyMatchups),
+      late_matchups: candidateList(lateMatchups),
+      sunday_night_teams: [teamA.trim(), teamB.trim()],
+      qb_candidates: candidateList(qbCandidates),
+      rb_candidates: candidateList(rbCandidates),
+      receiver_candidates: candidateList(receiverCandidates),
+      team_candidates: candidateList(teamCandidates),
+      game_candidates: candidateList(gameCandidates),
+    } : undefined;
+    const hasSlateDetails = !isSundaySlate || (
+      slate_config!.early_matchups.length > 0 &&
+      slate_config!.late_matchups.length > 0 &&
+      slate_config!.sunday_night_teams.every(Boolean) &&
+      slate_config!.qb_candidates.length > 0 &&
+      slate_config!.rb_candidates.length > 0 &&
+      slate_config!.receiver_candidates.length > 0 &&
+      slate_config!.team_candidates.length > 0
+    );
+    if (
+      !roomName.trim() ||
+      !hasSlateDetails ||
+      (!isSundaySlate && (!teamA.trim() || !teamB.trim() || !starA.trim() || !starB.trim()))
+    ) {
       setError("Please fill in all required fields.");
       return;
     }
@@ -170,11 +220,13 @@ export default function CreateGameDayRoom() {
             room_name: roomName.trim(),
             team_a_name: teamA.trim(),
             team_b_name: teamB.trim(),
-            team_a_star: starA.trim(),
-            team_b_star: starB.trim(),
+            team_a_star: isSundaySlate ? slate_config!.qb_candidates[0] : starA.trim(),
+            team_b_star: isSundaySlate ? (slate_config!.qb_candidates[1] ?? slate_config!.qb_candidates[0]) : starB.trim(),
             game_date: gameDate.trim() || undefined,
             selected_prop_ids: Array.from(selectedPropIds),
             sport,
+            template_type: isNfl ? nflTemplateType : undefined,
+            slate_config,
             card_schedules: Object.keys(card_schedules).length > 0 ? card_schedules : undefined,
           }),
         },
@@ -214,8 +266,7 @@ export default function CreateGameDayRoom() {
   };
 
   const phases =
-    sport === "soccer" ? SOCCER_PHASES : sport === "nfl" ? NFL_PHASES : NBA_PHASES;
-  const isNfl = sport === "nfl";
+    sport === "soccer" ? SOCCER_PHASES : isSundaySlate ? NFL_SUNDAY_SLATE_PHASES : isNfl ? NFL_PHASES : NBA_PHASES;
 
   if (isHost === null) {
     return (
@@ -279,6 +330,25 @@ export default function CreateGameDayRoom() {
             </TouchableOpacity>
           ))}
         </View>
+        {isNfl && (
+          <>
+            <Text style={[styles.sectionLabel, { marginTop: 18 }]}>NFL FORMAT</Text>
+            <View style={styles.formatRow}>
+              {([
+                ["nfl_single_game", "Single Game"],
+                ["nfl_sunday_slate", "Sunday Slate"],
+              ] as Array<[NflTemplateType, string]>).map(([format, label]) => (
+                <TouchableOpacity
+                  key={format}
+                  style={[styles.formatBtn, nflTemplateType === format && styles.formatBtnActive]}
+                  onPress={() => setNflTemplateType(format)}
+                >
+                  <Text style={[styles.formatBtnText, nflTemplateType === format && styles.formatBtnTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
       </View>
 
       {/* Room details */}
@@ -286,7 +356,7 @@ export default function CreateGameDayRoom() {
         <Text style={styles.sectionLabel}>ROOM DETAILS</Text>
         <TextInput
           style={styles.input}
-          placeholder={isNfl ? "Room name (e.g. Bears vs Packers)" : "Room name (e.g. Thunder vs Spurs — Game 2)"}
+          placeholder={isSundaySlate ? "Room name (e.g. NFL Sunday Slate — Week 1)" : isNfl ? "Room name (e.g. Bears vs Packers)" : "Room name (e.g. Thunder vs Spurs — Game 2)"}
           placeholderTextColor={C.textMuted}
           value={roomName}
           onChangeText={setRoomName}
@@ -294,20 +364,20 @@ export default function CreateGameDayRoom() {
         <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.half]}
-            placeholder="Team A"
+            placeholder={isSundaySlate ? "Sunday Night team A" : "Team A"}
             placeholderTextColor={C.textMuted}
             value={teamA}
             onChangeText={setTeamA}
           />
           <TextInput
             style={[styles.input, styles.half]}
-            placeholder="Team B"
+            placeholder={isSundaySlate ? "Sunday Night team B" : "Team B"}
             placeholderTextColor={C.textMuted}
             value={teamB}
             onChangeText={setTeamB}
           />
         </View>
-        <View style={styles.row}>
+        {!isSundaySlate && <View style={styles.row}>
           <TextInput
             style={[styles.input, styles.half]}
             placeholder={isNfl ? "Starting QB A" : "Star player A"}
@@ -322,7 +392,28 @@ export default function CreateGameDayRoom() {
             value={starB}
             onChangeText={setStarB}
           />
-        </View>
+        </View>}
+        {isSundaySlate && (
+          <View style={styles.slateSetup}>
+            <Text style={styles.slateIntro}>
+              Add one candidate per line or separate them with commas. These lists become the pick options when the room is created.
+            </Text>
+            <Text style={styles.listLabel}>Early Slate matchups</Text>
+            <TextInput style={styles.textArea} placeholder="Bears vs Packers&#10;Eagles vs Cowboys" placeholderTextColor={C.textMuted} value={earlyMatchups} onChangeText={setEarlyMatchups} multiline />
+            <Text style={styles.listLabel}>Late Slate matchups</Text>
+            <TextInput style={styles.textArea} placeholder="Chiefs vs Raiders&#10;Seahawks vs Rams" placeholderTextColor={C.textMuted} value={lateMatchups} onChangeText={setLateMatchups} multiline />
+            <Text style={styles.listLabel}>QB candidates</Text>
+            <TextInput style={styles.textArea} placeholder="Patrick Mahomes, Josh Allen" placeholderTextColor={C.textMuted} value={qbCandidates} onChangeText={setQbCandidates} multiline />
+            <Text style={styles.listLabel}>RB candidates</Text>
+            <TextInput style={styles.textArea} placeholder="Saquon Barkley, Christian McCaffrey" placeholderTextColor={C.textMuted} value={rbCandidates} onChangeText={setRbCandidates} multiline />
+            <Text style={styles.listLabel}>WR / TE candidates</Text>
+            <TextInput style={styles.textArea} placeholder="Justin Jefferson, Amon-Ra St. Brown" placeholderTextColor={C.textMuted} value={receiverCandidates} onChangeText={setReceiverCandidates} multiline />
+            <Text style={styles.listLabel}>Team candidates</Text>
+            <TextInput style={styles.textArea} placeholder="List every team you want available for team leader props" placeholderTextColor={C.textMuted} value={teamCandidates} onChangeText={setTeamCandidates} multiline />
+            <Text style={styles.listLabel}>Game candidates (optional)</Text>
+            <TextInput style={styles.textArea} placeholder="Optional master matchup list for your host reference" placeholderTextColor={C.textMuted} value={gameCandidates} onChangeText={setGameCandidates} multiline />
+          </View>
+        )}
         <TextInput
           style={styles.input}
           placeholder="Game date (e.g. 2025-06-12)"
@@ -420,7 +511,11 @@ export default function CreateGameDayRoom() {
                       </View>
                       <View style={styles.propTextWrap}>
                         <Text style={styles.propQuestion}>{prop.question}</Text>
-                        <Text style={styles.propAnswers}>{prop.answers.join(" · ")}</Text>
+                        <Text style={styles.propAnswers}>
+                          {prop.answers.some((answer) => answer.startsWith("{{SLATE_"))
+                            ? "Host-selected candidates · Other · Tie / Multiple tied"
+                            : prop.answers.join(" · ")}
+                        </Text>
                         {prop.settlement_window ? (
                           <Text style={styles.windowText}>Settles: {prop.settlement_window}</Text>
                         ) : null}
@@ -478,6 +573,14 @@ const styles = StyleSheet.create({
   sportBtnActive: { borderColor: C.tint, backgroundColor: `${C.tint}18` },
   sportBtnText: { fontSize: 15, fontWeight: "600", color: C.textSecondary },
   sportBtnTextActive: { color: C.tint },
+  formatRow: { flexDirection: "row", gap: 10 },
+  formatBtn: {
+    flex: 1, paddingVertical: 11, borderRadius: 10,
+    borderWidth: 1, borderColor: C.border, alignItems: "center", backgroundColor: C.surface,
+  },
+  formatBtnActive: { borderColor: C.tint, backgroundColor: `${C.tint}18` },
+  formatBtnText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+  formatBtnTextActive: { color: C.tint },
   // Inputs
   input: {
     backgroundColor: C.surface, borderRadius: 10,
@@ -488,6 +591,14 @@ const styles = StyleSheet.create({
   hint: { fontSize: 11, color: C.textMuted, marginTop: -6, marginBottom: 4 },
   row: { flexDirection: "row", gap: 10 },
   half: { flex: 1 },
+  slateSetup: { marginTop: 2 },
+  slateIntro: { fontSize: 12, lineHeight: 18, color: C.textSecondary, marginBottom: 14 },
+  listLabel: { fontSize: 12, fontWeight: "700", color: C.textSecondary, marginBottom: 6 },
+  textArea: {
+    minHeight: 70, textAlignVertical: "top",
+    backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border,
+    color: C.text, fontSize: 14, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 12,
+  },
   // Schedule
   scheduleBlock: { marginBottom: 16 },
   schedulePhaseLabel: {

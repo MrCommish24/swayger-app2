@@ -151,6 +151,78 @@ async function main() {
       JSON.stringify(publicRoom.body),
     );
 
+    const sundayTemplate = await request("/api/gameday/template?sport=nfl&template_type=nfl_sunday_slate");
+    expect(
+      "Sunday Slate template returns all 16 format-specific defaults",
+      sundayTemplate.status === 200 && sundayTemplate.body.template?.length === 16 &&
+        sundayTemplate.body.defaultPropIds?.length === 16,
+      JSON.stringify(sundayTemplate.body),
+    );
+    expect(
+      "Sunday Slate template uses the required stable prop IDs",
+      ["nfl_slate_early_qb_passing_yards", "nfl_slate_late_overtime", "nfl_slate_snf_margin"]
+        .every((id) => sundayTemplate.body.defaultPropIds?.includes(id)),
+      JSON.stringify(sundayTemplate.body.defaultPropIds),
+    );
+
+    const sundaySlatePayload = {
+      room_name: `Sunday Slate ${runId}`,
+      game_date: "2026-09-13",
+      sport: "nfl",
+      template_type: "nfl_sunday_slate",
+      slate_config: {
+        early_matchups: ["Bears vs Packers", "Eagles vs Cowboys"],
+        late_matchups: ["Chiefs vs Raiders", "Rams vs Seahawks"],
+        sunday_night_teams: ["Baltimore Ravens", "Buffalo Bills"],
+        qb_candidates: ["Lamar Jackson", "Josh Allen", "Patrick Mahomes"],
+        rb_candidates: ["Derrick Henry", "Saquon Barkley"],
+        receiver_candidates: ["Justin Jefferson", "CeeDee Lamb"],
+        team_candidates: ["Bears", "Packers", "Eagles", "Cowboys", "Chiefs", "Raiders", "Rams", "Seahawks"],
+        game_candidates: ["Bears vs Packers", "Eagles vs Cowboys", "Chiefs vs Raiders", "Rams vs Seahawks"],
+      },
+    };
+    const sundayCreated = await request("/api/gameday/rooms", {
+      method: "POST", token: host.token, body: sundaySlatePayload,
+    });
+    const sundayRoomId = sundayCreated.body.room_id as string;
+    if (sundayRoomId) roomIds.push(sundayRoomId);
+    expect(
+      "host creates a Sunday Slate room with its persisted format",
+      sundayCreated.status === 200 && sundayCreated.body.room?.template_type === "nfl_sunday_slate",
+      JSON.stringify(sundayCreated.body),
+    );
+    const sundayData = sundayRoomId
+      ? await request(`/api/gameday/rooms/${sundayRoomId}/host-data`, { token: host.token })
+      : { status: 0, body: {} };
+    const sundayCards = sundayData.body.cards ?? [];
+    const earlySlate = sundayCards.find((card: any) => card.phase === "pregame");
+    const lateSlate = sundayCards.find((card: any) => card.phase === "halftime");
+    const sundayNight = sundayCards.find((card: any) => card.phase === "fourth");
+    expect(
+      "Sunday Slate creates Early, Late, and Sunday Night cards with 8/5/3 props",
+      sundayData.status === 200 && sundayCards.length === 3 &&
+        earlySlate?.title === "Early Slate Picks" && earlySlate?.gameday_props?.length === 8 &&
+        lateSlate?.title === "Late Slate Picks" && lateSlate?.gameday_props?.length === 5 &&
+        sundayNight?.title === "Sunday Night Picks" && sundayNight?.gameday_props?.length === 3,
+      JSON.stringify(sundayCards.map((card: any) => ({ title: card.title, count: card.gameday_props?.length }))),
+    );
+    expect(
+      "Sunday Slate resolves candidate options and includes Other plus tie settlement paths",
+      earlySlate?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Lamar Jackson") &&
+        prop.answer_options?.includes("Other") && prop.answer_options?.includes("Tie / Multiple tied")) &&
+        earlySlate?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Bears vs Packers")) &&
+        sundayNight?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Baltimore Ravens")) &&
+        !JSON.stringify(sundayCards).includes("{{SLATE_"),
+      JSON.stringify(sundayCards),
+    );
+    const sundayPublic = sundayRoomId ? await request(`/api/gameday/rooms/${sundayRoomId}`) : { status: 0, body: {} };
+    expect(
+      "public Sunday Slate room exposes safe format context",
+      sundayPublic.status === 200 && sundayPublic.body.room?.template_type === "nfl_sunday_slate" &&
+        Array.isArray(sundayPublic.body.room?.slate_config?.qb_candidates),
+      JSON.stringify(sundayPublic.body),
+    );
+
     const joinedAuthed = await request(`/api/gameday/rooms/${roomId}/join`, {
       method: "POST", token: player.token, body: {},
     });
