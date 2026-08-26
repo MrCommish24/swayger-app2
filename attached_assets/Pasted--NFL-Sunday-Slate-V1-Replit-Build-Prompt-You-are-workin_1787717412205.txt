@@ -1,0 +1,1036 @@
+# NFL Sunday Slate V1 — Replit Build Prompt
+
+You are working in the main Swayger Replit project.
+
+The existing NFL Game Day V1 build is complete and should remain intact.
+
+That existing build should now be treated as the **NFL Single Game** format.
+
+NFL Single Game is useful for:
+
+* Thursday Night Football
+* Sunday Night Football
+* Monday Night Football
+* Playoffs
+* Super Bowl
+* Madden-style single-game activations later
+
+Do not replace, undo, or redesign the existing NFL Single Game work.
+
+The new task is to add a second NFL format:
+
+# NFL Sunday Slate V1
+
+The objective is to support the way NFL Sundays actually work: multiple games across the early and late windows, with a final Sunday Night Football card.
+
+This should be built as an extension of the existing Game Day architecture, not a new engine.
+
+---
+
+# 1. Preserve existing behavior
+
+Do not break:
+
+* Existing NBA Game Day rooms
+* Existing Soccer/World Cup Game Day rooms
+* Existing NFL Single Game rooms
+* Existing historical rooms
+* Existing Discord-created room privacy behavior
+* Guest joining
+* Authenticated joining
+* Picks
+* Leaderboard
+* Manual settlement
+* Final standings
+* Room codes
+* Short links
+* Captain Center
+* Discord lifecycle commands
+* Existing regression suites
+
+The existing NFL V1 should continue to work exactly as the single-game NFL format.
+
+Current NFL Single Game behavior should remain valid for one-game broadcasts.
+
+---
+
+# 2. Add NFL room format/template type
+
+NFL now needs two formats:
+
+1. `nfl_single_game`
+2. `nfl_sunday_slate`
+
+Use the project’s existing naming conventions where possible.
+
+Preferred approach:
+
+* Keep `sport = "nfl"`
+* Add a format/template discriminator such as:
+
+  * `template_type = "nfl_single_game" | "nfl_sunday_slate"`
+  * or `game_format = "single_game" | "sunday_slate"`
+
+Use whichever fits the current architecture best.
+
+Do not create a second Game Day system.
+
+If a schema migration is needed, make it additive and backwards-compatible.
+
+Existing NFL rooms should behave as single-game rooms.
+
+Legacy callers that send only `sport: "nfl"` may continue defaulting to the current NFL Single Game template unless the host explicitly selects Sunday Slate.
+
+Legacy callers that omit `sport` should continue preserving existing NBA/default behavior.
+
+---
+
+# 3. Product definition
+
+NFL Sunday Slate V1 is a manually curated, cross-game prediction room.
+
+It should allow the host/admin to create a room like:
+
+> NFL Sunday Slate — Week 1
+
+The room should cover:
+
+* Early Sunday games
+* Late Sunday games
+* Sunday Night Football
+
+Use the existing three-card Game Day structure internally, but apply Sunday Slate labels.
+
+Internal phase reuse is preferred:
+
+| Existing internal phase | Sunday Slate label |
+| ----------------------- | ------------------ |
+| `pregame`               | Early Slate Picks  |
+| `halftime`              | Late Slate Picks   |
+| `fourth`                | Sunday Night Picks |
+
+Do not create new phase identifiers unless absolutely necessary.
+
+---
+
+# 4. Default pick counts
+
+NFL Sunday Slate should use compact player-facing cards:
+
+* Early Slate Picks: 8 default picks
+* Late Slate Picks: 5 default picks
+* Sunday Night Picks: 3 default picks
+
+Do not show 20+ questions on one card.
+
+A larger prop library is fine, but the default room should stay manageable.
+
+---
+
+# 5. Admin burden principle
+
+This is a pilot-stage feature.
+
+The admin/host should be able to:
+
+* Set up the Sunday Slate room in roughly 20 minutes or less
+* Settle the room in roughly 15 minutes or less
+* Verify outcomes from normal final scores and stat leaderboards
+* Avoid hunting through obscure play-by-play details
+
+Do not create props that require watching every game live.
+
+Do not create props that require subjective judgment.
+
+Do not create props that require obscure stat interpretation.
+
+This is important because the admin is currently me, and this must be manageable before automation is justified.
+
+---
+
+# 6. Manual settlement model
+
+Preserve manual host/admin settlement.
+
+NFL Sunday Slate V1 should be settleable by one admin using final scores and stat leaderboards.
+
+The app may provide optional settlement reference support, but the host/admin remains the source of truth.
+
+Every settlement action must still require the host/admin to choose or confirm the correct answer.
+
+Do not auto-settle.
+
+Do not create props that require exact lock-time context unless that context is already stored.
+
+Avoid slate-wide “next score” style props unless they are tied to a single Sunday Night game or otherwise easy to verify.
+
+For this reason, Sunday Slate props should focus on:
+
+* final player stat leaders
+* final team scores
+* final game margins
+* final game totals
+* Sunday Night single-game outcomes
+
+---
+
+# 7. Sports data / settlement-assist guidance
+
+Replit already confirmed the project has several prior sports-data integrations.
+
+## ESPN public scoreboard / summary API
+
+Replit confirmed:
+
+* ESPN’s public NFL scoreboard endpoint is currently live
+* ESPN’s NFL game-summary endpoint is currently live
+* No API key is required
+* NFL data includes final score, quarter scoring, scoring plays, team stats, QB passing lines, passing TDs, interceptions, game metadata, and game status
+* This API is unofficial/undocumented and has no availability guarantee
+
+For V1, ESPN may be useful as a **host settlement reference**, not as an automated settlement engine.
+
+## The Odds API
+
+Replit confirmed:
+
+* NFL appears available
+* `ODDS_API_KEY` is not currently configured
+* Existing project usage is mainly odds/schedule/market context
+* Existing calls do not provide enough player-stat data to settle many NFL props
+
+Do not use The Odds API in this V1.
+
+## SportsGameOdds
+
+Replit confirmed:
+
+* Existing integration is in the generic `prop_nights` system, not Game Day Rooms
+* Existing adapter is hardcoded to basketball/NBA
+* `SPORTS_GAME_ODDS_API_KEY` is not currently configured
+* NFL support may exist from the provider, but adapting it would be a separate deliberate project
+
+Do not adapt SportsGameOdds for this V1.
+
+## Correct V1 approach
+
+For NFL Sunday Slate V1:
+
+* Do not build full automatic settlement
+* Do not build new paid-provider integration
+* Do not introduce a new external API dependency
+* Do not require ESPN to complete the build
+* Use manual host/admin settlement as the source of truth
+
+Acceptable optional ESPN helper, only if low-risk:
+
+* Add admin-facing settlement reference data
+* Show helper links or simple fetched summary data
+* Help the host verify final scores, margins, team points, Sunday Night scoring, or passing/rushing/receiving leaders
+* Keep all settlement host-confirmed
+
+If ESPN helper work becomes too large, skip it and report it as a V2 item.
+
+Do not build:
+
+* full NFL schedule ingestion
+* automatic candidate generation from API
+* automatic stat settlement
+* live score sync
+* lock-time game-state snapshots
+* provider event ID mapping across all selected games
+* SportsGameOdds NFL adapter
+* The Odds API NFL adapter
+
+---
+
+# 8. Optional settlement hints
+
+If the current prop/data model supports it cleanly, add optional admin-facing settlement hints.
+
+Examples:
+
+* “Verify using final passing-yard leaders across selected Sunday games.”
+* “Verify using final rushing-yard leaders across selected Sunday games.”
+* “Verify using final receiving-yard leaders across selected Sunday games.”
+* “Verify using final team scores across selected Sunday games.”
+* “Verify from the selected Sunday Night Football box score.”
+
+These hints should be visible only to the host/admin during settlement if easy to implement.
+
+If settlement hints require too much new UI or schema work, skip them for V1 and list them as a V2 item.
+
+Do not make settlement hints a blocker.
+
+---
+
+# 9. Editable answer options
+
+NFL Sunday Slate V1 must support editable answer options.
+
+Unlike single-game NFL props, Sunday Slate props are not just Team A vs Team B.
+
+The host/admin needs a clean way to populate and edit candidates such as:
+
+* QB candidates
+* RB candidates
+* WR/TE candidates
+* Team candidates
+* Game candidates
+* Sunday Night teams
+
+For V1, candidate options should be manually entered or edited by the host/admin.
+
+Do not require an API to populate candidates.
+
+This matters because of:
+
+* injuries
+* inactive players
+* changing matchups
+* better weekly candidates
+* host judgment
+
+The host/admin should be able to change answer options before creating/publishing the room.
+
+If an existing sports data source can safely provide optional suggestions without significant extra work, document that as a future enhancement, but it should not block V1.
+
+---
+
+# 10. “Other” option
+
+For leader-style props, include an `Other` option by default.
+
+Examples:
+
+* Which QB throws for the most passing yards?
+* Which player rushes for the most yards?
+* Which player has the most receiving yards?
+* Which team scores the most points?
+* Which team allows the fewest points?
+
+This keeps the prop fair when someone outside the curated candidate list wins.
+
+For props where answer options are selected games, do not add `Other` unless the prop intentionally allows unlisted games.
+
+---
+
+# 11. Sunday Slate setup fields
+
+Add a Sunday Slate creation experience under NFL.
+
+Suggested flow:
+
+1. Host selects Sport: NFL
+2. Host selects NFL Room Type:
+
+   * Single Game
+   * Sunday Slate
+3. If Single Game, keep the current NFL V1 flow.
+4. If Sunday Slate, show Sunday Slate setup fields.
+
+Minimum Sunday Slate setup fields:
+
+* Room name
+
+  * Example: `NFL Sunday Slate — Week 1`
+
+* Slate label
+
+  * Example: `Week 1 Sunday`
+
+* Early slate games
+
+  * editable text/list of matchups
+
+* Late slate games
+
+  * editable text/list of matchups
+
+* Sunday Night game
+
+  * Team A
+  * Team B
+
+* Candidate QBs
+
+  * editable list
+  * include `Other`
+
+* Candidate RBs
+
+  * editable list
+  * include `Other`
+
+* Candidate WR/TEs
+
+  * editable list
+  * include `Other`
+
+* Candidate teams
+
+  * editable list
+  * include `Other`
+
+* Candidate games
+
+  * editable list of matchups
+
+Keep this simple.
+
+It does not need to be a sophisticated schedule builder.
+
+---
+
+# 12. Sunday Slate default props
+
+Create a reusable NFL Sunday Slate prop library and default card.
+
+Use stable IDs.
+
+Suggested ID prefixes:
+
+* `nfl_slate_early_*`
+* `nfl_slate_late_*`
+* `nfl_slate_snf_*`
+
+## Early Slate Picks — 8 default props
+
+These are made before the main early Sunday games.
+
+### 1. `nfl_slate_early_qb_passing_yards`
+
+Question:
+
+> Which QB throws for the most passing yards across the Sunday slate?
+
+Options:
+
+* Editable QB candidates
+* Other
+
+Settlement:
+
+* Final passing-yard leaders across selected Sunday games
+
+### 2. `nfl_slate_early_rushing_yards`
+
+Question:
+
+> Which player rushes for the most yards across the Sunday slate?
+
+Options:
+
+* Editable RB candidates
+* Other
+
+Settlement:
+
+* Final rushing-yard leaders across selected Sunday games
+
+### 3. `nfl_slate_early_receiving_yards`
+
+Question:
+
+> Which player has the most receiving yards across the Sunday slate?
+
+Options:
+
+* Editable WR/TE candidates
+* Other
+
+Settlement:
+
+* Final receiving-yard leaders across selected Sunday games
+
+### 4. `nfl_slate_early_team_points`
+
+Question:
+
+> Which team scores the most points across the Sunday slate?
+
+Options:
+
+* Editable team candidates
+* Other
+
+Settlement:
+
+* Final team scores
+
+### 5. `nfl_slate_early_fewest_points_allowed`
+
+Question:
+
+> Which team allows the fewest points across the Sunday slate?
+
+Options:
+
+* Editable team candidates
+* Other
+
+Settlement:
+
+* Final team scores
+
+### 6. `nfl_slate_early_highest_total_game`
+
+Question:
+
+> Which game has the highest combined score?
+
+Options:
+
+* Editable selected games
+
+Settlement:
+
+* Final scores
+
+### 7. `nfl_slate_early_closest_game`
+
+Question:
+
+> Which game finishes with the closest final margin?
+
+Options:
+
+* Editable selected games
+
+Settlement:
+
+* Final scores
+
+### 8. `nfl_slate_early_close_games_count`
+
+Question:
+
+> How many Sunday games are decided by 7 points or fewer?
+
+Options:
+
+* 0–2
+* 3–4
+* 5+
+
+Settlement:
+
+* Final scores
+
+---
+
+## Late Slate Picks — 5 default props
+
+These are made before the late afternoon NFL window.
+
+### 1. `nfl_slate_late_qb_passing_yards`
+
+Question:
+
+> Which late-window QB throws for the most passing yards?
+
+Options:
+
+* Editable late-window QB candidates
+* Other
+
+Settlement:
+
+* Final passing-yard leaders for late-window games
+
+### 2. `nfl_slate_late_team_points`
+
+Question:
+
+> Which late-window team scores the most points?
+
+Options:
+
+* Editable late-window team candidates
+* Other
+
+Settlement:
+
+* Final team scores
+
+### 3. `nfl_slate_late_highest_total_game`
+
+Question:
+
+> Which late-window game has the highest combined score?
+
+Options:
+
+* Editable late-window games
+
+Settlement:
+
+* Final scores
+
+### 4. `nfl_slate_late_overtime`
+
+Question:
+
+> Will any late-window game go to overtime?
+
+Options:
+
+* Yes
+* No
+
+Settlement:
+
+* Final game summaries
+
+### 5. `nfl_slate_late_fewest_points_allowed`
+
+Question:
+
+> Which late-window team allows the fewest points?
+
+Options:
+
+* Editable late-window team candidates
+* Other
+
+Settlement:
+
+* Final team scores
+
+---
+
+## Sunday Night Picks — 3 default props
+
+These are made before Sunday Night Football.
+
+### 1. `nfl_slate_snf_winner`
+
+Question:
+
+> Who wins Sunday Night Football?
+
+Options:
+
+* Sunday Night Team A
+* Sunday Night Team B
+
+Settlement:
+
+* Final score
+
+### 2. `nfl_slate_snf_first_score`
+
+Question:
+
+> Which team scores first?
+
+Options:
+
+* Sunday Night Team A
+* Sunday Night Team B
+
+Settlement:
+
+* First scoring play
+
+### 3. `nfl_slate_snf_margin`
+
+Question:
+
+> Will the final margin be 7 points or fewer?
+
+Options:
+
+* Yes
+* No
+
+Settlement:
+
+* Final score
+
+---
+
+# 13. Props to avoid
+
+Do not include V1 props like:
+
+* First player to score across the whole slate
+* First team to turn it over across the whole slate
+* Longest touchdown
+* Most sacks by an individual player
+* Most tackles
+* First red-zone stop
+* Best defense
+* Biggest play
+* Biggest upset unless manually defined
+* Most clutch player
+* Most impressive performance
+* Which team looked best
+* Any prop requiring subjective interpretation
+* Any prop requiring close play-by-play review across many games
+
+---
+
+# 14. Tie handling
+
+For Sunday Slate leader props, ties are possible.
+
+Support tie settlement in a simple, fair way.
+
+Preferred V1 behavior:
+
+* If multiple candidates tie for the lead and one or more tied candidates are listed as answer options, the host should be able to select multiple correct answers if the existing settlement model supports multi-correct.
+* If multi-correct settlement is not supported, add a `Tie / Multiple tied` answer option where appropriate.
+* If that is too invasive, document the limitation and avoid forcing the host to choose one incorrect winner.
+
+Do not make major scoring-engine changes if avoidable.
+
+At minimum:
+
+* Do not force the host/admin to choose one player/team if the actual result is a tie.
+* The settlement UI must have a valid path for tied outcomes.
+
+---
+
+# 15. Public/participant UI copy
+
+For NFL Sunday Slate rooms, use slate-specific language.
+
+Examples:
+
+* “Make your Early Slate picks before the Sunday games kick off.”
+* “Come back before the late-window games for Late Slate Picks.”
+* “Finish with Sunday Night Picks.”
+
+Avoid single-game-only language like:
+
+* “before kickoff” if it implies one game
+* “halftime” for the Late Slate card
+* “4Q” for the Sunday Night card
+
+But keep internal phase values if that is easiest.
+
+Player-facing labels should be:
+
+* Early Slate Picks
+* Late Slate Picks
+* Sunday Night Picks
+
+---
+
+# 16. Host/admin copy
+
+For Sunday Slate, host/admin controls should be understandable:
+
+* Open Early Slate Picks
+* Lock Early Slate Picks
+* Open Late Slate Picks
+* Lock Late Slate Picks
+* Open Sunday Night Picks
+* Lock Sunday Night Picks
+* Settle Sunday Slate props
+* Finalize standings
+
+If the underlying control still uses pregame/halftime/fourth internally, map the display labels by template type.
+
+---
+
+# 17. Captain Center copy
+
+Audit Captain Center copy for Sunday Slate rooms.
+
+Do not break Captain Center.
+
+For NFL Sunday Slate rooms, Captain Center should use slate labels where easy:
+
+* Early Slate invite/reminder
+* Late Slate invite/reminder
+* Sunday Night invite/reminder
+* Final standings/run-it-back copy
+
+Do not require a major Captain Center redesign.
+
+If full Captain Center slate-specific copy is too large for V1, preserve existing behavior and document the gap.
+
+---
+
+# 18. Discord compatibility
+
+Do not modify the Discord bot repo in this Replit task.
+
+Backend should be capable of creating a Sunday Slate room if the bot eventually sends the appropriate payload.
+
+Document the required Claude bot payload change.
+
+Likely required Discord bot payload:
+
+```json
+{
+  "sport": "nfl",
+  "template_type": "nfl_sunday_slate"
+}
+```
+
+or the equivalent field name chosen in the backend.
+
+Discord-created Sunday Slate rooms must remain:
+
+```text
+is_private = true
+```
+
+Do not weaken the existing Discord privacy/unlisted behavior.
+
+Do not silently make all Discord NFL rooms Sunday Slate.
+
+Existing Discord NFL Single Game rooms should remain possible.
+
+Existing NBA Discord rooms should remain possible.
+
+---
+
+# 19. No betting language
+
+Do not add:
+
+* odds
+* moneyline
+* spread
+* parlay
+* bet slip
+* wager language
+* payout language
+
+Use social prediction language only.
+
+Good:
+
+* “Which QB throws for the most passing yards?”
+* “Which team scores the most points?”
+* “How many Sunday games are decided by 7 points or fewer?”
+
+Avoid:
+
+* “QB passing yards over/under”
+* “Team total”
+* “Spread”
+* “Lock of the week”
+
+---
+
+# 20. Historical compatibility
+
+Existing rooms must continue rendering their stored prop/card definitions.
+
+Do not require old NBA, Soccer, or NFL Single Game rooms to have Sunday Slate fields.
+
+Do not rename existing prop IDs.
+
+Do not retroactively mutate existing rooms.
+
+---
+
+# 21. Testing requirements
+
+Add a dedicated NFL Sunday Slate regression suite.
+
+At minimum verify:
+
+## Creation/template
+
+1. NFL Sunday Slate room can be created.
+2. `sport = "nfl"` persists.
+3. Template/format value persists.
+4. Existing NFL Single Game remains available.
+5. Legacy `sport=nfl` behavior remains compatible.
+6. Cards render with:
+
+   * Early Slate Picks
+   * Late Slate Picks
+   * Sunday Night Picks
+7. Default card counts are:
+
+   * 8
+   * 5
+   * 3
+
+## Editable options
+
+8. QB candidate options populate.
+9. RB candidate options populate.
+10. WR/TE candidate options populate.
+11. Team candidate options populate.
+12. Game candidate options populate.
+13. Host-provided edited options are used in participant-facing props.
+14. `Other` appears where expected.
+
+## Participation
+
+15. Guest can join.
+16. Authenticated user can join.
+17. Early Slate picks persist.
+18. Late Slate picks work after opening.
+19. Sunday Night picks work after opening.
+
+## Settlement/scoring
+
+20. Host can settle Sunday Slate props.
+21. Correct picks score using existing 10 SP logic.
+22. Leaderboard updates.
+23. Final standings work.
+24. Tie/multiple-tied handling does not force an incorrect settlement path.
+
+## Privacy/Discord
+
+25. Discord-created Sunday Slate room defaults private/unlisted.
+26. It is absent from public discovery.
+27. Direct link works.
+28. Room code works.
+
+## Regression
+
+Also run:
+
+* Existing NFL Single Game suite
+* Normal web Game Day suite
+* Discord isolation suite
+* Discord visibility/unlisted suite
+* Fantasy regression
+* Server build
+
+Do not rely only on exit status.
+
+Report explicit assertion counts.
+
+---
+
+# 22. Browser QA
+
+Perform at least one visual browser check if authenticated host access is available.
+
+Verify:
+
+* Host can select NFL
+* Host can select Single Game or Sunday Slate
+* Sunday Slate setup fields render cleanly
+* Editable candidate options are understandable
+* Early/Late/Sunday Night labels appear
+* No NBA-specific language appears
+* Participant room renders cleanly
+* Default prop count feels manageable
+
+If no authenticated host session is available, report that limitation clearly.
+
+Do not create unnecessary persistent test data unless cleanup is included.
+
+---
+
+# 23. Final report
+
+Return:
+
+## A. Executive summary
+
+What NFL Sunday Slate V1 added and whether it is playable.
+
+## B. Relationship to existing NFL Single Game
+
+Confirm existing NFL Single Game remains intact.
+
+## C. Files changed
+
+For each file, explain what changed and why.
+
+## D. Data model / migration
+
+Explain any schema changes.
+
+## E. Sunday Slate creation flow
+
+Describe host/admin setup.
+
+## F. Phase model
+
+Document:
+
+* Early Slate
+* Late Slate
+* Sunday Night
+
+and their internal phase mappings.
+
+## G. Default props
+
+List exact default props and answer options.
+
+## H. Editable option model
+
+Explain how candidate QBs/RBs/WRs/teams/games are populated and edited.
+
+## I. Settlement model
+
+Explain manual settlement, optional hints if implemented, and any tie behavior.
+
+## J. API/stat helper findings
+
+Summarize ESPN/Odds API/SportsGameOdds findings.
+
+State clearly whether any API helper was implemented.
+
+If not implemented, state why.
+
+## K. Sport-specific UI/copy
+
+List Sunday Slate copy changes.
+
+## L. Captain Center impact
+
+State whether Captain Center has slate-specific copy or whether it remains unchanged.
+
+## M. Discord compatibility
+
+Document the backend payload needed for Claude bot support.
+
+## N. Privacy behavior
+
+Confirm Discord-created Sunday Slate rooms remain private/unlisted.
+
+## O. Test results
+
+Include exact assertion counts.
+
+## P. Browser QA
+
+Summarize what was visually verified and any auth limitation.
+
+## Q. Remaining V2 items
+
+Separate follow-ups such as:
+
+* NFL schedule lookup
+* candidate auto-suggestions
+* ESPN/stat API-assisted settlement
+* automated final stat leader detection
+* automated phase timing
+* weekly recurring Sunday Slate templates
+* deeper Captain Center slate copy
+* SportsGameOdds NFL adapter if later justified
+* The Odds API schedule support if later justified
+
+## R. Pilot decision
+
+Answer:
+
+> Is NFL Sunday Slate V1 ready for a controlled Discord pilot?
+
+Use:
+
+* YES
+* YES, WITH CONDITIONS
+* NO
+
+End with:
+
+**NFL SUNDAY SLATE V1 STATUS: PASS / FAIL**
+
+Do not begin Madden, College Football, schedule automation, paid API integration, automated settlement, or unrelated work after completing this task.
