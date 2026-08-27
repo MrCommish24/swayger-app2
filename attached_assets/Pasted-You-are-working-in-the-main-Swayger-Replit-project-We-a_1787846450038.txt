@@ -1,0 +1,139 @@
+You are working in the main Swayger Replit project.
+
+We are beginning the NFL Discord pilot rollout in a controlled, methodical way.
+
+Do not build the full weekly slate publishing system yet.
+
+Do not build centralized settlement yet.
+
+Do not build receipts yet.
+
+Do not build billing yet.
+
+Do not auto-create Discord channels.
+
+The next task is:
+
+# Task #52 — Discord NFL Slate Subscriptions
+
+## Objective
+
+Allow a Discord server owner/admin to opt their server into weekly NFL Sunday Slate rooms by selecting the Discord channel where Swayger should post Game Day rooms and, optionally, a receipt channel and reward text.
+
+This is the subscription/configuration layer only.
+
+No rooms should be created automatically in this task.
+
+No weekly slate should be published in this task.
+
+No settlement or receipt posting should be built in this task.
+
+---
+
+# 1. Product context
+
+Swayger now supports:
+
+- NFL Single Game rooms
+- NFL Sunday Slate rooms
+- Discord-created private/unlisted Game Day rooms
+
+The next pilot model is:
+
+1. Server owner invites Swayger bot.
+2. Server owner chooses where Swayger should post weekly NFL Sunday Slate rooms.
+3. Swayger stores that server/channel configuration.
+4. Later, Swayger admin will publish one weekly master slate into all opted-in servers.
+
+This task only builds step 2 and step 3.
+
+---
+
+# 2. Channel creation decision
+
+Do not auto-create channels.
+
+For pilot V1, the server owner should create or choose channels.
+
+The bot should store the selected channel IDs.
+
+Required channel:
+
+- Game Day channel
+
+Optional channel:
+
+- Receipt channel
+
+If no receipt channel is selected, future receipts can default to the Game Day channel.
+
+Suggested channel names may be mentioned in copy, but the bot should not create channels in this task.
+
+---
+
+# 3. Data model
+
+Add a Supabase table such as:
+
+`discord_gameday_subscriptions`
+
+Use the project’s existing naming/migration conventions.
+
+Minimum fields:
+
+- `id`
+- `discord_guild_id`
+- `discord_guild_name`
+- `game_day_channel_id`
+- `game_day_channel_name`
+- `receipt_channel_id`
+- `receipt_channel_name`
+- `enabled_nfl_sunday_slate` boolean default true
+- `enabled_nfl_single_games` boolean default false
+- `reward_text` text nullable
+- `created_by_discord_user_id`
+- `created_by_discord_username` nullable if available
+- `status` text, values like `active`, `paused`, `disabled`
+- `created_at`
+- `updated_at`
+
+Recommended uniqueness:
+
+- one active subscription row per `discord_guild_id`
+
+If using upsert, enabling should update the existing guild row rather than creating duplicates.
+
+Enable RLS.
+
+This table should not be publicly readable or writable from the browser.
+
+Backend/service-role writes are acceptable.
+
+---
+
+# 4. Backend API
+
+Add backend endpoints for the Discord bot to manage subscriptions.
+
+Protect these endpoints using the existing Game Day bot API key pattern.
+
+Suggested endpoints:
+
+## Enable / upsert subscription
+
+`POST /api/gameday/discord/subscriptions/nfl-slate`
+
+Payload:
+
+```json
+{
+  "discord_guild_id": "...",
+  "discord_guild_name": "...",
+  "game_day_channel_id": "...",
+  "game_day_channel_name": "...",
+  "receipt_channel_id": "...",
+  "receipt_channel_name": "...",
+  "reward_text": "...",
+  "created_by_discord_user_id": "...",
+  "created_by_discord_username": "..."
+}
