@@ -697,6 +697,60 @@ function getRequestedDiscordGuildId(
   );
 }
 
+const DISCORD_NFL_SLATE_SUBSCRIPTION_STATUSES = ["active", "paused", "disabled"] as const;
+type DiscordNflSlateSubscriptionStatus =
+  (typeof DISCORD_NFL_SLATE_SUBSCRIPTION_STATUSES)[number];
+
+function normalizeDiscordSubscriptionText(
+  value: unknown,
+  options: { required?: boolean; maxLength: number } = { maxLength: 128 },
+): string | null {
+  if (value === null || value === undefined) {
+    return options.required ? null : null;
+  }
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (
+    (!normalized && options.required) ||
+    normalized.length > options.maxLength ||
+    /[\u0000-\u001f\u007f]/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized || null;
+}
+
+function isDiscordNflSlateSubscriptionStatus(
+  value: unknown,
+): value is DiscordNflSlateSubscriptionStatus {
+  return (
+    typeof value === "string" &&
+    (DISCORD_NFL_SLATE_SUBSCRIPTION_STATUSES as readonly string[]).includes(value)
+  );
+}
+
+function isMissingDiscordNflSlateSubscriptionSchemaError(error: any): boolean {
+  return ["42P01", "PGRST205", "PGRST204"].includes(error?.code);
+}
+
+function serializeDiscordNflSlateSubscription(row: any) {
+  return {
+    id: row.id,
+    discord_guild_id: row.discord_guild_id,
+    discord_guild_name: row.discord_guild_name ?? null,
+    game_day_channel_id: row.game_day_channel_id,
+    game_day_channel_name: row.game_day_channel_name,
+    receipt_channel_id: row.receipt_channel_id ?? null,
+    receipt_channel_name: row.receipt_channel_name ?? null,
+    reward_text: row.reward_text ?? null,
+    status: row.status,
+    configured_by_discord_user_id: row.configured_by_discord_user_id ?? null,
+    configured_by_discord_user_name: row.configured_by_discord_user_name ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 /**
  * Validate that a bot request is scoped to the Discord guild that owns a
  * Discord-created room. Public participant reads intentionally do not call
@@ -948,6 +1002,203 @@ export function registerGamedayRoutes(app: Express) {
     Object.defineProperty(req, "fresh", { get: () => false, configurable: true });
     next();
   });
+
+  // ── POST /api/gameday/discord/subscriptions/nfl-slate ────────────────────
+  // Bot-only configuration endpoint. This stores subscription preferences;
+  // it intentionally does not create rooms, publish slates, or settle picks.
+  app.post(
+    "/api/gameday/discord/subscriptions/nfl-slate",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const discordGuildId = normalizeDiscordGuildId(body.discord_guild_id);
+      const headerGuildId = req.header("x-discord-guild-id");
+      const normalizedHeaderGuildId = headerGuildId
+        ? normalizeDiscordGuildId(headerGuildId)
+        : null;
+      if (!discordGuildId) {
+        res.status(400).json({ error: "discord_guild_id is required" });
+        return;
+      }
+      if (headerGuildId && (!normalizedHeaderGuildId || normalizedHeaderGuildId !== discordGuildId)) {
+        res.status(400).json({
+          error: "X-Discord-Guild-ID must match discord_guild_id",
+        });
+        return;
+      }
+
+      const gameDayChannelId = normalizeDiscordSubscriptionText(
+        body.game_day_channel_id ?? body.gameday_channel_id ?? body.discord_channel_id,
+        { required: true, maxLength: 128 },
+      );
+      const gameDayChannelName = normalizeDiscordSubscriptionText(
+        body.game_day_channel_name ?? body.gameday_channel_name ?? body.discord_channel_name,
+        { required: true, maxLength: 128 },
+      );
+      if (!gameDayChannelId || !gameDayChannelName) {
+        res.status(400).json({
+          error: "game_day_channel_id and game_day_channel_name are required",
+        });
+        return;
+      }
+
+      const receiptChannelId = normalizeDiscordSubscriptionText(
+        body.receipt_channel_id,
+        { maxLength: 128 },
+      );
+      const receiptChannelName = normalizeDiscordSubscriptionText(
+        body.receipt_channel_name,
+        { maxLength: 128 },
+      );
+      if (body.receipt_channel_id !== undefined && body.receipt_channel_id !== null && !receiptChannelId) {
+        res.status(400).json({ error: "receipt_channel_id must be a valid Discord identifier" });
+        return;
+      }
+      if (body.receipt_channel_name !== undefined && body.receipt_channel_name !== null && !receiptChannelName) {
+        res.status(400).json({ error: "receipt_channel_name must be valid text" });
+        return;
+      }
+      if (receiptChannelName && !receiptChannelId) {
+        res.status(400).json({
+          error: "receipt_channel_id is required when receipt_channel_name is supplied",
+        });
+        return;
+      }
+
+      const discordGuildName = normalizeDiscordSubscriptionText(body.discord_guild_name, {
+        maxLength: 128,
+      });
+      const configuredByUserId = normalizeDiscordSubscriptionText(
+        body.configured_by_discord_user_id ?? body.discord_user_id,
+        { maxLength: 128 },
+      );
+      const configuredByUserName = normalizeDiscordSubscriptionText(
+        body.configured_by_discord_user_name ?? body.discord_user_name,
+        { maxLength: 128 },
+      );
+      const rewardText = normalizeDiscordSubscriptionText(body.reward_text, {
+        maxLength: 2000,
+      });
+      if (
+        body.discord_guild_name !== undefined &&
+        body.discord_guild_name !== null &&
+        !discordGuildName
+      ) {
+        res.status(400).json({ error: "discord_guild_name must be valid text" });
+        return;
+      }
+      if (
+        body.reward_text !== undefined &&
+        body.reward_text !== null &&
+        typeof body.reward_text !== "string"
+      ) {
+        res.status(400).json({ error: "reward_text must be text" });
+        return;
+      }
+
+      const status =
+        body.status === undefined || body.status === null
+          ? "active"
+          : typeof body.status === "string"
+            ? body.status.trim().toLowerCase()
+            : body.status;
+      if (!isDiscordNflSlateSubscriptionStatus(status)) {
+        res.status(400).json({
+          error: "status must be active, paused, or disabled",
+        });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const { data: subscription, error } = await supabase
+        .from("discord_gameday_subscriptions")
+        .upsert(
+          {
+            discord_guild_id: discordGuildId,
+            discord_guild_name: discordGuildName,
+            game_day_channel_id: gameDayChannelId,
+            game_day_channel_name: gameDayChannelName,
+            receipt_channel_id: receiptChannelId,
+            receipt_channel_name: receiptChannelName,
+            reward_text: rewardText,
+            status,
+            configured_by_discord_user_id: configuredByUserId,
+            configured_by_discord_user_name: configuredByUserName,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "discord_guild_id" },
+        )
+        .select(
+          "id, discord_guild_id, discord_guild_name, game_day_channel_id, game_day_channel_name, receipt_channel_id, receipt_channel_name, reward_text, status, configured_by_discord_user_id, configured_by_discord_user_name, created_at, updated_at",
+        )
+        .single();
+
+      if (error) {
+        console.error("[gameday] Discord NFL Slate subscription upsert failed:", error.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(error)) {
+          res.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE",
+          });
+          return;
+        }
+        res.status(500).json({ error: "Could not save Discord NFL Slate subscription" });
+        return;
+      }
+
+      res.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
+    },
+  );
+
+  // ── GET /api/gameday/discord/subscriptions/nfl-slate ─────────────────────
+  // Bot-only guild-scoped read for configuration confirmation/recovery.
+  app.get(
+    "/api/gameday/discord/subscriptions/nfl-slate",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const discordGuildId = getRequestedDiscordGuildId(req);
+      if (!discordGuildId) {
+        res.status(400).json({
+          error: "X-Discord-Guild-ID is required for Discord subscription reads",
+        });
+        return;
+      }
+
+      const { data: subscription, error } = await getServiceSupabase()
+        .from("discord_gameday_subscriptions")
+        .select(
+          "id, discord_guild_id, discord_guild_name, game_day_channel_id, game_day_channel_name, receipt_channel_id, receipt_channel_name, reward_text, status, configured_by_discord_user_id, configured_by_discord_user_name, created_at, updated_at",
+        )
+        .eq("discord_guild_id", discordGuildId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[gameday] Discord NFL Slate subscription read failed:", error.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(error)) {
+          res.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE",
+          });
+          return;
+        }
+        res.status(500).json({ error: "Could not read Discord NFL Slate subscription" });
+        return;
+      }
+      if (!subscription) {
+        res.status(404).json({ error: "Discord NFL Slate subscription not found" });
+        return;
+      }
+
+      res.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
+    },
+  );
 
   // ── GET /api/gameday/is-host ────────────────────────────────────────────
   app.get("/api/gameday/is-host", async (req: Request, res: Response) => {
