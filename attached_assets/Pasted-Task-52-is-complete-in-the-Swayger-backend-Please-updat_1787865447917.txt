@@ -1,0 +1,146 @@
+Task #52 is complete in the Swayger backend.
+
+Please update the Discord bot to support NFL Sunday Slate subscription setup commands.
+
+Context:
+The backend now has bot-authenticated endpoints for storing one NFL Sunday Slate subscription configuration per Discord guild.
+
+These endpoints do not create rooms, publish slates, settle picks, post receipts, create channels, or handle billing. They only store and retrieve configuration.
+
+Backend endpoints:
+
+1. Enable/update subscription
+
+POST /api/gameday/discord/subscriptions/nfl-slate
+
+Auth:
+Use the existing Game Day bot credential convention:
+- x-api-key: GAMEDAY_BOT_API_KEY
+or existing bearer-token convention if that is how the bot currently calls Game Day APIs.
+
+Required payload:
+
+{
+  "discord_guild_id": "guild-id",
+  "game_day_channel_id": "channel-id",
+  "game_day_channel_name": "game-day"
+}
+
+Optional payload:
+
+{
+  "discord_guild_name": "Guild Name",
+  "receipt_channel_id": "receipt-channel-id",
+  "receipt_channel_name": "receipts",
+  "reward_text": "Winner gets bragging rights.",
+  "status": "active",
+  "configured_by_discord_user_id": "discord-user-id",
+  "configured_by_discord_user_name": "Pilot Admin"
+}
+
+Repeating the request for the same guild updates the existing row.
+
+2. Get subscription status
+
+GET /api/gameday/discord/subscriptions/nfl-slate
+
+Headers:
+X-Discord-Guild-ID: guild-id
+
+Auth:
+Same Game Day bot credential.
+
+Required bot commands:
+
+1. /swayger gameday enable-nfl-slate
+Options:
+- game_channel: Discord channel, required
+- receipt_channel: Discord channel, optional
+- reward_text: string, optional
+
+Behavior:
+- Require the requesting Discord user to have appropriate server-management/admin permissions.
+- Send the guild ID, guild name, selected channel IDs/names, optional reward text, and configuring user info to the backend.
+- Return a clear confirmation message.
+
+Suggested success copy:
+
+✅ NFL Sunday Slate is enabled for this server.
+
+Swayger will post weekly NFL Sunday Slate rooms in #game-channel.
+
+Receipts will post in #receipt-channel.
+
+Reward:
+[reward text]
+
+If no receipt channel is provided:
+Receipts will post in the Game Day channel.
+
+If no reward text is provided:
+No reward text set yet. You can add one later by running this command again.
+
+2. /swayger gameday slate-status
+
+Behavior:
+- Require guild context.
+- Call the GET endpoint with X-Discord-Guild-ID.
+- Show whether NFL Sunday Slate is active, paused, disabled, or not configured.
+- Show configured Game Day channel, receipt channel, and reward text if available.
+
+3. /swayger gameday disable-nfl-slate
+
+Behavior:
+- Require appropriate server-management/admin permissions.
+- If the backend does not yet expose a disable endpoint, report that clearly before implementing.
+- If the disable endpoint exists in the current backend, call it.
+- Return a clear confirmation.
+
+Important:
+Do not change:
+- /swayger gameday create
+- /swayger gameday create-slate
+- leaderboard
+- halftime
+- 4q
+- final
+- active room mapping
+- guild isolation
+- room privacy behavior
+- GAMEDAY_BOT_API_KEY handling
+- SWAYGER_API_BASE_URL handling
+
+Do not build:
+- automatic weekly publishing
+- room creation from subscriptions
+- settlement
+- receipt posting
+- billing
+- channel creation
+- role rewards
+
+Testing:
+Use the same mocked-fetch approach unless I explicitly approve live API calls.
+
+Verify:
+1. enable-nfl-slate sends the correct POST payload.
+2. enable-nfl-slate requires guild context.
+3. enable-nfl-slate requires admin/manage-server permission.
+4. receipt_channel is optional.
+5. reward_text is optional.
+6. slate-status calls the GET endpoint with X-Discord-Guild-ID.
+7. disable-nfl-slate behavior is correct based on backend availability.
+8. Existing create command remains unchanged.
+9. Existing create-slate command remains unchanged.
+10. leaderboard/halftime/4q/final remain unchanged.
+11. Slash command registration includes the new commands.
+12. No production API call is made during tests.
+
+Return:
+- files changed
+- exact command syntax
+- example enable payload
+- example status output
+- test results
+- any limitations
+- whether commands were registered or still need registration
