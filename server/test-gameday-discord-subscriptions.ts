@@ -11,6 +11,8 @@
 
 import * as dotenv from "dotenv";
 import express from "express";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createClient } from "@supabase/supabase-js";
@@ -19,7 +21,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 16;
+const EXPECTED_ASSERTIONS = 22;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -96,6 +98,7 @@ async function main() {
     }
 
     const endpoint = "/api/gameday/discord/subscriptions/nfl-slate";
+    const disableEndpoint = `${endpoint}/disable`;
     const initialConfig = {
       discord_guild_id: guildId,
       discord_guild_name: "Subscription Test Guild",

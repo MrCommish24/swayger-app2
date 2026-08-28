@@ -733,6 +733,17 @@ function isMissingDiscordNflSlateSubscriptionSchemaError(error: any): boolean {
   return ["42P01", "PGRST205", "PGRST204"].includes(error?.code);
 }
 
+function isMissingDiscordNflSlateSubscriptionColumnError(
+  error: any,
+  column: string,
+): boolean {
+  if (error?.code === "42703") return true;
+  return (
+    error?.code === "PGRST204" &&
+    String(error?.message ?? "").toLowerCase().includes(column.toLowerCase())
+  );
+}
+
 function serializeDiscordNflSlateSubscription(row: any) {
   return {
     id: row.id,
@@ -1151,6 +1162,162 @@ export function registerGamedayRoutes(app: Express) {
       }
 
       res.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
+    },
+  );
+
+  // ── POST /api/gameday/discord/subscriptions/nfl-slate/disable ────────────
+  // Bot-only guild-scoped disable. This preserves the configuration row and
+  // intentionally does not create rooms, publish slates, or settle picks.
+  app.post(
+    "/api/gameday/discord/subscriptions/nfl-slate/disable",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const discordGuildId = normalizeDiscordGuildId(body.discord_guild_id);
+      const headerGuildId = req.header("x-discord-guild-id");
+      const normalizedHeaderGuildId = headerGuildId
+        ? normalizeDiscordGuildId(headerGuildId)
+        : null;
+      if (!discordGuildId) {
+        res.status(400).json({ error: "discord_guild_id is required" });
+        return;
+      }
+      if (headerGuildId && (!normalizedHeaderGuildId || normalizedHeaderGuildId !== discordGuildId)) {
+        res.status(400).json({
+          error: "X-Discord-Guild-ID must match discord_guild_id",
+        });
+        return;
+      }
+
+      const disabledByUserId = normalizeDiscordSubscriptionText(
+        body.disabled_by_discord_user_id,
+        { maxLength: 128 },
+      );
+      const disabledByUserName = normalizeDiscordSubscriptionText(
+        body.disabled_by_discord_user_name,
+        { maxLength: 128 },
+      );
+      if (
+        body.disabled_by_discord_user_id !== undefined &&
+        body.disabled_by_discord_user_id !== null &&
+        !disabledByUserId
+      ) {
+        res.status(400).json({ error: "disabled_by_discord_user_id must be valid text" });
+        return;
+      }
+      if (
+        body.disabled_by_discord_user_name !== undefined &&
+        body.disabled_by_discord_user_name !== null &&
+        !disabledByUserName
+      ) {
+        res.status(400).json({ error: "disabled_by_discord_user_name must be valid text" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const subscriptionSelect =
+        "id, discord_guild_id, discord_guild_name, game_day_channel_id, game_day_channel_name, receipt_channel_id, receipt_channel_name, reward_text, status, configured_by_discord_user_id, configured_by_discord_user_name, created_at, updated_at";
+      const { data: existingSubscription, error: readError } = await supabase
+        .from("discord_gameday_subscriptions")
+        .select(subscriptionSelect)
+        .eq("discord_guild_id", discordGuildId)
+        .maybeSingle();
+
+      if (readError) {
+        console.error("[gameday] Discord NFL Slate subscription disable lookup failed:", readError.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(readError)) {
+          res.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE",
+          });
+          return;
+        }
+        res.status(500).json({ error: "Could not find Discord NFL Slate subscription" });
+        return;
+      }
+      if (!existingSubscription) {
+        res.status(404).json({ error: "Discord NFL Slate subscription not found" });
+        return;
+      }
+
+      const updatedAt = new Date().toISOString();
+      const baseUpdate = {
+        status: "disabled",
+        updated_at: updatedAt,
+      };
+      let updatedSubscription: any;
+      let disableError: any;
+
+      // Newer schemas may expose this flag. Try it first, then preserve
+      // compatibility with the original migration when the column is absent.
+      ({ data: updatedSubscription, error: disableError } = await supabase
+        .from("discord_gameday_subscriptions")
+        .update({ ...baseUpdate, enabled_nfl_sunday_slate: false })
+        .eq("discord_guild_id", discordGuildId)
+        .select(subscriptionSelect)
+        .single());
+
+      if (
+        disableError &&
+        isMissingDiscordNflSlateSubscriptionColumnError(
+          disableError,
+          "enabled_nfl_sunday_slate",
+        )
+      ) {
+        ({ data: updatedSubscription, error: disableError } = await supabase
+          .from("discord_gameday_subscriptions")
+          .update(baseUpdate)
+          .eq("discord_guild_id", discordGuildId)
+          .select(subscriptionSelect)
+          .single());
+      }
+
+      if (disableError) {
+        console.error("[gameday] Discord NFL Slate subscription disable failed:", disableError.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(disableError)) {
+          res.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE",
+          });
+          return;
+        }
+        res.status(500).json({ error: "Could not disable Discord NFL Slate subscription" });
+        return;
+      }
+
+      // These audit columns are optional. Update each independently so a
+      // partially upgraded schema stores only the columns it actually has.
+      for (const [column, value] of [
+        ["disabled_by_discord_user_id", disabledByUserId],
+        ["disabled_by_discord_user_name", disabledByUserName],
+      ] as const) {
+        if (value === null) continue;
+        const { data: auditUpdated, error: auditError } = await supabase
+          .from("discord_gameday_subscriptions")
+          .update({ [column]: value, updated_at: new Date().toISOString() })
+          .eq("discord_guild_id", discordGuildId)
+          .select(subscriptionSelect)
+          .single();
+
+        if (auditError) {
+          if (isMissingDiscordNflSlateSubscriptionColumnError(auditError, column)) {
+            continue;
+          }
+          console.error(`[gameday] Discord NFL Slate subscription ${column} update failed:`, auditError.message);
+          res.status(500).json({ error: "Could not disable Discord NFL Slate subscription" });
+          return;
+        }
+        updatedSubscription = auditUpdated;
+      }
+
+      res.json({
+        ok: true,
+        subscription: serializeDiscordNflSlateSubscription(updatedSubscription),
+      });
     },
   );
 
