@@ -142,6 +142,25 @@ async function main() {
     });
     expect("subscription write requires the Game Day channel", missingChannel.status === 400);
 
+    const missingDisableGuild = await request(disableEndpoint, {
+      method: "POST",
+      bot: true,
+      body: {
+        disabled_by_discord_user_id: `DISCORD_USER_${runId}`,
+      },
+    });
+    expect("subscription disable requires a guild ID", missingDisableGuild.status === 400);
+
+    const unconfiguredDisable = await request(disableEndpoint, {
+      method: "POST",
+      bot: true,
+      body: { discord_guild_id: otherGuildId },
+    });
+    expect(
+      "disabling an unconfigured guild returns not found",
+      unconfiguredDisable.status === 404,
+    );
+
     const mismatchedGuildHeader = await request(endpoint, {
       method: "POST",
       bot: true,
@@ -201,6 +220,15 @@ async function main() {
       serviceRow.error?.message,
     );
 
+    const rlsMigration = readFileSync(
+      resolve(process.cwd(), "supabase/gameday-discord-nfl-slate-subscriptions-migration.sql"),
+      "utf8",
+    );
+    expect(
+      "subscription migration keeps row-level security enabled",
+      /ALTER TABLE\s+public\.discord_gameday_subscriptions\s+ENABLE ROW LEVEL SECURITY/i.test(rlsMigration),
+    );
+
     const missingGuildRead = await request(endpoint, { bot: true });
     expect("subscription read requires a guild boundary header", missingGuildRead.status === 400);
 
@@ -222,6 +250,49 @@ async function main() {
       JSON.stringify(readBack.body),
     );
 
+    const disabledActive = await request(disableEndpoint, {
+      method: "POST",
+      bot: true,
+      body: {
+        discord_guild_id: guildId,
+        disabled_by_discord_user_id: `DISABLER_${runId}`,
+        disabled_by_discord_user_name: "Disable Admin",
+      },
+    });
+    expect(
+      "disabling an active subscription sets status to disabled",
+      disabledActive.status === 200 &&
+        disabledActive.body.ok === true &&
+        disabledActive.body.subscription?.id === subscriptionId &&
+        disabledActive.body.subscription?.status === "disabled" &&
+        typeof disabledActive.body.subscription?.updated_at === "string",
+      JSON.stringify(disabledActive.body),
+    );
+
+    const afterDisableRows = await service
+      .from("discord_gameday_subscriptions")
+      .select("id, status")
+      .eq("discord_guild_id", guildId);
+    expect(
+      "disabling a subscription does not delete its row",
+      !afterDisableRows.error &&
+        afterDisableRows.data?.length === 1 &&
+        afterDisableRows.data[0]?.id === subscriptionId &&
+        afterDisableRows.data[0]?.status === "disabled",
+      afterDisableRows.error?.message,
+    );
+
+    const statusAfterDisable = await request(endpoint, {
+      bot: true,
+      guildId,
+    });
+    expect(
+      "status read returns disabled after the disable route",
+      statusAfterDisable.status === 200 &&
+        statusAfterDisable.body.subscription?.status === "disabled",
+      JSON.stringify(statusAfterDisable.body),
+    );
+
     const updated = await request(endpoint, {
       method: "POST",
       bot: true,
@@ -233,14 +304,14 @@ async function main() {
         receipt_channel_id: null,
         receipt_channel_name: null,
         reward_text: null,
-        status: "paused",
+        status: "active",
       },
     });
     expect(
-      "repeating a guild write updates the existing row",
+      "re-enabling after disable updates the same guild row back to active",
       updated.status === 200 &&
         updated.body.subscription?.id === subscriptionId &&
-        updated.body.subscription?.status === "paused" &&
+        updated.body.subscription?.status === "active" &&
         updated.body.subscription?.game_day_channel_id === `UPDATED_CHANNEL_${runId}` &&
         updated.body.subscription?.receipt_channel_id === null &&
         updated.body.subscription?.reward_text === null,

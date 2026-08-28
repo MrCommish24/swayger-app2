@@ -8916,6 +8916,10 @@ function isDiscordNflSlateSubscriptionStatus(value) {
 function isMissingDiscordNflSlateSubscriptionSchemaError(error) {
   return ["42P01", "PGRST205", "PGRST204"].includes(error?.code);
 }
+function isMissingDiscordNflSlateSubscriptionColumnError(error, column) {
+  if (error?.code === "42703") return true;
+  return error?.code === "PGRST204" && String(error?.message ?? "").toLowerCase().includes(column.toLowerCase());
+}
 function serializeDiscordNflSlateSubscription(row) {
   return {
     id: row.id,
@@ -9194,6 +9198,110 @@ function registerGamedayRoutes(app2) {
         return;
       }
       res2.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
+    }
+  );
+  app2.post(
+    "/api/gameday/discord/subscriptions/nfl-slate/disable",
+    async (req, res2) => {
+      if (!isBotApiKeyValid(req)) {
+        res2.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const body = req.body ?? {};
+      const discordGuildId = normalizeDiscordGuildId(body.discord_guild_id);
+      const headerGuildId = req.header("x-discord-guild-id");
+      const normalizedHeaderGuildId = headerGuildId ? normalizeDiscordGuildId(headerGuildId) : null;
+      if (!discordGuildId) {
+        res2.status(400).json({ error: "discord_guild_id is required" });
+        return;
+      }
+      if (headerGuildId && (!normalizedHeaderGuildId || normalizedHeaderGuildId !== discordGuildId)) {
+        res2.status(400).json({
+          error: "X-Discord-Guild-ID must match discord_guild_id"
+        });
+        return;
+      }
+      const disabledByUserId = normalizeDiscordSubscriptionText(
+        body.disabled_by_discord_user_id,
+        { maxLength: 128 }
+      );
+      const disabledByUserName = normalizeDiscordSubscriptionText(
+        body.disabled_by_discord_user_name,
+        { maxLength: 128 }
+      );
+      if (body.disabled_by_discord_user_id !== void 0 && body.disabled_by_discord_user_id !== null && !disabledByUserId) {
+        res2.status(400).json({ error: "disabled_by_discord_user_id must be valid text" });
+        return;
+      }
+      if (body.disabled_by_discord_user_name !== void 0 && body.disabled_by_discord_user_name !== null && !disabledByUserName) {
+        res2.status(400).json({ error: "disabled_by_discord_user_name must be valid text" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      const subscriptionSelect = "id, discord_guild_id, discord_guild_name, game_day_channel_id, game_day_channel_name, receipt_channel_id, receipt_channel_name, reward_text, status, configured_by_discord_user_id, configured_by_discord_user_name, created_at, updated_at";
+      const { data: existingSubscription, error: readError } = await supabase.from("discord_gameday_subscriptions").select(subscriptionSelect).eq("discord_guild_id", discordGuildId).maybeSingle();
+      if (readError) {
+        console.error("[gameday] Discord NFL Slate subscription disable lookup failed:", readError.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(readError)) {
+          res2.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE"
+          });
+          return;
+        }
+        res2.status(500).json({ error: "Could not find Discord NFL Slate subscription" });
+        return;
+      }
+      if (!existingSubscription) {
+        res2.status(404).json({ error: "Discord NFL Slate subscription not found" });
+        return;
+      }
+      const updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const baseUpdate = {
+        status: "disabled",
+        updated_at: updatedAt
+      };
+      let updatedSubscription;
+      let disableError;
+      ({ data: updatedSubscription, error: disableError } = await supabase.from("discord_gameday_subscriptions").update({ ...baseUpdate, enabled_nfl_sunday_slate: false }).eq("discord_guild_id", discordGuildId).select(subscriptionSelect).single());
+      if (disableError && isMissingDiscordNflSlateSubscriptionColumnError(
+        disableError,
+        "enabled_nfl_sunday_slate"
+      )) {
+        ({ data: updatedSubscription, error: disableError } = await supabase.from("discord_gameday_subscriptions").update(baseUpdate).eq("discord_guild_id", discordGuildId).select(subscriptionSelect).single());
+      }
+      if (disableError) {
+        console.error("[gameday] Discord NFL Slate subscription disable failed:", disableError.message);
+        if (isMissingDiscordNflSlateSubscriptionSchemaError(disableError)) {
+          res2.status(503).json({
+            error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+            code: "SUBSCRIPTION_SCHEMA_UNAVAILABLE"
+          });
+          return;
+        }
+        res2.status(500).json({ error: "Could not disable Discord NFL Slate subscription" });
+        return;
+      }
+      for (const [column, value] of [
+        ["disabled_by_discord_user_id", disabledByUserId],
+        ["disabled_by_discord_user_name", disabledByUserName]
+      ]) {
+        if (value === null) continue;
+        const { data: auditUpdated, error: auditError } = await supabase.from("discord_gameday_subscriptions").update({ [column]: value, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("discord_guild_id", discordGuildId).select(subscriptionSelect).single();
+        if (auditError) {
+          if (isMissingDiscordNflSlateSubscriptionColumnError(auditError, column)) {
+            continue;
+          }
+          console.error(`[gameday] Discord NFL Slate subscription ${column} update failed:`, auditError.message);
+          res2.status(500).json({ error: "Could not disable Discord NFL Slate subscription" });
+          return;
+        }
+        updatedSubscription = auditUpdated;
+      }
+      res2.json({
+        ok: true,
+        subscription: serializeDiscordNflSlateSubscription(updatedSubscription)
+      });
     }
   );
   app2.get(
