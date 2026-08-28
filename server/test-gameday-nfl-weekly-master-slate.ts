@@ -106,6 +106,12 @@ async function main() {
     }
 
     const endpoint = "/api/gameday/admin/nfl-weekly-slates";
+    const roomCountBefore = await service
+      .from("gameday_rooms")
+      .select("id", { count: "exact", head: true });
+    if (roomCountBefore.error) {
+      throw new Error(`Could not establish Game Day room baseline: ${roomCountBefore.error.message}`);
+    }
 
     expect("migration defines the master slate table", new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`, "i").test(migration));
     expect("migration enables row-level security", /ENABLE ROW LEVEL SECURITY/i.test(migration));
@@ -146,6 +152,7 @@ async function main() {
         slate_name: `  ${slateName}  `,
         slate_label: " Week 1 Sunday ",
         ...validCandidates,
+        sunday_night_teams: [" Ravens "],
       },
     });
     const slateId = created.body.slate?.id as string | undefined;
@@ -302,8 +309,14 @@ async function main() {
       JSON.stringify(replacement.body),
     );
 
-    const roomCount = await service.from("gameday_rooms").select("id", { count: "exact", head: true });
-    expect("master slate creation does not write Game Day rooms", !roomCount.error, roomCount.error?.message);
+    const roomCountAfter = await service
+      .from("gameday_rooms")
+      .select("id", { count: "exact", head: true });
+    expect(
+      "master slate lifecycle does not write Game Day rooms",
+      !roomCountAfter.error && roomCountAfter.count === roomCountBefore.count,
+      roomCountAfter.error?.message ?? `${roomCountBefore.count} before, ${roomCountAfter.count} after`,
+    );
 
     if (replacementId) {
       await service.from(table).delete().in("id", [slateId, replacementId]);

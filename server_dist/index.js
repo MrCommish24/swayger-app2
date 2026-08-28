@@ -9048,6 +9048,80 @@ function normalizeSundaySlateConfig(value) {
   }
   return config;
 }
+var WEEKLY_SLATE_CANDIDATE_FIELDS = [
+  "early_matchups",
+  "late_matchups",
+  "sunday_night_teams",
+  "qb_candidates",
+  "rb_candidates",
+  "receiver_candidates",
+  "team_candidates",
+  "game_candidates"
+];
+var WEEKLY_SLATE_SELECT = "id, season_year, week_number, slate_name, slate_label, status, early_matchups, late_matchups, sunday_night_teams, qb_candidates, rb_candidates, receiver_candidates, team_candidates, game_candidates, created_by_user_id, created_by_email, approved_by_user_id, approved_by_email, approved_at, published_at, archived_at, created_at, updated_at";
+function normalizeWeeklySlateText(value, maxLength) {
+  if (value === null || value === void 0) return null;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!normalized || normalized.length > maxLength) return null;
+  return normalized;
+}
+function parsePositiveInteger(value) {
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    value = Number(value.trim());
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return null;
+  return value;
+}
+function normalizeWeeklySlateCandidates(body, partial = false) {
+  const values = {};
+  for (const field of WEEKLY_SLATE_CANDIDATE_FIELDS) {
+    if (partial && body[field] === void 0) continue;
+    if (body[field] !== void 0 && body[field] !== null && !Array.isArray(body[field])) {
+      return { values, error: `${field} must be an array of strings` };
+    }
+    values[field] = normalizeSlateList(body[field]);
+  }
+  return { values };
+}
+function serializeWeeklySlate(row) {
+  return {
+    id: row.id,
+    season_year: row.season_year,
+    week_number: row.week_number,
+    slate_name: row.slate_name,
+    slate_label: row.slate_label ?? null,
+    status: row.status,
+    early_matchups: row.early_matchups ?? [],
+    late_matchups: row.late_matchups ?? [],
+    sunday_night_teams: row.sunday_night_teams ?? [],
+    qb_candidates: row.qb_candidates ?? [],
+    rb_candidates: row.rb_candidates ?? [],
+    receiver_candidates: row.receiver_candidates ?? [],
+    team_candidates: row.team_candidates ?? [],
+    game_candidates: row.game_candidates ?? [],
+    created_by_user_id: row.created_by_user_id ?? null,
+    created_by_email: row.created_by_email ?? null,
+    approved_by_user_id: row.approved_by_user_id ?? null,
+    approved_by_email: row.approved_by_email ?? null,
+    approved_at: row.approved_at ?? null,
+    published_at: row.published_at ?? null,
+    archived_at: row.archived_at ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+function isMissingWeeklySlateSchemaError(error) {
+  return ["42P01", "PGRST204", "PGRST205"].includes(error?.code);
+}
+function getWeeklySlateAdminIdentity(req) {
+  const userId = req.header("x-admin-user-id")?.trim() ?? "";
+  const email = normalizeWeeklySlateText(req.header("x-admin-email"), 320);
+  return {
+    userId: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId) ? userId : null,
+    email
+  };
+}
 function withUniqueOutcomeOptions(options, includeOther = true) {
   const next = [...options];
   if (includeOther && !next.includes("Other")) next.push("Other");
@@ -9340,6 +9414,273 @@ function registerGamedayRoutes(app2) {
       res2.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
     }
   );
+  function checkWeeklySlateAdmin(req, res2) {
+    const token = req.header("x-admin-token");
+    const adminToken = process.env.MM_ADMIN_TOKEN;
+    if (!adminToken || token !== adminToken) {
+      res2.status(401).json({ ok: false, error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  }
+  function weeklySlateDbError(res2, error, fallback) {
+    if (!error) return false;
+    console.error("[gameday] NFL weekly master slate database error:", error.message);
+    if (isMissingWeeklySlateSchemaError(error)) {
+      res2.status(503).json({
+        ok: false,
+        error: "NFL weekly master slates are not enabled; apply the master slate migration first",
+        code: "WEEKLY_SLATE_SCHEMA_UNAVAILABLE"
+      });
+    } else if (error.code === "23505") {
+      res2.status(409).json({
+        ok: false,
+        error: "A non-archived master slate already exists for this season and week",
+        code: "WEEKLY_SLATE_ALREADY_EXISTS"
+      });
+    } else {
+      res2.status(500).json({ ok: false, error: fallback });
+    }
+    return true;
+  }
+  app2.post("/api/gameday/admin/nfl-weekly-slates", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const body = req.body ?? {};
+    const seasonYear = parsePositiveInteger(body.season_year);
+    const weekNumber = parsePositiveInteger(body.week_number);
+    const slateName = normalizeWeeklySlateText(body.slate_name, 200);
+    if (!seasonYear) {
+      res2.status(400).json({ ok: false, error: "season_year is required and must be a positive integer" });
+      return;
+    }
+    if (!weekNumber) {
+      res2.status(400).json({ ok: false, error: "week_number is required and must be a positive integer" });
+      return;
+    }
+    if (!slateName) {
+      res2.status(400).json({ ok: false, error: "slate_name is required" });
+      return;
+    }
+    const slateLabel = body.slate_label === void 0 || body.slate_label === null ? null : normalizeWeeklySlateText(body.slate_label, 200);
+    if (body.slate_label !== void 0 && body.slate_label !== null && !slateLabel) {
+      res2.status(400).json({ ok: false, error: "slate_label must be valid text" });
+      return;
+    }
+    const candidates = normalizeWeeklySlateCandidates(body);
+    if (candidates.error) {
+      res2.status(400).json({ ok: false, error: candidates.error });
+      return;
+    }
+    const identity = getWeeklySlateAdminIdentity(req);
+    const { data, error } = await getServiceSupabase().from("nfl_weekly_slate_templates").insert({
+      season_year: seasonYear,
+      week_number: weekNumber,
+      slate_name: slateName,
+      slate_label: slateLabel,
+      status: "draft",
+      ...Object.fromEntries(
+        WEEKLY_SLATE_CANDIDATE_FIELDS.map((field) => [field, candidates.values[field] ?? []])
+      ),
+      created_by_user_id: identity.userId,
+      created_by_email: identity.email
+    }).select(WEEKLY_SLATE_SELECT).single();
+    if (weeklySlateDbError(res2, error, "Could not create NFL weekly master slate")) return;
+    res2.status(201).json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
+  app2.get("/api/gameday/admin/nfl-weekly-slates", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const seasonYear = req.query.season_year === void 0 ? null : parsePositiveInteger(req.query.season_year);
+    const weekNumber = req.query.week_number === void 0 ? null : parsePositiveInteger(req.query.week_number);
+    if (req.query.season_year !== void 0 && !seasonYear) {
+      res2.status(400).json({ ok: false, error: "season_year must be a positive integer" });
+      return;
+    }
+    if (req.query.week_number !== void 0 && !weekNumber) {
+      res2.status(400).json({ ok: false, error: "week_number must be a positive integer" });
+      return;
+    }
+    const status = req.query.status === void 0 ? null : String(req.query.status).trim().toLowerCase();
+    if (status && !["draft", "approved", "published", "archived"].includes(status)) {
+      res2.status(400).json({ ok: false, error: "status must be draft, approved, published, or archived" });
+      return;
+    }
+    let query = getServiceSupabase().from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).order("season_year", { ascending: false }).order("week_number", { ascending: true }).order("created_at", { ascending: false });
+    if (seasonYear) query = query.eq("season_year", seasonYear);
+    if (weekNumber) query = query.eq("week_number", weekNumber);
+    if (status) query = query.eq("status", status);
+    const { data, error } = await query;
+    if (weeklySlateDbError(res2, error, "Could not list NFL weekly master slates")) return;
+    res2.json({ ok: true, slates: (data ?? []).map(serializeWeeklySlate) });
+  });
+  app2.get("/api/gameday/admin/nfl-weekly-slates/:slateId", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const { data, error } = await getServiceSupabase().from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).eq("id", req.params.slateId).maybeSingle();
+    if (weeklySlateDbError(res2, error, "Could not read NFL weekly master slate")) return;
+    if (!data) {
+      res2.status(404).json({ ok: false, error: "NFL weekly master slate not found" });
+      return;
+    }
+    res2.json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
+  app2.patch("/api/gameday/admin/nfl-weekly-slates/:slateId", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const supabase = getServiceSupabase();
+    const { data: existing, error: readError } = await supabase.from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).eq("id", req.params.slateId).maybeSingle();
+    if (weeklySlateDbError(res2, readError, "Could not read NFL weekly master slate")) return;
+    if (!existing) {
+      res2.status(404).json({ ok: false, error: "NFL weekly master slate not found" });
+      return;
+    }
+    if (existing.status === "published" || existing.status === "archived") {
+      res2.status(409).json({
+        ok: false,
+        error: `Cannot update a ${existing.status} master slate`,
+        code: "WEEKLY_SLATE_IMMUTABLE"
+      });
+      return;
+    }
+    const body = req.body ?? {};
+    const requestedStatus = body.status === void 0 || body.status === null ? null : typeof body.status === "string" ? body.status.trim().toLowerCase() : "";
+    if (requestedStatus && requestedStatus !== "draft") {
+      res2.status(400).json({ ok: false, error: "PATCH status may only be draft" });
+      return;
+    }
+    if (existing.status === "approved" && requestedStatus !== "draft") {
+      res2.status(409).json({
+        ok: false,
+        error: "Approved master slates must be reset to draft before editing",
+        code: "WEEKLY_SLATE_RESET_REQUIRED"
+      });
+      return;
+    }
+    const updates = {};
+    if (body.season_year !== void 0) {
+      const seasonYear = parsePositiveInteger(body.season_year);
+      if (!seasonYear) {
+        res2.status(400).json({ ok: false, error: "season_year must be a positive integer" });
+        return;
+      }
+      updates.season_year = seasonYear;
+    }
+    if (body.week_number !== void 0) {
+      const weekNumber = parsePositiveInteger(body.week_number);
+      if (!weekNumber) {
+        res2.status(400).json({ ok: false, error: "week_number must be a positive integer" });
+        return;
+      }
+      updates.week_number = weekNumber;
+    }
+    if (body.slate_name !== void 0) {
+      const slateName = normalizeWeeklySlateText(body.slate_name, 200);
+      if (!slateName) {
+        res2.status(400).json({ ok: false, error: "slate_name must be valid text" });
+        return;
+      }
+      updates.slate_name = slateName;
+    }
+    if (body.slate_label !== void 0) {
+      const slateLabel = body.slate_label === null ? null : normalizeWeeklySlateText(body.slate_label, 200);
+      if (body.slate_label !== null && !slateLabel) {
+        res2.status(400).json({ ok: false, error: "slate_label must be valid text" });
+        return;
+      }
+      updates.slate_label = slateLabel;
+    }
+    const candidates = normalizeWeeklySlateCandidates(body, true);
+    if (candidates.error) {
+      res2.status(400).json({ ok: false, error: candidates.error });
+      return;
+    }
+    Object.assign(updates, candidates.values);
+    if (requestedStatus === "draft") updates.status = "draft";
+    if (existing.status === "approved") {
+      updates.status = "draft";
+      updates.approved_by_user_id = null;
+      updates.approved_by_email = null;
+      updates.approved_at = null;
+    }
+    if (Object.keys(updates).length === 0) {
+      res2.status(400).json({ ok: false, error: "No valid fields to update" });
+      return;
+    }
+    updates.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    const { data, error } = await supabase.from("nfl_weekly_slate_templates").update(updates).eq("id", req.params.slateId).eq("status", existing.status).select(WEEKLY_SLATE_SELECT).maybeSingle();
+    if (weeklySlateDbError(res2, error, "Could not update NFL weekly master slate")) return;
+    if (!data) {
+      res2.status(409).json({
+        ok: false,
+        error: "Master slate status changed during the update; reload and try again",
+        code: "WEEKLY_SLATE_CONCURRENT_UPDATE"
+      });
+      return;
+    }
+    res2.json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
+  app2.post("/api/gameday/admin/nfl-weekly-slates/:slateId/approve", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const supabase = getServiceSupabase();
+    const { data: existing, error: readError } = await supabase.from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).eq("id", req.params.slateId).maybeSingle();
+    if (weeklySlateDbError(res2, readError, "Could not read NFL weekly master slate")) return;
+    if (!existing) {
+      res2.status(404).json({ ok: false, error: "NFL weekly master slate not found" });
+      return;
+    }
+    if (existing.status !== "draft") {
+      res2.status(409).json({
+        ok: false,
+        error: `Only draft master slates can be approved; current status is ${existing.status}`,
+        code: "WEEKLY_SLATE_INVALID_TRANSITION"
+      });
+      return;
+    }
+    const missing = [];
+    const hasItems = (field) => Array.isArray(existing[field]) && existing[field].length > 0;
+    if (!hasItems("early_matchups")) missing.push("early_matchups");
+    if (!hasItems("late_matchups")) missing.push("late_matchups");
+    if (!Array.isArray(existing.sunday_night_teams) || existing.sunday_night_teams.length !== 2) {
+      missing.push("sunday_night_teams (exactly two teams required)");
+    }
+    for (const field of ["qb_candidates", "rb_candidates", "receiver_candidates", "team_candidates", "game_candidates"]) {
+      if (!hasItems(field)) missing.push(field);
+    }
+    if (missing.length > 0) {
+      res2.status(400).json({
+        ok: false,
+        error: "Master slate does not meet approval requirements",
+        code: "WEEKLY_SLATE_APPROVAL_INVALID",
+        missing
+      });
+      return;
+    }
+    const identity = getWeeklySlateAdminIdentity(req);
+    const { data, error } = await supabase.from("nfl_weekly_slate_templates").update({
+      status: "approved",
+      approved_by_user_id: identity.userId,
+      approved_by_email: identity.email,
+      approved_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    }).eq("id", req.params.slateId).eq("status", "draft").select(WEEKLY_SLATE_SELECT).single();
+    if (weeklySlateDbError(res2, error, "Could not approve NFL weekly master slate")) return;
+    res2.json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
+  app2.post("/api/gameday/admin/nfl-weekly-slates/:slateId/archive", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const supabase = getServiceSupabase();
+    const { data: existing, error: readError } = await supabase.from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).eq("id", req.params.slateId).maybeSingle();
+    if (weeklySlateDbError(res2, readError, "Could not read NFL weekly master slate")) return;
+    if (!existing) {
+      res2.status(404).json({ ok: false, error: "NFL weekly master slate not found" });
+      return;
+    }
+    if (existing.status === "archived") {
+      res2.json({ ok: true, slate: serializeWeeklySlate(existing) });
+      return;
+    }
+    const archivedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const { data, error } = await supabase.from("nfl_weekly_slate_templates").update({ status: "archived", archived_at: archivedAt, updated_at: archivedAt }).eq("id", req.params.slateId).select(WEEKLY_SLATE_SELECT).single();
+    if (weeklySlateDbError(res2, error, "Could not archive NFL weekly master slate")) return;
+    res2.json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
   app2.get("/api/gameday/is-host", async (req, res2) => {
     const user = await getVerifiedGamedayUser(req);
     const email = user?.email ?? "";

@@ -8,8 +8,8 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.nfl_weekly_slate_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  season_year INTEGER NOT NULL,
-  week_number INTEGER NOT NULL,
+  season_year INTEGER NOT NULL CHECK (season_year > 0),
+  week_number INTEGER NOT NULL CHECK (week_number > 0),
   slate_name TEXT NOT NULL,
   slate_label TEXT,
   status TEXT NOT NULL DEFAULT 'draft'
@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS public.nfl_weekly_slate_templates (
   published_at TIMESTAMPTZ,
   archived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (jsonb_typeof(early_matchups) = 'array'),
+  CHECK (jsonb_typeof(late_matchups) = 'array'),
+  CHECK (jsonb_typeof(sunday_night_teams) = 'array'),
+  CHECK (jsonb_typeof(qb_candidates) = 'array'),
+  CHECK (jsonb_typeof(rb_candidates) = 'array'),
+  CHECK (jsonb_typeof(receiver_candidates) = 'array'),
+  CHECK (jsonb_typeof(team_candidates) = 'array'),
+  CHECK (jsonb_typeof(game_candidates) = 'array')
 );
 
 -- Archived templates do not block a replacement for the same NFL week.

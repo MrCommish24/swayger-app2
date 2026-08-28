@@ -1695,9 +1695,18 @@ export function registerGamedayRoutes(app: Express) {
       .from("nfl_weekly_slate_templates")
       .update(updates)
       .eq("id", req.params.slateId)
+      .eq("status", existing.status)
       .select(WEEKLY_SLATE_SELECT)
-      .single();
+      .maybeSingle();
     if (weeklySlateDbError(res, error, "Could not update NFL weekly master slate")) return;
+    if (!data) {
+      res.status(409).json({
+        ok: false,
+        error: "Master slate status changed during the update; reload and try again",
+        code: "WEEKLY_SLATE_CONCURRENT_UPDATE",
+      });
+      return;
+    }
     res.json({ ok: true, slate: serializeWeeklySlate(data) });
   });
 
