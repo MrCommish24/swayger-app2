@@ -1,0 +1,432 @@
+# Task #53 — NFL Weekly Master Slate Admin Model
+
+You are working in the main Swayger Replit project.
+
+Task #51 and Task #52 are complete:
+
+* NFL Sunday Slate V1 exists.
+* NFL Single Game remains intact.
+* Discord NFL Slate subscription configuration exists.
+* Discord bot setup commands are live and tested.
+* Servers can now enable/disable NFL Sunday Slate subscriptions and store Game Day channel, receipt channel, and reward text.
+
+The next task is:
+
+# Task #53 — NFL Weekly Master Slate Admin Model
+
+## Objective
+
+Create the internal/admin model for one weekly NFL Sunday Slate master template.
+
+This task should allow Swayger admin to create, store, update, and approve one master Sunday Slate for a given NFL week.
+
+This master slate is **not** a playable room.
+
+It is the source content package that will later be copied/published into each opted-in Discord server.
+
+Do not build multi-server publishing in this task.
+
+Do not build room creation from the master slate in this task.
+
+Do not build settlement, receipts, billing, ESPN integration, schedule automation, or Discord posting in this task.
+
+---
+
+# 1. Product context
+
+The scalable Swayger NFL pilot model is:
+
+1. Discord servers opt in to weekly NFL Sunday Slate rooms.
+2. Swayger admin creates one master NFL Sunday Slate for the week.
+3. Swayger later publishes copies of that master slate into each opted-in server.
+4. Each server gets its own private room, leaderboard, and receipt.
+5. Swayger later settles once and applies the results across all server copies.
+
+Task #52 handled step 1.
+
+Task #53 only handles step 2.
+
+---
+
+# 2. Master slate concept
+
+Create a master slate table such as:
+
+`nfl_weekly_slate_templates`
+
+This table stores weekly slate content.
+
+It is not a Game Day room.
+
+It should not have participants, picks, leaderboard, settlement, or final standings.
+
+It should store the data needed to later generate an `nfl_sunday_slate` Game Day room.
+
+---
+
+# 3. Data model
+
+Add a Supabase migration for a new table:
+
+`public.nfl_weekly_slate_templates`
+
+Suggested fields:
+
+* `id`
+* `season_year` integer required
+* `week_number` integer required
+* `slate_name` text required
+
+  * Example: `NFL Sunday Slate — Week 1`
+* `slate_label` text nullable
+
+  * Example: `Week 1 Sunday`
+* `status` text required
+
+  * allowed values: `draft`, `approved`, `published`, `archived`
+  * default: `draft`
+* `early_matchups` jsonb required default `[]`
+* `late_matchups` jsonb required default `[]`
+* `sunday_night_teams` jsonb required default `[]`
+* `qb_candidates` jsonb required default `[]`
+* `rb_candidates` jsonb required default `[]`
+* `receiver_candidates` jsonb required default `[]`
+* `team_candidates` jsonb required default `[]`
+* `game_candidates` jsonb required default `[]`
+* `created_by_user_id` uuid nullable
+* `created_by_email` text nullable
+* `approved_by_user_id` uuid nullable
+* `approved_by_email` text nullable
+* `approved_at` timestamptz nullable
+* `published_at` timestamptz nullable
+* `archived_at` timestamptz nullable
+* `created_at` timestamptz default now()
+* `updated_at` timestamptz default now()
+
+Recommended uniqueness:
+
+* one active/non-archived master slate per `season_year` + `week_number`
+
+If uniqueness is implemented, make sure archived rows do not block future replacement if needed.
+
+Enable RLS.
+
+This table should not be publicly readable or writable from the browser.
+
+Use service-role/backend access for admin operations.
+
+---
+
+# 4. Candidate list normalization
+
+The same normalization used for Sunday Slate room creation should be reused if possible.
+
+For each list:
+
+* trim values
+* remove empty values
+* dedupe exact matches
+* preserve order
+* store as arrays in JSONB
+
+Candidate fields:
+
+* `early_matchups`
+* `late_matchups`
+* `sunday_night_teams`
+* `qb_candidates`
+* `rb_candidates`
+* `receiver_candidates`
+* `team_candidates`
+* `game_candidates`
+
+Do not require API-generated candidates.
+
+Do not call ESPN, The Odds API, or SportsGameOdds.
+
+---
+
+# 5. Validation rules
+
+Minimum validation for draft save:
+
+* `season_year` required
+* `week_number` required
+* `slate_name` required
+
+Minimum validation for approval:
+
+To approve a slate, require:
+
+* at least one early matchup
+* at least one late matchup
+* exactly two Sunday Night teams
+* at least one QB candidate
+* at least one RB candidate
+* at least one receiver candidate
+* at least one team candidate
+* at least one game candidate
+
+Do not over-validate football correctness.
+
+Do not require official NFL schedule lookup.
+
+This is manually curated by Swayger admin.
+
+---
+
+# 6. Backend admin endpoints
+
+Add backend endpoints for admin use.
+
+Use the project’s existing admin authentication pattern if one exists.
+
+If there is already an admin token pattern such as `MM_ADMIN_TOKEN` or Game Day host/admin checks, reuse the safest existing convention.
+
+Do not expose these endpoints publicly.
+
+Suggested endpoints:
+
+## Create master slate
+
+`POST /api/gameday/admin/nfl-weekly-slates`
+
+Payload:
+
+```json
+{
+  "season_year": 2026,
+  "week_number": 1,
+  "slate_name": "NFL Sunday Slate — Week 1",
+  "slate_label": "Week 1 Sunday",
+  "early_matchups": ["Bears vs Packers", "Eagles vs Cowboys"],
+  "late_matchups": ["Chiefs vs Raiders", "Rams vs Seahawks"],
+  "sunday_night_teams": ["Ravens", "Bills"],
+  "qb_candidates": ["Caleb Williams", "Jordan Love", "Jalen Hurts", "Dak Prescott", "Patrick Mahomes", "Josh Allen"],
+  "rb_candidates": ["Saquon Barkley", "Derrick Henry", "Josh Jacobs"],
+  "receiver_candidates": ["CeeDee Lamb", "A.J. Brown", "Travis Kelce"],
+  "team_candidates": ["Bears", "Packers", "Eagles", "Cowboys", "Chiefs", "Raiders", "Rams", "Seahawks", "Ravens", "Bills"],
+  "game_candidates": ["Bears vs Packers", "Eagles vs Cowboys", "Chiefs vs Raiders", "Rams vs Seahawks"]
+}
+```
+
+Behavior:
+
+* create a draft slate
+* normalize candidate arrays
+* return stored slate
+
+## Update master slate
+
+`PATCH /api/gameday/admin/nfl-weekly-slates/:slateId`
+
+Behavior:
+
+* allow edits while status is `draft`
+* allow edits while status is `approved` only if it resets status to `draft`, or reject approved edits cleanly
+* do not allow updates after `published` unless explicitly archived/reopened
+* return updated slate
+
+Keep the rules simple and explicit.
+
+## Get/list master slates
+
+`GET /api/gameday/admin/nfl-weekly-slates`
+
+Support filters if simple:
+
+* `season_year`
+* `week_number`
+* `status`
+
+`GET /api/gameday/admin/nfl-weekly-slates/:slateId`
+
+Return the stored slate.
+
+## Approve master slate
+
+`POST /api/gameday/admin/nfl-weekly-slates/:slateId/approve`
+
+Behavior:
+
+* validate approval requirements
+* set status = `approved`
+* set approved fields and timestamp if admin identity is available
+* return approved slate
+
+## Archive master slate
+
+`POST /api/gameday/admin/nfl-weekly-slates/:slateId/archive`
+
+Behavior:
+
+* set status = `archived`
+* set archived_at
+* do not delete the row
+* return archived slate
+
+---
+
+# 7. Optional admin UI
+
+If there is an existing internal/admin Game Day page pattern, add a simple admin UI.
+
+If an admin UI would be too much for this task, skip UI and provide API-only functionality.
+
+Do not overbuild.
+
+A simple API-only Task #53 is acceptable if fully tested.
+
+If UI is added, keep it minimal:
+
+* list weekly slates
+* create/edit draft slate
+* approve slate
+* archive slate
+
+Do not build publish buttons yet.
+
+Publishing is Task #54.
+
+---
+
+# 8. Relationship to Game Day rooms
+
+This master slate should store enough data to later create an NFL Sunday Slate room with:
+
+* `sport = "nfl"`
+* `template_type = "nfl_sunday_slate"`
+* `slate_config` based on the master slate
+
+But Task #53 should not create rooms.
+
+Do not insert into:
+
+* `gameday_rooms`
+* `gameday_pick_cards`
+* `gameday_props`
+* `gameday_participants`
+* `gameday_picks`
+* `gameday_final_standings`
+
+Those are for Task #54.
+
+---
+
+# 9. Testing requirements
+
+Add a focused regression suite for the master slate admin model.
+
+Verify:
+
+1. Migration/table exists.
+2. RLS is enabled.
+3. Anonymous/browser access is blocked.
+4. Create draft slate works.
+5. Candidate arrays are normalized.
+6. Empty strings are removed.
+7. Duplicate exact values are removed.
+8. Draft slate can be updated.
+9. List endpoint returns created slate.
+10. Get endpoint returns created slate.
+11. Approval fails if required candidate groups are missing.
+12. Approval succeeds when required groups are present.
+13. Approved slate stores approved timestamp.
+14. Approved slate cannot be casually mutated without explicit rule handling.
+15. Archive marks slate archived and preserves row.
+16. Archived slate does not break uniqueness / replacement behavior if implemented.
+17. No Game Day room is created by Task #53.
+18. Existing NFL Sunday Slate room creation still works.
+19. Existing NFL Single Game room creation still works.
+20. Discord subscription endpoints still work.
+21. Discord visibility/unlisted regression still passes.
+22. Server build passes.
+
+Run relevant existing gates:
+
+* NFL Game Day regression
+* Discord subscription regression
+* Discord isolation regression
+* Discord visibility regression
+* Web Game Day regression
+* Fantasy regression if feasible
+* Server build
+
+Report exact assertion counts.
+
+---
+
+# 10. Do not build yet
+
+Do not build:
+
+* publish master slate to servers
+* create Game Day rooms from master slate
+* centralized settlement
+* receipt posting
+* billing
+* Discord bot commands for publishing
+* channel creation
+* ESPN integration
+* The Odds API
+* SportsGameOdds
+* automated NFL schedule lookup
+* recurring automation
+* cross-server leaderboard
+* reward fulfillment
+* Discord role management
+* 1v1 subscription management
+
+Those are later tasks.
+
+---
+
+# 11. Final report
+
+Return:
+
+## A. Executive summary
+
+What was added and whether the master slate model is functional.
+
+## B. Data model
+
+Table, fields, constraints, status values, RLS.
+
+## C. Backend endpoints
+
+List endpoints, payloads, auth, and behavior.
+
+## D. Admin UI
+
+State whether a UI was added or whether this is API-only.
+
+## E. Relationship to existing Game Day rooms
+
+Confirm no rooms are created in this task.
+
+## F. Files changed
+
+For each file, explain what changed.
+
+## G. Test results
+
+Exact assertion counts and regression results.
+
+## H. Pilot readiness
+
+Answer:
+
+“Is the master slate admin model ready to support a controlled Task #54 publishing build?”
+
+Use:
+
+* YES
+* YES, WITH CONDITIONS
+* NO
+
+End with:
+
+NFL WEEKLY MASTER SLATE STATUS: PASS / FAIL
+
+Do not start Task #54 or any publishing/settlement/receipt work after this task.
