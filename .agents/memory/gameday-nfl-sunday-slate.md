@@ -17,3 +17,16 @@ resolve all candidate tokens into stored prop options at room creation. Use
 one-correct-answer settlement engine. Apply the dedicated additive Supabase
 migration before enabling Slate room creation; retain legacy read/duplicate
 fallbacks until the database has it.
+
+For Discord subscription lifecycle, use the existing `status` column as the
+source of truth for disabling. Preserve the guild row; optional enable flags or
+disable-audit columns may be written only when an already-deployed schema has
+them, and must not be required for the disable route.
+
+**Why:** The original subscription migration intentionally stores configuration
+only, so requiring new disable-specific columns would create an unnecessary
+schema rollout and break compatibility with the bot.
+
+**How to apply:** Treat `status = 'disabled'` as the durable disabled state in
+bot writes and status reads. Keep optional-column handling best-effort and
+schema-compatible.
