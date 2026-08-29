@@ -1,0 +1,400 @@
+Replit only received a **partial prompt**, so don’t let it proceed yet. The safest move is to send a shorter complete version that still includes all key requirements.
+
+Send Replit this:
+
+````text
+Use this as the complete Task #54A brief. The prior attachment was truncated. Do not implement from the partial version.
+
+# Task #54A — Backend Publish Engine
+
+Objective:
+Create the backend/admin publishing layer that takes one approved NFL Weekly Master Slate and creates one private NFL Sunday Slate Game Day room instance for each active Discord NFL Slate subscription.
+
+This task is backend/API-only.
+
+Do not post to Discord.
+Do not build Discord bot commands.
+Do not build settlement, receipts, reminders, billing, ESPN/API integration, or Task #55.
+
+Current completed foundation:
+- Task #51: NFL Sunday Slate V1 works.
+- Task #52: Discord NFL Slate subscriptions work.
+- Task #53: NFL Weekly Master Slate Admin Model works.
+- `public.nfl_weekly_slate_templates` exists and passes lifecycle regression.
+- Active/disabled Discord subscriptions are stored in `discord_gameday_subscriptions`.
+
+## 1. Add room instance table
+
+Create migration for:
+
+`public.nfl_weekly_slate_room_instances`
+
+Purpose:
+Track one server-specific playable Game Day room created from one weekly master slate.
+
+Fields:
+- `id` uuid primary key default gen_random_uuid()
+- `master_slate_id` uuid required references `public.nfl_weekly_slate_templates(id)` on delete restrict
+- `gameday_room_id` uuid nullable/references Game Day rooms table if possible
+- `room_code` text nullable
+- `room_url` text nullable
+- `discord_guild_id` text required
+- `discord_guild_name` text nullable
+- `game_day_channel_id` text required
+- `game_day_channel_name` text nullable
+- `receipt_channel_id` text nullable
+- `receipt_channel_name` text nullable
+- `reward_text` text nullable
+- `status` text required default `post_ready`
+  - allowed values: `created`, `post_ready`, `posted`, `failed`, `archived`
+- `post_payload` jsonb nullable
+- `post_error` text nullable
+- `discord_message_id` text nullable
+- `created_at` timestamptz default now()
+- `posted_at` timestamptz nullable
+- `updated_at` timestamptz default now()
+
+Constraints:
+- one instance per `master_slate_id + discord_guild_id`
+- RLS enabled
+- anon/authenticated/browser access revoked
+- service-role/backend access only
+
+## 2. Add admin publish endpoint
+
+Endpoint:
+
+`POST /api/gameday/admin/nfl-weekly-slates/:slateId/publish`
+
+Auth:
+Use same `x-admin-token` / `MM_ADMIN_TOKEN` pattern from Task #53.
+
+Payload:
+
+```json
+{
+  "dry_run": true,
+  "guild_ids": ["1505427577005932554"]
+}
+````
+
+Fields:
+
+* `dry_run` optional boolean, default false
+* `guild_ids` optional array of Discord guild IDs
+
+  * when provided, target only those guilds
+  * normalize to trimmed strings
+  * handle empty array explicitly and document behavior
+
+## 3. Publish behavior
+
+1. Load the master slate.
+2. Reject if missing.
+3. Reject if status is `draft`.
+4. Reject if status is `archived`.
+5. Allow publish if status is `approved` or already `published`.
+6. Load only active Discord NFL Slate subscriptions:
+
+   * `discord_gameday_subscriptions.status = 'active'`
+7. If `guild_ids` is provided, limit to those guilds.
+8. Skip disabled/paused/inactive subscriptions.
+9. For `dry_run: true`:
+
+   * do not create Game Day rooms
+   * do not create instance rows
+   * do not update master slate status
+   * return target subscriptions and whether an instance already exists
+10. For actual publish:
+
+* for each active target subscription:
+
+  * if instance already exists for `master_slate_id + discord_guild_id`, return existing instance and do not duplicate
+  * otherwise create one private NFL Sunday Slate Game Day room using existing Sunday Slate creation logic
+  * create one room instance row
+  * generate and store post-ready payload
+
+11. After at least one instance is created or confirmed existing, mark the master slate:
+
+* `status = 'published'`
+* `published_at = now()` only if null
+
+12. Return summary counts and post payloads.
+
+## 4. Room creation requirements
+
+Each created Game Day room must have:
+
+* `sport = 'nfl'`
+* `template_type = 'nfl_sunday_slate'`
+* `is_private = true`
+* `discord_guild_id = subscription.discord_guild_id`
+* `discord_channel_id = subscription.game_day_channel_id`
+* `slate_config` copied from the master slate:
+
+  * `early_matchups`
+  * `late_matchups`
+  * `sunday_night_teams`
+  * `qb_candidates`
+  * `rb_candidates`
+  * `receiver_candidates`
+  * `team_candidates`
+  * `game_candidates`
+
+Use existing NFL Sunday Slate expansion logic so pick cards and props are created consistently.
+
+Do not mutate the master slate candidate arrays.
+
+Suggested room name:
+`{slate_name} — {discord_guild_name}`
+
+Fallback:
+`{slate_name}`
+
+## 5. Post-ready payload
+
+For each created or existing instance, return and store a post payload like:
+
+```json
+{
+  "guild_id": "1505427577005932554",
+  "guild_name": "Swayger Test Server",
+  "channel_id": "1508936456494649465",
+  "channel_name": "game-day-swayger-test",
+  "receipt_channel_id": "1542905441569476618",
+  "receipt_channel_name": "swayger-receipts",
+  "reward_text": "Winner gets Game Day Champ for the week",
+  "room_id": "...",
+  "room_code": "GDS-XXXXX",
+  "room_url": "https://www.swayger.app/g/GDS-XXXXX",
+  "message": "🏈 NFL Sunday Slate is live\n\nMake your picks across this week’s NFL slate:\n\n• Early Slate Picks\n• Late Slate Picks\n• Sunday Night Picks\n\nWinner gets:\nWinner gets Game Day Champ for the week\n\nUse a name your server will recognize.\n\nJoin here:\nhttps://www.swayger.app/g/GDS-XXXXX"
+}
+```
+
+If no reward text is configured, use:
+
+`Bragging rights and receipts.`
+
+Message copy:
+
+```text
+🏈 NFL Sunday Slate is live
+
+Make your picks across this week’s NFL slate:
+
+• Early Slate Picks
+• Late Slate Picks
+• Sunday Night Picks
+
+Winner gets:
+{reward_text_or_default}
+
+Use a name your server will recognize.
+
+Join here:
+{room_url}
+```
+
+Do not post this message to Discord.
+
+## 6. Dry run response
+
+Dry run should return:
+
+* slate summary
+* target counts
+* guild/channel/reward info
+* whether an instance already exists
+* existing room URL if present
+
+Example shape:
+
+```json
+{
+  "ok": true,
+  "dry_run": true,
+  "slate": {
+    "id": "...",
+    "season_year": 2026,
+    "week_number": 1,
+    "slate_name": "NFL Sunday Slate — Week 1",
+    "status": "approved"
+  },
+  "summary": {
+    "targets": 1,
+    "already_created": 0,
+    "would_create": 1,
+    "skipped_inactive": 0
+  },
+  "targets": []
+}
+```
+
+## 7. Actual publish response
+
+Actual publish should return:
+
+```json
+{
+  "ok": true,
+  "dry_run": false,
+  "slate": {
+    "id": "...",
+    "status": "published",
+    "published_at": "..."
+  },
+  "summary": {
+    "targets": 1,
+    "created": 1,
+    "skipped_existing": 0,
+    "failed": 0
+  },
+  "instances": [],
+  "post_payloads": []
+}
+```
+
+If one guild fails, continue other targets if reasonable and return failed entries with guild ID/name/error.
+
+## 8. Idempotency
+
+Publishing must be idempotent.
+
+Rules:
+
+* if instance exists for `master_slate_id + discord_guild_id`, do not create another Game Day room
+* do not create duplicate instance rows
+* count as `skipped_existing`
+* include existing room URL/post payload
+* running publish twice must not duplicate:
+
+  * room instances
+  * gameday_rooms
+  * pick cards
+  * props
+
+## 9. Status rules
+
+* `draft`: reject publish
+* `approved`: allow publish
+* `published`: allow idempotent publish
+* `archived`: reject publish
+
+On successful actual publish:
+
+* set `status = 'published'`
+* set `published_at` only if null
+* do not overwrite `published_at` on later idempotent publishes
+
+## 10. Testing requirements
+
+Add focused Task #54A regression suite.
+
+Verify:
+
+1. Instance table exists.
+2. RLS is enabled.
+3. Anonymous/browser access blocked.
+4. Publish endpoint rejects missing admin token.
+5. Publish endpoint rejects wrong admin token.
+6. Publish rejects draft master slate.
+7. Publish rejects archived master slate.
+8. Dry run works for approved slate.
+9. Dry run creates no Game Day rooms.
+10. Dry run creates no instance rows.
+11. Dry run returns active subscription targets.
+12. Disabled subscriptions are skipped.
+13. Optional `guild_ids` filter works.
+14. Actual publish creates one private Game Day room for active target guild.
+15. Created room has `sport = nfl`.
+16. Created room has `template_type = nfl_sunday_slate`.
+17. Created room has `is_private = true`.
+18. Created room has correct `discord_guild_id`.
+19. Created room has `slate_config` copied from master slate.
+20. Pick cards/props are created using existing Sunday Slate logic.
+21. Instance row is created.
+22. Instance links master slate to Game Day room.
+23. Instance stores game day channel, receipt channel, reward text.
+24. Post payload includes guild/channel/room URL/message.
+25. Actual publish marks master slate as `published`.
+26. `published_at` is set.
+27. Publishing same slate again is idempotent.
+28. Second publish creates no duplicate Game Day rooms.
+29. Second publish creates no duplicate instance rows.
+30. Published slate can be dry-run/published idempotently.
+31. No Discord message is posted.
+32. No settlement/finalization/receipt rows are created.
+33. Existing NFL Sunday Slate room creation still works.
+34. Existing NFL Single Game room creation still works.
+35. Discord subscription endpoints still work.
+36. Discord isolation regression still passes.
+37. Discord visibility/unlisted regression still passes.
+38. Web Game Day regression still passes.
+39. Server build passes.
+
+Also run:
+
+* Task #53 master slate lifecycle regression
+* NFL Game Day regression
+* Discord subscription regression
+* Discord isolation regression
+* Discord visibility regression
+* Web Game Day regression
+* Fantasy regression if feasible
+* Server build
+
+Report exact assertion counts.
+
+## 11. Migration handling
+
+If Supabase migration is required, provide:
+
+* exact migration file name
+* exact SQL path
+* whether applied
+* whether schema reload is needed
+
+Do not mark Task #54A PASS until:
+
+* migration has been applied
+* focused Task #54A suite passes against real Supabase
+* relevant regressions pass
+
+If migration cannot be applied automatically, stop and tell me exactly what SQL file to run.
+
+## 12. Final report
+
+Return:
+
+A. Executive summary
+B. Data model
+C. Backend endpoint
+D. Dry run behavior
+E. Publish behavior
+F. Idempotency
+G. Post payload
+H. Non-goals confirmed
+I. Files changed
+J. Test results
+K. Pilot readiness
+
+Answer:
+
+“Is the backend publish engine ready to support a controlled Claude Discord posting build?”
+
+Use:
+
+* YES
+* YES, WITH CONDITIONS
+* NO
+
+End with:
+
+NFL WEEKLY SLATE PUBLISH ENGINE STATUS: PASS / FAIL
+
+Do not start Claude/bot posting, settlement, receipts, reminders, billing, or Task #55.
+
+```
+
+That should avoid the attachment getting cut off. If Replit still complains, send it in two chunks: **Task #54A Part 1 — Scope/Data/Endpoint** and **Task #54A Part 2 — Testing/Final Report**.
+```
