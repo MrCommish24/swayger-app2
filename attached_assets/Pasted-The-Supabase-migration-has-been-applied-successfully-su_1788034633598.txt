@@ -1,0 +1,83 @@
+The Supabase migration has been applied successfully:
+
+supabase/gameday-nfl-weekly-slate-room-instances.sql
+
+Please rerun the Task #56 / Task #54A validation now.
+
+Run:
+
+npm run test:gameday:nfl-weekly-slate-publish
+
+Then rerun the required regression gates:
+
+1. Weekly master slate regression
+2. NFL Game Day regression
+3. Discord subscriptions regression
+4. Discord isolation regression
+5. Discord visibility regression
+6. Web Game Day regression
+7. Server build
+
+Please specifically confirm:
+
+- `public.nfl_weekly_slate_room_instances` exists
+- RLS is enabled
+- anon/authenticated/browser access is blocked
+- publish endpoint rejects missing admin token
+- publish endpoint rejects wrong admin token
+- draft slate cannot be published
+- archived slate cannot be published
+- dry run works
+- dry run creates no Game Day rooms
+- dry run creates no instance rows
+- active subscriptions are targeted
+- disabled subscriptions are skipped
+- `guild_ids` filter works
+- empty `guild_ids` behavior is explicit and tested
+- actual publish creates one private NFL Sunday Slate Game Day room
+- created room has `sport = nfl`
+- created room has `template_type = nfl_sunday_slate`
+- created room has `is_private = true`
+- created room has the correct `discord_guild_id`
+- created room has `slate_config` copied from the master slate
+- Sunday Slate cards/props are created using existing logic
+- instance row links master slate to Game Day room
+- instance row stores game day channel, receipt channel, and reward text
+- post-ready payload is persisted
+- post-ready payload includes guild/channel/room URL/message
+- master slate is marked `published`
+- `published_at` is set once and not overwritten on idempotent republish
+- publishing the same slate again creates no duplicate Game Day rooms
+- publishing the same slate again creates no duplicate instance rows
+- per-guild failure handling works or is covered
+- no Discord message is posted
+- no settlement, finalization, receipt, billing, reminder, or API-integration behavior was added
+
+Return the final report:
+
+A. Executive summary  
+B. Data model  
+C. Backend endpoint  
+D. Dry run behavior  
+E. Publish behavior  
+F. Idempotency  
+G. Post payload  
+H. Non-goals confirmed  
+I. Files changed  
+J. Test results  
+K. Pilot readiness  
+
+Answer:
+
+“Is the backend publish engine ready to support a controlled Claude Discord posting build?”
+
+Use:
+- YES
+- YES, WITH CONDITIONS
+- NO
+
+End with:
+
+NFL WEEKLY SLATE PUBLISH ENGINE STATUS: PASS / FAIL
+
+Do not start Claude/bot posting, settlement, receipts, reminders, billing, or Task #55.

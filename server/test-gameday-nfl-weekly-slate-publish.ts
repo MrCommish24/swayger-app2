@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 20;
+const EXPECTED_ASSERTIONS = 23;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -69,6 +69,7 @@ async function main() {
   );
   const createdRoomIds: string[] = [];
   let slateId: string | null = null;
+  let archivedSlateId: string | null = null;
   let server: Server | null = null;
 
   const validCandidates = {
@@ -104,9 +105,10 @@ async function main() {
         method?: string;
         authorized?: boolean;
         body?: Record<string, unknown>;
+        headers?: Record<string, string>;
       } = {},
     ): Promise<ApiResponse> {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { ...(options.headers ?? {}) };
       if (options.authorized) headers["x-admin-token"] = adminToken!;
       if (options.body) headers["Content-Type"] = "application/json";
       const response = await fetch(`${baseUrl}${path}`, {
@@ -134,6 +136,11 @@ async function main() {
       method: "POST",
     });
     expect("publish requires the admin token", unauthorized.status === 401);
+    const wrongToken = await request("/api/gameday/admin/nfl-weekly-slates/not-a-slate/publish", {
+      method: "POST",
+      headers: { "x-admin-token": "wrong-token" },
+    });
+    expect("publish rejects a wrong admin token", wrongToken.status === 401);
 
     const created = await request("/api/gameday/admin/nfl-weekly-slates", {
       method: "POST",
@@ -161,6 +168,29 @@ async function main() {
       { method: "POST", authorized: true },
     );
     expect("fixture slate can be approved", approved.status === 200 && approved.body.slate?.status === "approved");
+
+    const archivedFixture = await request("/api/gameday/admin/nfl-weekly-slates", {
+      method: "POST",
+      authorized: true,
+      body: {
+        season_year: seasonYear,
+        week_number: 2,
+        slate_name: `${slateName} archived`,
+        ...validCandidates,
+      },
+    });
+    archivedSlateId = archivedFixture.body.slate?.id ?? null;
+    if (archivedSlateId) {
+      await request(`/api/gameday/admin/nfl-weekly-slates/${archivedSlateId}/archive`, {
+        method: "POST",
+        authorized: true,
+      });
+    }
+    const archivedPublish = await request(
+      `/api/gameday/admin/nfl-weekly-slates/${archivedSlateId ?? "missing"}/publish`,
+      { method: "POST", authorized: true },
+    );
+    expect("archived slates cannot be published", !!archivedSlateId && archivedPublish.status === 409);
 
     const subscriptions = [
       {
@@ -277,6 +307,8 @@ async function main() {
       JSON.stringify(published.body),
     );
     expect("publishing marks the master slate published", published.body.slate?.status === "published");
+    const publishedAt = published.body.slate?.published_at;
+    expect("publishing sets published_at once", typeof publishedAt === "string" && publishedAt.length > 0);
     expect(
       "publishing creates exactly two private Discord rooms",
       (await countRows("gameday_rooms")) - roomCountBeforePublish === 2,
@@ -339,7 +371,8 @@ async function main() {
       repeat.status === 200 &&
         repeat.body.summary?.created === 0 &&
         repeat.body.summary?.skipped_existing === 2 &&
-        repeat.body.instances?.length === 2,
+        repeat.body.instances?.length === 2 &&
+        repeat.body.slate?.published_at === publishedAt,
       JSON.stringify(repeat.body),
     );
     expect(
@@ -354,6 +387,9 @@ async function main() {
     if (slateId) {
       await service.from("nfl_weekly_slate_room_instances").delete().eq("master_slate_id", slateId);
       await service.from("nfl_weekly_slate_templates").delete().eq("id", slateId);
+    }
+    if (archivedSlateId) {
+      await service.from("nfl_weekly_slate_templates").delete().eq("id", archivedSlateId);
     }
     if (createdRoomIds.length) {
       await service.from("gameday_rooms").delete().in("id", createdRoomIds);
