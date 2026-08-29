@@ -9122,6 +9122,44 @@ function getWeeklySlateAdminIdentity(req) {
     email
   };
 }
+function normalizeWeeklySlatePublishGuildIds(value) {
+  if (value === void 0) return { provided: false, ids: [] };
+  if (!Array.isArray(value)) {
+    return { provided: true, ids: [], error: "guild_ids must be an array of strings" };
+  }
+  const ids = [];
+  for (const item of value) {
+    const id = normalizeDiscordGuildId(item);
+    if (!id) {
+      return { provided: true, ids: [], error: "guild_ids must contain only non-empty valid strings" };
+    }
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return { provided: true, ids };
+}
+function serializeWeeklySlateRoomInstance(row) {
+  return {
+    id: row.id,
+    master_slate_id: row.master_slate_id,
+    gameday_room_id: row.gameday_room_id,
+    room_code: row.room_code ?? null,
+    room_url: row.room_url,
+    discord_guild_id: row.discord_guild_id,
+    discord_channel_id: row.discord_channel_id,
+    discord_channel_name: row.discord_channel_name ?? null,
+    receipt_channel_id: row.receipt_channel_id ?? null,
+    receipt_channel_name: row.receipt_channel_name ?? null,
+    reward_text: row.reward_text ?? null,
+    status: row.status,
+    post_payload: row.post_payload ?? {},
+    error: row.error ?? null,
+    discord_message_id: row.discord_message_id ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    posted_at: row.posted_at ?? null,
+    archived_at: row.archived_at ?? null
+  };
+}
 function withUniqueOutcomeOptions(options, includeOther = true) {
   const next = [...options];
   if (includeOther && !next.includes("Other")) next.push("Other");
@@ -9138,6 +9176,93 @@ function resolveSundaySlateAnswers(answers, vars, slate) {
     "{{SLATE_LATE_GAMES}}": withUniqueOutcomeOptions(slate.late_matchups, false)
   };
   return answers.flatMap((answer) => tokenOptions[answer] ?? [resolvePlaceholders(answer, vars)]);
+}
+async function createPrivateSundaySlateRoom(supabase, input) {
+  const { slateConfig } = input;
+  let roomCode;
+  try {
+    roomCode = await generateUniqueRoomCode(supabase);
+  } catch (error) {
+    console.warn("[gameday] weekly slate room_code generation skipped:", error);
+  }
+  const insertPayload = {
+    room_name: input.roomName.trim(),
+    team_a_name: slateConfig.sunday_night_teams[0],
+    team_b_name: slateConfig.sunday_night_teams[1],
+    team_a_star: slateConfig.qb_candidates[0],
+    team_b_star: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0],
+    game_date: parseGameDate(input.gameDate),
+    host_user_id: null,
+    status: "active",
+    source: "discord",
+    is_private: true,
+    sport: "nfl",
+    template_type: "nfl_sunday_slate",
+    slate_config: slateConfig,
+    discord_guild_id: input.discordGuildId,
+    discord_channel_id: input.discordChannelId
+  };
+  if (roomCode) insertPayload.room_code = roomCode;
+  let { data: room, error: roomError } = await supabase.from("gameday_rooms").insert(insertPayload).select().single();
+  if (roomError && roomCode && roomError.message?.includes("room_code")) {
+    delete insertPayload.room_code;
+    const retry = await supabase.from("gameday_rooms").insert(insertPayload).select().single();
+    room = retry.data;
+    roomError = retry.error;
+  }
+  if (roomError || !room) {
+    throw new Error(`Could not create weekly slate room: ${roomError?.message ?? "unknown database error"}`);
+  }
+  const cardPhases = [
+    { title: "Early Slate Picks", phase: "pregame", display_order: 0 },
+    { title: "Late Slate Picks", phase: "halftime", display_order: 1 },
+    { title: "Sunday Night Picks", phase: "fourth", display_order: 2 }
+  ];
+  const vars = {
+    TEAM_A: slateConfig.sunday_night_teams[0],
+    TEAM_B: slateConfig.sunday_night_teams[1],
+    STAR_A: slateConfig.qb_candidates[0],
+    STAR_B: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0]
+  };
+  try {
+    for (const cardDef of cardPhases) {
+      const { data: card, error: cardError } = await supabase.from("gameday_pick_cards").insert({
+        room_id: room.id,
+        ...cardDef,
+        status: "closed"
+      }).select().single();
+      if (cardError || !card) throw new Error("Could not create all weekly slate pick cards");
+      const templateProps = NFL_SUNDAY_SLATE_TEMPLATE.filter(
+        (prop) => prop.phase === cardDef.phase && NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS.includes(prop.id)
+      );
+      for (let i = 0; i < templateProps.length; i++) {
+        const tmpl = templateProps[i];
+        const { error: propError } = await supabase.from("gameday_props").insert({
+          card_id: card.id,
+          question: resolvePlaceholders(tmpl.question, vars),
+          answer_options: resolveSundaySlateAnswers(tmpl.answers, vars, slateConfig),
+          display_order: i,
+          status: "pending",
+          template_prop_id: tmpl.id
+        });
+        if (propError) throw new Error("Could not create all weekly slate pick props");
+      }
+    }
+    const { data: pregameCard } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", room.id).eq("phase", "pregame").single();
+    if (pregameCard) {
+      await supabase.from("gameday_pick_cards").update({ status: "open", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", pregameCard.id);
+    }
+    await logEvent(supabase, room.id, null, null, "room_created");
+  } catch (error) {
+    await supabase.from("gameday_rooms").delete().eq("id", room.id);
+    throw error;
+  }
+  const returnedCode = room.room_code ?? roomCode ?? null;
+  return {
+    room,
+    roomCode: returnedCode,
+    publicLink: returnedCode ? `${APP_URL2}/g/${returnedCode}` : `${APP_URL2}/gameday/${room.id}`
+  };
 }
 function registerGamedayRoutes(app2) {
   setImmediate(() => {
@@ -9680,6 +9805,237 @@ function registerGamedayRoutes(app2) {
     const { data, error } = await supabase.from("nfl_weekly_slate_templates").update({ status: "archived", archived_at: archivedAt, updated_at: archivedAt }).eq("id", req.params.slateId).select(WEEKLY_SLATE_SELECT).single();
     if (weeklySlateDbError(res2, error, "Could not archive NFL weekly master slate")) return;
     res2.json({ ok: true, slate: serializeWeeklySlate(data) });
+  });
+  app2.post("/api/gameday/admin/nfl-weekly-slates/:slateId/publish", async (req, res2) => {
+    if (!checkWeeklySlateAdmin(req, res2)) return;
+    const body = req.body ?? {};
+    const dryRun = body.dry_run === void 0 ? false : body.dry_run;
+    if (typeof dryRun !== "boolean") {
+      res2.status(400).json({ ok: false, error: "dry_run must be a boolean" });
+      return;
+    }
+    const guildFilter = normalizeWeeklySlatePublishGuildIds(body.guild_ids);
+    if (guildFilter.error) {
+      res2.status(400).json({ ok: false, error: guildFilter.error });
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: slate, error: slateError } = await supabase.from("nfl_weekly_slate_templates").select(WEEKLY_SLATE_SELECT).eq("id", req.params.slateId).maybeSingle();
+    if (weeklySlateDbError(res2, slateError, "Could not read NFL weekly master slate")) return;
+    if (!slate) {
+      res2.status(404).json({ ok: false, error: "NFL weekly master slate not found" });
+      return;
+    }
+    if (slate.status === "draft" || slate.status === "archived") {
+      res2.status(409).json({
+        ok: false,
+        error: `Cannot publish a ${slate.status} master slate; approve it first`,
+        code: "WEEKLY_SLATE_INVALID_PUBLISH_STATUS"
+      });
+      return;
+    }
+    const slateConfig = normalizeSundaySlateConfig({
+      early_matchups: slate.early_matchups,
+      late_matchups: slate.late_matchups,
+      sunday_night_teams: slate.sunday_night_teams,
+      qb_candidates: slate.qb_candidates,
+      rb_candidates: slate.rb_candidates,
+      receiver_candidates: slate.receiver_candidates,
+      team_candidates: slate.team_candidates,
+      game_candidates: slate.game_candidates
+    });
+    if (!slateConfig) {
+      res2.status(409).json({
+        ok: false,
+        error: "Approved master slate has an invalid Sunday Slate configuration",
+        code: "WEEKLY_SLATE_CONFIG_INVALID"
+      });
+      return;
+    }
+    const { data: subscriptions, error: subscriptionsError } = await supabase.from("discord_gameday_subscriptions").select("id, discord_guild_id, discord_guild_name, game_day_channel_id, game_day_channel_name, receipt_channel_id, receipt_channel_name, reward_text, status").order("created_at", { ascending: true });
+    if (subscriptionsError) {
+      console.error("[gameday] weekly slate subscription lookup error:", subscriptionsError.message);
+      if (isMissingDiscordNflSlateSubscriptionSchemaError(subscriptionsError)) {
+        res2.status(503).json({
+          ok: false,
+          error: "Discord NFL Slate subscriptions are not enabled; apply the subscription migration first",
+          code: "DISCORD_NFL_SLATE_SUBSCRIPTION_SCHEMA_UNAVAILABLE"
+        });
+      } else {
+        res2.status(500).json({ ok: false, error: "Could not load Discord NFL Slate subscriptions" });
+      }
+      return;
+    }
+    const allSubscriptions = (subscriptions ?? []).filter((subscription) => {
+      if (!guildFilter.provided) return true;
+      return guildFilter.ids.includes(subscription.discord_guild_id);
+    });
+    const activeSubscriptions = allSubscriptions.filter((subscription) => subscription.status === "active");
+    const inactiveSkipped = allSubscriptions.filter((subscription) => subscription.status !== "active").length;
+    const { data: existingInstances, error: instancesError } = await supabase.from("nfl_weekly_slate_room_instances").select("*").eq("master_slate_id", slate.id);
+    if (instancesError) {
+      console.error("[gameday] weekly slate instance lookup error:", instancesError.message);
+      if (isMissingWeeklySlateSchemaError(instancesError)) {
+        res2.status(503).json({
+          ok: false,
+          error: "NFL weekly slate room instances are not enabled; apply the room-instance migration first",
+          code: "WEEKLY_SLATE_ROOM_INSTANCE_SCHEMA_UNAVAILABLE"
+        });
+      } else {
+        res2.status(500).json({ ok: false, error: "Could not load NFL weekly slate room instances" });
+      }
+      return;
+    }
+    const instanceByGuild = new Map(
+      (existingInstances ?? []).map((instance) => [instance.discord_guild_id, instance])
+    );
+    const summary = {
+      active_targets: activeSubscriptions.length,
+      inactive_skipped: inactiveSkipped,
+      skipped_existing: 0,
+      created: 0,
+      failed: 0
+    };
+    const targets = [];
+    const failures = [];
+    const postReadyPayloads = [];
+    const successfulInstances = [];
+    if (guildFilter.provided && guildFilter.ids.length === 0) {
+      res2.json({
+        ok: true,
+        dry_run: dryRun,
+        empty_guild_ids: true,
+        slate: serializeWeeklySlate(slate),
+        targets: [],
+        instances: [],
+        post_ready_payloads: [],
+        failures: [],
+        summary: { ...summary, active_targets: 0, inactive_skipped: 0 }
+      });
+      return;
+    }
+    for (const subscription of activeSubscriptions) {
+      const guildId = subscription.discord_guild_id;
+      const existing = instanceByGuild.get(guildId);
+      const target = {
+        subscription_id: subscription.id,
+        guild_id: guildId,
+        guild_name: subscription.discord_guild_name ?? null,
+        channel_id: subscription.game_day_channel_id,
+        channel_name: subscription.game_day_channel_name,
+        existing_instance_id: existing?.id ?? null,
+        action: existing ? "skipped_existing" : dryRun ? "would_create" : "create"
+      };
+      targets.push(target);
+      if (existing) {
+        summary.skipped_existing++;
+        successfulInstances.push(existing);
+        postReadyPayloads.push(existing.post_payload ?? {});
+        continue;
+      }
+      if (dryRun) continue;
+      try {
+        const roomName = slate.slate_label ? `${slate.slate_name} \u2014 ${slate.slate_label}` : slate.slate_name;
+        const createdRoom = await createPrivateSundaySlateRoom(supabase, {
+          roomName,
+          slateConfig,
+          discordGuildId: guildId,
+          discordChannelId: subscription.game_day_channel_id
+        });
+        const rewardText = typeof subscription.reward_text === "string" && subscription.reward_text.trim() ? subscription.reward_text.trim() : "Bragging rights and receipts.";
+        const message = [
+          `\u{1F3C8} ${slate.slate_name} is live!`,
+          `Make your picks: ${createdRoom.publicLink}`,
+          rewardText
+        ].join("\n");
+        const postPayload = {
+          type: "gameday_nfl_sunday_slate",
+          master_slate_id: slate.id,
+          season_year: slate.season_year,
+          week_number: slate.week_number,
+          slate_name: slate.slate_name,
+          slate_label: slate.slate_label ?? null,
+          discord_guild_id: guildId,
+          discord_channel_id: subscription.game_day_channel_id,
+          discord_channel_name: subscription.game_day_channel_name,
+          room_id: createdRoom.room.id,
+          room_code: createdRoom.roomCode,
+          room_url: createdRoom.publicLink,
+          receipt_channel_id: subscription.receipt_channel_id ?? null,
+          receipt_channel_name: subscription.receipt_channel_name ?? null,
+          reward_text: rewardText,
+          message
+        };
+        const { data: instance, error: instanceInsertError } = await supabase.from("nfl_weekly_slate_room_instances").insert({
+          master_slate_id: slate.id,
+          gameday_room_id: createdRoom.room.id,
+          room_code: createdRoom.roomCode,
+          room_url: createdRoom.publicLink,
+          discord_guild_id: guildId,
+          discord_channel_id: subscription.game_day_channel_id,
+          discord_channel_name: subscription.game_day_channel_name,
+          receipt_channel_id: subscription.receipt_channel_id ?? null,
+          receipt_channel_name: subscription.receipt_channel_name ?? null,
+          reward_text: rewardText,
+          status: "post_ready",
+          post_payload: postPayload
+        }).select("*").single();
+        if (instanceInsertError) {
+          if (instanceInsertError.code === "23505") {
+            await supabase.from("gameday_rooms").delete().eq("id", createdRoom.room.id);
+            const { data: concurrentInstance } = await supabase.from("nfl_weekly_slate_room_instances").select("*").eq("master_slate_id", slate.id).eq("discord_guild_id", guildId).maybeSingle();
+            if (concurrentInstance) {
+              summary.skipped_existing++;
+              successfulInstances.push(concurrentInstance);
+              postReadyPayloads.push(concurrentInstance.post_payload ?? {});
+              target.action = "skipped_existing";
+              target.existing_instance_id = concurrentInstance.id;
+              continue;
+            }
+          }
+          await supabase.from("gameday_rooms").delete().eq("id", createdRoom.room.id);
+          throw new Error(`Could not store weekly slate room instance: ${instanceInsertError.message}`);
+        }
+        if (!instance) throw new Error("Could not store weekly slate room instance");
+        summary.created++;
+        successfulInstances.push(instance);
+        postReadyPayloads.push(postPayload);
+      } catch (error) {
+        summary.failed++;
+        const message = error instanceof Error ? error.message : "Unknown weekly slate publish error";
+        target.action = "failed";
+        target.error = message;
+        failures.push({ guild_id: guildId, error: message });
+        console.error(`[gameday] weekly slate publish failed for guild ${guildId}:`, message);
+      }
+    }
+    if (!dryRun && successfulInstances.length > 0 && slate.status === "approved") {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const update = {
+        status: "published",
+        updated_at: now
+      };
+      if (!slate.published_at) update.published_at = now;
+      const { data: updatedSlate, error: updateError } = await supabase.from("nfl_weekly_slate_templates").update(update).eq("id", slate.id).eq("status", "approved").select(WEEKLY_SLATE_SELECT).maybeSingle();
+      if (updateError) {
+        console.error("[gameday] weekly slate status update failed:", updateError.message);
+        failures.push({ guild_id: null, error: "Rooms created but master slate status could not be updated" });
+      } else if (updatedSlate) {
+        slate.status = updatedSlate.status;
+        slate.published_at = updatedSlate.published_at;
+        slate.updated_at = updatedSlate.updated_at;
+      }
+    }
+    res2.json({
+      ok: true,
+      dry_run: dryRun,
+      slate: serializeWeeklySlate(slate),
+      targets,
+      instances: successfulInstances.map(serializeWeeklySlateRoomInstance),
+      post_ready_payloads: postReadyPayloads,
+      failures,
+      summary
+    });
   });
   app2.get("/api/gameday/is-host", async (req, res2) => {
     const user = await getVerifiedGamedayUser(req);
