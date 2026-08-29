@@ -1,0 +1,153 @@
+# Task #54A — Publish Approved NFL Weekly Master Slate to Discord Room Instances
+
+You are working in the main Swayger Replit project.
+
+Task #51, Task #52, and Task #53 are complete.
+
+Current state:
+
+- NFL Sunday Slate V1 exists and passes regression.
+- NFL Single Game remains intact.
+- Discord NFL Slate subscriptions exist.
+- Discord servers can enable/disable NFL Sunday Slate subscriptions.
+- `public.nfl_weekly_slate_templates` exists.
+- Admin-only NFL weekly master slate lifecycle works:
+  - create draft
+  - normalize candidates
+  - update draft
+  - approve
+  - archive
+  - list/get
+- Task #53 is API-only and does not create Game Day rooms.
+
+The next task is:
+
+# Task #54A — Backend Publish Engine
+
+## Objective
+
+Build the backend/admin publishing layer that takes one approved NFL Weekly Master Slate and creates one private NFL Sunday Slate Game Day room instance for each active Discord subscription.
+
+This task should create server-specific room instances and return Discord post-ready payloads.
+
+This task should **not** post to Discord.
+
+Discord posting will be a separate Claude/bot task after this backend layer passes.
+
+---
+
+# 1. Product context
+
+The scalable NFL Sunday Slate pilot model is:
+
+1. Discord servers opt in using `/swayger gameday enable-nfl-slate`.
+2. Swayger admin creates and approves one weekly NFL master slate.
+3. Swayger admin publishes that approved master slate.
+4. The backend creates one private Game Day room per active subscribed Discord server.
+5. The backend stores an instance row connecting:
+   - master slate
+   - Discord guild
+   - Game Day room
+   - Game Day channel
+   - receipt channel
+   - reward text
+6. The backend returns post-ready payloads.
+7. Later, the Discord bot posts those room links into the configured channels.
+
+Task #54A only handles steps 3–6.
+
+---
+
+# 2. Non-goals
+
+Do not build:
+
+- Discord posting
+- Discord bot commands
+- Discord message sending
+- Discord message ID capture from live Discord
+- settlement
+- receipts
+- final standings posting
+- reminder scheduling
+- ESPN integration
+- The Odds API
+- SportsGameOdds
+- automated NFL schedule lookup
+- billing
+- reward fulfillment
+- role assignment
+- cross-server leaderboard
+- admin UI unless it already exists and is trivial
+
+This is backend/API-only.
+
+---
+
+# 3. Data model
+
+Add a migration for a new table:
+
+`public.nfl_weekly_slate_room_instances`
+
+Purpose:
+
+Track one server-specific playable Game Day room created from one weekly master slate.
+
+Suggested fields:
+
+- `id` uuid primary key default gen_random_uuid()
+- `master_slate_id` uuid required references `public.nfl_weekly_slate_templates(id)` on delete restrict
+- `gameday_room_id` uuid nullable/references appropriate Game Day rooms table if possible
+- `room_code` text nullable
+- `room_url` text nullable
+- `discord_guild_id` text required
+- `discord_guild_name` text nullable
+- `game_day_channel_id` text required
+- `game_day_channel_name` text nullable
+- `receipt_channel_id` text nullable
+- `receipt_channel_name` text nullable
+- `reward_text` text nullable
+- `status` text required default `created`
+  - allowed values: `created`, `post_ready`, `posted`, `failed`, `archived`
+- `post_payload` jsonb nullable
+- `post_error` text nullable
+- `discord_message_id` text nullable
+- `created_at` timestamptz default now()
+- `posted_at` timestamptz nullable
+- `updated_at` timestamptz default now()
+
+Important uniqueness:
+
+- enforce one instance per `master_slate_id` + `discord_guild_id`
+- duplicate publish should be idempotent
+
+Security:
+
+- Enable RLS.
+- Revoke anonymous/authenticated/browser access.
+- Use service-role/backend/admin only.
+
+Do not make this table public.
+
+---
+
+# 4. Publishing endpoint
+
+Add an admin-token-protected endpoint under the existing Game Day admin surface.
+
+Suggested endpoint:
+
+`POST /api/gameday/admin/nfl-weekly-slates/:slateId/publish`
+
+Auth:
+
+- Use the same `x-admin-token` / `MM_ADMIN_TOKEN` pattern from Task #53.
+
+Payload:
+
+```json
+{
+  "dry_run": true,
+  "guild_ids": ["1505427577005932554"]
+}
