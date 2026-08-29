@@ -55,3 +55,7 @@ REVOKE ALL ON TABLE public.nfl_weekly_slate_room_instances FROM anon, authentica
 GRANT ALL PRIVILEGES ON TABLE public.nfl_weekly_slate_room_instances TO service_role;
 
 COMMIT;
+
+-- Supabase normally detects DDL automatically; notify PostgREST explicitly so
+-- the new table is available to the live focused suite immediately.
+NOTIFY pgrst, 'reload schema';

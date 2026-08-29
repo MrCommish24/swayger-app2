@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 17;
+const EXPECTED_ASSERTIONS = 20;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -222,6 +222,16 @@ async function main() {
       (await countRows("gameday_rooms")) === roomCountBeforeDryRun &&
         (await countRows("nfl_weekly_slate_room_instances")) === instanceCountBeforeDryRun,
     );
+    const slateAfterDryRun = await service
+      .from("nfl_weekly_slate_templates")
+      .select("status, published_at")
+      .eq("id", slateId)
+      .single();
+    expect(
+      "dry-run leaves the master slate approved and unpublished",
+      slateAfterDryRun.data?.status === "approved" && slateAfterDryRun.data?.published_at === null,
+      slateAfterDryRun.error?.message,
+    );
 
     const filteredDryRun = await request(
       `/api/gameday/admin/nfl-weekly-slates/${slateId}/publish`,
@@ -250,6 +260,10 @@ async function main() {
     );
 
     const roomCountBeforePublish = await countRows("gameday_rooms");
+    const cardCountBeforePublish = await countRows("gameday_pick_cards");
+    const propCountBeforePublish = await countRows("gameday_props");
+    const picksCountBeforePublish = await countRows("gameday_picks");
+    const standingsCountBeforePublish = await countRows("gameday_final_standings");
     const published = await request(
       `/api/gameday/admin/nfl-weekly-slates/${slateId}/publish`,
       { method: "POST", authorized: true },
@@ -266,6 +280,16 @@ async function main() {
     expect(
       "publishing creates exactly two private Discord rooms",
       (await countRows("gameday_rooms")) - roomCountBeforePublish === 2,
+    );
+    expect(
+      "published Sunday Slate rooms expand to three cards and sixteen props each",
+      (await countRows("gameday_pick_cards")) - cardCountBeforePublish === 6 &&
+        (await countRows("gameday_props")) - propCountBeforePublish === 32,
+    );
+    expect(
+      "publishing creates no picks, standings, settlement, or receipt side effects",
+      (await countRows("gameday_picks")) === picksCountBeforePublish &&
+        (await countRows("gameday_final_standings")) === standingsCountBeforePublish,
     );
 
     const instances = await service
@@ -321,6 +345,8 @@ async function main() {
     expect(
       "republishing does not create duplicate rooms, cards, props, or instances",
       (await countRows("gameday_rooms")) === roomCountBeforePublish + 2 &&
+        (await countRows("gameday_pick_cards")) === cardCountBeforePublish + 6 &&
+        (await countRows("gameday_props")) === propCountBeforePublish + 32 &&
         (await countRows("nfl_weekly_slate_room_instances")) === instanceCountBeforeDryRun + 2,
     );
   } finally {
@@ -344,7 +370,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
