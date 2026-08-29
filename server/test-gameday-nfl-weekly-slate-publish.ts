@@ -61,6 +61,7 @@ async function main() {
   const activeGuildB = `PUBLISH_ACTIVE_B_${runId}`;
   const pausedGuild = `PUBLISH_PAUSED_${runId}`;
   const disabledGuild = `PUBLISH_DISABLED_${runId}`;
+  const fixtureGuildIds = [activeGuildA, activeGuildB, pausedGuild, disabledGuild];
   const seasonYear = 3000 + Math.floor(Date.now() % 1000);
   const slateName = `NFL Sunday Slate ${runId}`;
   const migration = readFileSync(
@@ -236,7 +237,11 @@ async function main() {
     const instanceCountBeforeDryRun = await countRows("nfl_weekly_slate_room_instances");
     const dryRun = await request(
       `/api/gameday/admin/nfl-weekly-slates/${slateId}/publish`,
-      { method: "POST", authorized: true, body: { dry_run: true } },
+      {
+        method: "POST",
+        authorized: true,
+        body: { dry_run: true, guild_ids: fixtureGuildIds },
+      },
     );
     expect(
       "dry-run reports only active targets and inactive skips",
@@ -296,7 +301,7 @@ async function main() {
     const standingsCountBeforePublish = await countRows("gameday_final_standings");
     const published = await request(
       `/api/gameday/admin/nfl-weekly-slates/${slateId}/publish`,
-      { method: "POST", authorized: true },
+      { method: "POST", authorized: true, body: { guild_ids: fixtureGuildIds } },
     );
     expect(
       "publishing creates one instance per active subscription",
@@ -364,7 +369,7 @@ async function main() {
 
     const repeat = await request(
       `/api/gameday/admin/nfl-weekly-slates/${slateId}/publish`,
-      { method: "POST", authorized: true },
+      { method: "POST", authorized: true, body: { guild_ids: fixtureGuildIds } },
     );
     expect(
       "republishing is idempotent and returns existing instances",
@@ -397,7 +402,7 @@ async function main() {
     await service
       .from("discord_gameday_subscriptions")
       .delete()
-      .in("discord_guild_id", [activeGuildA, activeGuildB, pausedGuild, disabledGuild]);
+      .in("discord_guild_id", fixtureGuildIds);
   }
 
   console.log(`\n${passed}/${EXPECTED_ASSERTIONS} assertions passed`);

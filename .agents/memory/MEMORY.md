@@ -27,3 +27,4 @@
 - [Game Day security regression gates](gameday-security-regression-gates.md) — Treat the Discord suite’s explicit 23/23 marker as the acceptance gate, not its process exit code.
 - [NFL Sunday Slate format](gameday-nfl-sunday-slate.md) — additive candidate-driven NFL multi-game format; legacy NFL stays Single Game until format data exists.
 - [NFL Weekly Master Slate](gameday-nfl-weekly-master-slate.md) — source-only admin lifecycle, explicit approved-to-draft reset, archived replacement rule, Supabase migration required.
+- [NFL Weekly Slate Publishing](gameday-nfl-weekly-slate-publishing.md) — active-guild room materialization only; slate+guild idempotency; post-ready payloads never perform Discord delivery.
