@@ -19,7 +19,7 @@
  * Duplicate-safe: RPCs return already_exists=true on retry.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -40,6 +40,7 @@ import {
   FantasySport,
   FANTASY_SPORTS,
 } from "@/lib/fantasy-api";
+import { parsePasteText } from "@/lib/bulk-import-parser";
 import Colors from "@/constants/colors";
 
 const C = Colors.dark;
@@ -93,6 +94,11 @@ export default function FantasySetupScreen() {
   const [participants, setParticipants] = useState<ParticipantRow[]>([
     { id: "commissioner", displayName: "", teamName: "", isCommissioner: true },
   ]);
+  const [rosterPaste, setRosterPaste] = useState("");
+  const [rosterPasteError, setRosterPasteError] = useState<string | null>(null);
+  // Keep one key per participant so a retry after a partial setup replays the
+  // successful rows instead of creating duplicates.
+  const participantIdempotencyKeys = useRef(new Map<string, string>());
 
   // ── Result ──────────────────────────────────────────────────────────────────
   const [setupResult, setSetupResult] = useState<SetupLeagueResponse | null>(null);
@@ -118,6 +124,11 @@ export default function FantasySetupScreen() {
     field: "displayName" | "teamName",
     value: string
   ) {
+    if (id !== "commissioner") {
+      // A changed row is a new intentional operation and must not reuse the
+      // previous request's hash-bound idempotency key.
+      participantIdempotencyKeys.current.delete(id);
+    }
     setParticipants((prev) =>
       prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
     );
@@ -131,7 +142,69 @@ export default function FantasySetupScreen() {
   }
 
   function removeParticipant(id: string) {
+    participantIdempotencyKeys.current.delete(id);
     setParticipants((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  function loadPastedRoster() {
+    const parsed = parsePasteText(rosterPaste);
+    if (parsed.length === 0) {
+      setRosterPasteError("Paste at least one member row first.");
+      return;
+    }
+
+    const commissioner = participants.find((p) => p.isCommissioner);
+    const commissionerName = commissioner?.displayName.trim().toLowerCase() ?? "";
+    const commissionerTeam = commissioner?.teamName.trim().toLowerCase() ?? "";
+    const commissionerMatchIndex = parsed.findIndex((row) => {
+      if (!commissionerName || row.display_name.trim().toLowerCase() !== commissionerName) {
+        return false;
+      }
+      // If the commissioner already entered a team, require an exact pair.
+      // If not, a matching pasted name with a team fills that missing field.
+      return commissionerTeam
+        ? row.team_name.trim().toLowerCase() === commissionerTeam
+        : row.team_name.trim().length > 0;
+    });
+
+    let commissionerForSetup = commissioner;
+    if (
+      commissioner &&
+      commissionerMatchIndex >= 0 &&
+      !commissionerTeam &&
+      parsed[commissionerMatchIndex].team_name.trim()
+    ) {
+      commissionerForSetup = {
+        ...commissioner,
+        teamName: parsed[commissionerMatchIndex].team_name.trim(),
+      };
+    }
+
+    // Keep the commissioner in their atomic setup row and do not add a
+    // duplicate participant for the matching pasted row.
+    const imported = parsed.filter((_row, index) => index !== commissionerMatchIndex);
+
+    const importedParticipants = imported.map((row) => ({
+      id: `pasted-${row.id}`,
+      displayName: row.display_name,
+      teamName: row.team_name,
+    }));
+
+    participantIdempotencyKeys.current.clear();
+    setParticipants([
+      ...(commissionerForSetup ? [commissionerForSetup] : []),
+      ...importedParticipants,
+    ]);
+    setRosterPaste("");
+
+    const invalidCount = imported.filter(
+      (row) => !row.display_name.trim() || !row.team_name.trim()
+    ).length;
+    setRosterPasteError(
+      invalidCount > 0
+        ? `${invalidCount} pasted row${invalidCount === 1 ? "" : "s"} need a name and team before you can continue.`
+        : `${importedParticipants.length} member${importedParticipants.length === 1 ? "" : "s"} loaded into the table.`
+    );
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────────
@@ -206,10 +279,19 @@ export default function FantasySetupScreen() {
       const nonCommissioners = participants.filter((p) => !p.isCommissioner);
 
       for (const p of nonCommissioners) {
+        let idempotencyKey = participantIdempotencyKeys.current.get(p.id);
+        if (!idempotencyKey) {
+          idempotencyKey =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `fantasy-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          participantIdempotencyKeys.current.set(p.id, idempotencyKey);
+        }
         await fantasyFetch(
           `/api/fantasy/leagues/${setup.league_id}/seasons/${setup.season_id}/participants`,
           {
             method: "POST",
+            headers: { "Idempotency-Key": idempotencyKey },
             body: JSON.stringify({
               display_name: p.displayName.trim(),
               team_name:    p.teamName.trim(),
@@ -424,8 +506,43 @@ export default function FantasySetupScreen() {
           <View>
             <Text style={styles.stepTitle}>Members & Teams</Text>
             <Text style={styles.stepSubtitle}>
-              Enter each manager's name and their team. Your row is first.
+              Add managers one at a time, or paste your full roster below. Your row is first.
             </Text>
+
+            {/* Optional bulk import during initial league creation */}
+            <View style={styles.bulkImportCard}>
+              <Text style={styles.bulkImportTitle}>PASTE LEAGUE ROSTER</Text>
+              <Text style={styles.bulkImportHint}>
+                One member per line. Use a tab, pipe, or comma between the name and team.
+                Loading a roster replaces the non-commissioner rows below.
+              </Text>
+              <TextInput
+                style={styles.bulkImportInput}
+                placeholder={"Alex\tSunday Winners\nJordan | The Champs"}
+                placeholderTextColor={C.textMuted}
+                value={rosterPaste}
+                onChangeText={(value) => {
+                  setRosterPaste(value);
+                  setRosterPasteError(null);
+                }}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[styles.secondaryBtn, !rosterPaste.trim() && styles.btnDisabled]}
+                onPress={loadPastedRoster}
+                disabled={!rosterPaste.trim()}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.secondaryBtnText}>Load Roster into Table</Text>
+              </TouchableOpacity>
+              {rosterPasteError && (
+                <Text style={styles.bulkImportStatus}>{rosterPasteError}</Text>
+              )}
+            </View>
 
             {/* Table header */}
             <View style={styles.tableHeader}>
@@ -686,6 +803,46 @@ const styles = StyleSheet.create({
   addRowBtnText: { color: C.tint, fontSize: 15, fontWeight: "600" },
   removeBtn: { padding: 4 },
   removeBtnText: { color: C.textMuted, fontSize: 14 },
+
+  // Bulk import
+  bulkImportCard: {
+    backgroundColor: "#111827",
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 20,
+  },
+  bulkImportTitle: {
+    color: C.tint,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    marginBottom: 5,
+  },
+  bulkImportHint: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 10 },
+  bulkImportInput: {
+    minHeight: 88,
+    backgroundColor: C.surface,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: C.text,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  secondaryBtn: {
+    borderColor: C.tint,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  secondaryBtnText: { color: C.tint, fontSize: 14, fontWeight: "700" },
+  bulkImportStatus: { color: C.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 8 },
 
   // Primary button
   btn: {
