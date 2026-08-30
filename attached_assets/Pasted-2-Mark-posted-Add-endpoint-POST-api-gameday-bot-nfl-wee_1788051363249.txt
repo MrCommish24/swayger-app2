@@ -1,0 +1,144 @@
+2. Mark posted
+
+Add endpoint:
+
+POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/posted
+
+Auth:
+
+GAMEDAY_BOT_API_KEY
+
+Payload:
+
+{
+  "discord_message_id": "123456789012345678"
+}
+
+Behavior:
+
+Only update rows where:
+id = :instanceId
+status = 'post_ready'
+Set:
+status = 'posted'
+discord_message_id
+posted_at = now()
+updated_at = now()
+Return updated instance.
+If the row is not found because it is already posted/failed/archived, return a clear conflict response, not a silent success.
+Do not overwrite an already-posted message ID.
+3. Mark failed
+
+Add endpoint:
+
+POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/failed
+
+Auth:
+
+GAMEDAY_BOT_API_KEY
+
+Payload:
+
+{
+  "post_error": "Missing Discord channel permission"
+}
+
+Behavior:
+
+Only update rows where:
+id = :instanceId
+status = 'post_ready'
+Set:
+status = 'failed'
+post_error
+updated_at = now()
+Return updated instance.
+If already posted/failed/archived, return a clear conflict response.
+Keep error text reasonably bounded.
+4. Security requirements
+
+Confirm:
+
+Missing bot API key is rejected.
+Wrong bot API key is rejected.
+Admin token is not required.
+Direct anon/authenticated browser access to the table remains blocked by RLS.
+These endpoints use backend/service-role access internally.
+The Discord bot does not need Supabase service-role credentials.
+5. Testing requirements
+
+Add a focused regression suite for this bot delivery API.
+
+Verify:
+
+Fetch endpoint rejects missing bot key.
+Fetch endpoint rejects wrong bot key.
+Fetch endpoint returns post_ready instances.
+Fetch endpoint filters by master_slate_id.
+Fetch endpoint filters by discord_guild_id.
+Fetch endpoint respects limit.
+Fetch endpoint does not return posted instances.
+Fetch endpoint does not return failed instances.
+Mark posted rejects missing bot key.
+Mark posted rejects wrong bot key.
+Mark posted succeeds for post_ready instance.
+Mark posted stores discord_message_id.
+Mark posted sets posted_at.
+Mark posted changes status to posted.
+Mark posted cannot be applied twice.
+Mark failed succeeds for post_ready instance.
+Mark failed stores post_error.
+Mark failed changes status to failed.
+Mark failed cannot be applied after posted.
+Mark posted cannot be applied after failed.
+RLS/browser access remains blocked.
+Existing Task #56 publish engine regression still passes.
+Existing Discord subscription regression still passes.
+Existing Discord isolation regression still passes.
+Existing Discord visibility regression still passes.
+Existing NFL Game Day regression still passes.
+Server build passes.
+
+Return exact assertion counts.
+
+6. Final report
+
+Return:
+
+A. Executive summary
+B. Bot delivery endpoints
+C. Auth/security behavior
+D. Status transition behavior
+E. Files changed
+F. Test results
+G. Readiness for Claude Discord posting task
+
+Answer:
+
+“Is the bot delivery API ready for the Discord bot to consume post-ready NFL slate payloads?”
+
+Use:
+
+YES
+YES, WITH CONDITIONS
+NO
+
+End with:
+
+NFL WEEKLY SLATE BOT DELIVERY API STATUS: PASS / FAIL
+
+Do not start Discord bot posting in Replit.
+Do not start settlement, receipts, reminders, billing, or Task #55.
+
+
+## My recommendation
+
+Do **this Replit task first**, then Claude’s bot task becomes very clean:
+
+```text id="7kgo0v"
+1. GET post-ready instances from app API.
+2. Post message to Discord channel.
+3. POST /posted with Discord message ID.
+4. POST /failed if Discord rejects the message.
+
+That is the right architecture. It avoids giving the bot broad database power and keeps all delivery status transitions inside the Swayger API.

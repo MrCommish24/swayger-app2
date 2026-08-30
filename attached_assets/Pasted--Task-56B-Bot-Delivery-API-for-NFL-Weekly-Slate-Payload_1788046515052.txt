@@ -1,0 +1,222 @@
+# Task #56B — Bot Delivery API for NFL Weekly Slate Payloads
+
+Task #56 / Task #54A is complete, but there is no dedicated bot endpoint to fetch post-ready NFL weekly slate payloads or mark instances as posted/failed.
+
+Do not have the Discord bot query Supabase directly.
+Do not expose the Supabase service-role key to the Discord bot.
+Do not require the bot to use MM_ADMIN_TOKEN.
+
+Use the existing GAMEDAY_BOT_API_KEY authentication pattern used by other Discord bot/Game Day routes.
+
+## Objective
+
+Add bot-authenticated API endpoints so the Discord bot can:
+
+1. Fetch post-ready NFL weekly slate room instances.
+2. Mark an instance as posted after Discord confirms the message was sent.
+3. Mark an instance as failed if Discord posting fails.
+
+This task should not post to Discord.
+This task should not create rooms.
+This task should not publish master slates.
+This task should not settle, finalize, create receipts, schedule reminders, assign rewards, or call external sports APIs.
+
+## Endpoint 1 — Fetch post-ready instances
+
+Add:
+
+GET /api/gameday/bot/nfl-weekly-slate-room-instances/post-ready
+
+Auth:
+
+GAMEDAY_BOT_API_KEY
+
+Query params:
+
+- master_slate_id optional
+- discord_guild_id optional
+- limit optional, default 50, max 100
+
+Behavior:
+
+- Return only instances where status = post_ready
+- Order by created_at asc
+- Include:
+  - instance id
+  - master_slate_id
+  - gameday_room_id
+  - room_code
+  - room_url
+  - discord_guild_id
+  - discord_guild_name
+  - discord_channel_id
+  - discord_channel_name
+  - receipt_channel_id
+  - receipt_channel_name
+  - reward_text
+  - post_payload
+  - created_at
+  - updated_at
+
+Response shape:
+
+{
+  "ok": true,
+  "count": 1,
+  "instances": [
+    {
+      "id": "instance-uuid",
+      "master_slate_id": "master-slate-uuid",
+      "gameday_room_id": "room-uuid",
+      "room_code": "GDS-ABC123",
+      "room_url": "https://www.swayger.app/g/GDS-ABC123",
+      "discord_guild_id": "123456789012345678",
+      "discord_guild_name": "Example Guild",
+      "discord_channel_id": "234567890123456789",
+      "discord_channel_name": "game-day",
+      "receipt_channel_id": null,
+      "receipt_channel_name": null,
+      "reward_text": "Bragging rights and receipts.",
+      "post_payload": {
+        "message": "..."
+      },
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
+}
+
+## Endpoint 2 — Mark posted
+
+Add:
+
+POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/posted
+
+Auth:
+
+GAMEDAY_BOT_API_KEY
+
+Payload:
+
+{
+  "discord_message_id": "123456789012345678"
+}
+
+Behavior:
+
+- Only update rows where:
+  - id = :instanceId
+  - status = post_ready
+- Set:
+  - status = posted
+  - discord_message_id
+  - posted_at = now()
+  - updated_at = now()
+- Return updated instance.
+- If row is missing or not post_ready, return a clear conflict response.
+- Do not overwrite an already-posted message ID.
+
+## Endpoint 3 — Mark failed
+
+Add:
+
+POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/failed
+
+Auth:
+
+GAMEDAY_BOT_API_KEY
+
+Payload:
+
+{
+  "post_error": "Missing Discord channel permission"
+}
+
+Behavior:
+
+- Only update rows where:
+  - id = :instanceId
+  - status = post_ready
+- Set:
+  - status = failed
+  - post_error
+  - updated_at = now()
+- Return updated instance.
+- If row is missing or not post_ready, return a clear conflict response.
+- Bound/sanitize post_error to a reasonable length.
+
+## Security requirements
+
+Confirm:
+
+- Missing bot API key is rejected.
+- Wrong bot API key is rejected.
+- Admin token is not required.
+- Direct anon/authenticated browser access to nfl_weekly_slate_room_instances remains blocked by RLS.
+- These endpoints use backend/service-role access internally.
+- The Discord bot does not need Supabase service-role credentials.
+
+## Testing requirements
+
+Add focused regression coverage.
+
+Verify:
+
+1. Fetch endpoint rejects missing bot key.
+2. Fetch endpoint rejects wrong bot key.
+3. Fetch endpoint returns post_ready instances.
+4. Fetch endpoint filters by master_slate_id.
+5. Fetch endpoint filters by discord_guild_id.
+6. Fetch endpoint respects limit.
+7. Fetch endpoint does not return posted instances.
+8. Fetch endpoint does not return failed instances.
+9. Mark posted rejects missing bot key.
+10. Mark posted rejects wrong bot key.
+11. Mark posted succeeds for post_ready instance.
+12. Mark posted stores discord_message_id.
+13. Mark posted sets posted_at.
+14. Mark posted changes status to posted.
+15. Mark posted cannot be applied twice.
+16. Mark failed succeeds for post_ready instance.
+17. Mark failed stores post_error.
+18. Mark failed changes status to failed.
+19. Mark failed cannot be applied after posted.
+20. Mark posted cannot be applied after failed.
+21. RLS/browser access remains blocked.
+22. Existing Task #56 publish engine regression still passes.
+23. Existing Discord subscription regression still passes.
+24. Existing Discord isolation regression still passes.
+25. Existing Discord visibility regression still passes.
+26. Existing NFL Game Day regression still passes.
+27. Server build passes.
+
+Return exact assertion counts.
+
+## Final report
+
+Return:
+
+A. Executive summary  
+B. Bot delivery endpoints  
+C. Auth/security behavior  
+D. Status transition behavior  
+E. Files changed  
+F. Test results  
+G. Readiness for Claude Discord posting task  
+
+Answer:
+
+“Is the bot delivery API ready for the Discord bot to consume post-ready NFL slate payloads?”
+
+Use:
+
+- YES
+- YES, WITH CONDITIONS
+- NO
+
+End with:
+
+NFL WEEKLY SLATE BOT DELIVERY API STATUS: PASS / FAIL
+
+Do not start Discord bot posting in Replit.
+Do not start settlement, receipts, reminders, billing, or Task #55.

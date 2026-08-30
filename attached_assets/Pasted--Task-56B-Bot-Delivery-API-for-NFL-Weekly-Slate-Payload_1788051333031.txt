@@ -1,0 +1,106 @@
+# Task #56B — Bot Delivery API for NFL Weekly Slate Payloads
+
+You are working in the main Swayger Replit project.
+
+Task #56 / Task #54A is complete:
+
+- Approved NFL weekly master slates can be published.
+- Publishing creates private server-specific NFL Sunday Slate Game Day rooms.
+- Publishing creates `nfl_weekly_slate_room_instances`.
+- Instances store `post_ready` payloads for Discord.
+- Publishing is idempotent.
+- No Discord posting exists yet.
+
+Before Claude/the Discord bot can post these payloads, we need a small bot-authenticated delivery API.
+
+Do not give the Discord bot direct Supabase service-role access.
+
+Do not require the Discord bot to use `MM_ADMIN_TOKEN`.
+
+Use the existing `GAMEDAY_BOT_API_KEY` authentication pattern used by other Discord bot/Game Day routes.
+
+## Objective
+
+Add bot-authenticated endpoints that allow the Discord bot to:
+
+1. Fetch post-ready NFL weekly slate room instances.
+2. Mark an instance as posted after Discord confirms the message was sent.
+3. Mark an instance as failed if Discord posting fails.
+
+This task should not post to Discord.
+
+This task should not create rooms.
+
+This task should not publish master slates.
+
+This task should not settle, finalize, create receipts, schedule reminders, assign rewards, or call external sports APIs.
+
+---
+
+## 1. Fetch post-ready payloads
+
+Add endpoint:
+
+`GET /api/gameday/bot/nfl-weekly-slate-room-instances/post-ready`
+
+Auth:
+
+`GAMEDAY_BOT_API_KEY`
+
+Use the same auth convention as existing bot-authenticated Game Day APIs.
+
+Query params:
+
+- `master_slate_id` optional
+- `discord_guild_id` optional
+- `limit` optional, default 50, max 100
+
+Behavior:
+
+- Return instances with `status = 'post_ready'`
+- Ordered by `created_at asc`
+- Include:
+  - instance id
+  - master_slate_id
+  - gameday_room_id
+  - room_code
+  - room_url
+  - discord_guild_id
+  - discord_guild_name
+  - discord_channel_id
+  - discord_channel_name
+  - receipt_channel_id
+  - receipt_channel_name
+  - reward_text
+  - post_payload
+  - created_at
+  - updated_at
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "count": 1,
+  "instances": [
+    {
+      "id": "instance-uuid",
+      "master_slate_id": "master-slate-uuid",
+      "gameday_room_id": "room-uuid",
+      "room_code": "GDS-ABC123",
+      "room_url": "https://www.swayger.app/g/GDS-ABC123",
+      "discord_guild_id": "123456789012345678",
+      "discord_guild_name": "Example Guild",
+      "discord_channel_id": "234567890123456789",
+      "discord_channel_name": "game-day",
+      "receipt_channel_id": null,
+      "receipt_channel_name": null,
+      "reward_text": "Bragging rights and receipts.",
+      "post_payload": {
+        "message": "..."
+      },
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
+}
