@@ -28,3 +28,4 @@
 - [NFL Sunday Slate format](gameday-nfl-sunday-slate.md) — additive candidate-driven NFL multi-game format; legacy NFL stays Single Game until format data exists.
 - [NFL Weekly Master Slate](gameday-nfl-weekly-master-slate.md) — source-only admin lifecycle, explicit approved-to-draft reset, archived replacement rule, Supabase migration required.
 - [NFL Weekly Slate Publishing](gameday-nfl-weekly-slate-publishing.md) — active-guild room materialization only; slate+guild idempotency; post-ready payloads never perform Discord delivery.
+- [Fantasy Multi-League Claims](gameday-fantasy-multi-league-claims.md) — resolve authenticated claims within the requested league; users may have multiple active league memberships.

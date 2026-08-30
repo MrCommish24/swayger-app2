@@ -445,30 +445,45 @@ async function resolveViewer(
 } | null> {
   if (!identity.userId && !identity.guestToken) return null;
 
-  // Find the active claim for this identity
-  const claimQuery = supabase
-    .from("fantasy_member_claims")
-    .select("league_member_id")
-    .eq("is_active", true);
+  // Find the active claim for this identity.
+  //
+  // An authenticated user may belong to multiple leagues, so this query must
+  // not use maybeSingle() for user_id. Resolve the claim against the requested
+  // league instead; otherwise a second active claim makes the whole viewer
+  // lookup return null and hides commissioner controls from the hub.
+  let claimRows: any[] = [];
+  if (identity.userId) {
+    const { data } = await supabase
+      .from("fantasy_member_claims")
+      .select("league_member_id")
+      .eq("user_id", identity.userId)
+      .eq("is_active", true);
+    claimRows = (data ?? []) as any[];
+  } else {
+    const { data } = await supabase
+      .from("fantasy_member_claims")
+      .select("league_member_id")
+      .eq("guest_token", identity.guestToken!)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (data) claimRows = [data as any];
+  }
 
-  const { data: claim } = identity.userId
-    ? await claimQuery.eq("user_id", identity.userId).maybeSingle()
-    : await claimQuery.eq("guest_token", identity.guestToken!).maybeSingle();
+  if (!claimRows.length) return null;
 
-  if (!claim) return null;
+  const claimedMemberIds = claimRows.map((row) => row.league_member_id);
 
-  const lmId = (claim as any).league_member_id;
-
-  // Verify league_member belongs to THIS league
+  // Resolve only the member belonging to THIS league.
   const { data: lm } = await supabase
     .from("fantasy_league_members")
     .select("id, display_name")
-    .eq("id", lmId)
     .eq("league_id", leagueId)
     .eq("is_active", true)
+    .in("id", claimedMemberIds)
     .maybeSingle();
 
   if (!lm) return null;
+  const lmId = (lm as any).id;
 
   // Find season_member for this league_member in this season
   const { data: sm } = await supabase

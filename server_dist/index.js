@@ -12539,12 +12539,19 @@ async function requireLeagueActive(supabase, leagueId, res2) {
 }
 async function resolveViewer(supabase, identity, seasonId, leagueId) {
   if (!identity.userId && !identity.guestToken) return null;
-  const claimQuery = supabase.from("fantasy_member_claims").select("league_member_id").eq("is_active", true);
-  const { data: claim } = identity.userId ? await claimQuery.eq("user_id", identity.userId).maybeSingle() : await claimQuery.eq("guest_token", identity.guestToken).maybeSingle();
-  if (!claim) return null;
-  const lmId = claim.league_member_id;
-  const { data: lm } = await supabase.from("fantasy_league_members").select("id, display_name").eq("id", lmId).eq("league_id", leagueId).eq("is_active", true).maybeSingle();
+  let claimRows = [];
+  if (identity.userId) {
+    const { data } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", identity.userId).eq("is_active", true);
+    claimRows = data ?? [];
+  } else {
+    const { data } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("guest_token", identity.guestToken).eq("is_active", true).maybeSingle();
+    if (data) claimRows = [data];
+  }
+  if (!claimRows.length) return null;
+  const claimedMemberIds = claimRows.map((row) => row.league_member_id);
+  const { data: lm } = await supabase.from("fantasy_league_members").select("id, display_name").eq("league_id", leagueId).eq("is_active", true).in("id", claimedMemberIds).maybeSingle();
   if (!lm) return null;
+  const lmId = lm.id;
   const { data: sm } = await supabase.from("fantasy_season_members").select("id, role, draft_day_eligible").eq("league_season_id", seasonId).eq("league_member_id", lmId).eq("is_active", true).maybeSingle();
   if (!sm) return null;
   const { data: mgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(id, team_name)").eq("season_member_id", sm.id).eq("is_active", true).maybeSingle();
