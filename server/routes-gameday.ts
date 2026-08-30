@@ -1641,6 +1641,209 @@ export function registerGamedayRoutes(app: Express) {
     },
   );
 
+  // ── Bot: NFL Weekly Slate delivery ───────────────────────────────────────
+  // Delivery state only: these routes never publish slates, create rooms, or
+  // call Discord.
+  app.get(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/post-ready",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+
+      const singleQueryValue = (key: string): string | undefined | null => {
+        const value = req.query[key];
+        if (value === undefined) return undefined;
+        if (Array.isArray(value) || typeof value !== "string") return null;
+        return value;
+      };
+      const masterSlateId = singleQueryValue("master_slate_id");
+      const rawGuildId = singleQueryValue("discord_guild_id");
+      const rawLimit = singleQueryValue("limit");
+      if (masterSlateId === null || rawGuildId === null || rawLimit === null) {
+        res.status(400).json({ ok: false, error: "Query parameters must be provided once" });
+        return;
+      }
+      if (masterSlateId !== undefined && !isUuidLike(masterSlateId.trim())) {
+        res.status(400).json({ ok: false, error: "master_slate_id must be a valid UUID" });
+        return;
+      }
+      const discordGuildId =
+        rawGuildId === undefined ? undefined : normalizeDiscordGuildId(rawGuildId);
+      if (rawGuildId !== undefined && !discordGuildId) {
+        res.status(400).json({ ok: false, error: "discord_guild_id must be a valid guild ID" });
+        return;
+      }
+      const limit = rawLimit === undefined ? 50 : parsePositiveInteger(rawLimit);
+      if (!limit || limit > 100) {
+        res.status(400).json({ ok: false, error: "limit must be an integer between 1 and 100" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      let query = supabase
+        .from("nfl_weekly_slate_room_instances")
+        .select("*")
+        .eq("status", "post_ready")
+        .order("created_at", { ascending: true })
+        .limit(limit);
+      if (masterSlateId !== undefined) query = query.eq("master_slate_id", masterSlateId.trim());
+      if (discordGuildId !== undefined) query = query.eq("discord_guild_id", discordGuildId);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error("[gameday] weekly slate post-ready lookup error:", error.message);
+        if (isMissingWeeklySlateSchemaError(error)) {
+          res.status(503).json({
+            ok: false,
+            error: "NFL weekly slate room instances are not enabled; apply the room-instance migration first",
+            code: "WEEKLY_SLATE_ROOM_INSTANCE_SCHEMA_UNAVAILABLE",
+          });
+        } else {
+          res.status(500).json({ ok: false, error: "Could not load post-ready NFL weekly slate instances" });
+        }
+        return;
+      }
+
+      const rows = data ?? [];
+      const guildIds = [...new Set(rows.map((row: any) => row.discord_guild_id).filter(Boolean))];
+      const guildNameById = new Map<string, string | null>();
+      if (guildIds.length > 0) {
+        const { data: subscriptions, error: subscriptionError } = await supabase
+          .from("discord_gameday_subscriptions")
+          .select("discord_guild_id, discord_guild_name")
+          .in("discord_guild_id", guildIds);
+        if (subscriptionError) {
+          console.error("[gameday] weekly slate delivery guild lookup error:", subscriptionError.message);
+          res.status(500).json({ ok: false, error: "Could not load Discord guild names for slate instances" });
+          return;
+        }
+        for (const subscription of subscriptions ?? []) {
+          guildNameById.set(
+            subscription.discord_guild_id,
+            subscription.discord_guild_name ?? null,
+          );
+        }
+      }
+      const instances = rows.map((row: any) =>
+        serializeWeeklySlateRoomInstance({
+          ...row,
+          discord_guild_name:
+            guildNameById.get(row.discord_guild_id) ??
+            row.post_payload?.discord_guild_name ??
+            null,
+        }),
+      );
+      res.json({ ok: true, count: instances.length, instances });
+    },
+  );
+
+  async function updateWeeklySlateDeliveryStatus(
+    req: Request,
+    res: Response,
+    nextStatus: "posted" | "failed",
+  ) {
+    if (!isBotApiKeyValid(req)) {
+      res.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+      return;
+    }
+
+    const instanceId = req.params.instanceId?.trim();
+    if (!instanceId || !isUuidLike(instanceId)) {
+      res.status(400).json({ ok: false, error: "instanceId must be a valid UUID" });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const now = new Date().toISOString();
+    let update: Record<string, unknown>;
+    if (nextStatus === "posted") {
+      const discordMessageId = normalizeWeeklySlateText(body.discord_message_id, 128);
+      if (!discordMessageId) {
+        res.status(400).json({ ok: false, error: "discord_message_id is required" });
+        return;
+      }
+      update = {
+        status: "posted",
+        discord_message_id: discordMessageId,
+        posted_at: now,
+        updated_at: now,
+      };
+    } else {
+      const postError = normalizeWeeklySlateText(body.post_error, 2000);
+      if (!postError) {
+        res.status(400).json({ ok: false, error: "post_error is required and must be at most 2000 characters" });
+        return;
+      }
+      update = {
+        status: "failed",
+        error: postError,
+        updated_at: now,
+      };
+    }
+
+    const supabase = getServiceSupabase();
+    const { data: instance, error } = await supabase
+      .from("nfl_weekly_slate_room_instances")
+      .update(update)
+      .eq("id", instanceId)
+      .eq("status", "post_ready")
+      .select("*")
+      .maybeSingle();
+    if (error) {
+      console.error(`[gameday] weekly slate ${nextStatus} update error:`, error.message);
+      if (isMissingWeeklySlateSchemaError(error)) {
+        res.status(503).json({
+          ok: false,
+          error: "NFL weekly slate room instances are not enabled; apply the room-instance migration first",
+          code: "WEEKLY_SLATE_ROOM_INSTANCE_SCHEMA_UNAVAILABLE",
+        });
+      } else {
+        res.status(500).json({ ok: false, error: `Could not mark weekly slate instance ${nextStatus}` });
+      }
+      return;
+    }
+    if (instance) {
+      res.json({ ok: true, instance: serializeWeeklySlateRoomInstance(instance) });
+      return;
+    }
+
+    const { data: current, error: currentError } = await supabase
+      .from("nfl_weekly_slate_room_instances")
+      .select("id, status")
+      .eq("id", instanceId)
+      .maybeSingle();
+    if (currentError) {
+      res.status(500).json({ ok: false, error: "Could not verify weekly slate instance state" });
+      return;
+    }
+    if (!current) {
+      res.status(404).json({ ok: false, error: "NFL weekly slate room instance not found" });
+      return;
+    }
+    res.status(409).json({
+      ok: false,
+      error: `NFL weekly slate room instance is already ${current.status}`,
+      code: "WEEKLY_SLATE_INSTANCE_NOT_POST_READY",
+      status: current.status,
+    });
+  }
+
+  app.post(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/posted",
+    async (req: Request, res: Response) => {
+      await updateWeeklySlateDeliveryStatus(req, res, "posted");
+    },
+  );
+
+  app.post(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/failed",
+    async (req: Request, res: Response) => {
+      await updateWeeklySlateDeliveryStatus(req, res, "failed");
+    },
+  );
+
   // ── Admin: NFL Weekly Master Slates ───────────────────────────────────────
   // These rows are source content only. They are not playable Game Day rooms.
   function checkWeeklySlateAdmin(req: Request, res: Response): boolean {
@@ -2155,6 +2358,7 @@ export function registerGamedayRoutes(app: Express) {
           slate_name: slate.slate_name,
           slate_label: slate.slate_label ?? null,
           discord_guild_id: guildId,
+          discord_guild_name: subscription.discord_guild_name ?? null,
           discord_channel_id: subscription.game_day_channel_id,
           discord_channel_name: subscription.game_day_channel_name,
           room_id: createdRoom.room.id,

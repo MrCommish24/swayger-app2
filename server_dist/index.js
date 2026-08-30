@@ -9145,6 +9145,7 @@ function serializeWeeklySlateRoomInstance(row) {
     room_code: row.room_code ?? null,
     room_url: row.room_url,
     discord_guild_id: row.discord_guild_id,
+    discord_guild_name: row.discord_guild_name ?? null,
     discord_channel_id: row.discord_channel_id,
     discord_channel_name: row.discord_channel_name ?? null,
     receipt_channel_id: row.receipt_channel_id ?? null,
@@ -9153,6 +9154,7 @@ function serializeWeeklySlateRoomInstance(row) {
     status: row.status,
     post_payload: row.post_payload ?? {},
     error: row.error ?? null,
+    post_error: row.error ?? null,
     discord_message_id: row.discord_message_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -9537,6 +9539,168 @@ function registerGamedayRoutes(app2) {
         return;
       }
       res2.json({ ok: true, subscription: serializeDiscordNflSlateSubscription(subscription) });
+    }
+  );
+  app2.get(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/post-ready",
+    async (req, res2) => {
+      if (!isBotApiKeyValid(req)) {
+        res2.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const singleQueryValue = (key) => {
+        const value = req.query[key];
+        if (value === void 0) return void 0;
+        if (Array.isArray(value) || typeof value !== "string") return null;
+        return value;
+      };
+      const masterSlateId = singleQueryValue("master_slate_id");
+      const rawGuildId = singleQueryValue("discord_guild_id");
+      const rawLimit = singleQueryValue("limit");
+      if (masterSlateId === null || rawGuildId === null || rawLimit === null) {
+        res2.status(400).json({ ok: false, error: "Query parameters must be provided once" });
+        return;
+      }
+      if (masterSlateId !== void 0 && !isUuidLike(masterSlateId.trim())) {
+        res2.status(400).json({ ok: false, error: "master_slate_id must be a valid UUID" });
+        return;
+      }
+      const discordGuildId = rawGuildId === void 0 ? void 0 : normalizeDiscordGuildId(rawGuildId);
+      if (rawGuildId !== void 0 && !discordGuildId) {
+        res2.status(400).json({ ok: false, error: "discord_guild_id must be a valid guild ID" });
+        return;
+      }
+      const limit = rawLimit === void 0 ? 50 : parsePositiveInteger(rawLimit);
+      if (!limit || limit > 100) {
+        res2.status(400).json({ ok: false, error: "limit must be an integer between 1 and 100" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      let query = supabase.from("nfl_weekly_slate_room_instances").select("*").eq("status", "post_ready").order("created_at", { ascending: true }).limit(limit);
+      if (masterSlateId !== void 0) query = query.eq("master_slate_id", masterSlateId.trim());
+      if (discordGuildId !== void 0) query = query.eq("discord_guild_id", discordGuildId);
+      const { data, error } = await query;
+      if (error) {
+        console.error("[gameday] weekly slate post-ready lookup error:", error.message);
+        if (isMissingWeeklySlateSchemaError(error)) {
+          res2.status(503).json({
+            ok: false,
+            error: "NFL weekly slate room instances are not enabled; apply the room-instance migration first",
+            code: "WEEKLY_SLATE_ROOM_INSTANCE_SCHEMA_UNAVAILABLE"
+          });
+        } else {
+          res2.status(500).json({ ok: false, error: "Could not load post-ready NFL weekly slate instances" });
+        }
+        return;
+      }
+      const rows = data ?? [];
+      const guildIds = [...new Set(rows.map((row) => row.discord_guild_id).filter(Boolean))];
+      const guildNameById = /* @__PURE__ */ new Map();
+      if (guildIds.length > 0) {
+        const { data: subscriptions, error: subscriptionError } = await supabase.from("discord_gameday_subscriptions").select("discord_guild_id, discord_guild_name").in("discord_guild_id", guildIds);
+        if (subscriptionError) {
+          console.error("[gameday] weekly slate delivery guild lookup error:", subscriptionError.message);
+          res2.status(500).json({ ok: false, error: "Could not load Discord guild names for slate instances" });
+          return;
+        }
+        for (const subscription of subscriptions ?? []) {
+          guildNameById.set(
+            subscription.discord_guild_id,
+            subscription.discord_guild_name ?? null
+          );
+        }
+      }
+      const instances = rows.map(
+        (row) => serializeWeeklySlateRoomInstance({
+          ...row,
+          discord_guild_name: guildNameById.get(row.discord_guild_id) ?? row.post_payload?.discord_guild_name ?? null
+        })
+      );
+      res2.json({ ok: true, count: instances.length, instances });
+    }
+  );
+  async function updateWeeklySlateDeliveryStatus(req, res2, nextStatus) {
+    if (!isBotApiKeyValid(req)) {
+      res2.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+      return;
+    }
+    const instanceId = req.params.instanceId?.trim();
+    if (!instanceId || !isUuidLike(instanceId)) {
+      res2.status(400).json({ ok: false, error: "instanceId must be a valid UUID" });
+      return;
+    }
+    const body = req.body ?? {};
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    let update;
+    if (nextStatus === "posted") {
+      const discordMessageId = normalizeWeeklySlateText(body.discord_message_id, 128);
+      if (!discordMessageId) {
+        res2.status(400).json({ ok: false, error: "discord_message_id is required" });
+        return;
+      }
+      update = {
+        status: "posted",
+        discord_message_id: discordMessageId,
+        posted_at: now,
+        updated_at: now
+      };
+    } else {
+      const postError = normalizeWeeklySlateText(body.post_error, 2e3);
+      if (!postError) {
+        res2.status(400).json({ ok: false, error: "post_error is required and must be at most 2000 characters" });
+        return;
+      }
+      update = {
+        status: "failed",
+        error: postError,
+        updated_at: now
+      };
+    }
+    const supabase = getServiceSupabase();
+    const { data: instance, error } = await supabase.from("nfl_weekly_slate_room_instances").update(update).eq("id", instanceId).eq("status", "post_ready").select("*").maybeSingle();
+    if (error) {
+      console.error(`[gameday] weekly slate ${nextStatus} update error:`, error.message);
+      if (isMissingWeeklySlateSchemaError(error)) {
+        res2.status(503).json({
+          ok: false,
+          error: "NFL weekly slate room instances are not enabled; apply the room-instance migration first",
+          code: "WEEKLY_SLATE_ROOM_INSTANCE_SCHEMA_UNAVAILABLE"
+        });
+      } else {
+        res2.status(500).json({ ok: false, error: `Could not mark weekly slate instance ${nextStatus}` });
+      }
+      return;
+    }
+    if (instance) {
+      res2.json({ ok: true, instance: serializeWeeklySlateRoomInstance(instance) });
+      return;
+    }
+    const { data: current, error: currentError } = await supabase.from("nfl_weekly_slate_room_instances").select("id, status").eq("id", instanceId).maybeSingle();
+    if (currentError) {
+      res2.status(500).json({ ok: false, error: "Could not verify weekly slate instance state" });
+      return;
+    }
+    if (!current) {
+      res2.status(404).json({ ok: false, error: "NFL weekly slate room instance not found" });
+      return;
+    }
+    res2.status(409).json({
+      ok: false,
+      error: `NFL weekly slate room instance is already ${current.status}`,
+      code: "WEEKLY_SLATE_INSTANCE_NOT_POST_READY",
+      status: current.status
+    });
+  }
+  app2.post(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/posted",
+    async (req, res2) => {
+      await updateWeeklySlateDeliveryStatus(req, res2, "posted");
+    }
+  );
+  app2.post(
+    "/api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/failed",
+    async (req, res2) => {
+      await updateWeeklySlateDeliveryStatus(req, res2, "failed");
     }
   );
   function checkWeeklySlateAdmin(req, res2) {
@@ -9956,6 +10120,7 @@ function registerGamedayRoutes(app2) {
           slate_name: slate.slate_name,
           slate_label: slate.slate_label ?? null,
           discord_guild_id: guildId,
+          discord_guild_name: subscription.discord_guild_name ?? null,
           discord_channel_id: subscription.game_day_channel_id,
           discord_channel_name: subscription.game_day_channel_name,
           room_id: createdRoom.room.id,
