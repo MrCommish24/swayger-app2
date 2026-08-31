@@ -1,0 +1,756 @@
+We found a real Draft Day settlement edge case during pilot QA and need a focused correction.
+
+# PHASE 6G — MULTIPLE CORRECT ANSWERS
+## Settlement + Scoring Enhancement
+
+This is NOT a new product phase.
+
+This is a targeted settlement/scoring correction discovered from a real Draft Day board.
+
+Current limitation:
+A Swayger prop can currently be settled with only ONE correct answer.
+
+Real Draft Day examples showed that is insufficient:
+
+Example 1:
+"Who drafts the most running backs?"
+
+Actual result:
+- Grim Reaper
+- Team Jasand Shootaw
+- Mr Big aka Clown Maker
+
+All three tied for the most RBs.
+
+Example 2:
+"Who drafts three or more quarterbacks?"
+
+Actual result:
+- Appetite 4 Destruction
+- Hilson
+
+Both satisfy the condition.
+
+A generic "Tie" answer is NOT the right solution.
+
+The correct product model is:
+
+# A PROP MAY HAVE ONE OR MORE CORRECT ANSWER IDs.
+
+If a participant's selected answer is contained in the correct-answer set:
+→ correct
+
+Otherwise:
+→ incorrect
+
+==================================================
+1. IMPORTANT — INSPECT CURRENT SETTLEMENT MODEL FIRST
+==================================================
+
+Before changing code, inspect:
+
+- gameday_props correct-answer fields
+- settlePropCore
+- Game Day settlement
+- Fantasy Draft Day settlement
+- Weekly settlement
+- result correction before finalization
+- scoring helper
+- leaderboard derivation
+- League Picks correct markers
+- results UI
+- tests that assume one correct answer
+- any published answer_options shape
+
+Determine exactly how the current correct answer is persisted.
+
+Do NOT immediately redesign schema.
+
+Return whether this can be implemented safely with the current column shape.
+
+==================================================
+2. PRODUCT RULE
+==================================================
+
+Settlement must support:
+
+ONE correct answer
+or
+MULTIPLE correct answers
+
+Examples:
+
+Single:
+["team_a"]
+
+Multiple:
+["team_a", "team_b", "team_c"]
+
+The selected-answer data model for PARTICIPANTS remains unchanged.
+
+A participant still chooses exactly ONE answer for a normal prop.
+
+We are changing settlement only.
+
+==================================================
+3. DO NOT ADD "TIE" AS A GENERIC ANSWER
+==================================================
+
+Do NOT automatically add:
+
+Tie
+
+to answer_options.
+
+Why:
+
+"Who drafts three or more quarterbacks?"
+is not a tie question.
+
+Multiple teams can independently satisfy the condition.
+
+For tied "most X" questions, selecting all actual tied teams is more accurate than selecting "Tie."
+
+No generic tie workaround.
+
+==================================================
+4. SCHEMA DECISION
+==================================================
+
+Inspect whether the existing correct-answer field is:
+
+TEXT
+JSONB
+another flexible type
+
+If it can safely store an array:
+prefer adapting it.
+
+If the schema only supports a scalar and an additive migration is required:
+
+write the smallest safe migration
+and STOP.
+
+Possible conceptual approaches:
+
+A. new `correct_answer_ids JSONB`
+or
+B. evolve existing JSON field if already flexible
+
+Do NOT destroy historical single-answer data.
+
+Existing settled props must remain readable.
+
+==================================================
+5. BACKWARD COMPATIBILITY
+==================================================
+
+Existing historical values may be scalar.
+
+Normalize both forms internally.
+
+Conceptually:
+
+normalizeCorrectAnswers(value)
+
+Scalar:
+"team_a"
+→ ["team_a"]
+
+Array:
+["team_a","team_b"]
+→ unchanged
+
+Null:
+→ []
+
+Do not require rewriting all historical rows if normalization can preserve compatibility.
+
+==================================================
+6. SETTLEMENT API
+==================================================
+
+Current settlement route likely accepts something conceptually like:
+
+correct_answer
+
+Extend carefully.
+
+Preferred request shape:
+
+{
+  "correct_answers": ["answer_a", "answer_b"]
+}
+
+For backward compatibility, if old clients send:
+
+{
+  "correct_answer": "answer_a"
+}
+
+normalize to:
+
+["answer_a"]
+
+Do not break existing Game Day or Weekly clients.
+
+==================================================
+7. VALIDATION
+==================================================
+
+Every supplied correct answer ID must:
+
+- exist in published answer_options
+- be valid for that prop
+- be unique
+
+Reject:
+
+unknown IDs
+duplicate IDs
+empty array where settlement requires an outcome
+
+If supports_no_one exists:
+`no_one` is just another valid answer ID.
+
+==================================================
+8. SETTLEMENT UI
+==================================================
+
+Current commissioner settlement UI likely shows answer options as single-select.
+
+Change the interaction so commissioner can intentionally select more than one correct answer.
+
+Preferred UX:
+
+SELECT CORRECT ANSWER
+
+[ Team A ]
+[ Team B ]
+[ Team C ]
+
+Then a clear option:
+
+"Multiple answers are correct"
+
+or simply allow multi-select with clear instruction:
+
+Select all correct answers.
+
+I prefer:
+
+- default interaction still feels single-select
+- allow tapping additional answers
+- selected answers show checkmarks
+- CTA says:
+  "Set 3 Correct Answers"
+
+Do NOT make every settlement screen feel complicated.
+
+==================================================
+9. SIMPLE UX RULE
+==================================================
+
+If commissioner selects one:
+normal behavior.
+
+If commissioner selects two or more:
+show lightweight notice:
+
+Multiple correct answers selected.
+
+Anyone who picked one of these answers will receive credit.
+
+That is enough.
+
+==================================================
+10. RESULT CORRECTION
+==================================================
+
+Preserve current rule:
+
+Before finalization, commissioner can correct settlement.
+
+Examples:
+
+[A]
+→ [A, B]
+→ [B, C]
+→ [A]
+
+All should work before room finalization.
+
+After finalization:
+immutable.
+
+Do not add a new lock state.
+
+==================================================
+11. SCORING
+==================================================
+
+Critical.
+
+Current logic likely does:
+
+selected_answer === correct_answer
+
+Replace/normalize to:
+
+correctAnswers.includes(selected_answer)
+
+Participant still earns the prop's full point_value.
+
+Do NOT split points among tied correct answers.
+
+Example:
+
+20-point prop.
+
+A, B, C are all correct.
+
+User picked B.
+
+User receives:
+20 points
+
+NOT:
+6.67 points
+
+==================================================
+12. NO DOUBLE CREDIT
+==================================================
+
+A participant still has one saved answer per prop.
+
+Even if multiple answers are correct:
+maximum award = point_value once.
+
+No duplicate scoring.
+
+==================================================
+13. LEADERBOARD
+==================================================
+
+Derived leaderboard must automatically reflect multi-correct settlement.
+
+Verify:
+
+- Draft Day leaderboard
+- Weekly leaderboard
+- Season Standings
+- competitions_played
+- weekly wins
+
+No duplicate aggregation.
+
+==================================================
+14. LEAGUE PICKS
+==================================================
+
+Phase 6C League Picks currently shows:
+
+is_correct marker
+
+Update it so every answer in the correct-answer set gets:
+
+✓ CORRECT
+
+Example:
+
+Grim Reaper — 3 picks ✓
+Team Jasand Shootaw — 2 picks ✓
+Mr Big aka Clown Maker — 1 pick ✓
+
+All three display correctly.
+
+Distribution counts remain unchanged.
+
+==================================================
+15. ZERO-PICK CORRECT ANSWERS
+==================================================
+
+Existing League Picks behavior shows a correct answer even if nobody picked it.
+
+Extend that for multiple correct answers.
+
+If:
+
+A correct, 5 picks
+B correct, 0 picks
+C correct, 0 picks
+
+show all three correct answers after settlement.
+
+Do not hide B/C just because count=0.
+
+==================================================
+16. RESULTS UI
+==================================================
+
+Where results currently display:
+
+Correct Answer:
+Team A
+
+support:
+
+Correct Answers:
+Team A
+Team B
+Team C
+
+Use singular when one.
+
+Plural when multiple.
+
+Keep clean.
+
+==================================================
+17. DRAFT DAY EXAMPLE TEST
+==================================================
+
+Build a fixture for:
+
+"Who drafts the most running backs?"
+
+Correct answers:
+- Grim Reaper
+- Team Jasand Shootaw
+- Mr Big aka Clown Maker
+
+User A picks Grim Reaper
+→ correct
+
+User B picks Team Jasand Shootaw
+→ correct
+
+User C picks Mr Big aka Clown Maker
+→ correct
+
+User D picks GAMEBREAKERS
+→ incorrect
+
+All correct users receive full point value exactly once.
+
+==================================================
+18. MULTI-QUALIFIER TEST
+==================================================
+
+Question:
+
+"Who drafts three or more quarterbacks?"
+
+Correct:
+- Appetite 4 Destruction
+- Hilson
+
+User picks Appetite:
+correct
+
+User picks Hilson:
+correct
+
+User picks Dispimpin:
+incorrect
+
+This proves multi-correct is broader than ties.
+
+==================================================
+19. SINGLE-ANSWER REGRESSION
+==================================================
+
+Critical:
+
+Existing normal prop:
+
+Correct:
+Team A
+
+must behave exactly as before.
+
+No UX/scoring regression.
+
+==================================================
+20. YES/NO
+==================================================
+
+Most yes/no questions should still have one correct answer.
+
+Do not accidentally permit both Yes and No unless commissioner deliberately selects both.
+
+If both are selected accidentally:
+allow if technically valid, but consider whether UI should warn:
+
+"Both answers are selected as correct."
+
+Do not hardcode prohibition because some future prop may legitimately allow multiple static answers.
+
+==================================================
+21. NO ONE
+==================================================
+
+Question supports:
+
+No one
+
+If actual result is:
+
+No one
+
+correct set:
+["no_one"]
+
+works normally.
+
+If weird real-world case supports:
+No one + another answer
+
+do not special-case unless product semantics make that impossible.
+
+Use stable IDs.
+
+==================================================
+22. API RESPONSE
+==================================================
+
+Prefer new normalized response field:
+
+correct_answer_ids: string[]
+
+Keep legacy scalar field if old UI/API needs it.
+
+Do not silently break consumers.
+
+Examples:
+
+single:
+correct_answer_ids = ["a"]
+
+multiple:
+correct_answer_ids = ["a","b"]
+
+==================================================
+23. SECURITY
+==================================================
+
+Only existing authorized commissioner settlement actors can set correct answers.
+
+No authorization changes.
+
+Members cannot settle.
+
+Guests cannot settle unless already allowed by existing commissioner authority.
+
+==================================================
+24. GAME DAY PARITY
+==================================================
+
+This change potentially touches shared settlement infrastructure.
+
+Inspect whether classic Game Day props can also encounter multi-correct outcomes.
+
+Preferred architecture:
+
+shared settlement/scoring layer supports arrays generically.
+
+Do not create a Fantasy-only fork if settlement helper is shared.
+
+However:
+do not modify classic Game Day UI unnecessarily unless required for compatibility.
+
+==================================================
+25. HISTORICAL DATA
+==================================================
+
+Existing finalized single-answer props must continue to:
+
+- render
+- score
+- show results
+- show League Picks
+
+No migration that corrupts historical scalar correct_answer values.
+
+==================================================
+26. TESTS
+==================================================
+
+Add focused Phase 6G coverage.
+
+Suggested sections:
+
+§AT Single-answer backward compatibility
+§AU Multiple correct answers
+§AV Multi-correct scoring
+§AW Result correction
+§AX League Picks multi-correct markers
+§AY Zero-pick correct answers
+§AZ Finalization immutability
+§BA Historical scalar normalization
+§BB Draft Day real-world tie fixture
+§BC Multi-qualifier fixture
+
+Use naming consistent with current suite.
+
+==================================================
+27. FULL REGRESSION
+==================================================
+
+Because settlement/scoring is high-risk, run:
+
+- Phase 6 full suite
+- Phase 4C
+- Phase 5 weekly settlement
+- Draft Day settlement
+- League Picks
+- Season Standings
+- classic Game Day settlement
+- open roster
+- result correction
+- finalization
+
+Then full maintained Fantasy regression if inexpensive.
+
+Return exact:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+Do not update old test expectations merely to force green.
+
+==================================================
+28. MANUAL QA
+==================================================
+
+Return exact manual steps:
+
+1. Open Draft Day settlement.
+2. Find "Who drafts the most running backs?"
+3. Select:
+   Grim Reaper
+   Team Jasand Shootaw
+   Mr Big aka Clown Maker
+4. Verify UI shows 3 correct answers selected.
+5. Save.
+6. Open League Picks.
+7. Verify all 3 show ✓ CORRECT.
+8. Verify users who picked any of the 3 receive full points.
+9. Correct settlement to only 2 answers.
+10. Verify scoring recalculates.
+11. Restore all 3.
+12. Set "Who drafts three or more quarterbacks?"
+13. Select:
+    Appetite 4 Destruction
+    Hilson
+14. Verify both receive correct markers.
+15. Verify both groups of pickers receive points.
+16. Finalize Draft Day.
+17. Verify further settlement changes rejected.
+18. Verify Season Standings incorporate correct totals.
+
+==================================================
+29. IMPORTANT PRODUCT LANGUAGE
+==================================================
+
+Use:
+
+Correct Answer
+Correct Answers
+Select all correct answers
+
+Do NOT use:
+
+Tie Mode
+Tie Winner
+Split Winner
+
+because multi-correct outcomes are not always ties.
+
+==================================================
+30. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- participant selecting multiple answers
+- partial credit
+- split points
+- ranked answers
+- tie-breakers
+- prop cancellation
+- voiding
+- manual point overrides
+- percentage scoring
+- "Tie" synthetic answer
+- new Draft Day templates
+- Season Receipts redesign
+
+==================================================
+31. IMPLEMENTATION ORDER
+==================================================
+
+First:
+
+1. inspect current correct-answer persistence
+2. inspect shared settlement/scoring helpers
+3. determine schema compatibility
+4. determine migration requirement
+5. inspect League Picks correctness handling
+6. inspect results UI
+
+If SQL required:
+write migration and STOP.
+
+Return:
+SQL APPLICATION REQUIRED
+
+If no SQL required:
+implement.
+
+==================================================
+32. RETURN
+==================================================
+
+Return:
+
+# PHASE 6G — MULTIPLE CORRECT ANSWERS REPORT
+
+1. Existing correct-answer architecture
+2. Schema decision
+3. Backward compatibility
+4. Settlement API changes
+5. Settlement UI changes
+6. Validation
+7. Scoring behavior
+8. Result correction
+9. League Picks behavior
+10. Results behavior
+11. Draft Day tie fixture
+12. Multi-qualifier fixture
+13. Game Day impact
+14. Historical compatibility
+15. Files changed
+16. Tests added
+17. Full regression totals
+18. Bugs found/fixed
+19. Known limitations
+20. Exact manual QA
+
+Then STOP.
+
+Do not begin another feature.
+
+Final status:
+
+PHASE 6G MULTIPLE CORRECT ANSWERS READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
