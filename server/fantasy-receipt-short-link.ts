@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Application, Request, Response } from "express";
 import { getServiceSupabase } from "./supabase-service.js";
 
 const SHORT_CODE_PATTERN = /^[a-z2-7]{16}$/;
@@ -8,9 +8,9 @@ const SHORT_CODE_PATTERN = /^[a-z2-7]{16}$/;
  * route. This route intentionally performs no receipt authorization itself;
  * the canonical route remains the security boundary.
  */
-export function registerFantasyReceiptShortLink(app: Express): void {
+export function registerFantasyReceiptShortLink(app: Application): void {
   app.get("/r/:shortCode", async (req: Request, res: Response) => {
-    const shortCode = (req.params.shortCode ?? "").trim().toLowerCase();
+    const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
     if (!SHORT_CODE_PATTERN.test(shortCode)) {
       res.status(404).send("Receipt not found");
       return;

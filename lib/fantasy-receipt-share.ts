@@ -1,7 +1,7 @@
 import type {
   CompetitionReceiptData,
   CompetitionReceiptLeaderboardEntry,
-} from "@/lib/fantasy-api";
+} from "./fantasy-api";
 
 export const COMPACT_RECEIPT_MAX_ROWS = 5;
 export const COMPACT_RECEIPT_MAX_TIE_ROWS = 8;

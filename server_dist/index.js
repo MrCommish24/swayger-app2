@@ -12452,6 +12452,33 @@ function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, 
 function _correctAnswers(prop) {
   return normalizeCorrectAnswers(prop?.correct_answer_ids, prop?.correct_answer);
 }
+var _RECEIPT_ALIAS_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+function _generateReceiptAliasCode() {
+  const bytes = randomBytes(16);
+  let code = "";
+  for (const byte of bytes) {
+    code += _RECEIPT_ALIAS_ALPHABET[byte & 31];
+  }
+  return code;
+}
+async function _getOrCreateDraftDayReceiptAlias(supabase, seasonId) {
+  const { data: existing, error: existingError } = await supabase.from("fantasy_draft_day_receipt_aliases").select("short_code").eq("league_season_id", seasonId).maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (existing?.short_code) return existing.short_code;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = _generateReceiptAliasCode();
+    const { data: inserted, error: insertError } = await supabase.from("fantasy_draft_day_receipt_aliases").insert({ league_season_id: seasonId, short_code: shortCode }).select("short_code").maybeSingle();
+    if (!insertError && inserted?.short_code) {
+      return inserted.short_code;
+    }
+    if (insertError?.code !== "23505") {
+      throw new Error(insertError?.message ?? "Failed to create receipt alias");
+    }
+    const { data: race } = await supabase.from("fantasy_draft_day_receipt_aliases").select("short_code").eq("league_season_id", seasonId).maybeSingle();
+    if (race?.short_code) return race.short_code;
+  }
+  throw new Error("Failed to generate a unique receipt alias");
+}
 async function _appendMemberToWeeklyCards(supabase, seasonId, seasonMemberId, teamId, displayName, teamName) {
   try {
     const { data: weeklyRooms, error: roomErr } = await supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("experience_type", "fantasy").is("archived_at", null);
@@ -14715,6 +14742,53 @@ function registerFantasyRoutes(app2) {
         }),
         total_competition_props: competitionProps.length
       });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt/alias",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const { data: league } = await supabase.from("fantasy_leagues").select("id").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+      if (viewer.role !== "commissioner" && viewer.role !== "co_commissioner") {
+        res2.status(403).json({ error: "Commissioner authority required for sharing" });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      if (room.status !== "finalized") {
+        res2.status(409).json({ error: "Draft Day receipt is not finalized" });
+        return;
+      }
+      try {
+        const shortCode = await _getOrCreateDraftDayReceiptAlias(supabase, seasonId);
+        res2.json({ short_code: shortCode });
+      } catch (error) {
+        console.error("[fantasy-receipt-alias] create failed:", error);
+        res2.status(500).json({ error: "Unable to prepare receipt link" });
+      }
     }
   );
   async function _getWeeklyRoomAndCard(supabase, seasonId, weekNumber) {
@@ -17194,6 +17268,49 @@ function registerGamedayShortLink(app2) {
   });
 }
 
+// server/fantasy-receipt-short-link.ts
+var SHORT_CODE_PATTERN = /^[a-z2-7]{16}$/;
+function registerFantasyReceiptShortLink(app2) {
+  app2.get("/r/:shortCode", async (req, res2) => {
+    const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
+    if (!SHORT_CODE_PATTERN.test(shortCode)) {
+      res2.status(404).send("Receipt not found");
+      return;
+    }
+    try {
+      const supabase = getServiceSupabase();
+      const { data: alias, error: aliasError } = await supabase.from("fantasy_draft_day_receipt_aliases").select("league_season_id").eq("short_code", shortCode).maybeSingle();
+      if (aliasError) {
+        console.error("[fantasy-receipt-short-link] alias lookup failed:", aliasError.message);
+        res2.status(500).send("Unable to resolve receipt");
+        return;
+      }
+      if (!alias) {
+        res2.status(404).send("Receipt not found");
+        return;
+      }
+      const { data: season, error: seasonError } = await supabase.from("fantasy_league_seasons").select("id, league_id").eq("id", alias.league_season_id).maybeSingle();
+      if (seasonError) {
+        console.error("[fantasy-receipt-short-link] season lookup failed:", seasonError.message);
+        res2.status(500).send("Unable to resolve receipt");
+        return;
+      }
+      if (!season) {
+        res2.status(404).send("Receipt not found");
+        return;
+      }
+      res2.setHeader("Cache-Control", "no-store");
+      res2.redirect(
+        302,
+        `/fantasy/draft-day/${season.league_id}/${season.id}/receipt`
+      );
+    } catch (error) {
+      console.error("[fantasy-receipt-short-link] unexpected error:", error);
+      res2.status(500).send("Unable to resolve receipt");
+    }
+  });
+}
+
 // server/index.ts
 var app = express();
 var log = console.log;
@@ -17431,6 +17548,7 @@ function configureExpoAndLanding(app2) {
     res2.send(`importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");`);
   });
   registerGamedayShortLink(app2);
+  registerFantasyReceiptShortLink(app2);
   registerUnsubscribeRoutes(app2);
   log("Serving static Expo files with dynamic manifest routing");
   app2.use((req, res2, next) => {

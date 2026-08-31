@@ -12,6 +12,7 @@ import {
   isServiceSupabaseConfigured,
 } from "./supabase-service";
 import { registerGamedayShortLink } from "./gameday-short-link";
+import { registerFantasyReceiptShortLink } from "./fantasy-receipt-short-link";
 
 const app = express();
 const log = console.log;
@@ -311,6 +312,7 @@ function configureExpoAndLanding(app: express.Application) {
   // Used by Discord bot public_link. Private rooms intentionally remain
   // resolvable here because privacy controls discovery, not invite access.
   registerGamedayShortLink(app);
+  registerFantasyReceiptShortLink(app);
 
   registerUnsubscribeRoutes(app);
 

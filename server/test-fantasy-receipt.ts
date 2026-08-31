@@ -22,11 +22,15 @@ const SEASON_ID = process.env.TEST_SEASON_ID ?? "";
 
 type Headers = Record<string, string>;
 
-function request(path: string, headers: Headers = {}): Promise<{ status: number; data: any; raw: string }> {
+function request(
+  path: string,
+  headers: Headers = {},
+  method = "GET",
+): Promise<{ status: number; data: any; raw: string; location?: string }> {
   return new Promise((resolve, reject) => {
     const url = new URL(API + path);
     const req = http.request({
-      method: "GET",
+      method,
       hostname: url.hostname,
       port: url.port || 5000,
       path: url.pathname + url.search,
@@ -40,7 +44,7 @@ function request(path: string, headers: Headers = {}): Promise<{ status: number;
         try {
           resolve({ status: res.statusCode ?? 0, data: JSON.parse(raw), raw });
         } catch {
-          resolve({ status: res.statusCode ?? 0, data: {}, raw });
+          resolve({ status: res.statusCode ?? 0, data: {}, raw, location: res.headers.location });
         }
       });
     });
@@ -108,6 +112,32 @@ async function main() {
     "Receipt includes only settled competition props with normalized answer arrays",
     commissioner.data.competition_props,
   );
+
+  const aliasPath =
+    `/api/fantasy/leagues/${LEAGUE_ID}/seasons/${SEASON_ID}/draft-day/receipt/alias`;
+  const alias = await request(aliasPath, bearer(COMMISSIONER_TOKEN), "POST");
+  assert(alias.status === 200, "Commissioner can create or retrieve the receipt alias", alias);
+  const shortCode = alias.data.short_code as string | undefined;
+  assert(Boolean(shortCode && /^[a-z2-7]{16}$/.test(shortCode)), "Alias is an opaque 16-character Base32-style code", alias.data);
+
+  if (shortCode) {
+    const aliasAgain = await request(aliasPath, bearer(COMMISSIONER_TOKEN), "POST");
+    assert(aliasAgain.status === 200 && aliasAgain.data.short_code === shortCode, "Receipt alias is stable across requests", aliasAgain);
+    const redirect = await request(`/r/${shortCode}`);
+    assert(
+      redirect.status === 302 &&
+        redirect.location === `/fantasy/draft-day/${LEAGUE_ID}/${SEASON_ID}/receipt`,
+      "Short receipt URL redirects only to the canonical receipt route",
+      redirect,
+    );
+  }
+
+  const malformedAlias = await request("/r/not-a-valid-receipt-code");
+  assert(malformedAlias.status === 404, "Malformed receipt aliases return 404", malformedAlias);
+  const unknownAlias = await request("/r/aaaaaaaaaaaaaaaa");
+  assert(unknownAlias.status === 404, "Unknown well-formed receipt aliases return 404", unknownAlias);
+  const unauthenticatedAlias = await request(aliasPath);
+  assert(unauthenticatedAlias.status === 401, "Unauthenticated alias creation returns 401", unauthenticatedAlias);
   assert(
     !(commissioner.raw.includes("my_competition_picks") ||
       commissioner.raw.includes("my_pick") ||
@@ -137,6 +167,8 @@ async function main() {
       JSON.stringify(sharedPayload(member.data)) === JSON.stringify(sharedPayload(commissioner.data)),
       "Authenticated member receives the same viewer-independent receipt",
     );
+    const memberAlias = await request(aliasPath, bearer(MEMBER_TOKEN), "POST");
+    assert(memberAlias.status === 403, "Regular members cannot create share aliases", memberAlias);
   } else {
     console.log("  · TEST_MEMBER_TOKEN_DARIUS not set; regular-member branch skipped");
   }

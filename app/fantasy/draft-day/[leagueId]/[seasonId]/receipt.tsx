@@ -6,7 +6,7 @@
  * sharing controls should be shown.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -24,14 +24,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
 import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
-  buildDraftDayReceiptUrl,
+  buildDraftDayReceiptShortUrl,
   CompetitionReceiptData,
   fantasyFetch,
   FantasySeasonDetail,
   getDraftDayReceipt,
+  getDraftDayReceiptAlias,
 } from "@/lib/fantasy-api";
 import { CompetitionReceipt } from "@/components/fantasy/CompetitionReceipt";
+import { CompactCompetitionReceipt } from "@/components/fantasy/CompactCompetitionReceipt";
+import { buildDraftDayReceiptShareText } from "@/lib/fantasy-receipt-share";
 import Colors from "@/constants/colors";
+import * as Sharing from "expo-sharing";
+import { captureRef } from "react-native-view-shot";
 
 const C = Colors.dark;
 
@@ -49,6 +54,9 @@ export default function DraftDayReceiptScreen() {
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shortReceiptUrl, setShortReceiptUrl] = useState<string | null>(null);
+  const captureCardRef = useRef<View | null>(null);
+  const aliasPromiseRef = useRef<Promise<string> | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     if (!leagueId || !seasonId || (!session && !guestToken)) return;
@@ -78,42 +86,134 @@ export default function DraftDayReceiptScreen() {
     if (!authLoading && !guestTokenLoading) load();
   }, [authLoading, guestTokenLoading, load]);
 
-  const receiptUrl = leagueId && seasonId
-    ? buildDraftDayReceiptUrl(leagueId, seasonId)
-    : "";
   const canShare = detail?.viewer?.role === "commissioner" ||
     detail?.viewer?.role === "co_commissioner";
 
+  const ensureShortReceiptUrl = useCallback(async (): Promise<string> => {
+    if (shortReceiptUrl) return shortReceiptUrl;
+    if (!leagueId || !seasonId || (!session && !guestToken)) {
+      throw new Error("Receipt sharing requires league access");
+    }
+    if (aliasPromiseRef.current) return aliasPromiseRef.current;
+
+    const auth = session ? { session } : { guestToken };
+    const promise = getDraftDayReceiptAlias(leagueId, seasonId, auth)
+      .then(({ short_code }) => {
+        const url = buildDraftDayReceiptShortUrl(short_code);
+        setShortReceiptUrl(url);
+        return url;
+      })
+      .finally(() => {
+        aliasPromiseRef.current = null;
+      });
+    aliasPromiseRef.current = promise;
+    return promise;
+  }, [guestToken, leagueId, seasonId, session, shortReceiptUrl]);
+
+  const fallbackToTextShare = useCallback(async (message: string, url: string) => {
+    if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.share) {
+      await navigator.share({ title: "Swayger Draft Day Receipt", text: message, url });
+      return;
+    }
+    await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+  }, []);
+
   const handleShare = useCallback(async () => {
-    if (!receipt || !receiptUrl || sharing) return;
+    if (!receipt || sharing) return;
     setSharing(true);
     try {
-      const leagueName = receipt.league_name ?? "our league";
-      const message =
-        `${leagueName}'s Draft Day receipt is final.\n\n` +
-        `See the winner, standings, and final answers:\n${receiptUrl}`;
-      if (Platform.OS === "ios") {
-        await Share.share({ message, url: receiptUrl });
+      const url = await ensureShortReceiptUrl();
+      const message = buildDraftDayReceiptShareText(receipt, url);
+
+      if (Platform.OS === "web") {
+        const target = captureCardRef.current as any;
+        if (!target) throw new Error("Receipt image is not ready");
+        const html2canvas = (await import("html2canvas")).default;
+        const canvas = await html2canvas(target, {
+          backgroundColor: "#0C1220",
+          scale: Math.min(2, window.devicePixelRatio || 1),
+          useCORS: true,
+        });
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/png"),
+        );
+        if (!blob) throw new Error("Unable to create receipt image");
+
+        const file = new File([blob], "swayger-draft-day-receipt.png", {
+          type: "image/png",
+        });
+        if (
+          typeof navigator !== "undefined" &&
+          navigator.share &&
+          navigator.canShare?.({ files: [file] })
+        ) {
+          await navigator.share({
+            title: "Swayger Draft Day Receipt",
+            text: message,
+            files: [file],
+          });
+        } else {
+          const downloadUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = downloadUrl;
+          link.download = "swayger-draft-day-receipt.png";
+          link.click();
+          URL.revokeObjectURL(downloadUrl);
+          await Clipboard.setStringAsync(message);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }
       } else {
-        await Share.share({ message });
+        const target = captureCardRef.current;
+        if (!target) throw new Error("Receipt image is not ready");
+        const uri = await captureRef(target, {
+          format: "png",
+          quality: 1,
+        });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "image/png",
+            dialogTitle: "Share Draft Day Receipt",
+            UTI: "public.png",
+          });
+        } else {
+          await fallbackToTextShare(message, url);
+        }
       }
-    } catch {
-      // Share dismissal is not an error state.
+    } catch (e: any) {
+      // Share dismissal is not an error state, but capture/API failures should
+      // still leave the user a usable text/link fallback.
+      const errorText = `${e?.name ?? ""} ${e?.message ?? ""}`;
+      if (!/abort|cancel|dismiss/i.test(errorText)) {
+        try {
+          const url = shortReceiptUrl ?? await ensureShortReceiptUrl();
+          await fallbackToTextShare(buildDraftDayReceiptShareText(receipt, url), url);
+        } catch {
+          // Restricted preview environments may expose neither capture nor share.
+        }
+      }
     } finally {
       setSharing(false);
     }
-  }, [receipt, receiptUrl, sharing]);
+  }, [
+    ensureShortReceiptUrl,
+    fallbackToTextShare,
+    receipt,
+    sharing,
+    shortReceiptUrl,
+  ]);
 
   const handleCopy = useCallback(async () => {
-    if (!receiptUrl || copied) return;
+    if (copied) return;
     try {
-      await Clipboard.setStringAsync(receiptUrl);
+      const url = await ensureShortReceiptUrl();
+      await Clipboard.setStringAsync(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard may be unavailable in a restricted preview environment.
     }
-  }, [receiptUrl, copied]);
+  }, [copied, ensureShortReceiptUrl]);
 
   if (authLoading || guestTokenLoading || (loading && !receipt)) {
     return (
@@ -164,41 +264,53 @@ export default function DraftDayReceiptScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 36 },
-      ]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => { setRefreshing(true); load(true); }}
-          tintColor={C.tint}
-        />
-      }
-    >
-      <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
-        <Text style={styles.linkText}>← Draft Day Results</Text>
-      </TouchableOpacity>
-      <CompetitionReceipt
-        data={receipt}
-        canShare={canShare}
-        sharing={sharing}
-        copied={copied}
-        onShare={handleShare}
-        onCopy={handleCopy}
-        onViewLeaguePicks={() =>
-          router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/league-picks` as any)
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 36 },
+        ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); load(true); }}
+            tintColor={C.tint}
+          />
         }
-      />
-    </ScrollView>
+      >
+        <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
+          <Text style={styles.linkText}>← Draft Day Results</Text>
+        </TouchableOpacity>
+        <CompetitionReceipt
+          data={receipt}
+          canShare={canShare}
+          sharing={sharing}
+          copied={copied}
+          onShare={handleShare}
+          onCopy={handleCopy}
+          onViewLeaguePicks={() =>
+            router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/league-picks` as any)
+          }
+        />
+      </ScrollView>
+
+      <View pointerEvents="none" style={styles.captureStage}>
+        <View ref={captureCardRef} collapsable={false}>
+          <CompactCompetitionReceipt data={receipt} />
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
   content: { paddingHorizontal: 20 },
+  captureStage: {
+    position: "absolute",
+    left: -10000,
+    top: 0,
+  },
   center: { flex: 1, backgroundColor: C.background, alignItems: "center", justifyContent: "center", padding: 32, gap: 12 },
   backLink: { marginBottom: 14 },
   linkText: { color: C.tint, fontSize: 14, fontWeight: "600" },
