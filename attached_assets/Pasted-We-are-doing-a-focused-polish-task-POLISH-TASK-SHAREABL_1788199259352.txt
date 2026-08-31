@@ -1,0 +1,880 @@
+We are doing a focused polish task:
+
+# POLISH TASK — SHAREABLE DRAFT DAY RECEIPT V2
+## Receipt Image + Short Link + Receipt-Specific Preview
+
+This is NOT a new major product phase.
+
+We already have:
+
+- Personal Draft Day Results
+- Global Draft Day Receipt
+- League Picks
+- finalized-only receipt access
+- authorized league-member viewing
+- commissioner/co-commissioner share controls
+- Phase 6G multi-correct settlement
+- canonical long receipt URL
+
+The current Global Draft Day Receipt works, but real-world sharing exposed three UX problems:
+
+1. The shared receipt has no attached receipt image.
+2. The canonical URL is too long for group text.
+3. Messaging apps may show a generic Swayger preview card that is not useful enough.
+
+The desired share experience is:
+
+[BEAUTIFUL DRAFT DAY RECEIPT IMAGE]
+
+🏆 Food Pyramid XX — Draft Day Swayger
+J Spells wins Week 0 with 20 SP.
+The receipts are in 👀
+swayger.app/r/7K4M2Q
+
+The share should feel compact, visual, branded, and useful in SMS/RCS/iMessage/group chat.
+
+==================================================
+1. PRODUCT GOAL
+==================================================
+
+When a commissioner taps:
+
+Share Draft Day Receipt
+
+Swayger should do the work they currently have to do manually:
+
+- create a polished receipt image
+- attach/share that image if supported
+- generate concise text
+- use a short Swayger receipt URL
+- open the native share sheet
+
+Do not make the commissioner manually screenshot the receipt.
+
+==================================================
+2. PRESERVE EXISTING PRODUCT MODEL
+==================================================
+
+Do NOT change:
+
+- Personal Results
+- Global Receipt content model
+- League Picks
+- scoring
+- settlement
+- authorization
+- multi-correct behavior
+- finalized-only rule
+
+This task only improves sharing.
+
+==================================================
+3. FIRST — INSPECT EXISTING SHARE-IMAGE INFRASTRUCTURE
+==================================================
+
+Before building anything new, inspect the project for existing image/share functionality.
+
+Especially inspect:
+
+- Game Day standings share image
+- existing receipt-card rendering
+- react-native-view-shot / expo sharing / image capture
+- any server-side share-image route
+- any HTML/canvas/image generation helper
+- Swayger logo assets
+- existing Open Graph metadata helpers
+- existing short-link infrastructure
+
+We previously built Game Day standings/share functionality.
+
+Prefer reusing that architecture if it is safe and reasonably generic.
+
+Do NOT introduce a completely separate image system if existing infrastructure can support this.
+
+==================================================
+4. TARGET SHARE IMAGE
+==================================================
+
+The share image should be intentionally SHORTER than the full Global Receipt.
+
+It is a social artifact, not the entire results page.
+
+Suggested content:
+
+FOOD PYRAMID XX
+DRAFT DAY · 2026
+
+FINALIZED RECEIPT
+
+🏆 DRAFT DAY WINNER
+J SPELLS
+All Eyez On Me
+20 SP
+
+FINAL STANDINGS
+
+1. J Spells — 20
+T-2. J Askew — 10
+T-2. Mr Roarke — 10
+T-2. Hunter Helmsley — 10
+
+THE RECEIPTS ARE IN.
+
+SWAYGER
+LOCK IT IN. STAND ON IT.
+
+Do NOT include every Draft Day question/result in the share image.
+
+Those belong behind the receipt link.
+
+==================================================
+5. IMAGE DESIGN GOAL
+==================================================
+
+The image should be:
+
+- mobile-friendly
+- readable in a group text preview
+- compact
+- visually strong
+- consistent with Swayger branding
+- not excessively tall
+- not just a screenshot of the entire page
+
+Think:
+
+social result card
+
+not:
+
+dashboard screenshot
+
+==================================================
+6. WINNER / CO-WINNER SUPPORT
+==================================================
+
+Single winner:
+
+🏆 DRAFT DAY WINNER
+J Spells
+20 SP
+
+Co-winners:
+
+🏆 DRAFT DAY CO-WINNERS
+Darius — 20 SP
+Mike — 20 SP
+
+Do not invent a tiebreaker.
+
+==================================================
+7. STANDINGS ON IMAGE
+==================================================
+
+Show a compact top standings section.
+
+Preferred:
+
+top 3–5 positions
+
+If ties extend a position:
+include all tied participants where reasonable.
+
+Do not render the entire 12–16 member league unless required for clarity.
+
+The full standings remain in the Global Receipt.
+
+==================================================
+8. SHORT RECEIPT LINKS
+==================================================
+
+The current canonical receipt URL is too long:
+
+/fantasy/draft-day/<league UUID>/<season UUID>/receipt
+
+Add a short-link layer.
+
+Preferred format:
+
+https://www.swayger.app/r/7K4M2Q
+
+or equivalent.
+
+Use a short, opaque, collision-resistant code.
+
+==================================================
+9. SHORT LINK SECURITY
+==================================================
+
+Critical:
+
+The short link is ONLY an alias.
+
+It must NOT bypass existing Fantasy authorization.
+
+Flow:
+
+/r/7K4M2Q
+→ resolves to leagueId + seasonId + receipt destination
+→ existing receipt authorization still applies
+
+Possessing the short URL alone does NOT grant receipt access.
+
+Do not put:
+
+- auth token
+- guest token
+- user ID
+- member ID
+- claim ID
+- recovery token
+
+inside the short code.
+
+==================================================
+10. SHORT LINK DATA MODEL
+==================================================
+
+First inspect whether the project already has:
+
+- short links
+- room short codes
+- share-link table
+- redirect infrastructure
+- `/g/:roomCode`
+
+Reuse a proven pattern where sensible.
+
+Do NOT immediately create a new table if existing infrastructure can support a generic alias.
+
+If a migration is required:
+write the smallest safe additive migration and STOP for approval.
+
+Do not build an unsafe in-memory shortener.
+
+==================================================
+11. SHORT LINK STABILITY
+==================================================
+
+A finalized Draft Day receipt should have a stable short link.
+
+Repeated sharing of the same receipt should return the same short URL.
+
+Do not generate a new code every time Share is tapped.
+
+Archive/restore should not invalidate it.
+
+==================================================
+12. SHORT LINK ROUTE
+==================================================
+
+Preferred public-facing route:
+
+`/r/:shortCode`
+
+or an equally short existing convention.
+
+Behavior:
+
+1. resolve short code
+2. determine destination
+3. redirect to canonical Draft Day receipt
+4. canonical receipt performs normal auth
+
+Keep the redirect simple.
+
+==================================================
+13. SHARE TEXT
+==================================================
+
+Replace the current verbose share text.
+
+Current style is too wordy and the URL dominates the message.
+
+Preferred:
+
+🏆 Food Pyramid XX — Draft Day Swayger
+J Spells wins Week 0 with 20 SP.
+The receipts are in 👀
+https://www.swayger.app/r/7K4M2Q
+
+Keep it short.
+
+==================================================
+14. WEEK 0 LANGUAGE
+==================================================
+
+Draft Day is Week 0 in Swayger Fantasy.
+
+Use:
+
+"J Spells wins Week 0 with 20 SP."
+
+If the current product does not consistently surface Week 0 publicly and this wording creates inconsistency, use:
+
+"J Spells wins Draft Day with 20 SP."
+
+Pick the version consistent with existing UI terminology.
+
+Do not introduce confusing mixed terminology.
+
+==================================================
+15. CO-WINNER SHARE TEXT
+==================================================
+
+Example:
+
+🏆 Food Pyramid XX — Draft Day Swayger
+Darius + Mike finish as co-winners with 20 SP.
+The receipts are in 👀
+<short URL>
+
+Use natural wording.
+
+==================================================
+16. IMAGE + TEXT SHARE
+==================================================
+
+Preferred behavior where supported:
+
+native share payload includes:
+
+- receipt image
+- concise share text
+- short receipt URL
+
+Inspect platform limitations carefully.
+
+If one native sharing API cannot reliably send both image + text across iOS/Android/web:
+
+implement the best supported platform behavior and document it.
+
+Do not fake success.
+
+==================================================
+17. PLATFORM PRIORITY
+==================================================
+
+Primary real-world use case:
+
+mobile phone → text/group chat
+
+Prioritize:
+
+- iOS
+- Android
+
+Web is secondary.
+
+If web cannot attach the same image through Web Share API:
+provide a reasonable fallback.
+
+==================================================
+18. SHARE FALLBACK
+==================================================
+
+Fallback hierarchy:
+
+1. image + text + short link
+2. image + short text where platform handles URL separately
+3. text + short link
+4. Copy Receipt Link
+
+Do not block sharing because image attachment is unavailable.
+
+==================================================
+19. SAVE / DOWNLOAD IMAGE
+==================================================
+
+If existing share-image infrastructure makes it trivial:
+optionally provide:
+
+Save Receipt Image
+
+or:
+
+Download Receipt Image
+
+Do NOT make this a requirement if it materially expands scope.
+
+Primary behavior remains Share.
+
+==================================================
+20. GENERIC LINK PREVIEW PROBLEM
+==================================================
+
+Current messaging apps may show a generic:
+
+Swayger — Picks, Challenges & Receipts
+
+preview.
+
+We cannot reliably force SMS/RCS/iMessage to suppress URL previews.
+
+Therefore:
+
+Do NOT attempt to solve this by relying on a "disable preview" flag.
+
+Instead make receipt URLs produce useful receipt-specific metadata.
+
+==================================================
+21. RECEIPT-SPECIFIC OPEN GRAPH METADATA
+==================================================
+
+Inspect the current web metadata architecture.
+
+For the receipt route or short-link resolution destination, expose appropriate:
+
+- og:title
+- og:description
+- og:image
+- twitter/card equivalents if existing conventions use them
+
+Target example:
+
+Title:
+Food Pyramid XX — Draft Day Receipt
+
+Description:
+J Spells won Draft Day with 20 SP. The receipts are in.
+
+Image:
+the generated Draft Day receipt share image
+
+==================================================
+22. IMPORTANT AUTH / PREVIEW CONSTRAINT
+==================================================
+
+Social crawlers and messaging preview bots are typically unauthenticated.
+
+Do NOT leak private league data through unrestricted metadata/image endpoints without consciously addressing the access model.
+
+Before implementation, inspect how current private Swayger links handle previews.
+
+We need a deliberate decision.
+
+Preferred privacy-safe options include:
+
+A. generic metadata for unauthorized crawlers + receipt image only after auth
+
+OR
+
+B. explicitly decide that finalized receipt preview title/winner is shareable metadata even though the full receipt remains member-only
+
+DO NOT silently expose private league information merely to improve previews.
+
+Return the privacy decision.
+
+If this requires a product/security decision from us:
+STOP and ask before exposing private data.
+
+==================================================
+23. RECOMMENDED PRIVACY DEFAULT
+==================================================
+
+Unless an existing product policy already allows public share metadata:
+
+default to protecting league-specific details.
+
+It is acceptable if the short link preview remains generic while the actual native share includes the receipt image.
+
+The attached image is more important than forcing rich-link previews.
+
+Do not sacrifice authorization/privacy for prettier previews.
+
+==================================================
+24. SHARE IMAGE DATA SOURCE
+==================================================
+
+Use the SAME finalized receipt data that powers the Global Draft Day Receipt.
+
+Do not create independent scoring logic.
+
+Image must reflect:
+
+- same winner
+- same points
+- same standings
+- same team/display labels
+
+==================================================
+25. VIEWER INDEPENDENCE
+==================================================
+
+The generated share image is GLOBAL.
+
+It must not contain:
+
+- Your Pick
+- personal correctness
+- current viewer's highlight
+- guest identity
+- auth identity
+
+Same finalized competition:
+same image.
+
+==================================================
+26. IMAGE CACHING / STABILITY
+==================================================
+
+Because Draft Day is finalized and immutable:
+
+prefer generating a deterministic/stable share image.
+
+If existing architecture supports caching:
+reuse it.
+
+Do not regenerate expensive image assets unnecessarily.
+
+But do not add elaborate CDN infrastructure for this polish task.
+
+==================================================
+27. IMAGE DIMENSIONS
+==================================================
+
+Use dimensions suitable for messaging/social sharing.
+
+Inspect existing Game Day share-card dimensions first.
+
+Preferred conceptual range:
+
+1080 × 1350
+or similar portrait social ratio
+
+BUT:
+
+do not hardcode this if existing Swayger share infrastructure uses another proven size.
+
+The card should remain readable when scaled down in text threads.
+
+==================================================
+28. BRANDING
+==================================================
+
+Reuse existing:
+
+- SwaygerMark
+- official logo asset
+- current dark background
+- gold winner treatment
+- green finalized treatment
+- blue accent where appropriate
+
+Do not recreate the logo manually.
+
+==================================================
+29. SHARE BUTTON UX
+==================================================
+
+Current:
+
+Share Draft Day Receipt
+
+Keep that CTA.
+
+On tap:
+
+- prepare/find stable short URL
+- prepare share image
+- open native share sheet
+
+Do not make user choose through unnecessary intermediate screens.
+
+==================================================
+30. COPY LINK UX
+==================================================
+
+Copy Receipt Link should now copy the SHORT URL.
+
+Not the long canonical URL.
+
+Provide existing 2-second feedback.
+
+==================================================
+31. RECEIPT SCREEN URL
+==================================================
+
+Do NOT replace the internal canonical route.
+
+Keep:
+
+/fantasy/draft-day/:leagueId/:seasonId/receipt
+
+as the canonical application destination.
+
+Short URL is a share alias.
+
+==================================================
+32. ANALYTICS
+==================================================
+
+Inspect existing analytics conventions.
+
+If trivial and consistent, add events such as:
+
+fantasy_draft_receipt_shared
+fantasy_draft_receipt_link_copied
+fantasy_draft_receipt_shortlink_opened
+
+Include only safe IDs consistent with current analytics conventions.
+
+Do NOT add a large analytics subsystem.
+
+==================================================
+33. TESTS — SHORT LINKS
+==================================================
+
+Add focused tests for:
+
+- same receipt returns same short code
+- two receipts do not collide
+- unknown short code returns safe 404
+- redirect points to correct canonical route
+- short code contains no sensitive identifiers
+- archived receipt short link still resolves
+- unauthorized destination remains unauthorized
+
+==================================================
+34. TESTS — SHARE IMAGE
+==================================================
+
+Verify:
+
+- finalized receipt can generate/render image
+- correct winner
+- correct points
+- standings
+- co-winner support
+- no viewer-specific data
+- no Season Receipt props
+- Swayger branding
+- stable behavior
+
+Do not rely only on snapshots if meaningful data assertions are possible.
+
+==================================================
+35. TESTS — SHARE TEXT
+==================================================
+
+Single winner:
+
+contains:
+- league
+- Draft Day Swayger
+- winner
+- points
+- short URL
+
+does NOT contain:
+- UUID URL
+- viewer pick
+- every question
+
+Co-winner likewise.
+
+==================================================
+36. TESTS — PRIVACY
+==================================================
+
+Critical:
+
+Verify short-link resolution does NOT bypass membership authorization.
+
+If preview metadata is receipt-specific:
+explicitly test what unauthenticated requests can see.
+
+No guest token or internal identity data may leak.
+
+==================================================
+37. MANUAL QA — PRIMARY
+==================================================
+
+Return exact steps:
+
+1. Open finalized Food Pyramid XX Draft Day Receipt as commissioner.
+2. Tap Share Draft Day Receipt.
+3. Verify native share sheet opens.
+4. Send to SMS/RCS or equivalent.
+5. Verify receipt image is attached/displayed.
+6. Verify image shows:
+   - league
+   - Draft Day 2026
+   - J Spells winner
+   - 20 SP
+   - compact standings
+   - Swayger branding
+7. Verify text is concise.
+8. Verify link uses:
+   swayger.app/r/<code>
+9. Verify no UUID-heavy URL appears in message.
+10. Tap short link.
+11. Verify it resolves to canonical receipt.
+12. Verify authorized member can view.
+13. Try short link as unrelated account.
+14. Verify receipt remains blocked.
+15. Copy Receipt Link.
+16. Verify clipboard contains short URL.
+17. Share again.
+18. Verify same receipt uses same short URL.
+19. Test co-winner fixture.
+20. Test archived league receipt.
+21. Test Android/iOS behavior where available.
+
+==================================================
+38. MANUAL QA — MESSAGE PREVIEW
+==================================================
+
+Inspect actual SMS/RCS/iMessage result.
+
+Report:
+
+- whether image attaches successfully
+- whether platform generates an additional URL preview
+- what preview metadata appears
+- whether duplicate visual clutter remains
+- whether any platform behavior is outside app control
+
+Do not claim we can suppress previews if the messaging client controls them.
+
+==================================================
+39. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- public receipt pages
+- new receipt permissions
+- public leaderboards
+- weekly receipt images yet
+- social feeds
+- reactions/comments
+- animated videos
+- GIF generation
+- PDF receipts
+- custom URL domains
+- custom league vanity slugs
+- QR changes
+- scoring changes
+- settlement changes
+
+==================================================
+40. IMPLEMENTATION ORDER
+==================================================
+
+Do this in order:
+
+1. inspect existing Game Day/share-image infrastructure
+2. inspect short-link infrastructure
+3. inspect metadata/privacy behavior
+4. determine whether SQL is required
+5. if SQL required:
+   write migration + STOP
+6. otherwise implement short-link alias
+7. implement reusable Draft Day share card
+8. wire native image/text sharing
+9. switch Copy Link to short URL
+10. improve share text
+11. add receipt metadata only if privacy-safe
+12. tests
+13. regressions
+14. manual QA instructions
+
+==================================================
+41. SQL CHECKPOINT
+==================================================
+
+If a new persistent short-link table or schema change is required:
+
+STOP before application code.
+
+Return:
+
+SQL APPLICATION REQUIRED
+
+with:
+
+- exact migration
+- rationale
+- uniqueness strategy
+- security model
+- rollback implications
+
+Do not create production schema automatically unless current Replit workflow explicitly authorizes it.
+
+==================================================
+42. REGRESSION
+==================================================
+
+Run:
+
+- Global Draft Day Receipt tests
+- Phase 6G multi-correct
+- Draft Day Results
+- League Picks
+- authorization
+- guest access
+- archive historical reads
+- share-image tests
+- short-link tests
+
+If inexpensive:
+full maintained Fantasy regression.
+
+Return exact:
+
+TOTAL
+PASSED
+FAILED
+SKIPPED
+
+==================================================
+43. RETURN
+==================================================
+
+Return:
+
+# SHAREABLE DRAFT DAY RECEIPT V2 REPORT
+
+1. Existing sharing architecture
+2. Existing share-image infrastructure found
+3. Existing short-link infrastructure found
+4. Final short-link architecture
+5. Short-link security
+6. Share-image architecture
+7. Share-image design
+8. Native share behavior by platform
+9. Share-text behavior
+10. Copy-link behavior
+11. Receipt-specific preview decision
+12. Metadata/privacy decision
+13. Authorization verification
+14. Archive behavior
+15. Analytics changes
+16. Files changed
+17. Schema changes, if any
+18. Tests added
+19. Regression totals
+20. Bugs found/fixed
+21. Known platform limitations
+22. Exact manual QA
+
+Then STOP.
+
+Do not begin weekly receipt sharing or another feature.
+
+Final status:
+
+SHAREABLE DRAFT DAY RECEIPT V2 READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+PRIVACY DECISION REQUIRED
+
+or
+
+CORRECTION REQUIRED
