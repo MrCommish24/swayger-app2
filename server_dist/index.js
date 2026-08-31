@@ -12421,6 +12421,43 @@ async function _appendMemberToWeeklyCards(supabase, seasonId, seasonMemberId, te
     console.error("[fantasy] _appendMemberToWeeklyCards error (non-fatal):", err?.message ?? err);
   }
 }
+async function _updateDraftDaySeasonMemberLabel(supabase, seasonId, seasonMemberId, teamName, roomId) {
+  try {
+    const roomsQuery = supabase.from("gameday_rooms").select("id").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").is("archived_at", null);
+    if (roomId) roomsQuery.eq("id", roomId);
+    const { data: rooms, error: roomsError } = await roomsQuery;
+    if (roomsError || !rooms?.length) return;
+    const { data: cards, error: cardsError } = await supabase.from("gameday_pick_cards").select("id").in("room_id", rooms.map((room) => room.id)).eq("phase", "draft_day").neq("status", "settled");
+    if (cardsError || !cards?.length) return;
+    for (const card of cards) {
+      const { data: props, error: propsError } = await supabase.from("gameday_props").select("id, answer_options").eq("card_id", card.id).eq("answer_target_type", "season_member");
+      if (propsError || !props) continue;
+      for (const prop of props) {
+        const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+        let changed = false;
+        const nextOptions = options.map((option) => {
+          if (option?.id !== seasonMemberId || option.label === teamName) return option;
+          changed = true;
+          return { ...option, label: teamName };
+        });
+        if (changed) {
+          const { error: updateError } = await supabase.from("gameday_props").update({ answer_options: nextOptions }).eq("id", prop.id);
+          if (updateError) {
+            console.error(
+              "[fantasy] Draft Day team-label update failed:",
+              updateError.message
+            );
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error(
+      "[fantasy] Draft Day team-label update failed:",
+      error?.message ?? error
+    );
+  }
+}
 function decodeJwtPayload(token) {
   try {
     const parts = token.split(".");
@@ -12752,6 +12789,15 @@ function registerFantasyRoutes(app2) {
           team_name.trim()
         );
       }
+      if (result.season_member_id) {
+        await _updateDraftDaySeasonMemberLabel(
+          supabase,
+          seasonId,
+          result.season_member_id,
+          team_name.trim(),
+          roomIdForSnapshot
+        );
+      }
       res2.status(result.already_exists ? 200 : 201).json(result);
     }
   );
@@ -12908,6 +12954,17 @@ function registerFantasyRoutes(app2) {
           );
         }
       }
+      for (const r of results.filter((row) => row.status !== "failed")) {
+        if (r.season_member_id) {
+          await _updateDraftDaySeasonMemberLabel(
+            supabase,
+            seasonId,
+            r.season_member_id,
+            r.team_name,
+            roomIdForSnapshot
+          );
+        }
+      }
       console.log(
         `[fantasy] Batch import: season=${seasonId.slice(0, 8)}\u2026 created=${created_count} replayed=${replayed_count} failed=${failed_count} weekly_updated=${newlyCreatedResults.length}`
       );
@@ -12955,6 +13012,12 @@ function registerFantasyRoutes(app2) {
         });
         return;
       }
+      await _updateDraftDaySeasonMemberLabel(
+        supabase,
+        seasonId,
+        seasonMemberId,
+        team_name.trim()
+      );
       console.log(
         `[fantasy] Member renamed: season=${seasonId.slice(0, 8)}\u2026 sm=${seasonMemberId.slice(0, 8)}\u2026 props_updated=${data?.props_updated} participant_updated=${data?.participant_updated}`
       );
@@ -13372,13 +13435,13 @@ function registerFantasyRoutes(app2) {
     }
     throw new Error("Could not generate unique room code after 30 attempts");
   }
-  function buildAnswerOptions(targetType, seasonMembers, teams, staticOptions, supportsNoOne = false) {
+  function buildAnswerOptions(targetType, seasonMembers, teams, staticOptions, supportsNoOne = false, useTeamNamesForMembers = false) {
     const NO_ONE = { id: "no_one", label: "No one", type: "static" };
     switch (targetType) {
       case "season_member": {
         const opts = seasonMembers.map((sm) => ({
           id: sm.id,
-          label: sm.display_name ?? "Unknown",
+          label: useTeamNamesForMembers ? sm.team_name ?? "Unknown Team" : sm.display_name ?? "Unknown",
           type: "season_member"
         }));
         if (supportsNoOne) opts.push(NO_ONE);
@@ -13602,10 +13665,22 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { data: seasonMembers } = await supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true).order("created_at", { ascending: true });
-      const { data: teams } = await supabase.from("fantasy_teams").select("id, team_name").eq("league_season_id", seasonId);
+      const { data: teams } = await supabase.from("fantasy_teams").select("id, team_name, fantasy_team_managers(season_member_id)").eq("league_season_id", seasonId);
+      const teamNameBySeasonMemberId = /* @__PURE__ */ new Map();
+      for (const team of teams ?? []) {
+        for (const manager of team.fantasy_team_managers ?? []) {
+          if (manager.season_member_id) {
+            teamNameBySeasonMemberId.set(
+              manager.season_member_id,
+              team.team_name ?? null
+            );
+          }
+        }
+      }
       const memberList = (seasonMembers ?? []).map((sm) => ({
         id: sm.id,
-        display_name: sm.fantasy_league_members?.display_name ?? null
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+        team_name: teamNameBySeasonMemberId.get(sm.id) ?? null
       }));
       const teamList = teams ?? [];
       const propsPayload = templates.map((tmpl, i) => ({
@@ -13616,7 +13691,8 @@ function registerFantasyRoutes(app2) {
           memberList,
           teamList,
           tmpl.answer_options,
-          tmpl.supports_no_one ?? false
+          tmpl.supports_no_one ?? false,
+          true
         ),
         scoring_scope: tmpl.scoring_scope,
         point_value: tmpl.point_value,
@@ -13787,11 +13863,23 @@ function registerFantasyRoutes(app2) {
       for (const t of [...grandfatheredTemplates, ...newTemplates]) templateById[t.id] = t;
       const [membersResult, teamsResult] = await Promise.all([
         supabase.from("fantasy_season_members").select("id, fantasy_league_members(display_name)").eq("league_season_id", seasonId).eq("is_active", true).order("created_at", { ascending: true }),
-        supabase.from("fantasy_teams").select("id, team_name").eq("league_season_id", seasonId)
+        supabase.from("fantasy_teams").select("id, team_name, fantasy_team_managers(season_member_id)").eq("league_season_id", seasonId)
       ]);
+      const teamNameBySeasonMemberId = /* @__PURE__ */ new Map();
+      for (const team of teamsResult.data ?? []) {
+        for (const manager of team.fantasy_team_managers ?? []) {
+          if (manager.season_member_id) {
+            teamNameBySeasonMemberId.set(
+              manager.season_member_id,
+              team.team_name ?? null
+            );
+          }
+        }
+      }
       const memberList = (membersResult.data ?? []).map((sm) => ({
         id: sm.id,
-        display_name: sm.fantasy_league_members?.display_name ?? null
+        display_name: sm.fantasy_league_members?.display_name ?? null,
+        team_name: teamNameBySeasonMemberId.get(sm.id) ?? null
       }));
       const teamList = teamsResult.data ?? [];
       const propsPayload = selected_prop_ids.map((id, i) => {
@@ -13804,7 +13892,8 @@ function registerFantasyRoutes(app2) {
             memberList,
             teamList,
             tmpl.answer_options,
-            tmpl.supports_no_one ?? false
+            tmpl.supports_no_one ?? false,
+            true
           ),
           scoring_scope: tmpl.scoring_scope,
           point_value: tmpl.point_value,

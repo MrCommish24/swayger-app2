@@ -11,6 +11,8 @@
     "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist",
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "db:push": "drizzle-kit push",
+    "db:migrate:fantasy-team-labels": "npx tsx server/migrations/run-003-fantasy-team-labels.ts",
+    "db:repair:live-draft-day-labels": "npx tsx server/migrations/repair-live-draft-day-team-labels.ts",
     "start": "npx expo start",
     "test:gameday:web": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-gameday-web-regression.ts",
     "test:gameday:discord": "npx tsx server/test-gameday-discord-isolation.ts",

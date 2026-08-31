@@ -130,7 +130,7 @@ BEGIN
       SET    answer_options = answer_options || jsonb_build_array(
                jsonb_build_object(
                  'id',    v_season_member_id::text,
-                 'label', trim(p_display_name),
+                  'label', trim(p_team_name),
                  'type',  'season_member'
                )
              )

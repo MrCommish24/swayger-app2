@@ -168,6 +168,83 @@ async function _appendMemberToWeeklyCards(
   }
 }
 
+/**
+ * Keep season_member labels on active Fantasy Draft Day cards aligned with
+ * team_name. Answer IDs are never changed, so existing picks remain valid.
+ *
+ * This server-side repair is intentionally best-effort: it also covers
+ * projects whose Supabase function migration has not been applied yet.
+ */
+async function _updateDraftDaySeasonMemberLabel(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  seasonId: string,
+  seasonMemberId: string,
+  teamName: string,
+  roomId?: string | null,
+): Promise<void> {
+  try {
+    const roomsQuery = supabase
+      .from("gameday_rooms")
+      .select("id")
+      .eq("league_season_id", seasonId)
+      .eq("competition_type", "draft_day")
+      .eq("experience_type", "fantasy")
+      .is("archived_at", null);
+
+    if (roomId) roomsQuery.eq("id", roomId);
+
+    const { data: rooms, error: roomsError } = await roomsQuery;
+    if (roomsError || !rooms?.length) return;
+
+    const { data: cards, error: cardsError } = await supabase
+      .from("gameday_pick_cards")
+      .select("id")
+      .in("room_id", (rooms as any[]).map((room) => room.id))
+      .eq("phase", "draft_day")
+      .neq("status", "settled");
+
+    if (cardsError || !cards?.length) return;
+
+    for (const card of cards as any[]) {
+      const { data: props, error: propsError } = await supabase
+        .from("gameday_props")
+        .select("id, answer_options")
+        .eq("card_id", card.id)
+        .eq("answer_target_type", "season_member");
+
+      if (propsError || !props) continue;
+
+      for (const prop of props as any[]) {
+        const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+        let changed = false;
+        const nextOptions = options.map((option: any) => {
+          if (option?.id !== seasonMemberId || option.label === teamName) return option;
+          changed = true;
+          return { ...option, label: teamName };
+        });
+
+        if (changed) {
+          const { error: updateError } = await supabase
+            .from("gameday_props")
+            .update({ answer_options: nextOptions })
+            .eq("id", prop.id);
+          if (updateError) {
+            console.error(
+              "[fantasy] Draft Day team-label update failed:",
+              updateError.message,
+            );
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error(
+      "[fantasy] Draft Day team-label update failed:",
+      error?.message ?? error,
+    );
+  }
+}
+
 /** Fast JWT decode — no signature verification. */
 function decodeJwtPayload(token: string): { sub?: string } | null {
   try {
@@ -821,6 +898,19 @@ export function registerFantasyRoutes(app: Express) {
         );
       }
 
+      // The deployed RPC may still append display_name until its SQL migration
+      // is applied. Repair only this member's active Draft Day option while
+      // preserving every option ID and submitted pick.
+      if (result.season_member_id) {
+        await _updateDraftDaySeasonMemberLabel(
+          supabase,
+          seasonId,
+          result.season_member_id,
+          team_name.trim(),
+          roomIdForSnapshot,
+        );
+      }
+
       res.status(result.already_exists ? 200 : 201).json(result);
     }
   );
@@ -1057,6 +1147,21 @@ export function registerFantasyRoutes(app: Express) {
         }
       }
 
+      // Repair successful replays too. If the original request committed the
+      // member but lost the response before the label repair ran, retrying the
+      // same idempotency key must still converge the active Draft Day label.
+      for (const r of results.filter((row) => row.status !== "failed")) {
+        if (r.season_member_id) {
+          await _updateDraftDaySeasonMemberLabel(
+            supabase,
+            seasonId,
+            r.season_member_id,
+            r.team_name,
+            roomIdForSnapshot,
+          );
+        }
+      }
+
       console.log(
         `[fantasy] Batch import: season=${seasonId.slice(0, 8)}… ` +
         `created=${created_count} replayed=${replayed_count} failed=${failed_count} weekly_updated=${newlyCreatedResults.length}`
@@ -1134,6 +1239,15 @@ export function registerFantasyRoutes(app: Express) {
         });
         return;
       }
+
+      // Keep the active Draft Day snapshot team-based even when the deployed
+      // rename RPC predates the team-label migration.
+      await _updateDraftDaySeasonMemberLabel(
+        supabase,
+        seasonId,
+        seasonMemberId,
+        team_name.trim(),
+      );
 
       console.log(
         `[fantasy] Member renamed: season=${seasonId.slice(0, 8)}… sm=${seasonMemberId.slice(0, 8)}… ` +
@@ -1947,10 +2061,15 @@ export function registerFantasyRoutes(app: Express) {
   // The "no_one" id is stable — never use the label string as canonical identity.
   function buildAnswerOptions(
     targetType: string | null,
-    seasonMembers: Array<{ id: string; display_name: string | null }>,
+    seasonMembers: Array<{
+      id: string;
+      display_name: string | null;
+      team_name?: string | null;
+    }>,
     teams: Array<{ id: string; team_name: string | null }>,
     staticOptions?: any[],
-    supportsNoOne = false
+    supportsNoOne = false,
+    useTeamNamesForMembers = false
   ): Array<{ id: string; label: string; type: string }> {
     const NO_ONE = { id: "no_one", label: "No one", type: "static" };
 
@@ -1958,7 +2077,9 @@ export function registerFantasyRoutes(app: Express) {
       case "season_member": {
         const opts = seasonMembers.map((sm) => ({
           id:    sm.id,
-          label: sm.display_name ?? "Unknown",
+          label: useTeamNamesForMembers
+            ? (sm.team_name ?? "Unknown Team")
+            : (sm.display_name ?? "Unknown"),
           type:  "season_member",
         }));
         if (supportsNoOne) opts.push(NO_ONE);
@@ -2340,14 +2461,33 @@ export function registerFantasyRoutes(app: Express) {
       // ── Fetch teams for fantasy_team targets ──────────────────────────────
       const { data: teams } = await supabase
         .from("fantasy_teams")
-        .select("id, team_name")
+        .select("id, team_name, fantasy_team_managers(season_member_id)")
         .eq("league_season_id", seasonId);
 
-      // Flatten the embedded join result into { id, display_name }
+      // Resolve each season_member option to its fantasy team's name. The
+      // stable season_member ID remains the canonical answer value.
+      const teamNameBySeasonMemberId = new Map<string, string | null>();
+      for (const team of (teams ?? []) as any[]) {
+        for (const manager of (team.fantasy_team_managers ?? []) as any[]) {
+          if (manager.season_member_id) {
+            teamNameBySeasonMemberId.set(
+              manager.season_member_id,
+              team.team_name ?? null
+            );
+          }
+        }
+      }
+
+      // Flatten the embedded joins into the snapshot model.
       const memberList = (seasonMembers ?? []).map((sm: any) => ({
         id:           sm.id,
         display_name: sm.fantasy_league_members?.display_name ?? null,
-      })) as Array<{ id: string; display_name: string | null }>;
+        team_name:    teamNameBySeasonMemberId.get(sm.id) ?? null,
+      })) as Array<{
+        id: string;
+        display_name: string | null;
+        team_name: string | null;
+      }>;
       const teamList = (teams ?? []) as Array<{ id: string; team_name: string | null }>;
 
       // ── Build prop payload for RPC ────────────────────────────────────────
@@ -2360,7 +2500,8 @@ export function registerFantasyRoutes(app: Express) {
           memberList,
           teamList,
           tmpl.answer_options,
-          tmpl.supports_no_one ?? false
+          tmpl.supports_no_one ?? false,
+          true
         ),
         scoring_scope:      tmpl.scoring_scope,
         point_value:        tmpl.point_value,
@@ -2670,14 +2811,31 @@ export function registerFantasyRoutes(app: Express) {
           .order("created_at", { ascending: true }),
         supabase
           .from("fantasy_teams")
-          .select("id, team_name")
+          .select("id, team_name, fantasy_team_managers(season_member_id)")
           .eq("league_season_id", seasonId),
       ]);
+
+      const teamNameBySeasonMemberId = new Map<string, string | null>();
+      for (const team of (teamsResult.data ?? []) as any[]) {
+        for (const manager of (team.fantasy_team_managers ?? []) as any[]) {
+          if (manager.season_member_id) {
+            teamNameBySeasonMemberId.set(
+              manager.season_member_id,
+              team.team_name ?? null
+            );
+          }
+        }
+      }
 
       const memberList = (membersResult.data ?? []).map((sm: any) => ({
         id:           sm.id,
         display_name: sm.fantasy_league_members?.display_name ?? null,
-      })) as Array<{ id: string; display_name: string | null }>;
+        team_name:    teamNameBySeasonMemberId.get(sm.id) ?? null,
+      })) as Array<{
+        id: string;
+        display_name: string | null;
+        team_name: string | null;
+      }>;
       const teamList = (teamsResult.data ?? []) as Array<{ id: string; team_name: string | null }>;
 
       // ── Build props payload (preserving selection order) ────────────────────
@@ -2691,7 +2849,8 @@ export function registerFantasyRoutes(app: Express) {
             memberList,
             teamList,
             tmpl.answer_options,
-            tmpl.supports_no_one ?? false
+            tmpl.supports_no_one ?? false,
+            true
           ),
           scoring_scope:      tmpl.scoring_scope,
           point_value:        tmpl.point_value,

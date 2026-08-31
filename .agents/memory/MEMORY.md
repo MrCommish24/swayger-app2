@@ -29,3 +29,4 @@
 - [NFL Weekly Master Slate](gameday-nfl-weekly-master-slate.md) — source-only admin lifecycle, explicit approved-to-draft reset, archived replacement rule, Supabase migration required.
 - [NFL Weekly Slate Publishing](gameday-nfl-weekly-slate-publishing.md) — active-guild room materialization only; slate+guild idempotency; post-ready payloads never perform Discord delivery.
 - [Fantasy Multi-League Claims](gameday-fantasy-multi-league-claims.md) — resolve authenticated claims within the requested league; users may have multiple active league memberships.
+- [Fantasy Draft Day team labels](gameday-fantasy-team-labels.md) — season-member IDs stay stable while active answer labels use team names; settled snapshots remain historical.

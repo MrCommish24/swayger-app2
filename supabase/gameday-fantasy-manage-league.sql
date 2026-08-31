@@ -114,7 +114,7 @@ BEGIN
     SET    answer_options = (
              SELECT jsonb_agg(
                CASE WHEN (elem ->> 'id') = p_season_member_id::TEXT
-                    THEN jsonb_set(elem, '{label}', to_jsonb(trim(p_display_name)))
+                     THEN jsonb_set(elem, '{label}', to_jsonb(trim(p_team_name)))
                     ELSE elem
                END
                ORDER BY ordinality
@@ -298,7 +298,7 @@ BEGIN
       SET    answer_options = answer_options || jsonb_build_array(
                jsonb_build_object(
                  'id',    v_season_member_id::TEXT,
-                 'label', trim(p_display_name),
+                  'label', trim(p_team_name),
                  'type',  'season_member'
                )
              )
