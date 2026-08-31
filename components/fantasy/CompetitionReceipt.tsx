@@ -18,6 +18,7 @@ import {
   CompetitionReceiptLeaderboardEntry,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import SwaygerMark from "@/components/SwaygerMark";
 
 const C = Colors.dark;
 
@@ -47,6 +48,10 @@ export function CompetitionReceipt({
   return (
     <View>
       <View style={styles.receiptHeader}>
+        <View style={styles.brandRow}>
+          <SwaygerMark color={C.tint} size={20} />
+          <Text style={styles.brandName}>SWAYGER FANTASY</Text>
+        </View>
         <Text style={styles.eyebrow}>GLOBAL DRAFT DAY RECEIPT</Text>
         <Text style={styles.leagueName} numberOfLines={2}>
           {data.league_name ?? "Fantasy League"}
@@ -220,6 +225,8 @@ function StandingRow({
 
 const styles = StyleSheet.create({
   receiptHeader: { marginBottom: 14 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 13 },
+  brandName: { color: C.textSecondary, fontSize: 11, fontWeight: "800", letterSpacing: 1.1 },
   eyebrow: { color: C.tint, fontSize: 11, fontWeight: "800", letterSpacing: 1.5, marginBottom: 8 },
   leagueName: { color: C.text, fontSize: 17, fontWeight: "700", marginBottom: 3 },
   title: { color: C.text, fontSize: 28, fontWeight: "800", letterSpacing: -0.5 },

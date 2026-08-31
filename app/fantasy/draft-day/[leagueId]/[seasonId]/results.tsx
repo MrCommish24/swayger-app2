@@ -111,7 +111,7 @@ export default function DraftDayResultsScreen() {
   const {
     league_name, season_year, winners = [], leaderboard = [],
     my_competition_picks = [], my_total_points = 0, my_correct_count = 0,
-    season_props_pending_count = 0, total_competition_props = 0,
+    season_props_pending_count = 0,
   } = results;
 
   const hasMyPicks = my_competition_picks.length > 0;
@@ -269,7 +269,7 @@ export default function DraftDayResultsScreen() {
           </View>
           <Text style={styles.seasonPendingBody}>
             {season_props_pending_count} season prediction{season_props_pending_count !== 1 ? "s" : ""} will be settled as the season unfolds.
-            They don't affect the Draft Day results above.
+            They don&apos;t affect the Draft Day results above.
           </Text>
         </View>
       )}
