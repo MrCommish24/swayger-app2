@@ -70,6 +70,59 @@ function _correctAnswers(prop: any): string[] {
   return normalizeCorrectAnswers(prop?.correct_answer_ids, prop?.correct_answer);
 }
 
+const _RECEIPT_ALIAS_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+
+function _generateReceiptAliasCode(): string {
+  const bytes = randomBytes(16);
+  let code = "";
+  for (const byte of bytes) {
+    code += _RECEIPT_ALIAS_ALPHABET[byte & 31];
+  }
+  return code;
+}
+
+async function _getOrCreateDraftDayReceiptAlias(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  seasonId: string,
+): Promise<string> {
+  const { data: existing, error: existingError } = await supabase
+    .from("fantasy_draft_day_receipt_aliases")
+    .select("short_code")
+    .eq("league_season_id", seasonId)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+  if (existing?.short_code) return (existing as any).short_code;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = _generateReceiptAliasCode();
+    const { data: inserted, error: insertError } = await supabase
+      .from("fantasy_draft_day_receipt_aliases")
+      .insert({ league_season_id: seasonId, short_code: shortCode })
+      .select("short_code")
+      .maybeSingle();
+
+    if (!insertError && inserted?.short_code) {
+      return (inserted as any).short_code;
+    }
+
+    if ((insertError as any)?.code !== "23505") {
+      throw new Error(insertError?.message ?? "Failed to create receipt alias");
+    }
+
+    // A concurrent request for this receipt may have won the season key, or
+    // an astronomically unlikely code collision may have occurred.
+    const { data: race } = await supabase
+      .from("fantasy_draft_day_receipt_aliases")
+      .select("short_code")
+      .eq("league_season_id", seasonId)
+      .maybeSingle();
+    if (race?.short_code) return (race as any).short_code;
+  }
+
+  throw new Error("Failed to generate a unique receipt alias");
+}
+
 /**
  * _appendMemberToWeeklyCards
  * ─────────────────────────────────────────────────────────────────────────────
@@ -4100,6 +4153,79 @@ export function registerFantasyRoutes(app: Express) {
         total_competition_props: competitionProps.length,
       });
     }
+  );
+
+  // ── POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt/alias
+  //
+  // Create-or-return the stable alias used for commissioner/co-commissioner
+  // sharing. The alias row contains no receipt data and does not grant access.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt/alias",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      const { data: league } = await supabase
+        .from("fantasy_leagues")
+        .select("id")
+        .eq("id", leagueId)
+        .maybeSingle();
+      if (!league) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+      if (viewer.role !== "commissioner" && viewer.role !== "co_commissioner") {
+        res.status(403).json({ error: "Commissioner authority required for sharing" });
+        return;
+      }
+
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .maybeSingle();
+      if (!room) {
+        res.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      if ((room as any).status !== "finalized") {
+        res.status(409).json({ error: "Draft Day receipt is not finalized" });
+        return;
+      }
+
+      try {
+        const shortCode = await _getOrCreateDraftDayReceiptAlias(supabase, seasonId);
+        res.json({ short_code: shortCode });
+      } catch (error) {
+        console.error("[fantasy-receipt-alias] create failed:", error);
+        res.status(500).json({ error: "Unable to prepare receipt link" });
+      }
+    },
   );
 
   // ╔══════════════════════════════════════════════════════════════════════════╗

@@ -693,6 +693,23 @@ export async function getDraftDayReceipt(
   );
 }
 
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt/alias
+export interface DraftDayReceiptAlias {
+  short_code: string;
+}
+
+export async function getDraftDayReceiptAlias(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2],
+): Promise<DraftDayReceiptAlias> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/receipt/alias`,
+    { method: "POST" },
+    auth,
+  );
+}
+
 // ── Phase 6E: League Archive / Restore ───────────────────────────────────────
 
 export interface ArchiveLeagueResult {
@@ -1016,6 +1033,18 @@ export function buildFantasyInviteUrl(leagueId: string, seasonId: string): strin
  * always checked server-side when a member opens it. */
 export function buildDraftDayReceiptUrl(leagueId: string, seasonId: string): string {
   const path = `/fantasy/draft-day/${leagueId}/${seasonId}/receipt`;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+/** Build the opaque short URL for a finalized Draft Day receipt. */
+export function buildDraftDayReceiptShortUrl(shortCode: string): string {
+  const path = `/r/${shortCode}`;
   if (typeof window !== "undefined" && window.location?.origin) {
     return `${window.location.origin}${path}`;
   }
