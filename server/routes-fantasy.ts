@@ -35,6 +35,11 @@ import type { Express, Request, Response } from "express";
 import { createHash, randomBytes } from "crypto";
 import { settlePropCore } from "./gameday-settle-helper";
 import { getServiceSupabase } from "./supabase-service";
+import {
+  normalizeCorrectAnswers,
+  parseSettlementCorrectAnswers,
+  sameCorrectAnswerSet,
+} from "./correct-answers";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -59,6 +64,10 @@ function _computeAddMemberHash(
     teamName.trim().toLowerCase(),
   ].join("|");
   return createHash("sha256").update(raw).digest("hex");
+}
+
+function _correctAnswers(prop: any): string[] {
+  return normalizeCorrectAnswers(prop?.correct_answer_ids, prop?.correct_answer);
 }
 
 /**
@@ -3553,7 +3562,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: allProps } = await supabase
         .from("gameday_props")
-        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer")
+        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
       const propList = (allProps ?? []) as any[];
@@ -3578,6 +3587,7 @@ export function registerFantasyRoutes(app: Express) {
           scoring_scope:  p.scoring_scope,
           status:         p.status,
           correct_answer: p.correct_answer ?? null,
+          correct_answer_ids: _correctAnswers(p),
           answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
         })),
         settled_count:          settledCount,
@@ -3611,9 +3621,11 @@ export function registerFantasyRoutes(app: Express) {
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
 
-      const { prop_id, correct_answer } = req.body as { prop_id?: string; correct_answer?: string };
+      const { prop_id } = req.body as { prop_id?: string };
       if (!prop_id)       { res.status(400).json({ error: "prop_id is required" }); return; }
-      if (!correct_answer) { res.status(400).json({ error: "correct_answer is required" }); return; }
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) { res.status(400).json({ error: parsedAnswers.error }); return; }
+      const correctAnswers = parsedAnswers.answers;
 
       const rc = await _getDdRoomAndCard(supabase, seasonId);
       if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
@@ -3631,7 +3643,7 @@ export function registerFantasyRoutes(app: Express) {
       // Load and validate prop
       const { data: prop } = await supabase
         .from("gameday_props")
-        .select("id, card_id, scoring_scope, status, correct_answer, answer_options, question")
+        .select("id, card_id, scoring_scope, status, correct_answer, correct_answer_ids, answer_options, question")
         .eq("id", prop_id)
         .eq("card_id", (card as any).id)
         .maybeSingle();
@@ -3646,23 +3658,32 @@ export function registerFantasyRoutes(app: Express) {
         return;
       }
 
-      // Validate correct_answer is a published option ID
+      // Validate every correct answer is a published option ID.
       const opts: Array<{ id: string }> = Array.isArray((prop as any).answer_options)
         ? (prop as any).answer_options
         : [];
       const validIds = new Set(opts.map((o) => o.id));
-      if (!validIds.has(correct_answer)) {
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
         res.status(400).json({
-          error: "correct_answer must be a valid published answer option ID",
+          error: "Every correct answer must be a valid published answer option ID",
           valid_answer_ids: Array.from(validIds),
         });
         return;
       }
 
-      // Idempotency: same answer on already-settled prop → no-op
+      // Idempotency: same answer set on already-settled prop → no-op.
       const wasAlreadySettled = (prop as any).status === "settled";
-      if (wasAlreadySettled && (prop as any).correct_answer === correct_answer) {
-        res.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+      const previousAnswers = _correctAnswers(prop);
+      if (wasAlreadySettled && sameCorrectAnswerSet(previousAnswers, correctAnswers)) {
+        res.json({
+          ok: true,
+          idempotent: true,
+          was_correction: false,
+          prop_id,
+          correct_answer: correctAnswers[0],
+          correct_answer_ids: correctAnswers,
+        });
         return;
       }
 
@@ -3673,7 +3694,7 @@ export function registerFantasyRoutes(app: Express) {
       const result = await settlePropCore(supabase, {
         propId:       prop_id,
         cardId:       (card as any).id,
-        correctAnswer: correct_answer,
+        correctAnswers,
       });
 
       // Phase 4C invariant: finalized rooms keep card_status = 'locked' permanently.
@@ -3692,7 +3713,7 @@ export function registerFantasyRoutes(app: Express) {
 
       console.log(
         `[fantasy] settle prop=${prop_id.slice(0, 8)}… scope=${(prop as any).scoring_scope} ` +
-        `answer=${correct_answer} by=${commissioner.userId.slice(0, 8)}… ` +
+        `answers=${correctAnswers.join(",")} by=${commissioner.userId.slice(0, 8)}… ` +
         `card_auto_settled=${result.cardAutoSettled}`
       );
 
@@ -3701,7 +3722,9 @@ export function registerFantasyRoutes(app: Express) {
         idempotent:       false,
         was_correction:   wasAlreadySettled,  // true = changed existing result (mirrors Game Day re-settle)
         prop_id,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
+        correct_answers: correctAnswers,
         scoring_scope:    (prop as any).scoring_scope,
         card_auto_settled: result.cardAutoSettled,
       });
@@ -3817,7 +3840,7 @@ export function registerFantasyRoutes(app: Express) {
       // Load all props for this card
       const { data: allProps } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
       const propList = (allProps ?? []) as any[];
@@ -3873,7 +3896,8 @@ export function registerFantasyRoutes(app: Express) {
               myCompPicks = competitionProps.map((prop: any) => {
                 const pick          = pickByProp[prop.id] ?? null;
                 const myAnswerId    = pick?.selected_answer ?? null;
-                const correctId     = prop.correct_answer ?? null;
+                const correctIds    = _correctAnswers(prop);
+                const correctId     = correctIds[0] ?? null;
                 const isCorrect     = pick?.is_correct ?? null;
                 const pointsEarned  = isCorrect === true ? (pointValueMap[prop.id] ?? 0) : 0;
                 if (isCorrect === true) { myTotalPoints += pointsEarned; myCorrectCount++; }
@@ -3886,6 +3910,8 @@ export function registerFantasyRoutes(app: Express) {
                   my_answer_label:      myAnswerId ? (answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId) : null,
                   correct_answer_id:    correctId,
                   correct_answer_label: correctId ? (answerLabelMap[prop.id]?.[correctId] ?? correctId) : null,
+                  correct_answer_ids:   correctIds,
+                  correct_answer_labels: correctIds.map((id: string) => answerLabelMap[prop.id]?.[id] ?? id),
                   is_correct:           isCorrect,
                   points_earned:        pointsEarned,
                 };
@@ -4018,7 +4044,7 @@ export function registerFantasyRoutes(app: Express) {
     // 2. Props for this card (include correct_answer — this is the reveal endpoint)
     let propQuery = supabase
       .from("gameday_props")
-      .select("id, question, answer_options, answer_target_type, correct_answer, display_order, scoring_scope, point_value")
+      .select("id, question, answer_options, answer_target_type, correct_answer, correct_answer_ids, display_order, scoring_scope, point_value")
       .eq("card_id", cardId)
       .order("display_order", { ascending: true });
     if (scopeFilter) propQuery = (propQuery as any).eq("scoring_scope", scopeFilter);
@@ -4055,8 +4081,9 @@ export function registerFantasyRoutes(app: Express) {
     // 4. Build per-prop distribution
     const responseProps = propList.map((prop: any) => {
       const propId       = prop.id           as string;
-      const correctId    = (prop.correct_answer as string | null) ?? null;
-      const isPropSettled = correctId !== null;
+      const correctIds   = _correctAnswers(prop);
+      const correctId    = correctIds[0] ?? null;
+      const isPropSettled = prop.status === "settled" || correctIds.length > 0;
       const opts: Array<{ id: string; label: string; type?: string }> =
         Array.isArray(prop.answer_options) ? prop.answer_options : [];
 
@@ -4086,7 +4113,7 @@ export function registerFantasyRoutes(app: Express) {
       // Filter zero-count answers (§11): hide unless settled correct answer
       const filtered = answerRows.filter((a) => {
         if (a.pickers.length > 0) return true;
-        if (isPropSettled && a.answer_id === correctId) return true;
+        if (isPropSettled && correctIds.includes(a.answer_id)) return true;
         return false;
       });
 
@@ -4097,7 +4124,7 @@ export function registerFantasyRoutes(app: Express) {
         const percentage = totalPicks > 0
           ? Math.round((count / totalPicks) * 1000) / 10
           : 0;
-        const isCorrect  = correctId !== null ? a.answer_id === correctId : null;
+        const isCorrect  = isPropSettled ? correctIds.includes(a.answer_id) : null;
         const viewerPicked = viewerParticipantId !== null && a.pickers.includes(viewerParticipantId);
 
         const pickerDetails = a.pickers.map((pid: string) => {
@@ -4129,6 +4156,7 @@ export function registerFantasyRoutes(app: Express) {
         total_picks:        totalPicks,
         abstentions,
         correct_answer_id:  correctId,
+        correct_answer_ids: correctIds,
         answers,
       };
     });
@@ -5467,7 +5495,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: allProps } = await supabase
         .from("gameday_props")
-        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer")
+        .select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids")
         .eq("card_id", (card as any).id)
         .eq("scoring_scope", "competition")
         .order("display_order", { ascending: true });
@@ -5493,6 +5521,7 @@ export function registerFantasyRoutes(app: Express) {
           scoring_scope:  p.scoring_scope,
           status:         p.status,
           correct_answer: p.correct_answer ?? null,
+          correct_answer_ids: _correctAnswers(p),
           answer_options: Array.isArray(p.answer_options) ? p.answer_options : [],
         })),
         settled_count:           settledCount,
@@ -5516,9 +5545,11 @@ export function registerFantasyRoutes(app: Express) {
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
 
-      const { prop_id, correct_answer } = req.body as { prop_id?: string; correct_answer?: string };
+      const { prop_id } = req.body as { prop_id?: string };
       if (!prop_id)        { res.status(400).json({ error: "prop_id is required" }); return; }
-      if (!correct_answer) { res.status(400).json({ error: "correct_answer is required" }); return; }
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) { res.status(400).json({ error: parsedAnswers.error }); return; }
+      const correctAnswers = parsedAnswers.answers;
 
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
       if (!rc.ok) { res.status(rc.status).json(rc.body); return; }
@@ -5537,7 +5568,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: prop } = await supabase
         .from("gameday_props")
-        .select("id, card_id, scoring_scope, status, correct_answer, answer_options")
+        .select("id, card_id, scoring_scope, status, correct_answer, correct_answer_ids, answer_options")
         .eq("id", prop_id)
         .eq("card_id", (card as any).id)
         .maybeSingle();
@@ -5545,25 +5576,33 @@ export function registerFantasyRoutes(app: Express) {
 
       const opts     = Array.isArray((prop as any).answer_options) ? (prop as any).answer_options : [];
       const validIds = new Set(opts.map((o: any) => o.id as string));
-      if (!validIds.has(correct_answer)) {
-        res.status(400).json({ error: "correct_answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
+        res.status(400).json({ error: "Every correct answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
         return;
       }
 
       const wasAlreadySettled = (prop as any).status === "settled";
-      if (wasAlreadySettled && (prop as any).correct_answer === correct_answer) {
-        res.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+      if (wasAlreadySettled && sameCorrectAnswerSet(_correctAnswers(prop), correctAnswers)) {
+        res.json({
+          ok: true,
+          idempotent: true,
+          was_correction: false,
+          prop_id,
+          correct_answer: correctAnswers[0],
+          correct_answer_ids: correctAnswers,
+        });
         return;
       }
 
       const result = await settlePropCore(supabase, {
         propId:        prop_id,
         cardId:        (card as any).id,
-        correctAnswer: correct_answer,
+        correctAnswers,
       });
 
       console.log(
-        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}… week=${wn} answer=${correct_answer} ` +
+        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}… week=${wn} answers=${correctAnswers.join(",")} ` +
         `correction=${wasAlreadySettled} by=${commissioner.userId.slice(0, 8)}…`
       );
 
@@ -5572,7 +5611,9 @@ export function registerFantasyRoutes(app: Express) {
         idempotent:       false,
         was_correction:   wasAlreadySettled,
         prop_id,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
+        correct_answers: correctAnswers,
         card_auto_settled: result.cardAutoSettled,
       });
     }
@@ -5665,7 +5706,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: allProps } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
         .eq("card_id", (card as any).id)
         .eq("scoring_scope", "competition")
         .order("display_order", { ascending: true });
@@ -5716,7 +5757,8 @@ export function registerFantasyRoutes(app: Express) {
               myCompPicks = competitionProps.map((prop: any) => {
                 const pick         = pickByProp[prop.id] ?? null;
                 const myAnswerId   = pick?.selected_answer ?? null;
-                const correctId    = prop.correct_answer ?? null;
+                const correctIds   = _correctAnswers(prop);
+                const correctId    = correctIds[0] ?? null;
                 const isCorrect    = pick?.is_correct ?? null;
                 const pointsEarned = isCorrect === true ? (pvMap[prop.id] ?? 0) : 0;
                 if (isCorrect === true) { myTotalPoints += pointsEarned; myCorrectCount++; }
@@ -5729,6 +5771,8 @@ export function registerFantasyRoutes(app: Express) {
                   my_answer_label:      myAnswerId ? (answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId) : null,
                   correct_answer_id:    correctId,
                   correct_answer_label: correctId ? (answerLabelMap[prop.id]?.[correctId] ?? correctId) : null,
+                  correct_answer_ids:   correctIds,
+                  correct_answer_labels: correctIds.map((id: string) => answerLabelMap[prop.id]?.[id] ?? id),
                   is_correct:           isCorrect,
                   points_earned:        pointsEarned,
                 };

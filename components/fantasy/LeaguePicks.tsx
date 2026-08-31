@@ -18,7 +18,6 @@
 
 import React, { useState } from "react";
 import {
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -176,7 +175,7 @@ function PropCard({
       )}
 
       {/* Answer distribution */}
-      {hasAnyPicks || prop.correct_answer_id ? (
+      {hasAnyPicks || prop.correct_answer_id || (prop.correct_answer_ids?.length ?? 0) > 0 ? (
         <View style={styles.answerList}>
           {prop.answers.map((answer) => {
             const isViewerAnswer =

@@ -25,6 +25,7 @@ import {
   phaseLabel,
 } from "./gameday-normalize.js";
 import { settlePropCore } from "./gameday-settle-helper.js";
+import { parseSettlementCorrectAnswers } from "./correct-answers.js";
 import { getServiceSupabase } from "./supabase-service.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
@@ -3010,7 +3011,7 @@ export function registerGamedayRoutes(app: Express) {
       const { data: rawCards } = await supabase
         .from("gameday_pick_cards")
         .select(
-          "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, status, display_order)"
+          "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, correct_answer_ids, status, display_order)"
         )
         .eq("room_id", roomId)
         .order("display_order");
@@ -3096,6 +3097,8 @@ export function registerGamedayRoutes(app: Express) {
           ...prop,
           correct_answer:
             prop.status === "settled" ? prop.correct_answer : null,
+          correct_answer_ids:
+            prop.status === "settled" ? (prop.correct_answer_ids ?? (prop.correct_answer ? [prop.correct_answer] : [])) : [],
         })),
       }));
 
@@ -3440,12 +3443,12 @@ export function registerGamedayRoutes(app: Express) {
     "/api/gameday/props/:propId/settle",
     async (req: Request, res: Response) => {
       const { propId } = req.params;
-      const { correct_answer } = req.body as { correct_answer?: string };
-
-      if (!correct_answer) {
-        res.status(400).json({ error: "correct_answer is required" });
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) {
+        res.status(400).json({ error: parsedAnswers.error });
         return;
       }
+      const correctAnswers = parsedAnswers.answers;
 
       const supabase = getServiceSupabase();
 
@@ -3472,21 +3475,24 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      const options = prop.answer_options as string[];
-      if (!options.includes(correct_answer)) {
-        res.status(400).json({ error: "Invalid correct answer" });
+      const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const validIds = new Set(options.map((option: any) => typeof option === "string" ? option : option?.id));
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
+        res.status(400).json({ error: "Every correct answer must be valid" });
         return;
       }
 
       // Shared helper: update prop, score picks, cascade card status if complete.
-      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswer: correct_answer });
+      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
 
       const roomId = card?.room_id;
       await logEvent(supabase, roomId, null, operator.hostId, "prop_settled", {
         prop_id: propId,
         card_id: card?.id,
         phase: card?.phase,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
         operator: operator.kind,
       });
       res.json({ ok: true });

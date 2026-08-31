@@ -3,8 +3,8 @@
  * ──────────────────────────────────────────────────────────────────────────────
  * Phase 4C — Commissioner Draft Day Settlement Screen.
  *
- * Commissioner resolves each competition-scope prop by selecting the correct
- * answer. Results remain correctable until the commissioner taps "Finalize Draft
+ * Commissioner resolves each competition-scope prop by selecting one or more
+ * correct answers. Results remain correctable until the commissioner taps "Finalize Draft
  * Day" and confirms — mirroring the classic Game Day Room lifecycle.
  *
  * Finalize is single-flight: a ref guard prevents double submission even if
@@ -91,19 +91,22 @@ export default function DraftDaySettleScreen() {
 
   useEffect(() => { fetchSettlement(); }, [fetchSettlement]);
 
-  const handleSettle = useCallback(async (propId: string, answerId: string) => {
+  const handleSettle = useCallback(async (propId: string, answerIds: string[]) => {
     if (!session || !leagueId || !seasonId) return;
     setPropState(prev => ({ ...prev, [propId]: { settling: true, error: null } }));
     try {
-      await settleDraftDayProp(leagueId, seasonId, propId, answerId, { session });
+      const response = await settleDraftDayProp(leagueId, seasonId, propId, answerIds, { session });
       setState(prev => {
         if (!prev) return prev;
         const wasAlreadySettled = prev.competition_props.find(p => p.id === propId)?.status === "settled";
         const newSettledCount = wasAlreadySettled ? prev.settled_count : prev.settled_count + 1;
+        const correctAnswers = response.correct_answer_ids ?? answerIds;
         return {
           ...prev,
           competition_props: prev.competition_props.map(p =>
-            p.id === propId ? { ...p, status: "settled", correct_answer: answerId } : p
+            p.id === propId
+              ? { ...p, status: "settled", correct_answer: correctAnswers[0], correct_answer_ids: correctAnswers }
+              : p
           ),
           settled_count: newSettledCount,
           all_settled: newSettledCount === prev.total_competition_count,
@@ -241,7 +244,7 @@ export default function DraftDaySettleScreen() {
       {/* Header */}
       <Text style={styles.screenTitle}>Resolve Draft Day</Text>
       <Text style={styles.screenSub}>
-        Select the correct answer for each question. You can change a selection before finalizing.
+        Select all correct answers for each question. Tap answers to toggle them; you can change a selection before finalizing.
       </Text>
 
       {/* Progress */}
@@ -369,11 +372,12 @@ interface PropCardProps {
   settling: boolean;
   propError: string | null;
   disabled?: boolean;
-  onSelect: (propId: string, answerId: string) => void;
+  onSelect: (propId: string, answerIds: string[]) => void;
 }
 
 function PropCard({ prop, index, settling, propError, disabled, onSelect }: PropCardProps) {
   const isSettled = prop.status === "settled";
+  const correctIds = prop.correct_answer_ids ?? (prop.correct_answer ? [prop.correct_answer] : []);
 
   return (
     <View style={[styles.propCard, isSettled && styles.propCardSettled]}>
@@ -394,7 +398,7 @@ function PropCard({ prop, index, settling, propError, disabled, onSelect }: Prop
 
       {/* "Tap to change" hint for settled props */}
       {isSettled && !settling && !disabled && (
-        <Text style={styles.changeHint}>✎ Tap any answer to change</Text>
+        <Text style={styles.changeHint}>✎ Tap answers to toggle · at least one required</Text>
       )}
 
       {settling && (
@@ -407,7 +411,7 @@ function PropCard({ prop, index, settling, propError, disabled, onSelect }: Prop
       {!settling && (
         <View style={styles.answerList}>
           {prop.answer_options.map((opt) => {
-            const isCorrect = isSettled && prop.correct_answer === opt.id;
+            const isCorrect = isSettled && correctIds.includes(opt.id);
             const isOtherSettled = isSettled && !isCorrect;
             return (
               <TouchableOpacity
@@ -418,7 +422,13 @@ function PropCard({ prop, index, settling, propError, disabled, onSelect }: Prop
                   isOtherSettled && styles.answerOptionOther,
                   disabled && { opacity: 0.5 },
                 ]}
-                onPress={() => !disabled && onSelect(prop.id, opt.id)}
+                onPress={() => {
+                  if (disabled) return;
+                  const next = correctIds.includes(opt.id)
+                    ? (correctIds.length > 1 ? correctIds.filter((id) => id !== opt.id) : correctIds)
+                    : [...correctIds, opt.id];
+                  onSelect(prop.id, next.length > 0 ? next : [opt.id]);
+                }}
                 disabled={disabled}
                 activeOpacity={0.75}
               >

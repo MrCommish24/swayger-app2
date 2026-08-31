@@ -513,6 +513,8 @@ export interface DraftDaySettlementProp {
   scoring_scope: "competition" | "season";
   status: "pending" | "settled";
   correct_answer: string | null;
+  /** Normalized set; optional for clients reading older cached responses. */
+  correct_answer_ids?: string[];
   answer_options: DraftDayAnswerOption[];
 }
 
@@ -548,6 +550,8 @@ export interface DraftDayResultsPickEntry {
   my_answer_label: string | null;
   correct_answer_id: string | null;
   correct_answer_label: string | null;
+  correct_answer_ids?: string[];
+  correct_answer_labels?: string[];
   is_correct: boolean | null;
   points_earned: number;
 }
@@ -600,15 +604,18 @@ export async function settleDraftDayProp(
   leagueId: string,
   seasonId: string,
   propId: string,
-  correctAnswer: string,
+  correctAnswer: string | string[],
   auth: Parameters<typeof fantasyFetch>[2]
-): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; scoring_scope: string; card_auto_settled: boolean }> {
+): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; correct_answer_ids?: string[]; scoring_scope: string; card_auto_settled: boolean }> {
+  const body = Array.isArray(correctAnswer)
+    ? { prop_id: propId, correct_answers: correctAnswer }
+    : { prop_id: propId, correct_answer: correctAnswer };
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/settle`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prop_id: propId, correct_answer: correctAnswer }),
+      body: JSON.stringify(body),
     },
     auth
   );
@@ -1015,6 +1022,7 @@ export interface WeeklySettlementProp {
   scoring_scope: "competition";
   status: "pending" | "settled";
   correct_answer: string | null;
+  correct_answer_ids?: string[];
   answer_options: DraftDayAnswerOption[];
 }
 
@@ -1051,12 +1059,15 @@ export async function settleWeeklyProp(
   seasonId: string,
   weekNumber: number,
   propId: string,
-  correctAnswer: string,
+  correctAnswer: string | string[],
   auth: Parameters<typeof fantasyFetch>[2]
-): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; card_auto_settled: boolean }> {
+): Promise<{ ok: boolean; idempotent: boolean; was_correction: boolean; prop_id: string; correct_answer: string; correct_answer_ids?: string[]; card_auto_settled: boolean }> {
+  const body = Array.isArray(correctAnswer)
+    ? { prop_id: propId, correct_answers: correctAnswer }
+    : { prop_id: propId, correct_answer: correctAnswer };
   return fantasyFetch(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/settle`,
-    { method: "POST", body: JSON.stringify({ prop_id: propId, correct_answer: correctAnswer }) },
+    { method: "POST", body: JSON.stringify(body) },
     auth
   );
 }
@@ -1069,6 +1080,8 @@ export interface WeeklyResultsPickEntry {
   my_answer_id: string | null;
   my_answer_label: string | null;
   correct_answer_id: string | null;
+  correct_answer_ids?: string[];
+  correct_answer_labels?: string[];
   correct_answer_label: string | null;
   is_correct: boolean | null;
   points_earned: number;
@@ -1182,6 +1195,7 @@ export interface LeaguePicksProp {
   abstentions:        number;
   /** null until commissioner settles */
   correct_answer_id:  string | null;
+  correct_answer_ids?:  string[];
   answers:            LeaguePicksAnswer[];
 }
 

@@ -14,13 +14,17 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { correctAnswerWriteFields, normalizeCorrectAnswers } from "./correct-answers.js";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
 export interface PropSettleSpec {
   propId: string;
   cardId: string;
-  correctAnswer: string; // exact stored option string — validated by caller
+  /** New normalized set. */
+  correctAnswers?: string[];
+  /** Legacy single-answer callers remain supported. */
+  correctAnswer?: string;
 }
 
 export interface PropSettleResult {
@@ -33,39 +37,45 @@ export interface PropSettleResult {
  * Settle a single prop and score all player picks for it.
  *
  * Writes performed (in order):
- *   1. gameday_props → status = "settled", correct_answer = correctAnswer
- *   2. gameday_picks → is_correct = true  WHERE selected_answer = correctAnswer
- *   3. gameday_picks → is_correct = false WHERE selected_answer ≠ correctAnswer
+ *   1. gameday_props → status = "settled", correct_answer_ids = correctAnswers
+ *   2. gameday_picks → is_correct = false for all picks on this prop
+ *   3. gameday_picks → is_correct = true  WHERE selected_answer IN correctAnswers
  *   4. gameday_pick_cards → status = "settled" IFF all sibling props are settled
  *
  * Returns whether the parent card auto-settled after this write.
  */
 export async function settlePropCore(
   supabase: SupabaseClient,
-  { propId, cardId, correctAnswer }: PropSettleSpec,
+  { propId, cardId, correctAnswers, correctAnswer }: PropSettleSpec,
 ): Promise<PropSettleResult> {
+  const answers = normalizeCorrectAnswers(correctAnswers, correctAnswer);
+  if (answers.length === 0) throw new Error("At least one correct answer is required");
+
   // 1. Mark prop settled
-  await supabase
+  const { error: propError } = await (supabase
     .from("gameday_props")
     .update({
-      correct_answer: correctAnswer,
+      ...correctAnswerWriteFields(answers),
       status: "settled",
       updated_at: new Date().toISOString(),
     })
-    .eq("id", propId);
+    .eq("id", propId) as any);
+  if (propError) throw propError;
 
-  // 2 & 3. Score picks — two bulk updates avoid per-pick queries
-  await supabase
+  // 2 & 3. Reset then mark qualifying picks. This avoids fragile text `neq`
+  // filters and keeps corrections correct for any set size.
+  const { error: resetError } = await (supabase
+    .from("gameday_picks")
+    .update({ is_correct: false })
+    .eq("prop_id", propId) as any);
+  if (resetError) throw resetError;
+
+  const { error: scoreError } = await (supabase
     .from("gameday_picks")
     .update({ is_correct: true })
     .eq("prop_id", propId)
-    .eq("selected_answer", correctAnswer);
-
-  await supabase
-    .from("gameday_picks")
-    .update({ is_correct: false })
-    .eq("prop_id", propId)
-    .neq("selected_answer", correctAnswer);
+    .in("selected_answer", answers) as any);
+  if (scoreError) throw scoreError;
 
   // 4. Cascade: mark card settled if all its props are now done
   const { data: remaining } = await supabase
@@ -76,10 +86,10 @@ export async function settlePropCore(
 
   const cardAutoSettled = !remaining?.length;
   if (cardAutoSettled) {
-    await supabase
+    await (supabase
       .from("gameday_pick_cards")
       .update({ status: "settled", updated_at: new Date().toISOString() })
-      .eq("id", cardId);
+      .eq("id", cardId) as any);
   }
 
   return { propId, cardId, cardAutoSettled };

@@ -186,7 +186,7 @@ export default function WeeklyResultsScreen() {
                     {noPick && <Text style={styles.pickNoAnswer}>No pick submitted</Text>}
                     {pick.correct_answer_label && (
                       <Text style={styles.pickCorrectAnswer}>
-                        ✓ Correct: {pick.correct_answer_label}
+                        ✓ Correct: {pick.correct_answer_labels?.join(", ") ?? pick.correct_answer_label}
                       </Text>
                     )}
                   </View>

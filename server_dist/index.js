@@ -8443,15 +8443,68 @@ function phaseLabel(phase) {
   return phase.charAt(0).toUpperCase() + phase.slice(1).toLowerCase();
 }
 
+// server/correct-answers.ts
+function normalizeCorrectAnswers(value, legacyValue) {
+  const candidate = Array.isArray(value) ? value : value ?? legacyValue;
+  if (Array.isArray(candidate)) {
+    return candidate.filter((id) => typeof id === "string" && id.trim().length > 0);
+  }
+  return typeof candidate === "string" && candidate.trim().length > 0 ? [candidate] : [];
+}
+function sameCorrectAnswerSet(left, right) {
+  const a = normalizeCorrectAnswers(left);
+  const b = normalizeCorrectAnswers(right);
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+function parseSettlementCorrectAnswers(body) {
+  const hasArrayField = body.correct_answers !== void 0;
+  const hasLegacyField = body.correct_answer !== void 0;
+  if (hasArrayField) {
+    if (!Array.isArray(body.correct_answers)) {
+      return { ok: false, error: "correct_answers must be an array" };
+    }
+    if (body.correct_answers.length === 0) {
+      return { ok: false, error: "correct_answers must contain at least one answer ID" };
+    }
+    if (!body.correct_answers.every((id) => typeof id === "string" && id.trim().length > 0)) {
+      return { ok: false, error: "correct_answers must contain non-empty answer IDs" };
+    }
+    const answers = body.correct_answers;
+    if (new Set(answers).size !== answers.length) {
+      return { ok: false, error: "correct_answers must not contain duplicate answer IDs" };
+    }
+    if (hasLegacyField && typeof body.correct_answer === "string" && body.correct_answer !== answers[0]) {
+      return { ok: false, error: "correct_answer and correct_answers do not match" };
+    }
+    return { ok: true, answers, usedLegacyField: false };
+  }
+  if (typeof body.correct_answer !== "string" || body.correct_answer.trim().length === 0) {
+    return { ok: false, error: "correct_answer or correct_answers is required" };
+  }
+  return { ok: true, answers: [body.correct_answer], usedLegacyField: true };
+}
+function correctAnswerWriteFields(answers) {
+  return {
+    // Keep the first answer visible to legacy scalar consumers.
+    correct_answer: answers[0] ?? null,
+    correct_answer_ids: answers
+  };
+}
+
 // server/gameday-settle-helper.ts
-async function settlePropCore(supabase, { propId, cardId, correctAnswer }) {
-  await supabase.from("gameday_props").update({
-    correct_answer: correctAnswer,
+async function settlePropCore(supabase, { propId, cardId, correctAnswers, correctAnswer }) {
+  const answers = normalizeCorrectAnswers(correctAnswers, correctAnswer);
+  if (answers.length === 0) throw new Error("At least one correct answer is required");
+  const { error: propError } = await supabase.from("gameday_props").update({
+    ...correctAnswerWriteFields(answers),
     status: "settled",
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   }).eq("id", propId);
-  await supabase.from("gameday_picks").update({ is_correct: true }).eq("prop_id", propId).eq("selected_answer", correctAnswer);
-  await supabase.from("gameday_picks").update({ is_correct: false }).eq("prop_id", propId).neq("selected_answer", correctAnswer);
+  if (propError) throw propError;
+  const { error: resetError } = await supabase.from("gameday_picks").update({ is_correct: false }).eq("prop_id", propId);
+  if (resetError) throw resetError;
+  const { error: scoreError } = await supabase.from("gameday_picks").update({ is_correct: true }).eq("prop_id", propId).in("selected_answer", answers);
+  if (scoreError) throw scoreError;
   const { data: remaining } = await supabase.from("gameday_props").select("id").eq("card_id", cardId).neq("status", "settled");
   const cardAutoSettled = !remaining?.length;
   if (cardAutoSettled) {
@@ -10840,11 +10893,12 @@ function registerGamedayRoutes(app2) {
     "/api/gameday/props/:propId/settle",
     async (req, res2) => {
       const { propId } = req.params;
-      const { correct_answer } = req.body;
-      if (!correct_answer) {
-        res2.status(400).json({ error: "correct_answer is required" });
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) {
+        res2.status(400).json({ error: parsedAnswers.error });
         return;
       }
+      const correctAnswers = parsedAnswers.answers;
       const supabase = getServiceSupabase();
       const { data: prop } = await supabase.from("gameday_props").select(
         "id, answer_options, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
@@ -10861,18 +10915,21 @@ function registerGamedayRoutes(app2) {
         res2.status(400).json({ error: "Room is finalized \u2014 results are read-only" });
         return;
       }
-      const options = prop.answer_options;
-      if (!options.includes(correct_answer)) {
-        res2.status(400).json({ error: "Invalid correct answer" });
+      const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const validIds = new Set(options.map((option) => typeof option === "string" ? option : option?.id));
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
+        res2.status(400).json({ error: "Every correct answer must be valid" });
         return;
       }
-      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswer: correct_answer });
+      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
       const roomId = card?.room_id;
       await logEvent(supabase, roomId, null, operator.hostId, "prop_settled", {
         prop_id: propId,
         card_id: card?.id,
         phase: card?.phase,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
         operator: operator.kind
       });
       res2.json({ ok: true });
@@ -12390,6 +12447,9 @@ function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, 
     teamName.trim().toLowerCase()
   ].join("|");
   return createHash2("sha256").update(raw).digest("hex");
+}
+function _correctAnswers(prop) {
+  return normalizeCorrectAnswers(prop?.correct_answer_ids, prop?.correct_answer);
 }
 async function _appendMemberToWeeklyCards(supabase, seasonId, seasonMemberId, teamId, displayName, teamName) {
   try {
@@ -14293,7 +14353,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { room, card } = rc;
-      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer").eq("card_id", card.id).order("display_order", { ascending: true });
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids").eq("card_id", card.id).order("display_order", { ascending: true });
       const propList = allProps ?? [];
       const competitionProps = propList.filter((p) => p.scoring_scope === "competition");
       const totalCompCount = competitionProps.length;
@@ -14312,6 +14372,7 @@ function registerFantasyRoutes(app2) {
           scoring_scope: p.scoring_scope,
           status: p.status,
           correct_answer: p.correct_answer ?? null,
+          correct_answer_ids: _correctAnswers(p),
           answer_options: Array.isArray(p.answer_options) ? p.answer_options : []
         })),
         settled_count: settledCount,
@@ -14328,15 +14389,17 @@ function registerFantasyRoutes(app2) {
       const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
-      const { prop_id, correct_answer } = req.body;
+      const { prop_id } = req.body;
       if (!prop_id) {
         res2.status(400).json({ error: "prop_id is required" });
         return;
       }
-      if (!correct_answer) {
-        res2.status(400).json({ error: "correct_answer is required" });
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) {
+        res2.status(400).json({ error: parsedAnswers.error });
         return;
       }
+      const correctAnswers = parsedAnswers.answers;
       const rc = await _getDdRoomAndCard(supabase, seasonId);
       if (!rc.ok) {
         res2.status(rc.status).json(rc.body);
@@ -14350,7 +14413,7 @@ function registerFantasyRoutes(app2) {
         });
         return;
       }
-      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, answer_options, question").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, correct_answer_ids, answer_options, question").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
       if (!prop) {
         res2.status(404).json({ error: "Prop not found on this Draft Day card" });
         return;
@@ -14364,22 +14427,31 @@ function registerFantasyRoutes(app2) {
       }
       const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
       const validIds = new Set(opts.map((o) => o.id));
-      if (!validIds.has(correct_answer)) {
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
         res2.status(400).json({
-          error: "correct_answer must be a valid published answer option ID",
+          error: "Every correct answer must be a valid published answer option ID",
           valid_answer_ids: Array.from(validIds)
         });
         return;
       }
       const wasAlreadySettled = prop.status === "settled";
-      if (wasAlreadySettled && prop.correct_answer === correct_answer) {
-        res2.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+      const previousAnswers = _correctAnswers(prop);
+      if (wasAlreadySettled && sameCorrectAnswerSet(previousAnswers, correctAnswers)) {
+        res2.json({
+          ok: true,
+          idempotent: true,
+          was_correction: false,
+          prop_id,
+          correct_answer: correctAnswers[0],
+          correct_answer_ids: correctAnswers
+        });
         return;
       }
       const result = await settlePropCore(supabase, {
         propId: prop_id,
         cardId: card.id,
-        correctAnswer: correct_answer
+        correctAnswers
       });
       if (result.cardAutoSettled && room.status === "finalized") {
         await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", card.id);
@@ -14388,7 +14460,7 @@ function registerFantasyRoutes(app2) {
         );
       }
       console.log(
-        `[fantasy] settle prop=${prop_id.slice(0, 8)}\u2026 scope=${prop.scoring_scope} answer=${correct_answer} by=${commissioner.userId.slice(0, 8)}\u2026 card_auto_settled=${result.cardAutoSettled}`
+        `[fantasy] settle prop=${prop_id.slice(0, 8)}\u2026 scope=${prop.scoring_scope} answers=${correctAnswers.join(",")} by=${commissioner.userId.slice(0, 8)}\u2026 card_auto_settled=${result.cardAutoSettled}`
       );
       res2.json({
         ok: true,
@@ -14396,7 +14468,9 @@ function registerFantasyRoutes(app2) {
         was_correction: wasAlreadySettled,
         // true = changed existing result (mirrors Game Day re-settle)
         prop_id,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
+        correct_answers: correctAnswers,
         scoring_scope: prop.scoring_scope,
         card_auto_settled: result.cardAutoSettled
       });
@@ -14467,7 +14541,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
-      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options").eq("card_id", card.id).order("display_order", { ascending: true });
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).order("display_order", { ascending: true });
       const propList = allProps ?? [];
       const competitionProps = propList.filter((p) => p.scoring_scope === "competition");
       const seasonProps = propList.filter((p) => p.scoring_scope === "season");
@@ -14501,7 +14575,8 @@ function registerFantasyRoutes(app2) {
               myCompPicks = competitionProps.map((prop) => {
                 const pick = pickByProp[prop.id] ?? null;
                 const myAnswerId = pick?.selected_answer ?? null;
-                const correctId = prop.correct_answer ?? null;
+                const correctIds = _correctAnswers(prop);
+                const correctId = correctIds[0] ?? null;
                 const isCorrect = pick?.is_correct ?? null;
                 const pointsEarned = isCorrect === true ? pointValueMap[prop.id] ?? 0 : 0;
                 if (isCorrect === true) {
@@ -14517,6 +14592,8 @@ function registerFantasyRoutes(app2) {
                   my_answer_label: myAnswerId ? answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId : null,
                   correct_answer_id: correctId,
                   correct_answer_label: correctId ? answerLabelMap[prop.id]?.[correctId] ?? correctId : null,
+                  correct_answer_ids: correctIds,
+                  correct_answer_labels: correctIds.map((id) => answerLabelMap[prop.id]?.[id] ?? id),
                   is_correct: isCorrect,
                   points_earned: pointsEarned
                 };
@@ -14576,7 +14653,7 @@ function registerFantasyRoutes(app2) {
         viewerParticipantId = p.id;
       }
     }
-    let propQuery = supabase.from("gameday_props").select("id, question, answer_options, answer_target_type, correct_answer, display_order, scoring_scope, point_value").eq("card_id", cardId).order("display_order", { ascending: true });
+    let propQuery = supabase.from("gameday_props").select("id, question, answer_options, answer_target_type, correct_answer, correct_answer_ids, display_order, scoring_scope, point_value").eq("card_id", cardId).order("display_order", { ascending: true });
     if (scopeFilter) propQuery = propQuery.eq("scoring_scope", scopeFilter);
     const { data: rawProps } = await propQuery;
     const propList = rawProps ?? [];
@@ -14598,8 +14675,9 @@ function registerFantasyRoutes(app2) {
     }
     const responseProps = propList.map((prop) => {
       const propId = prop.id;
-      const correctId = prop.correct_answer ?? null;
-      const isPropSettled = correctId !== null;
+      const correctIds = _correctAnswers(prop);
+      const correctId = correctIds[0] ?? null;
+      const isPropSettled = prop.status === "settled" || correctIds.length > 0;
       const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
       const picksByAnswer = picksByProp.get(propId) ?? /* @__PURE__ */ new Map();
       const validIds = new Set(opts.map((o) => o.id));
@@ -14617,13 +14695,13 @@ function registerFantasyRoutes(app2) {
       );
       const filtered = answerRows.filter((a) => {
         if (a.pickers.length > 0) return true;
-        if (isPropSettled && a.answer_id === correctId) return true;
+        if (isPropSettled && correctIds.includes(a.answer_id)) return true;
         return false;
       });
       const answers = filtered.map((a) => {
         const count = a.pickers.length;
         const percentage = totalPicks > 0 ? Math.round(count / totalPicks * 1e3) / 10 : 0;
-        const isCorrect = correctId !== null ? a.answer_id === correctId : null;
+        const isCorrect = isPropSettled ? correctIds.includes(a.answer_id) : null;
         const viewerPicked = viewerParticipantId !== null && a.pickers.includes(viewerParticipantId);
         const pickerDetails = a.pickers.map((pid) => {
           const p = participantMap.get(pid);
@@ -14652,6 +14730,7 @@ function registerFantasyRoutes(app2) {
         total_picks: totalPicks,
         abstentions,
         correct_answer_id: correctId,
+        correct_answer_ids: correctIds,
         answers
       };
     });
@@ -15570,7 +15649,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { room, card } = rc;
-      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, answer_options, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
       const propList = allProps ?? [];
       const settledCount = propList.filter((p) => p.status === "settled").length;
       const previewLeaderboard = settledCount > 0 ? await _buildLeaderboard(supabase, room.id, propList) : [];
@@ -15588,6 +15667,7 @@ function registerFantasyRoutes(app2) {
           scoring_scope: p.scoring_scope,
           status: p.status,
           correct_answer: p.correct_answer ?? null,
+          correct_answer_ids: _correctAnswers(p),
           answer_options: Array.isArray(p.answer_options) ? p.answer_options : []
         })),
         settled_count: settledCount,
@@ -15609,15 +15689,17 @@ function registerFantasyRoutes(app2) {
       const supabase = getServiceSupabase();
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
-      const { prop_id, correct_answer } = req.body;
+      const { prop_id } = req.body;
       if (!prop_id) {
         res2.status(400).json({ error: "prop_id is required" });
         return;
       }
-      if (!correct_answer) {
-        res2.status(400).json({ error: "correct_answer is required" });
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) {
+        res2.status(400).json({ error: parsedAnswers.error });
         return;
       }
+      const correctAnswers = parsedAnswers.answers;
       const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
       if (!rc.ok) {
         res2.status(rc.status).json(rc.body);
@@ -15632,36 +15714,46 @@ function registerFantasyRoutes(app2) {
         res2.status(409).json({ error: "Week results are finalized and cannot be changed.", room_status: "finalized" });
         return;
       }
-      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, answer_options").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
+      const { data: prop } = await supabase.from("gameday_props").select("id, card_id, scoring_scope, status, correct_answer, correct_answer_ids, answer_options").eq("id", prop_id).eq("card_id", card.id).maybeSingle();
       if (!prop) {
         res2.status(404).json({ error: "Prop not found on this Week competition card" });
         return;
       }
       const opts = Array.isArray(prop.answer_options) ? prop.answer_options : [];
       const validIds = new Set(opts.map((o) => o.id));
-      if (!validIds.has(correct_answer)) {
-        res2.status(400).json({ error: "correct_answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
+      const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
+      if (invalidAnswer) {
+        res2.status(400).json({ error: "Every correct answer must be a valid published answer option ID", valid_answer_ids: Array.from(validIds) });
         return;
       }
       const wasAlreadySettled = prop.status === "settled";
-      if (wasAlreadySettled && prop.correct_answer === correct_answer) {
-        res2.json({ ok: true, idempotent: true, was_correction: false, prop_id, correct_answer });
+      if (wasAlreadySettled && sameCorrectAnswerSet(_correctAnswers(prop), correctAnswers)) {
+        res2.json({
+          ok: true,
+          idempotent: true,
+          was_correction: false,
+          prop_id,
+          correct_answer: correctAnswers[0],
+          correct_answer_ids: correctAnswers
+        });
         return;
       }
       const result = await settlePropCore(supabase, {
         propId: prop_id,
         cardId: card.id,
-        correctAnswer: correct_answer
+        correctAnswers
       });
       console.log(
-        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}\u2026 week=${wn} answer=${correct_answer} correction=${wasAlreadySettled} by=${commissioner.userId.slice(0, 8)}\u2026`
+        `[fantasy/weekly] settle prop=${prop_id.slice(0, 8)}\u2026 week=${wn} answers=${correctAnswers.join(",")} correction=${wasAlreadySettled} by=${commissioner.userId.slice(0, 8)}\u2026`
       );
       res2.json({
         ok: true,
         idempotent: false,
         was_correction: wasAlreadySettled,
         prop_id,
-        correct_answer,
+        correct_answer: correctAnswers[0],
+        correct_answer_ids: correctAnswers,
+        correct_answers: correctAnswers,
         card_auto_settled: result.cardAutoSettled
       });
     }
@@ -15736,7 +15828,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const { data: season } = await supabase.from("fantasy_league_seasons").select("season_year, fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
-      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
       const competitionProps = allProps ?? [];
       const answerLabelMap = {};
       for (const p of competitionProps) {
@@ -15767,7 +15859,8 @@ function registerFantasyRoutes(app2) {
               myCompPicks = competitionProps.map((prop) => {
                 const pick = pickByProp[prop.id] ?? null;
                 const myAnswerId = pick?.selected_answer ?? null;
-                const correctId = prop.correct_answer ?? null;
+                const correctIds = _correctAnswers(prop);
+                const correctId = correctIds[0] ?? null;
                 const isCorrect = pick?.is_correct ?? null;
                 const pointsEarned = isCorrect === true ? pvMap[prop.id] ?? 0 : 0;
                 if (isCorrect === true) {
@@ -15783,6 +15876,8 @@ function registerFantasyRoutes(app2) {
                   my_answer_label: myAnswerId ? answerLabelMap[prop.id]?.[myAnswerId] ?? myAnswerId : null,
                   correct_answer_id: correctId,
                   correct_answer_label: correctId ? answerLabelMap[prop.id]?.[correctId] ?? correctId : null,
+                  correct_answer_ids: correctIds,
+                  correct_answer_labels: correctIds.map((id) => answerLabelMap[prop.id]?.[id] ?? id),
                   is_correct: isCorrect,
                   points_earned: pointsEarned
                 };

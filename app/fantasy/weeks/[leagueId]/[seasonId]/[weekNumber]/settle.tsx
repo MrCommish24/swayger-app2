@@ -4,7 +4,7 @@
  * Phase 5 — Commissioner Weekly Settlement Screen
  *
  * Shows all competition props with answer options.
- * Commissioner selects correct answer for each; result correction allowed.
+ * Commissioner selects one or more correct answers for each; result correction allowed.
  * Shows live leaderboard preview as answers are submitted.
  * Finalize button appears when all props are resolved.
  */
@@ -55,7 +55,7 @@ export default function WeeklySettleScreen() {
   const [finalizeError, setFinalizeError]   = useState<string | null>(null);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   // local correct answers (updated optimistically)
-  const [localAnswers, setLocalAnswers] = useState<Record<string, string>>({});
+  const [localAnswers, setLocalAnswers] = useState<Record<string, string[]>>({});
 
   const auth = session ? { session } : {};
 
@@ -66,9 +66,10 @@ export default function WeeklySettleScreen() {
     try {
       const d = await getWeeklySettlement(leagueId, seasonId, wn, { session });
       setData(d);
-      const answers: Record<string, string> = {};
+      const answers: Record<string, string[]> = {};
       for (const p of d.competition_props) {
-        if (p.correct_answer) answers[p.id] = p.correct_answer;
+        const ids = p.correct_answer_ids ?? (p.correct_answer ? [p.correct_answer] : []);
+        if (ids.length > 0) answers[p.id] = ids;
       }
       setLocalAnswers(answers);
     } catch (e: any) {
@@ -80,18 +81,19 @@ export default function WeeklySettleScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleSettle = async (propId: string, answerId: string) => {
+  const handleSettle = async (propId: string, answerIds: string[]) => {
     if (!session || settling[propId]) return;
     setSettling(prev => ({ ...prev, [propId]: true }));
     try {
-      await settleWeeklyProp(leagueId, seasonId, wn, propId, answerId, { session });
-      setLocalAnswers(prev => ({ ...prev, [propId]: answerId }));
+      const response = await settleWeeklyProp(leagueId, seasonId, wn, propId, answerIds, { session });
+      setLocalAnswers(prev => ({ ...prev, [propId]: response.correct_answer_ids ?? answerIds }));
       // Refresh to get updated leaderboard
       const d = await getWeeklySettlement(leagueId, seasonId, wn, { session });
       setData(d);
-      const answers: Record<string, string> = {};
+      const answers: Record<string, string[]> = {};
       for (const p of d.competition_props) {
-        if (p.correct_answer) answers[p.id] = p.correct_answer;
+        const ids = p.correct_answer_ids ?? (p.correct_answer ? [p.correct_answer] : []);
+        if (ids.length > 0) answers[p.id] = ids;
       }
       setLocalAnswers(answers);
     } catch (e: any) {
@@ -170,8 +172,8 @@ export default function WeeklySettleScreen() {
 
       {/* Props */}
       {data.competition_props.map((prop, i) => {
-        const currentAnswer = localAnswers[prop.id] ?? null;
-        const isSettled     = !!currentAnswer;
+         const currentAnswers = localAnswers[prop.id] ?? [];
+         const isSettled     = currentAnswers.length > 0;
         const isSaving      = settling[prop.id];
 
         return (
@@ -188,12 +190,17 @@ export default function WeeklySettleScreen() {
             {!isFinalized && (
               <View style={styles.answers}>
                 {(prop.answer_options ?? []).map((opt) => {
-                  const isCorrect = currentAnswer === opt.id;
+                   const isCorrect = currentAnswers.includes(opt.id);
                   return (
                     <TouchableOpacity
                       key={opt.id}
                       style={[styles.answerBtn, isCorrect && styles.answerBtnCorrect]}
-                      onPress={() => handleSettle(prop.id, opt.id)}
+                       onPress={() => {
+                         const next = currentAnswers.includes(opt.id)
+                           ? (currentAnswers.length > 1 ? currentAnswers.filter((id) => id !== opt.id) : currentAnswers)
+                           : [...currentAnswers, opt.id];
+                         handleSettle(prop.id, next.length > 0 ? next : [opt.id]);
+                       }}
                       disabled={isSaving || isFinalized}
                       activeOpacity={0.7}
                     >
@@ -207,9 +214,11 @@ export default function WeeklySettleScreen() {
               </View>
             )}
 
-            {isFinalized && currentAnswer && (
+             {isFinalized && isSettled && (
               <Text style={styles.finalAnswer}>
-                ✓ Correct: {(prop.answer_options ?? []).find(o => o.id === currentAnswer)?.label ?? currentAnswer}
+                 ✓ Correct: {currentAnswers
+                   .map((id) => (prop.answer_options ?? []).find(o => o.id === id)?.label ?? id)
+                   .join(", ")}
               </Text>
             )}
           </View>

@@ -1,0 +1,258 @@
+Proceed with the SQL checkpoint for:
+
+# TASK #59 — PHASE 6G MULTIPLE CORRECT ANSWERS
+
+The architecture review is approved.
+
+We agree with the product model:
+
+- participants still select exactly ONE answer
+- commissioner may settle ONE OR MORE answers as correct
+- any pick whose selected_answer is contained in the correct-answer set receives the full prop point_value once
+- no synthetic Tie answer
+- historical scalar settlements must remain valid
+
+Now write the smallest safe additive migration.
+
+==================================================
+1. MIGRATION GOAL
+==================================================
+
+Add durable support for multiple correct answers without breaking:
+
+- existing `gameday_props.correct_answer TEXT`
+- historical finalized props
+- classic Game Day scalar settlement
+- Fantasy Draft Day
+- Weekly settlement
+- League Picks
+- scoring
+- result correction
+
+==================================================
+2. PREFERRED SCHEMA
+==================================================
+
+Add:
+
+`gameday_props.correct_answer_ids JSONB`
+
+Preferred semantics:
+
+NULL
+→ no settlement yet / legacy scalar path
+
+JSON array:
+["answer_a"]
+
+or:
+
+["answer_a", "answer_b"]
+
+Do NOT drop or change:
+
+`correct_answer TEXT`
+
+Do NOT rewrite historical rows automatically unless absolutely necessary.
+
+==================================================
+3. COMPATIBILITY PRINCIPLE
+==================================================
+
+After migration, authoritative normalization should conceptually be:
+
+If `correct_answer_ids` is a valid non-empty array:
+    use it
+
+Else if `correct_answer` is non-null:
+    use `[correct_answer]`
+
+Else:
+    use `[]`
+
+This allows all historical scalar rows to remain untouched.
+
+==================================================
+4. COLUMN CONSTRAINTS
+==================================================
+
+Inspect project conventions before adding constraints.
+
+Preferred:
+
+`correct_answer_ids JSONB NULL`
+
+If safe, add a CHECK that when non-null it must be a JSON array.
+
+Conceptually:
+
+jsonb_typeof(correct_answer_ids) = 'array'
+
+Do not attempt complex DB validation of each answer ID against answer_options.
+
+Application settlement validation will enforce membership.
+
+==================================================
+5. DO NOT BACKFILL
+==================================================
+
+Preferred:
+
+Do NOT run an UPDATE converting every existing `correct_answer` into JSON arrays.
+
+Reason:
+
+- historical scalar data already works
+- normalization layer can support both
+- avoids touching settled historical rows unnecessarily
+- simplifies rollback
+
+If Replit believes a backfill is required, explain why before including one.
+
+==================================================
+6. INDEXES
+==================================================
+
+No index should be required for this column.
+
+Do not add a GIN index unless there is a demonstrated query need.
+
+Scoring/settlement reads props directly by ID/room/card.
+
+==================================================
+7. RLS / GRANTS
+==================================================
+
+Adding the column should inherit the existing `gameday_props` access model.
+
+Do not change RLS policies or grants unless required.
+
+Do not broaden access.
+
+==================================================
+8. MIGRATION SAFETY
+==================================================
+
+Migration must NOT:
+
+- change existing correct_answer values
+- change existing picks
+- rescore historical competitions
+- change finalized rooms
+- rewrite League Picks
+- change participant data
+- change answer_options
+- touch claims/identity
+
+This should be an additive schema-only migration.
+
+==================================================
+9. MIGRATION FILE
+==================================================
+
+Create a focused migration file with a clear name, for example:
+
+`supabase/gameday-phase6g-multiple-correct-answers.sql`
+
+or the next established project migration naming convention.
+
+Do not add this change to an old foundational migration file if the project uses forward migrations.
+
+==================================================
+10. VERIFY CURRENT PRODUCTION SHAPE
+==================================================
+
+Before finalizing SQL, verify:
+
+- `gameday_props.correct_answer` currently exists and is TEXT
+- `gameday_props.correct_answer_ids` does NOT already exist
+- answer_options is JSONB
+- no existing function/trigger would reject the new nullable field
+
+==================================================
+11. POST-MIGRATION VERIFICATION QUERY
+==================================================
+
+Include exact SQL I can run after applying the migration to verify:
+
+- column exists
+- type is jsonb
+- nullable as expected
+- check constraint exists if added
+
+Also include a read-only query proving existing scalar settlements remain untouched.
+
+==================================================
+12. APPLICATION PLAN AFTER SQL
+==================================================
+
+After I confirm the migration is live, implementation should proceed in this order:
+
+1. shared normalization helper
+2. shared settlement helper
+3. API request compatibility
+4. scoring membership logic
+5. Fantasy Draft Day settlement UI
+6. League Picks multi-correct markers
+7. results plural display
+8. result correction
+9. classic Game Day scalar regression
+10. full test suite
+
+Do not implement any application code yet.
+
+==================================================
+13. IMPORTANT STORAGE RULE AFTER IMPLEMENTATION
+==================================================
+
+For NEW settlement writes:
+
+Preferred behavior:
+
+Single correct answer:
+- `correct_answer_ids = ["a"]`
+- keep `correct_answer = "a"` for compatibility if old consumers still require it
+
+Multiple:
+- `correct_answer_ids = ["a","b","c"]`
+- decide what compatibility value `correct_answer` should hold
+
+Preferred:
+`correct_answer = first answer ID`
+
+ONLY if existing legacy consumers require a scalar field.
+
+Otherwise keep scalar handling deliberate.
+
+Do NOT store JSON text inside the TEXT column.
+
+Do NOT store comma-separated IDs.
+
+The JSONB array is the authoritative multi-answer representation.
+
+Explain the exact compatibility rule before implementation.
+
+==================================================
+14. RETURN
+==================================================
+
+Return:
+
+# PHASE 6G SQL MIGRATION CHECKPOINT
+
+1. exact migration file
+2. exact SQL contents
+3. schema safety analysis
+4. backward compatibility analysis
+5. backfill decision
+6. RLS/grant impact
+7. post-migration verification SQL
+8. planned compatibility rule for `correct_answer`
+9. application implementation order
+10. risks
+
+Then STOP.
+
+Final status:
+
+SQL APPLICATION REQUIRED

@@ -289,7 +289,7 @@ function PickRow({ pick }: { pick: DraftDayResultsPickEntry }) {
           styles.pickCorrectAnswer,
           isCorrect && styles.pickCorrectGreen,
         ]}>
-          Correct: {pick.correct_answer_label ?? "—"}
+          Correct: {(pick.correct_answer_labels?.join(", ") ?? pick.correct_answer_label) ?? "—"}
         </Text>
       </View>
       <View style={styles.pickPointsCol}>
