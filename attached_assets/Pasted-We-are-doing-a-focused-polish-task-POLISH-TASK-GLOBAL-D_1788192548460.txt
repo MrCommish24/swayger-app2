@@ -1,0 +1,971 @@
+We are doing a focused polish task:
+
+# POLISH TASK — GLOBAL DRAFT DAY RECEIPT
+## Shared League-Level Results Artifact
+
+This is NOT a new major phase.
+
+The current Draft Day results screen is working correctly as a PERSONAL RESULTS view.
+
+It shows:
+
+- Draft Day winner
+- leaderboard
+- each question
+- correct answer(s)
+- viewer's own pick
+- whether that pick was correct
+- League Picks link
+
+We are keeping that.
+
+The new goal is to add a separate:
+
+# GLOBAL DRAFT DAY RECEIPT
+
+This should answer:
+
+"What happened in our league?"
+
+rather than:
+
+"How did I personally do?"
+
+The receipt is a SHARED LEAGUE ARTIFACT.
+
+It should be available to every authorized member of the Fantasy league:
+
+- authenticated league members
+- valid guest members
+- commissioner
+- co-commissioner
+
+Its content must be identical regardless of who is viewing it.
+
+Commissioner/co-commissioner should receive the most prominent Share action, but the receipt itself is NOT commissioner-only.
+
+==================================================
+1. PRODUCT MODEL
+==================================================
+
+We now want three distinct layers:
+
+1. PERSONAL RESULTS
+   - existing screen
+   - viewer-specific
+   - includes "Your Pick"
+
+2. GLOBAL DRAFT DAY RECEIPT
+   - league-level
+   - available to all authorized league members
+   - identical for every viewer
+   - winner + standings + correct outcomes
+   - designed to be viewed and shared
+
+3. LEAGUE PICKS
+   - detailed social receipts
+   - who picked what
+   - distributions
+   - existing Phase 6C behavior
+
+Do NOT merge all three into one giant screen.
+
+==================================================
+2. KEEP EXISTING PERSONAL RESULTS
+==================================================
+
+Do not remove or redesign the current personalized results screen.
+
+It should continue showing:
+
+- winner
+- leaderboard
+- correct answer
+- viewer's pick
+- correct/incorrect state
+- League Picks
+
+That experience answers:
+
+"How did I do?"
+
+==================================================
+3. GLOBAL RECEIPT GOAL
+==================================================
+
+Create a compact, polished, league-level receipt.
+
+Suggested hierarchy:
+
+FOOD PYRAMID 2026
+
+DRAFT DAY RECEIPT
+
+THE RECEIPTS ARE IN.
+
+🏆 DRAFT DAY WINNER
+
+J Spells
+20 SP
+
+Then compact standings:
+
+1. J Spells — 20
+T-2. J Askew — 10
+T-2. Mr Roarke — 10
+T-2. Hunter Helmsley — 10
+
+Then:
+
+THE RECEIPTS
+
+Who drafts a quarterback first?
+✓ Obama Son
+
+Who drafts the first rookie?
+✓ All Eyez On Me
+
+Who takes a defense first?
+✓ Appetite 4 Destruction
+
+...
+
+For multi-correct outcomes:
+
+Who drafts the most running backs?
+✓ Grim Reaper
+✓ Team Jasand Shootaw
+✓ Mr Big aka Clown Maker
+
+==================================================
+4. GLOBAL MEANS VIEWER-INDEPENDENT
+==================================================
+
+The global receipt must NOT contain:
+
+- YOUR PICK
+- my_pick
+- viewer_correct
+- personal correctness
+- viewer-specific highlighting
+- viewer-specific score callout
+- personalized badges
+
+The same finalized Draft Day should render the same global receipt for:
+
+Darius
+Mike
+Rob
+commissioner
+guest member
+
+The only viewer-specific difference may be authorization and whether Share controls are emphasized.
+
+Receipt CONTENT remains identical.
+
+==================================================
+5. ACCESS MODEL
+==================================================
+
+The receipt is NOT commissioner-only.
+
+Authorized to VIEW:
+
+- authenticated active league member
+- valid guest league member
+- commissioner
+- co-commissioner
+
+Not authorized:
+
+- anonymous non-member
+- unrelated authenticated Swayger user
+- invalid/lost guest credential
+- someone who merely has a guessed receipt URL
+
+Use existing Fantasy membership/claim authorization.
+
+Do not make the receipt public in this task.
+
+==================================================
+6. SHARE AUTHORITY
+==================================================
+
+Preferred UX:
+
+Commissioner / co-commissioner:
+- prominent Share Draft Day Receipt
+- Copy Receipt Link
+
+Regular authenticated/guest member:
+- may view the same receipt
+- may have a smaller Share / Copy action if existing product sharing conventions make this trivial
+
+Do NOT create separate commissioner and member receipt content.
+
+The artifact is communal.
+
+If regular-member sharing creates unnecessary complexity:
+all members may VIEW;
+commissioner/co-commissioner get the primary SHARE controls.
+
+Document the final choice.
+
+==================================================
+7. DATA SOURCE
+==================================================
+
+Reuse existing finalized Draft Day data.
+
+Prefer existing:
+
+- Draft Day results endpoint
+- leaderboard
+- correct_answer_ids / normalized correct answers
+- prop display order
+- participant display/team snapshots
+
+Do not build a new scoring system.
+
+Do not recompute results differently.
+
+==================================================
+8. FINALIZED ONLY
+==================================================
+
+The global receipt should be presented as final only once Draft Day is finalized.
+
+Preferred:
+
+Draft Day finalized
+→ Global Receipt becomes available
+
+Do not expose an apparently final shareable receipt while result corrections are still allowed.
+
+==================================================
+9. ENTRY POINT — PERSONAL RESULTS
+==================================================
+
+On the existing Draft Day Results screen, add:
+
+[ View Draft Day Receipt ]
+
+and for commissioner/co-commissioner:
+
+[ Share Draft Day Receipt ]
+
+This should be near the winner/results header.
+
+Do not replace:
+
+View League Picks.
+
+==================================================
+10. ENTRY POINT — OTHER LEAGUE MEMBERS
+==================================================
+
+Every authorized league member should be able to navigate to the same Global Draft Day Receipt from finalized Draft Day results/history.
+
+Do not require commissioner role just to view it.
+
+Example:
+
+Draft Day Results
+→ View Draft Day Receipt
+
+==================================================
+11. RECEIPT ROUTE
+==================================================
+
+Preferred:
+
+`app/fantasy/draft-day/[leagueId]/[seasonId]/receipt.tsx`
+
+or equivalent existing route conventions.
+
+A dedicated route is preferred because it is:
+
+- easy to revisit
+- easy to share
+- easy to link from history
+- easier to reuse later
+- cleaner than another modal layered over personalized results
+
+==================================================
+12. RECEIPT DATA ENDPOINT
+==================================================
+
+If existing Draft Day Results payload already contains everything required and does not expose personal-only fields to the receipt:
+reuse it.
+
+If necessary, add a dedicated global receipt response.
+
+Preferred shape conceptually:
+
+{
+  league_name,
+  season_year,
+  competition_title,
+  finalized_at,
+  winners: [...],
+  standings: [...],
+  props: [
+    {
+      prop_id,
+      question,
+      point_value,
+      correct_answer_ids,
+      correct_answer_labels
+    }
+  ]
+}
+
+Do NOT include:
+
+my_pick
+viewer_correct
+guest_token
+claim data
+auth user IDs
+
+==================================================
+13. COMPACTNESS
+==================================================
+
+The current personalized results page is detailed and long.
+
+The GLOBAL RECEIPT should be much more compact.
+
+Goal:
+
+A member should understand the outcome in 3–5 seconds.
+
+Avoid:
+
+- giant full-width card per question
+- excessive padding
+- personal answer rows
+- full League Picks distributions
+
+Prefer concise question/result rows.
+
+==================================================
+14. WINNER SECTION
+==================================================
+
+Primary focus:
+
+DRAFT DAY WINNER
+
+J Spells
+20 SP
+
+If co-winners:
+
+CO-WINNERS
+
+Darius — 20 SP
+Mike — 20 SP
+
+Use existing leaderboard/tie semantics.
+
+Do not invent a tiebreaker.
+
+==================================================
+15. STANDINGS
+==================================================
+
+Include compact standings.
+
+Preferred:
+
+Top 3–5 positions
+
+Example:
+
+STANDINGS
+
+1. J Spells — 20
+T-2. J Askew — 10
+T-2. Mr Roarke — 10
+T-2. Hunter Helmsley — 10
+
+If ties push the displayed count beyond 5, preserve proper tied ranking rather than cutting one tied participant arbitrarily.
+
+Optional:
+
+View Full Standings
+
+Do not make the global receipt a 15-row standings table by default.
+
+==================================================
+16. QUESTION RESULTS
+==================================================
+
+For every competition-scope Draft Day prop:
+
+show:
+
+Question
+Correct Answer(s)
+
+Example:
+
+Who drafts a quarterback first?
+✓ Obama Son
+
+For multiple correct:
+
+Who drafts three or more quarterbacks?
+✓ Appetite 4 Destruction
+✓ Hilson
+
+Use normalized Phase 6G multi-correct behavior.
+
+==================================================
+17. SEASON-SCOPE RECEIPTS
+==================================================
+
+Do NOT include unresolved season-scope Draft Day props in the final Draft Day competition receipt.
+
+The global receipt represents:
+
+Draft Day Swayger competition results.
+
+It should not imply that season-long predictions have been decided.
+
+Optional small section/footer:
+
+SEASON RECEIPTS
+Still pending
+
+only if existing UX benefits.
+
+Do not list all pending season props here.
+
+==================================================
+18. LEAGUE PICKS SEPARATION
+==================================================
+
+Do NOT show all distributions/picker names inside the global receipt.
+
+Instead:
+
+[ See League Picks ]
+
+or:
+
+See who picked what →
+
+League Picks remains the social drill-down.
+
+Global Receipt answers:
+WHAT HAPPENED?
+
+League Picks answers:
+WHO SAID WHAT?
+
+==================================================
+19. VIEWER'S OWN PICK
+==================================================
+
+Do not display "Your Pick" anywhere on the Global Receipt.
+
+A league member who wants their personalized result should return to:
+
+Personal Draft Day Results.
+
+Keep these concepts intentionally separate.
+
+==================================================
+20. SHARE BEHAVIOR — COMMISSIONER / CO-COMMISSIONER
+==================================================
+
+Add prominent:
+
+Share Draft Day Receipt
+
+For V1, native Share may send:
+
+Food Pyramid 2026 — Draft Day Swayger
+
+🏆 Winner: J Spells — 20 SP
+
+The receipts are in.
+
+See the results:
+<canonical receipt URL>
+
+Do not put every question/result into the share text.
+
+==================================================
+21. REGULAR MEMBER SHARE
+==================================================
+
+Evaluate whether regular league members can also use the same native Share/Copy controls safely with trivial reuse.
+
+Preferred product direction:
+
+The receipt is a league artifact, so regular members MAY share it.
+
+There is no strategic issue because the competition is finalized.
+
+However:
+
+Do not materially expand scope just to create role-specific share controls.
+
+At minimum:
+
+all authorized members can VIEW the receipt.
+
+Commissioner/co-commissioner definitely get prominent Share.
+
+Return your exact decision.
+
+==================================================
+22. COPY RECEIPT LINK
+==================================================
+
+Provide:
+
+Copy Receipt Link
+
+URL only.
+
+Use existing clipboard behavior and 2-second success feedback.
+
+No identity tokens/query parameters.
+
+==================================================
+23. CANONICAL RECEIPT URL
+==================================================
+
+Use one stable canonical route.
+
+Conceptually:
+
+https://www.swayger.app/fantasy/draft-day/<leagueId>/<seasonId>/receipt
+
+Use existing production origin helpers.
+
+Do NOT include:
+
+guest token
+recovery token
+user ID
+league member ID
+season member ID
+claim ID
+
+Possession of URL alone does not grant access.
+
+Normal membership authorization still applies.
+
+==================================================
+24. SHAREABLE IMAGE — DECISION
+==================================================
+
+Inspect existing project infrastructure for:
+
+- view-shot
+- screenshot sharing
+- existing Swayger receipt-card/image generator
+- existing share images
+
+If a high-quality receipt image can be produced using existing infrastructure with minimal effort:
+reuse it.
+
+If not:
+DO NOT create a new image-generation subsystem.
+
+V1 can be:
+
+Global Receipt screen
++
+Share URL
++
+Copy Link
+
+Return whether image sharing is:
+implemented
+or
+deferred.
+
+==================================================
+25. AUTHORIZATION IMPLEMENTATION
+==================================================
+
+Use established Fantasy viewer resolution.
+
+Receipt read endpoint/screen should resolve:
+
+authenticated user claim
+or
+valid guest claim
+
+Then ensure they belong to the relevant Fantasy league/season.
+
+Commissioner status is NOT required to read.
+
+Do not rely only on frontend hiding.
+
+==================================================
+26. GUEST MEMBER
+==================================================
+
+A valid guest member should be able to:
+
+Draft Day Results
+→ Global Draft Day Receipt
+→ League Picks
+
+according to the same historical visibility rules as an account member.
+
+Do not require account upgrade to see league history.
+
+==================================================
+27. ARCHIVED LEAGUE
+==================================================
+
+Phase 6E established:
+
+Archived = readable, not operational.
+
+Therefore:
+
+authorized archived-league members can still view:
+
+- finalized Draft Day results
+- Global Draft Day Receipt
+- League Picks
+- standings
+
+Do not block the receipt because `league.is_active=false`.
+
+No writes required.
+
+==================================================
+28. HISTORICAL ACCESS
+==================================================
+
+Once finalized:
+
+receipt should remain viewable indefinitely under current historical-retention rules.
+
+Archive / restore should not create a new receipt or change its data.
+
+==================================================
+29. MULTI-CORRECT SUPPORT
+==================================================
+
+Critical.
+
+Use Phase 6G normalized correct answers.
+
+Single:
+
+Correct Answer
+Obama Son
+
+Multiple:
+
+Correct Answers
+Grim Reaper
+Team Jasand Shootaw
+Mr Big aka Clown Maker
+
+Do NOT show:
+
+Tie
+
+unless Tie was literally a valid selected answer for some future prop.
+
+==================================================
+30. REAL PILOT FIXTURE
+==================================================
+
+Use the current Draft Day pilot outcomes when possible.
+
+Receipt should support:
+
+Who drafts the most running backs?
+
+Correct:
+- Grim Reaper
+- Team Jasand Shootaw
+- Mr Big aka Clown Maker
+
+Who drafts three or more quarterbacks?
+
+Correct:
+- Appetite 4 Destruction
+- Hilson
+
+All labels should render correctly.
+
+==================================================
+31. RESULTS CONSISTENCY
+==================================================
+
+Global receipt winner, scores, and correct answers must EXACTLY match:
+
+- Personal Draft Day Results
+- League Picks correctness
+- finalized leaderboard
+- Season Standings Draft Day contribution
+
+Do not recalculate independently.
+
+==================================================
+32. PERSONAL-DATA LEAK TEST
+==================================================
+
+Fetch/view receipt as:
+
+Member A
+Member B
+Commissioner
+Guest member
+
+Expected global result payload/content:
+
+identical.
+
+Do not include:
+
+my_pick
+viewer_correct
+personal result status
+
+Test this explicitly.
+
+==================================================
+33. SHARE ROLE TEST
+==================================================
+
+Verify:
+
+commissioner:
+view allowed
+share controls prominent
+
+co-commissioner:
+view allowed
+share controls prominent
+
+regular account member:
+view allowed
+
+guest member:
+view allowed
+
+unrelated authenticated user:
+403
+
+anonymous non-member:
+401/403 according to project convention
+
+==================================================
+34. BRANDING
+==================================================
+
+Make this feel like a Swayger artifact.
+
+Reuse:
+
+existing Swayger logo/mark
+existing footer asset/component
+dark visual system
+current blue/gold styling
+
+Suggested:
+
+DRAFT DAY RECEIPT
+
+THE RECEIPTS ARE IN.
+
+Footer:
+
+SWAYGER
+LOCK IT IN. STAND ON IT.
+
+Do not invent a new logo treatment.
+
+==================================================
+35. MOBILE FIRST
+==================================================
+
+This will most often be opened from:
+
+- phone
+- group chat link
+- Draft Day recap
+
+Design mobile-first.
+
+Also work on web/desktop.
+
+Avoid a giant desktop-only layout.
+
+==================================================
+36. FUTURE WEEKLY REUSE
+==================================================
+
+Design cleanly enough that we could later create:
+
+WEEK 1 RECEIPT
+WEEK 2 RECEIPT
+
+using the same component.
+
+Preferred reusable component if natural:
+
+`components/fantasy/CompetitionReceipt.tsx`
+
+Possible props:
+
+leagueName
+competitionTitle
+winner(s)
+standings
+questionResults
+reward
+footer
+
+But do NOT build weekly receipts now.
+
+==================================================
+37. TESTS
+==================================================
+
+Add focused coverage such as:
+
+§BD Receipt authorization
+§BE Global viewer-independence
+§BF Winner / co-winner behavior
+§BG Correct outcome list
+§BH Multi-correct answers
+§BI No personal-pick leakage
+§BJ Season-scope exclusion
+§BK Archived historical receipt
+§BL Canonical URL security
+§BM Share-role behavior
+
+Use current project naming conventions.
+
+==================================================
+38. MANUAL QA
+==================================================
+
+Return exact manual QA:
+
+1. Finalize Draft Day.
+2. Open Personal Draft Day Results as Member A.
+3. Verify Your Pick remains.
+4. Tap View Draft Day Receipt.
+5. Verify global receipt.
+6. Verify league name.
+7. Verify Draft Day winner.
+8. Verify standings.
+9. Verify all competition questions.
+10. Verify all correct answers.
+11. Verify multi-correct questions.
+12. Verify NO Your Pick appears.
+13. Tap League Picks.
+14. Verify detailed picker information remains separate.
+15. Open Global Receipt as Member B.
+16. Verify content matches Member A exactly.
+17. Open as commissioner.
+18. Verify same receipt content.
+19. Verify commissioner Share action.
+20. Open as valid guest.
+21. Verify access.
+22. Try unrelated account.
+23. Verify denied.
+24. Archive league.
+25. Verify authorized member can still view receipt.
+26. Restore.
+27. Verify receipt unchanged.
+
+==================================================
+39. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- new settlement
+- new scoring
+- public receipts
+- unauthenticated sharing access
+- reactions/comments
+- trash-talk feed
+- animated receipt
+- PDF generation
+- complex image-generation subsystem
+- weekly receipts
+- provider integrations
+- notification system
+
+==================================================
+40. REGRESSION
+==================================================
+
+Run:
+
+- Phase 6G multi-correct
+- Draft Day results
+- Draft Day authorization
+- League Picks
+- Season Standings
+- archived historical reads
+- guest/account membership
+- receipt tests
+
+If inexpensive:
+full maintained Fantasy regression.
+
+Return exact totals.
+
+==================================================
+41. RETURN
+==================================================
+
+Return:
+
+# GLOBAL DRAFT DAY RECEIPT POLISH REPORT
+
+1. Existing Personal Results architecture
+2. Global Receipt architecture
+3. League-member access model
+4. Commissioner/co-commissioner share behavior
+5. Regular-member share decision
+6. Global vs personal separation
+7. Receipt data source
+8. Winner/standings behavior
+9. Multi-correct behavior
+10. Season Receipt exclusion
+11. League Picks integration
+12. Share behavior
+13. Image-sharing decision
+14. Authorization/security
+15. Guest behavior
+16. Archived behavior
+17. Branding
+18. Files changed
+19. Tests added
+20. Regression totals
+21. Bugs found/fixed
+22. Known limitations
+23. Exact manual QA
+
+Then STOP.
+
+Do not begin another feature.
+
+Final status:
+
+GLOBAL DRAFT DAY RECEIPT READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED
