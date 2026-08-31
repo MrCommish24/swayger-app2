@@ -8452,8 +8452,8 @@ function normalizeCorrectAnswers(value, legacyValue) {
   return typeof candidate === "string" && candidate.trim().length > 0 ? [candidate] : [];
 }
 function sameCorrectAnswerSet(left, right) {
-  const a = normalizeCorrectAnswers(left);
-  const b = normalizeCorrectAnswers(right);
+  const a = [...new Set(normalizeCorrectAnswers(left))].sort();
+  const b = [...new Set(normalizeCorrectAnswers(right))].sort();
   return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 function parseSettlementCorrectAnswers(body) {
@@ -10619,7 +10619,7 @@ function registerGamedayRoutes(app2) {
         return;
       }
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
-        "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, status, display_order)"
+        "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, correct_answer_ids, status, display_order)"
       ).eq("room_id", roomId).order("display_order");
       const cards = (rawCards ?? []).map((card) => ({
         ...card,
@@ -10674,7 +10674,8 @@ function registerGamedayRoutes(app2) {
         ...card,
         gameday_props: (card.gameday_props ?? []).map((prop) => ({
           ...prop,
-          correct_answer: prop.status === "settled" ? prop.correct_answer : null
+          correct_answer: prop.status === "settled" ? prop.correct_answer : null,
+          correct_answer_ids: prop.status === "settled" ? prop.correct_answer_ids ?? (prop.correct_answer ? [prop.correct_answer] : []) : []
         }))
       }));
       const { count } = await supabase.from("gameday_participants").select("id", { count: "exact", head: true }).eq("room_id", roomId);
@@ -14625,6 +14626,93 @@ function registerFantasyRoutes(app2) {
         my_correct_count: myCorrectCount,
         my_season_pick_count: mySeasonPickCount,
         season_props_pending_count: seasonProps.filter((p) => p.status === "pending").length,
+        total_competition_props: competitionProps.length
+      });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt",
+    async (req, res2) => {
+      const identity = getCallerIdentity2(req);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+      const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "draft_day").eq("experience_type", "fantasy").maybeSingle();
+      if (!room) {
+        res2.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+      if (room.status !== "finalized") {
+        res2.json({ finalized: false });
+        return;
+      }
+      const { data: card } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
+      if (!card) {
+        res2.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+      const { data: allProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const competitionProps = (allProps ?? []).filter((p) => p.status === "settled");
+      const answerLabels = {};
+      for (const prop of competitionProps) {
+        answerLabels[prop.id] = {};
+        for (const option of Array.isArray(prop.answer_options) ? prop.answer_options : []) {
+          if (option?.id && option?.label) answerLabels[prop.id][option.id] = option.label;
+        }
+      }
+      const leaderboard = await _buildLeaderboard(
+        supabase,
+        room.id,
+        competitionProps
+      );
+      const sharedLeaderboard = leaderboard.map((entry) => ({
+        display_name: entry.display_name,
+        team_name: entry.team_name,
+        points: entry.points,
+        correct_count: entry.correct_count,
+        rank: entry.rank,
+        rank_label: entry.rank_label
+      }));
+      const topPoints = leaderboard[0]?.points ?? 0;
+      const winners = sharedLeaderboard.filter((entry) => entry.points === topPoints);
+      res2.json({
+        finalized: true,
+        league_name: league.league_name ?? null,
+        season_year: season.season_year ?? null,
+        winners,
+        leaderboard: sharedLeaderboard,
+        competition_props: competitionProps.map((prop) => {
+          const correctIds = _correctAnswers(prop);
+          return {
+            prop_id: prop.id,
+            question: prop.question,
+            display_order: prop.display_order,
+            point_value: prop.point_value,
+            scoring_scope: "competition",
+            correct_answer_ids: correctIds,
+            correct_answer_labels: correctIds.map(
+              (id) => answerLabels[prop.id]?.[id] ?? id
+            )
+          };
+        }),
         total_competition_props: competitionProps.length
       });
     }

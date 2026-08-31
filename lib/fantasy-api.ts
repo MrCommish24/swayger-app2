@@ -150,6 +150,40 @@ export interface FantasySeasonDetail {
   viewer: FantasyViewer | null;
 }
 
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt
+//
+// Shared, viewer-independent finalized Draft Day artifact. Unlike
+// DraftDayResults, this intentionally contains no pick or correctness fields
+// for the requesting viewer.
+export interface CompetitionReceiptProp {
+  prop_id: string;
+  question: string;
+  display_order: number;
+  point_value: number;
+  scoring_scope: "competition";
+  correct_answer_ids: string[];
+  correct_answer_labels: string[];
+}
+
+export interface CompetitionReceiptLeaderboardEntry {
+  display_name: string;
+  team_name: string | null;
+  points: number;
+  correct_count: number;
+  rank: number;
+  rank_label: string;
+}
+
+export interface CompetitionReceiptData {
+  finalized: boolean;
+  league_name?: string | null;
+  season_year?: number | null;
+  winners?: CompetitionReceiptLeaderboardEntry[];
+  leaderboard?: CompetitionReceiptLeaderboardEntry[];
+  competition_props?: CompetitionReceiptProp[];
+  total_competition_props?: number;
+}
+
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info
 export interface JoinInfoSeat {
   season_member_id: string;
@@ -647,6 +681,18 @@ export async function getDraftDayResults(
   );
 }
 
+export async function getDraftDayReceipt(
+  leagueId: string,
+  seasonId: string,
+  auth: Parameters<typeof fantasyFetch>[2]
+): Promise<CompetitionReceiptData> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/draft-day/receipt`,
+    {},
+    auth
+  );
+}
+
 // ── Phase 6E: League Archive / Restore ───────────────────────────────────────
 
 export interface ArchiveLeagueResult {
@@ -959,6 +1005,20 @@ export function buildFantasyInviteUrl(leagueId: string, seasonId: string): strin
     return `${window.location.origin}${path}`;
   }
   // Native: use injected env var (prod = www.swayger.app, dev = REPLIT_DEV_DOMAIN)
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+/** Build the canonical share URL for a finalized Draft Day receipt.
+ * This URL carries only the league and season identifiers; authorization is
+ * always checked server-side when a member opens it. */
+export function buildDraftDayReceiptUrl(leagueId: string, seasonId: string): string {
+  const path = `/fantasy/draft-day/${leagueId}/${seasonId}/receipt`;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
   const domain =
     typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
   const base = domain.startsWith("http") ? domain : `https://${domain}`;

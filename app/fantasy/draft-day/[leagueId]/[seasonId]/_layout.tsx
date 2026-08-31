@@ -5,6 +5,8 @@ export default function DraftDaySeasonLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="play" />
+      <Stack.Screen name="receipt" />
+      <Stack.Screen name="league-picks" />
     </Stack>
   );
 }

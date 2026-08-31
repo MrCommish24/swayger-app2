@@ -144,6 +144,22 @@ export default function DraftDayResultsScreen() {
         Draft Day Results{season_year ? ` · ${season_year}` : ""}
       </Text>
 
+      {/* Shared league artifact — separate from this viewer-specific screen. */}
+      <TouchableOpacity
+        style={styles.receiptLink}
+        onPress={() =>
+          router.push(`/fantasy/draft-day/${leagueId}/${seasonId}/receipt` as any)
+        }
+        activeOpacity={0.82}
+      >
+        <View style={styles.receiptLinkCopy}>
+          <Text style={styles.receiptLinkEyebrow}>GLOBAL DRAFT DAY RECEIPT</Text>
+          <Text style={styles.receiptLinkTitle}>See the final league story →</Text>
+          <Text style={styles.receiptLinkBody}>A shared view of the winner, standings, and answers.</Text>
+        </View>
+        <Text style={styles.receiptLinkIcon}>↗</Text>
+      </TouchableOpacity>
+
       {/* Champion banner */}
       {winners.length > 0 && (
         <View style={styles.championCard}>
@@ -321,6 +337,16 @@ const styles = StyleSheet.create({
 
   leagueName:   { color: C.textMuted, fontSize: 13, marginBottom: 2 },
   screenTitle:  { color: C.text, fontSize: 24, fontWeight: "700", marginBottom: 20 },
+  receiptLink: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: "#111A33", borderRadius: 14, padding: 15, marginBottom: 22,
+    borderWidth: 1, borderColor: "#293B78",
+  },
+  receiptLinkCopy: { flex: 1, gap: 3 },
+  receiptLinkEyebrow: { color: "#A5B4FC", fontSize: 10, fontWeight: "800", letterSpacing: 1.1 },
+  receiptLinkTitle: { color: C.text, fontSize: 15, fontWeight: "800" },
+  receiptLinkBody: { color: C.textSecondary, fontSize: 12, lineHeight: 17 },
+  receiptLinkIcon: { color: C.tint, fontSize: 23, fontWeight: "700", marginLeft: 10 },
 
   // Champion
   championCard: {

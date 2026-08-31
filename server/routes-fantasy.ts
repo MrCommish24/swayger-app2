@@ -3955,6 +3955,153 @@ export function registerFantasyRoutes(app: Express) {
     }
   );
 
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt
+  //
+  // Shared league artifact. Unlike /results, this endpoint never returns
+  // viewer-specific picks, correctness, claim, or guest-token data.
+  //
+  // Access: any active authenticated or guest member of this league season.
+  // Archived leagues remain readable because this is historical data.
+  // Visibility: finalized Draft Day only.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/draft-day/receipt",
+    async (req: Request, res: Response) => {
+      const identity = getCallerIdentity(req);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { leagueId, seasonId } = req.params;
+      const supabase = getServiceSupabase();
+
+      // Bind both path identifiers before reading the historical artifact.
+      // This prevents a valid member claim from being used with a season from
+      // another league.
+      const { data: league } = await supabase
+        .from("fantasy_leagues")
+        .select("id, league_name")
+        .eq("id", leagueId)
+        .maybeSingle();
+      if (!league) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, season_year")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      // Unlike the existing results endpoint, receipt membership is required.
+      // resolveViewer validates both account claims and durable guest claims.
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+
+      // Do not filter by league is_active: finalized history remains available
+      // after the primary commissioner archives the league. Do not use the
+      // results helper here either, because this route intentionally has no
+      // viewer-specific response branch.
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, status")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "draft_day")
+        .eq("experience_type", "fantasy")
+        .maybeSingle();
+      if (!room) {
+        res.status(404).json({ error: "No published Draft Day found for this season" });
+        return;
+      }
+
+      if ((room as any).status !== "finalized") {
+        res.json({ finalized: false });
+        return;
+      }
+
+      const { data: card } = await supabase
+        .from("gameday_pick_cards")
+        .select("id")
+        .eq("room_id", (room as any).id)
+        .order("created_at", { ascending: true })
+        .maybeSingle();
+      if (!card) {
+        res.status(404).json({ error: "Draft Day pick card not found" });
+        return;
+      }
+
+      const { data: allProps } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .order("display_order", { ascending: true });
+      const competitionProps = ((allProps ?? []) as any[])
+        // Finalization requires every competition prop to be settled. Keeping
+        // this guard makes the receipt fail closed if legacy data is repaired
+        // out of band and avoids presenting an unresolved outcome as final.
+        .filter((p: any) => p.status === "settled");
+
+      const answerLabels: Record<string, Record<string, string>> = {};
+      for (const prop of competitionProps) {
+        answerLabels[prop.id] = {};
+        for (const option of (Array.isArray(prop.answer_options) ? prop.answer_options : [])) {
+          if (option?.id && option?.label) answerLabels[prop.id][option.id] = option.label;
+        }
+      }
+
+      // Reuse the same finalized leaderboard builder as Draft Day Results.
+      // There is no second scoring or settlement implementation here.
+      const leaderboard = await _buildLeaderboard(
+        supabase,
+        (room as any).id,
+        competitionProps,
+      );
+      const sharedLeaderboard = leaderboard.map((entry: any) => ({
+        display_name: entry.display_name,
+        team_name: entry.team_name,
+        points: entry.points,
+        correct_count: entry.correct_count,
+        rank: entry.rank,
+        rank_label: entry.rank_label,
+      }));
+      const topPoints = leaderboard[0]?.points ?? 0;
+      const winners = sharedLeaderboard.filter((entry: any) => entry.points === topPoints);
+
+      res.json({
+        finalized: true,
+        league_name: (league as any).league_name ?? null,
+        season_year: (season as any).season_year ?? null,
+        winners,
+        leaderboard: sharedLeaderboard,
+        competition_props: competitionProps.map((prop: any) => {
+          const correctIds = _correctAnswers(prop);
+          return {
+            prop_id: prop.id,
+            question: prop.question,
+            display_order: prop.display_order,
+            point_value: prop.point_value,
+            scoring_scope: "competition",
+            correct_answer_ids: correctIds,
+            correct_answer_labels: correctIds.map(
+              (id: string) => answerLabels[prop.id]?.[id] ?? id,
+            ),
+          };
+        }),
+        total_competition_props: competitionProps.length,
+      });
+    }
+  );
+
   // ╔══════════════════════════════════════════════════════════════════════════╗
   // ║  Phase 5 — Fantasy Weekly Competitions & Season Standings              ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
