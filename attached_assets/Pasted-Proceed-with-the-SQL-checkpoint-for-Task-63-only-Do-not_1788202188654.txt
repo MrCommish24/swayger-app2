@@ -1,0 +1,55 @@
+Proceed with the SQL checkpoint for Task #63 only.
+
+Do not apply the migration.
+Do not implement short-link application code yet.
+Do not build code that assumes the new table exists.
+
+Return:
+
+# TASK #63 — SHORT RECEIPT LINK SQL CHECKPOINT
+
+1. Exact migration filename
+2. Exact SQL
+3. Table/column design
+4. Why existing room-code infrastructure is insufficient
+5. Uniqueness strategy
+6. Stable alias strategy
+7. Collision handling strategy
+8. RLS / grant / service-role access model
+9. Archive behavior
+10. Delete / lifecycle behavior
+11. Whether any backfill is required
+12. Post-migration verification SQL
+13. Rollback SQL
+14. Risks
+15. Exact implementation plan after schema approval
+
+Guardrails:
+
+- Smallest additive migration possible.
+- Prefer one stable alias per finalized Fantasy Draft Day receipt.
+- Alias identity should be based on the receipt itself, not the current viewer.
+- Repeated share requests must resolve to the same alias.
+- Alias must be opaque and collision-resistant.
+- The short code must contain no league ID, season ID, user ID, claim ID, guest token, or recovery token.
+- `/r/:shortCode` will only resolve/redirect; it must not become an authorization bypass.
+- Canonical receipt authorization remains authoritative.
+- Archived finalized receipts must retain the same alias.
+- No public receipt data should be stored in the alias row beyond what is needed to resolve the destination.
+- No RLS broadening.
+- Prefer service-role-managed writes.
+- Do not automatically expose alias rows to anon/browser clients.
+- No backfill unless truly required.
+- Do not reuse `gameday_rooms.room_code` or overload Game Day semantics.
+- If the project has an established migration naming convention, follow it.
+- If a table is required, use a narrowly scoped Fantasy receipt alias table rather than a generic URL-shortener platform unless there is already an established generic share-link abstraction.
+
+Then STOP.
+
+Final status:
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
