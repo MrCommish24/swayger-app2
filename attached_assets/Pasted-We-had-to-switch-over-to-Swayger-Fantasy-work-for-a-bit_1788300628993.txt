@@ -1,0 +1,188 @@
+We had to switch over to Swayger Fantasy work for a bit. I now want to resume the NFL Sunday Slate / Discord publishing project.
+
+Please do a status audit only first. Do not implement anything yet.
+
+Context from where we left off:
+
+Completed/passed before the pause:
+
+1. Task #51 — NFL Sunday Slate Web/API
+- NFL Sunday Slate V1 exists.
+- NFL Single Game remains intact.
+- Sunday Slate rooms use `sport = nfl` and `template_type = nfl_sunday_slate`.
+- Sunday Slate uses Early Slate Picks, Late Slate Picks, and Sunday Night Picks.
+- Existing Sunday Slate room creation passed regression.
+- Discord-created NFL rooms remain private/unlisted.
+
+2. Task #52 — Discord NFL Slate Subscriptions
+- Discord servers can enable/disable NFL Sunday Slate subscriptions.
+- Subscription table: `discord_gameday_subscriptions`.
+- Live Discord flow passed:
+  - enable-nfl-slate
+  - slate-status active
+  - disable-nfl-slate
+  - slate-status disabled
+- Bot status parsing issue was fixed separately in the Discord bot.
+- Production row was confirmed for guild `1505427577005932554`.
+
+3. Task #53 — NFL Weekly Master Slate Admin Model
+- Table: `public.nfl_weekly_slate_templates`.
+- API-only admin model.
+- Supports create draft, update draft, approve, archive, list/get.
+- Uses `x-admin-token` / `MM_ADMIN_TOKEN`.
+- RLS enabled.
+- Browser/anon access blocked.
+- No Game Day rooms created by this task.
+- Focused lifecycle suite previously passed 23/23.
+
+4. Task #56 / Task #54A — Backend Publish Engine
+- Table: `public.nfl_weekly_slate_room_instances`.
+- Migration file: `supabase/gameday-nfl-weekly-slate-room-instances.sql`.
+- Migration was applied after a PostgREST schema reload.
+- Backend publish endpoint creates private server-specific NFL Sunday Slate Game Day rooms from approved master slates.
+- Publish endpoint returns/stores post-ready Discord payloads.
+- Supports dry run.
+- Supports optional `guild_ids`.
+- Active subscriptions only.
+- Disabled subscriptions skipped.
+- Publishing is idempotent.
+- No Discord posting.
+- No settlement.
+- No receipts.
+- No reminders.
+- No billing.
+- Focused publish suite ultimately passed 23/23 after migration/schema reload.
+- Required regressions passed:
+  - Weekly master slate: 23/23
+  - NFL Game Day: 47/47
+  - Discord subscriptions: 22/22
+  - Discord isolation: 23/23
+  - Discord visibility: 16/16
+  - Web Game Day: 25/25
+  - Server build passed
+
+5. Task #58 — NFL Slate Bot Delivery API
+This was the next planned backend task.
+
+Purpose:
+Add bot-authenticated API endpoints so the Discord bot can:
+- fetch post-ready NFL weekly slate room instances
+- mark an instance as posted after Discord confirms delivery
+- mark an instance as failed if Discord posting fails
+
+Important requirements:
+- Use `GAMEDAY_BOT_API_KEY`, not `MM_ADMIN_TOKEN`.
+- Do not give the Discord bot Supabase service-role credentials.
+- Do not post to Discord from Replit.
+- Do not create rooms.
+- Do not publish master slates.
+- Do not settle/finalize/receipt/remind/bill/call sports APIs.
+
+Task #58 had been drafted but I do not remember if implementation was completed, committed, or validated.
+
+Please audit the repo and live configured Supabase project and report:
+
+A. Current git status
+- branch
+- latest commits relevant to NFL Slate tasks
+- uncommitted files
+- whether Task #58 appears implemented, partial, or not started
+
+B. Current database/schema status
+Confirm whether these tables exist in the configured live Supabase project:
+- `public.discord_gameday_subscriptions`
+- `public.nfl_weekly_slate_templates`
+- `public.nfl_weekly_slate_room_instances`
+
+For each, confirm:
+- RLS enabled
+- anon/authenticated/browser access blocked where expected
+- service-role/backend access works
+
+C. Current endpoint status
+Confirm whether these endpoints exist and work:
+
+Admin/master slate:
+- `POST /api/gameday/admin/nfl-weekly-slates`
+- `GET /api/gameday/admin/nfl-weekly-slates`
+- `GET /api/gameday/admin/nfl-weekly-slates/:slateId`
+- `PATCH /api/gameday/admin/nfl-weekly-slates/:slateId`
+- `POST /api/gameday/admin/nfl-weekly-slates/:slateId/approve`
+- `POST /api/gameday/admin/nfl-weekly-slates/:slateId/archive`
+- `POST /api/gameday/admin/nfl-weekly-slates/:slateId/publish`
+
+Bot delivery API — check whether implemented:
+- `GET /api/gameday/bot/nfl-weekly-slate-room-instances/post-ready`
+- `POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/posted`
+- `POST /api/gameday/bot/nfl-weekly-slate-room-instances/:instanceId/failed`
+
+For the bot delivery endpoints, specifically confirm:
+- missing bot key rejected
+- wrong bot key rejected
+- `GAMEDAY_BOT_API_KEY` accepted
+- `MM_ADMIN_TOKEN` is not required
+- fetch returns only `status = post_ready`
+- posted transition only works from `post_ready`
+- failed transition only works from `post_ready`
+- already posted/failed/archived rows return clear conflicts
+- no direct Supabase service-role credential is needed by the bot
+
+D. Test command inventory
+List the exact npm scripts available for:
+- NFL weekly master slate lifecycle
+- NFL weekly slate publish engine
+- NFL slate bot delivery API, if present
+- Discord subscriptions
+- Discord isolation
+- Discord visibility
+- NFL Game Day
+- Web Game Day
+- Fantasy regression, if relevant
+- Server build
+
+E. Run validation gates
+Run the relevant suites that exist and report exact assertion counts.
+
+At minimum, run:
+- Task #53 master slate lifecycle regression
+- Task #56 publish regression
+- Task #58 bot delivery regression if implemented
+- Discord subscription regression
+- Discord isolation regression
+- Discord visibility regression
+- NFL Game Day regression
+- Web Game Day regression
+- Server build
+
+If any test cannot run, explain exactly why.
+
+F. Production readiness checkpoint
+Answer these directly:
+
+1. Is Task #56 / backend publish engine still PASS after the Swayger Fantasy changes?
+2. Is Task #58 bot delivery API implemented?
+3. If implemented, is Task #58 PASS?
+4. If not implemented or partial, what exactly remains?
+5. Is the backend ready for Claude/the Discord bot to consume post-ready payloads and post them into Discord?
+6. Are there any regressions from the Fantasy work that affect NFL Slate, Game Day, or Discord subscription behavior?
+
+G. Do not implement yet
+Do not write code in this audit.
+Do not start Discord bot posting.
+Do not start settlement, receipts, reminders, billing, or sports API integration.
+Do not start Task #55.
+
+Return a clear status report with:
+
+- Executive summary
+- What is complete
+- What is incomplete
+- What needs migration/schema reload, if anything
+- Test results
+- Recommended next action
+
+End with one of:
+
+NFL SLATE PROJECT STATUS: READY FOR CLAUDE BOT POSTING
+NFL SLATE PROJECT STATUS: NEEDS TASK #58 IMPLEMENTATION
+NFL SLATE PROJECT STATUS: NEEDS FIXES BEFORE CONTINUING
