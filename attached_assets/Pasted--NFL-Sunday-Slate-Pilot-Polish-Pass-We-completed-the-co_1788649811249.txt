@@ -1,0 +1,178 @@
+# NFL Sunday Slate Pilot Polish Pass
+
+We completed the controlled live Discord posting test successfully.
+
+End-to-end flow is PASS:
+
+- Master slate created
+- Master slate approved
+- Master slate published to one active Discord subscription
+- Private NFL Sunday Slate Game Day room created
+- Room instance stored
+- Post-ready payload created
+- Discord bot fetched payload
+- Bot posted message into #game-day-swayger-test
+- Backend marked instance as posted
+- No duplicate instance
+- No remaining post_ready row
+- No failed row
+
+Now I want a small pilot polish pass before using this with real Discord server owners.
+
+Do not change architecture.
+Do not add new features.
+Do not start settlement, receipts, reminders, billing, sports APIs, or Task #55.
+Do not change Discord bot behavior.
+The bot should continue posting whatever `post_payload.message` the backend provides.
+
+## Objective
+
+Polish the backend-generated post-ready payload for NFL Sunday Slate rooms so the Discord message is ready for pilot servers.
+
+Current test message was:
+
+```text
+🏈 NFL Sunday Slate — Live Bot Test is live!
+Make your picks: https://swayger.app/g/GDS-7LCY7
+bragging rights
+
+This worked technically, but it needs better pilot copy.
+
+Required changes
+1. Standardize room URLs
+
+Post payload room URLs should use:
+
+https://www.swayger.app/g/{roomCode}
+
+not:
+
+https://swayger.app/g/{roomCode}
+
+Avoid redirecting links in bot-facing/user-facing post payloads.
+
+Confirm this does not break existing room access.
+
+2. Improve Discord post copy
+
+Use this pilot-ready message format:
+
+🏈 {slate_name} is live
+
+Lock in your picks for this week’s NFL slate:
+
+• Early Slate Picks
+• Late Slate Picks
+• Sunday Night Picks
+
+Winner gets:
+{reward_text_or_default}
+
+Use a name your server will recognize.
+
+Lock it in and stand on it:
+{room_url}
+
+Default reward text if none is configured:
+
+Bragging rights and receipts.
+
+Notes:
+
+Keep the message plain text.
+Do not use embeds yet.
+Do not mention betting, wagering, odds, gambling, or money.
+Do not say “test” unless the slate name itself contains test.
+Keep it suitable for a real Discord server pilot.
+Preserve configured reward text exactly, except trim surrounding whitespace.
+If reward text is blank or missing, use the default.
+3. Preserve payload fields
+
+The post-ready payload should still include the same useful fields:
+
+type
+master_slate_id
+season_year
+week_number
+slate_name
+slate_label
+discord_guild_id
+discord_channel_id
+discord_channel_name
+room_id
+room_code
+room_url
+receipt_channel_id
+receipt_channel_name
+reward_text
+message
+
+Only polish the generated values/copy.
+
+4. Existing posted rows
+
+Do not mutate already-posted historical rows.
+
+This polish should affect newly created post-ready payloads going forward.
+
+If existing idempotent publish returns an old stored payload, do not overwrite it unless there is already a safe explicit update path. Avoid risky retroactive mutation.
+
+5. Tests
+
+Update or add tests to verify:
+
+New post payload uses https://www.swayger.app/g/{roomCode}.
+Message uses the pilot-ready multiline format.
+Message includes Early Slate Picks, Late Slate Picks, Sunday Night Picks.
+Message includes “Use a name your server will recognize.”
+Message includes “Lock it in and stand on it.”
+Message uses configured reward text when present.
+Message uses Bragging rights and receipts. when reward text is missing/blank.
+Message does not include betting/wagering/odds/gambling language.
+Existing publish idempotency still passes.
+Bot delivery API still returns post_payload.message.
+No Discord posting is added.
+No settlement/receipt/reminder/billing/sports API behavior is added.
+
+Run relevant existing gates:
+
+NFL weekly slate publish engine regression
+NFL slate bot delivery API regression
+NFL weekly master slate lifecycle regression
+Discord subscriptions regression
+Discord isolation regression
+Discord visibility regression
+NFL Game Day regression
+Web Game Day regression
+Server build
+
+Report exact assertion counts.
+
+Final report
+
+Return:
+
+A. Executive summary
+B. Copy changes
+C. URL changes
+D. Payload shape confirmation
+E. Backward compatibility / existing posted rows
+F. Files changed
+G. Test results
+H. Pilot readiness
+
+Answer:
+
+“Is the NFL Sunday Slate Discord post payload ready for real pilot servers?”
+
+Use:
+
+YES
+YES, WITH CONDITIONS
+NO
+
+End with:
+
+NFL SUNDAY SLATE PILOT POLISH STATUS: PASS / FAIL
+
+Do not start Discord posting, settlement, receipts, reminders, billing, sports APIs, or Task #55.

@@ -656,6 +656,8 @@ async function requireGamedayHost(
 // ── Bot API key helpers ───────────────────────────────────────────────────────
 
 const APP_URL = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
+const NFL_SUNDAY_SLATE_ROOM_URL_BASE = "https://www.swayger.app";
+const NFL_SUNDAY_SLATE_DEFAULT_REWARD = "Bragging rights and receipts.";
 
 /**
  * Returns true if the request carries a valid GAMEDAY_BOT_API_KEY.
@@ -1261,7 +1263,9 @@ async function createPrivateSundaySlateRoom(
   return {
     room,
     roomCode: returnedCode,
-    publicLink: returnedCode ? `${APP_URL}/g/${returnedCode}` : `${APP_URL}/gameday/${room.id}`,
+    publicLink: returnedCode
+      ? `${NFL_SUNDAY_SLATE_ROOM_URL_BASE}/g/${returnedCode}`
+      : `${NFL_SUNDAY_SLATE_ROOM_URL_BASE}/gameday/${room.id}`,
   };
 }
 
@@ -2345,11 +2349,23 @@ export function registerGamedayRoutes(app: Express) {
         const rewardText =
           typeof subscription.reward_text === "string" && subscription.reward_text.trim()
             ? subscription.reward_text.trim()
-            : "Bragging rights and receipts.";
+            : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
         const message = [
-          `🏈 ${slate.slate_name} is live!`,
-          `Make your picks: ${createdRoom.publicLink}`,
+          `🏈 ${slate.slate_name} is live`,
+          "",
+          "Lock in your picks for this week’s NFL slate:",
+          "",
+          "• Early Slate Picks",
+          "• Late Slate Picks",
+          "• Sunday Night Picks",
+          "",
+          "Winner gets:",
           rewardText,
+          "",
+          "Use a name your server will recognize.",
+          "",
+          "Lock it in and stand on it:",
+          createdRoom.publicLink,
         ].join("\n");
         const postPayload = {
           type: "gameday_nfl_sunday_slate",

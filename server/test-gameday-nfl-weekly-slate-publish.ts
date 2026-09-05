@@ -201,7 +201,7 @@ async function main() {
         game_day_channel_name: "game-day-a",
         receipt_channel_id: `RECEIPTS_A_${runId}`,
         receipt_channel_name: "receipts-a",
-        reward_text: "Bragging rights and receipts.",
+        reward_text: "Guild A pilot reward",
         status: "active",
       },
       {
@@ -209,7 +209,7 @@ async function main() {
         discord_guild_name: "Active B",
         game_day_channel_id: `CHANNEL_B_${runId}`,
         game_day_channel_name: "game-day-b",
-        reward_text: null,
+        reward_text: "   ",
         status: "active",
       },
       {
@@ -346,6 +346,52 @@ async function main() {
         ),
       instances.error?.message,
     );
+    expect(
+      "new post payloads use the canonical www room URL",
+      !instances.error &&
+        instances.data?.every((row: any) =>
+          row.room_code &&
+          row.room_url === `https://www.swayger.app/g/${row.room_code}` &&
+          row.post_payload?.room_url === `https://www.swayger.app/g/${row.room_code}`,
+        ),
+      instances.error?.message,
+    );
+    expect(
+      "new post payloads use the pilot-ready multiline message format",
+      !instances.error &&
+        instances.data?.every((row: any) => {
+          const message = row.post_payload?.message;
+          return (
+            typeof message === "string" &&
+            message.startsWith(`🏈 ${row.post_payload.slate_name} is live\n\n`) &&
+            message.includes("Lock in your picks for this week’s NFL slate:\n\n") &&
+            message.includes("• Early Slate Picks\n• Late Slate Picks\n• Sunday Night Picks\n\n") &&
+            message.includes("Winner gets:\n") &&
+            message.includes("\n\nUse a name your server will recognize.\n\n") &&
+            message.includes("Lock it in and stand on it:\n") &&
+            message.endsWith(row.post_payload.room_url)
+          );
+        }),
+      instances.error?.message,
+    );
+    expect(
+      "configured reward text is preserved and blank reward text uses the default",
+      !instances.error &&
+        instances.data?.find((row: any) => row.discord_guild_id === activeGuildA)?.post_payload?.reward_text ===
+          "Guild A pilot reward" &&
+        instances.data?.find((row: any) => row.discord_guild_id === activeGuildB)?.post_payload?.reward_text ===
+          "Bragging rights and receipts.",
+    ),
+      instances.error?.message,
+    );
+    expect(
+      "pilot messages contain no betting or gambling language",
+      !instances.error &&
+        instances.data?.every((row: any) =>
+          !/\b(betting|wagering|odds|gambling|money)\b/i.test(row.post_payload?.message ?? ""),
+        ),
+      instances.error?.message,
+    );
 
     const roomIds = (instances.data ?? []).map((row: any) => row.gameday_room_id);
     createdRoomIds.push(...roomIds);
@@ -377,7 +423,15 @@ async function main() {
         repeat.body.summary?.created === 0 &&
         repeat.body.summary?.skipped_existing === 2 &&
         repeat.body.instances?.length === 2 &&
-        repeat.body.slate?.published_at === publishedAt,
+        repeat.body.slate?.published_at === publishedAt &&
+        repeat.body.instances.every((instance: any) =>
+          published.body.instances.some(
+            (publishedInstance: any) =>
+              publishedInstance.id === instance.id &&
+              publishedInstance.room_url === instance.room_url &&
+              publishedInstance.post_payload?.message === instance.post_payload?.message,
+          ),
+        ),
       JSON.stringify(repeat.body),
     );
     expect(
