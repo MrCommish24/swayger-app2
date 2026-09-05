@@ -1,0 +1,62 @@
+We are ready to live-test the Discord bot posting flow.
+
+Please do a narrow backend test setup only. Do not implement new code.
+
+Current backend status is already PASS:
+- Task #56 backend publish engine: PASS
+- Task #58 bot delivery API: PASS
+
+Goal:
+Prepare exactly one post_ready NFL weekly slate room instance for the Swayger Test Server so the Discord bot can run a controlled live test.
+
+Test Discord guild:
+- discord_guild_id: 1505427577005932554
+- guild name: Swayger Test Server
+- expected game day channel: game-day-swayger-test
+- expected receipt channel: swayger-receipts
+
+Please perform/confirm:
+
+1. Confirm there is an active Discord NFL Slate subscription for guild `1505427577005932554`.
+   - If it is disabled, tell me to run `/swayger gameday enable-nfl-slate` in Discord first.
+   - Do not modify the subscription directly unless already supported by existing tested API.
+
+2. Confirm whether any approved or published NFL weekly master slate currently exists.
+   - If none exists, create a small test master slate through the existing admin API.
+   - Use obvious test naming, such as:
+     `NFL Sunday Slate — Live Bot Test`
+   - Keep it clearly identifiable as a test slate.
+
+3. Approve the test master slate using the existing admin API.
+
+4. Run the publish endpoint with `guild_ids` limited to only:
+   `1505427577005932554`
+
+5. Confirm publish created or reused exactly one private NFL Sunday Slate Game Day room instance for that guild.
+
+6. Confirm the instance has:
+   - status = `post_ready`
+   - correct `discord_guild_id`
+   - correct `discord_channel_id`
+   - room_url populated
+   - post_payload.message populated
+
+7. Confirm the bot delivery fetch endpoint returns exactly that instance when filtered to:
+   - `discord_guild_id=1505427577005932554`
+   - limit=1
+
+8. Return:
+   - master_slate_id
+   - room_instance_id
+   - room_id
+   - room_code
+   - room_url
+   - current instance status
+   - post_payload.message preview
+   - whether the bot is ready to run `/swayger gameday publish-pending-nfl-slates guild_only:true limit:1`
+
+Do not post to Discord.
+Do not mark the instance posted or failed.
+Do not create multiple rooms.
+Do not publish to any other guild.
+Do not start settlement, receipts, reminders, billing, or sports API work.
