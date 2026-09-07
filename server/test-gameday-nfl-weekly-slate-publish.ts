@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 23;
+const EXPECTED_ASSERTIONS = 27;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -381,7 +381,6 @@ async function main() {
           "Guild A pilot reward" &&
         instances.data?.find((row: any) => row.discord_guild_id === activeGuildB)?.post_payload?.reward_text ===
           "Bragging rights and receipts.",
-    ),
       instances.error?.message,
     );
     expect(

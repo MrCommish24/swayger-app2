@@ -8927,6 +8927,8 @@ async function requireGamedayHost(req, res2) {
   return user.id;
 }
 var APP_URL2 = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
+var NFL_SUNDAY_SLATE_ROOM_URL_BASE = "https://www.swayger.app";
+var NFL_SUNDAY_SLATE_DEFAULT_REWARD = "Bragging rights and receipts.";
 function isBotApiKeyValid(req) {
   const botKey = process.env.GAMEDAY_BOT_API_KEY?.trim();
   if (!botKey) return false;
@@ -9316,7 +9318,7 @@ async function createPrivateSundaySlateRoom(supabase, input) {
   return {
     room,
     roomCode: returnedCode,
-    publicLink: returnedCode ? `${APP_URL2}/g/${returnedCode}` : `${APP_URL2}/gameday/${room.id}`
+    publicLink: returnedCode ? `${NFL_SUNDAY_SLATE_ROOM_URL_BASE}/g/${returnedCode}` : `${NFL_SUNDAY_SLATE_ROOM_URL_BASE}/gameday/${room.id}`
   };
 }
 function registerGamedayRoutes(app2) {
@@ -10159,11 +10161,23 @@ function registerGamedayRoutes(app2) {
           discordGuildId: guildId,
           discordChannelId: subscription.game_day_channel_id
         });
-        const rewardText = typeof subscription.reward_text === "string" && subscription.reward_text.trim() ? subscription.reward_text.trim() : "Bragging rights and receipts.";
+        const rewardText = typeof subscription.reward_text === "string" && subscription.reward_text.trim() ? subscription.reward_text.trim() : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
         const message = [
-          `\u{1F3C8} ${slate.slate_name} is live!`,
-          `Make your picks: ${createdRoom.publicLink}`,
-          rewardText
+          `\u{1F3C8} ${slate.slate_name} is live`,
+          "",
+          "Lock in your picks for this week\u2019s NFL slate:",
+          "",
+          "\u2022 Early Slate Picks",
+          "\u2022 Late Slate Picks",
+          "\u2022 Sunday Night Picks",
+          "",
+          "Winner gets:",
+          rewardText,
+          "",
+          "Use a name your server will recognize.",
+          "",
+          "Lock it in and stand on it:",
+          createdRoom.publicLink
         ].join("\n");
         const postPayload = {
           type: "gameday_nfl_sunday_slate",
