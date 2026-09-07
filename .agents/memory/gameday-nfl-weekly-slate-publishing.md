@@ -14,3 +14,9 @@ The durable idempotency key is the master slate plus Discord guild. A repeat pub
 **Why:** Admin retries and concurrent requests must be safe without multiplying playable rooms or changing the audit timeline.
 
 **How to apply:** Treat the instance uniqueness constraint as the final concurrency guard and clean up any losing room created during a race.
+
+Configured reward text is preserved in storage; only the display copy strips a leading “Winner gets” prefix before rendering the labeled message section.
+
+**Why:** Pilot-configured rewards may already include the label, and rewriting stored subscription or payload values would damage auditability and historical delivery data.
+
+**How to apply:** Keep `reward_text` unchanged for persistence and bot delivery; derive a separate display reward string for newly generated message text only.
