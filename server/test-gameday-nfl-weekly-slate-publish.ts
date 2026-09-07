@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 27;
+const EXPECTED_ASSERTIONS = 33;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -84,7 +84,7 @@ async function main() {
     game_candidates: [" Bears vs Packers ", "Chiefs vs Raiders"],
   };
 
-  const { registerGamedayRoutes } = await import("./routes-gameday");
+    const { normalizeNflSundaySlateDisplayReward, registerGamedayRoutes } = await import("./routes-gameday");
   const app = express();
   app.use(express.json());
   registerGamedayRoutes(app);
@@ -126,6 +126,29 @@ async function main() {
         /ON DELETE RESTRICT/i.test(migration) &&
         /REVOKE ALL ON TABLE public\.nfl_weekly_slate_room_instances FROM anon, authenticated, PUBLIC/i.test(migration) &&
         /status IN \('created', 'post_ready', 'posted', 'failed', 'archived'\)/i.test(migration),
+    );
+    expect(
+      "display reward strips a simple Winner gets prefix",
+      normalizeNflSundaySlateDisplayReward("Winner gets Game Day Champ for the week.") ===
+        "Game Day Champ for the week.",
+    );
+    expect(
+      "display reward strips a colon Winner gets prefix",
+      normalizeNflSundaySlateDisplayReward("Winner gets: Game Day Champ for the week.") ===
+        "Game Day Champ for the week.",
+    );
+    expect(
+      "display reward handles lowercase winner gets",
+      normalizeNflSundaySlateDisplayReward("winner gets Game Day Champ for the week") ===
+        "Game Day Champ for the week",
+    );
+    expect(
+      "display reward leaves normal text unchanged",
+      normalizeNflSundaySlateDisplayReward("Bragging rights.") === "Bragging rights.",
+    );
+    expect(
+      "display reward uses the default for blank text",
+      normalizeNflSundaySlateDisplayReward("   ") === "Bragging rights and receipts.",
     );
     const browserProbe = await anon
       .from("nfl_weekly_slate_room_instances")
@@ -201,7 +224,7 @@ async function main() {
         game_day_channel_name: "game-day-a",
         receipt_channel_id: `RECEIPTS_A_${runId}`,
         receipt_channel_name: "receipts-a",
-        reward_text: "Guild A pilot reward",
+         reward_text: "Winner gets Game Day Champ for the week.",
         status: "active",
       },
       {
@@ -374,11 +397,23 @@ async function main() {
         }),
       instances.error?.message,
     );
+    const prefixRewardInstance = instances.data?.find((row: any) => row.discord_guild_id === activeGuildA);
+    expect(
+      "stored reward text is preserved while display text avoids duplicate Winner gets",
+      prefixRewardInstance?.post_payload?.reward_text === "Winner gets Game Day Champ for the week." &&
+        prefixRewardInstance?.post_payload?.message?.includes(
+          "Winner gets:\nGame Day Champ for the week.",
+        ) &&
+        !prefixRewardInstance?.post_payload?.message?.includes(
+          "Winner gets:\nWinner gets Game Day Champ for the week.",
+        ),
+      instances.error?.message,
+    );
     expect(
       "configured reward text is preserved and blank reward text uses the default",
       !instances.error &&
         instances.data?.find((row: any) => row.discord_guild_id === activeGuildA)?.post_payload?.reward_text ===
-          "Guild A pilot reward" &&
+          "Winner gets Game Day Champ for the week." &&
         instances.data?.find((row: any) => row.discord_guild_id === activeGuildB)?.post_payload?.reward_text ===
           "Bragging rights and receipts.",
       instances.error?.message,

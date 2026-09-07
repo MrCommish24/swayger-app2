@@ -659,6 +659,14 @@ const APP_URL = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
 const NFL_SUNDAY_SLATE_ROOM_URL_BASE = "https://www.swayger.app";
 const NFL_SUNDAY_SLATE_DEFAULT_REWARD = "Bragging rights and receipts.";
 
+export function normalizeNflSundaySlateDisplayReward(rewardText: unknown): string {
+  const trimmed =
+    typeof rewardText === "string" && rewardText.trim()
+      ? rewardText.trim()
+      : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
+  return trimmed.replace(/^winner gets(?:[ \t]+|:[ \t]*)/i, "").trim();
+}
+
 /**
  * Returns true if the request carries a valid GAMEDAY_BOT_API_KEY.
  * Accepts either:
@@ -2350,6 +2358,7 @@ export function registerGamedayRoutes(app: Express) {
           typeof subscription.reward_text === "string" && subscription.reward_text.trim()
             ? subscription.reward_text.trim()
             : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
+        const displayRewardText = normalizeNflSundaySlateDisplayReward(rewardText);
         const message = [
           `🏈 ${slate.slate_name} is live`,
           "",
@@ -2360,7 +2369,7 @@ export function registerGamedayRoutes(app: Express) {
           "• Sunday Night Picks",
           "",
           "Winner gets:",
-          rewardText,
+          displayRewardText,
           "",
           "Use a name your server will recognize.",
           "",

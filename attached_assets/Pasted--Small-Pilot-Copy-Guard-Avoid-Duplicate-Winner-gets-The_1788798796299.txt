@@ -1,0 +1,101 @@
+# Small Pilot Copy Guard — Avoid Duplicate “Winner gets”
+
+The polished Discord post payload works, but the live test exposed a common reward-text issue.
+
+Current output:
+
+Winner gets:
+Winner gets Game Day Champ for the week.
+
+This happens when the configured subscription reward text already starts with “Winner gets...”
+
+Please add a small message-generation guard only.
+
+Objective:
+Avoid duplicate “Winner gets” wording in newly generated NFL Sunday Slate Discord post payloads.
+
+Do not change architecture.
+Do not change Discord bot code.
+Do not mutate existing posted rows.
+Do not change stored subscription reward_text unless existing code already does so.
+Do not start settlement, receipts, reminders, billing, sports APIs, or Task #55.
+
+Desired behavior:
+
+1. Preserve the stored reward_text value.
+2. When generating post_payload.message, derive a display reward string.
+3. If reward_text is blank/missing, use:
+   Bragging rights and receipts.
+
+4. If reward_text begins with any simple “winner gets” prefix, strip only that prefix for display:
+   - "Winner gets Game Day Champ for the week."
+   - "Winner gets: Game Day Champ for the week."
+   - "winner gets Game Day Champ for the week"
+   - "winner gets: Game Day Champ for the week"
+
+Should render as:
+
+Winner gets:
+Game Day Champ for the week.
+
+5. If reward_text does not start with “winner gets”, render it unchanged after trimming.
+
+Examples:
+
+Input reward_text:
+Winner gets Game Day Champ for the week.
+
+Message section should be:
+Winner gets:
+Game Day Champ for the week.
+
+Input reward_text:
+Game Day Champ for the week.
+
+Message section should be:
+Winner gets:
+Game Day Champ for the week.
+
+Input reward_text:
+Bragging rights.
+
+Message section should be:
+Winner gets:
+Bragging rights.
+
+Input reward_text:
+blank/null
+
+Message section should be:
+Winner gets:
+Bragging rights and receipts.
+
+Testing:
+Add/update focused assertions in the NFL weekly slate publish regression to verify:
+
+1. reward_text is still stored/preserved as originally provided
+2. message display strips leading “Winner gets ”
+3. message display strips leading “Winner gets: ”
+4. lowercase “winner gets” is handled
+5. normal reward text is unchanged
+6. blank/missing reward text still uses “Bragging rights and receipts.”
+7. no gambling/betting/odds/money language is introduced
+8. idempotent publish still returns existing stored payloads and does not rewrite old posted rows
+9. bot delivery API still returns post_payload.message
+10. server build passes
+
+Run:
+- NFL weekly slate publish engine regression
+- NFL slate bot delivery API regression
+- Web Game Day regression
+- Server build
+
+Return:
+- files changed
+- exact assertion counts
+- confirmation existing posted rows were not mutated
+- whether newly generated payloads now avoid duplicate “Winner gets”
+
+End with:
+
+NFL REWARD COPY GUARD STATUS: PASS / FAIL

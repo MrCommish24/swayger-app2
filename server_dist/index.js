@@ -8929,6 +8929,10 @@ async function requireGamedayHost(req, res2) {
 var APP_URL2 = process.env.EXPO_PUBLIC_APP_URL ?? "https://www.swayger.app";
 var NFL_SUNDAY_SLATE_ROOM_URL_BASE = "https://www.swayger.app";
 var NFL_SUNDAY_SLATE_DEFAULT_REWARD = "Bragging rights and receipts.";
+function normalizeNflSundaySlateDisplayReward(rewardText) {
+  const trimmed = typeof rewardText === "string" && rewardText.trim() ? rewardText.trim() : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
+  return trimmed.replace(/^winner gets(?:[ \t]+|:[ \t]*)/i, "").trim();
+}
 function isBotApiKeyValid(req) {
   const botKey = process.env.GAMEDAY_BOT_API_KEY?.trim();
   if (!botKey) return false;
@@ -10162,6 +10166,7 @@ function registerGamedayRoutes(app2) {
           discordChannelId: subscription.game_day_channel_id
         });
         const rewardText = typeof subscription.reward_text === "string" && subscription.reward_text.trim() ? subscription.reward_text.trim() : NFL_SUNDAY_SLATE_DEFAULT_REWARD;
+        const displayRewardText = normalizeNflSundaySlateDisplayReward(rewardText);
         const message = [
           `\u{1F3C8} ${slate.slate_name} is live`,
           "",
@@ -10172,7 +10177,7 @@ function registerGamedayRoutes(app2) {
           "\u2022 Sunday Night Picks",
           "",
           "Winner gets:",
-          rewardText,
+          displayRewardText,
           "",
           "Use a name your server will recognize.",
           "",
