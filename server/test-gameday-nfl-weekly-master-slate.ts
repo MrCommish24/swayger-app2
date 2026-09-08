@@ -58,6 +58,10 @@ async function main() {
     resolve(process.cwd(), "supabase/gameday-nfl-weekly-master-slate.sql"),
     "utf8",
   );
+  const scopedCandidatesMigration = readFileSync(
+    resolve(process.cwd(), "supabase/gameday-nfl-weekly-master-slate-scoped-player-candidates.sql"),
+    "utf8",
+  );
 
   const validCandidates = {
     early_matchups: [" Bears vs Packers ", "", "Eagles vs Cowboys", "Bears vs Packers"],
@@ -116,6 +120,17 @@ async function main() {
     expect("migration defines the master slate table", new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`, "i").test(migration));
     expect("migration enables row-level security", /ENABLE ROW LEVEL SECURITY/i.test(migration));
     expect("migration allows archived replacement", /WHERE status <> 'archived'/i.test(migration));
+    expect(
+      "scoped player migration defines all six optional candidate arrays",
+      [
+        "early_qb_candidates",
+        "late_qb_candidates",
+        "early_rb_candidates",
+        "late_rb_candidates",
+        "early_receiver_candidates",
+        "late_receiver_candidates",
+      ].every((field) => scopedCandidatesMigration.includes(`ADD COLUMN IF NOT EXISTS ${field} JSONB`)),
+    );
 
     const unauthorized = await request(endpoint);
     expect("admin routes reject missing credentials", unauthorized.status === 401, JSON.stringify(unauthorized.body));
@@ -173,6 +188,87 @@ async function main() {
       JSON.stringify(created.body.slate),
     );
     if (!slateId) throw new Error("Create did not return a slate ID");
+
+    const scopedOnly = await request(endpoint, {
+      method: "POST",
+      authorized: true,
+      body: {
+        season_year: seasonYear,
+        week_number: weekNumber + 1000,
+        slate_name: `${slateName} scoped-only`,
+        early_matchups: ["Bears vs Packers"],
+        late_matchups: ["Chiefs vs Raiders"],
+        sunday_night_teams: ["Ravens", "Bills"],
+        early_qb_candidates: [" Early QB ", "", "Early QB"],
+        late_qb_candidates: [" Late QB "],
+        early_rb_candidates: [" Early RB "],
+        late_rb_candidates: [" Late RB "],
+        early_receiver_candidates: [" Early WR ", "Early WR"],
+        late_receiver_candidates: [" Late WR "],
+        team_candidates: ["Bears", "Packers", "Chiefs", "Raiders"],
+        game_candidates: ["Bears vs Packers", "Chiefs vs Raiders"],
+      },
+    });
+    const scopedOnlyId = scopedOnly.body.slate?.id as string | undefined;
+    expect(
+      "create accepts and normalizes scoped player candidate fields",
+      scopedOnly.status === 201 &&
+        JSON.stringify(scopedOnly.body.slate?.early_qb_candidates) === JSON.stringify(["Early QB"]) &&
+        JSON.stringify(scopedOnly.body.slate?.late_receiver_candidates) === JSON.stringify(["Late WR"]) &&
+        scopedOnly.body.slate?.qb_candidates?.length === 0,
+      JSON.stringify(scopedOnly.body),
+    );
+    const scopedOnlyApproved = scopedOnlyId
+      ? await request(`${endpoint}/${scopedOnlyId}/approve`, {
+          method: "POST",
+          authorized: true,
+        })
+      : { status: 0, body: {} };
+    expect(
+      "approval succeeds with complete scoped player lists and no global player lists",
+      scopedOnlyApproved.status === 200 &&
+        scopedOnlyApproved.body.slate?.status === "approved",
+      JSON.stringify(scopedOnlyApproved.body),
+    );
+    if (scopedOnlyId) await service.from(table).delete().eq("id", scopedOnlyId);
+
+    const incompleteScoped = await request(endpoint, {
+      method: "POST",
+      authorized: true,
+      body: {
+        season_year: seasonYear,
+        week_number: weekNumber + 1001,
+        slate_name: `${slateName} incomplete-scoped`,
+        early_matchups: ["Bears vs Packers"],
+        late_matchups: ["Chiefs vs Raiders"],
+        sunday_night_teams: ["Ravens", "Bills"],
+        early_qb_candidates: ["Early QB"],
+        late_qb_candidates: [],
+        early_rb_candidates: ["Early RB"],
+        late_rb_candidates: ["Late RB"],
+        early_receiver_candidates: ["Early WR"],
+        late_receiver_candidates: ["Late WR"],
+        team_candidates: ["Bears", "Packers", "Chiefs", "Raiders"],
+        game_candidates: ["Bears vs Packers", "Chiefs vs Raiders"],
+      },
+    });
+    const incompleteScopedId = incompleteScoped.body.slate?.id as string | undefined;
+    const incompleteScopedApproval = incompleteScopedId
+      ? await request(`${endpoint}/${incompleteScopedId}/approve`, {
+          method: "POST",
+          authorized: true,
+        })
+      : { status: 0, body: {} };
+    expect(
+      "approval rejects a scoped-only player group missing one window",
+      incompleteScoped.status === 201 &&
+        incompleteScopedApproval.status === 400 &&
+        incompleteScopedApproval.body.missing?.includes(
+          "qb_candidates or both early_qb_candidates and late_qb_candidates",
+        ),
+      JSON.stringify(incompleteScopedApproval.body),
+    );
+    if (incompleteScopedId) await service.from(table).delete().eq("id", incompleteScopedId);
 
     const duplicate = await request(endpoint, {
       method: "POST",
@@ -244,7 +340,7 @@ async function main() {
       headers: { "x-admin-email": "approver@example.test" },
     });
     expect(
-      "approval succeeds and stores approved metadata",
+      "legacy global-only approval succeeds and stores approved metadata",
       approved.status === 200 &&
         approved.body.slate?.status === "approved" &&
         approved.body.slate?.approved_by_email === "approver@example.test" &&

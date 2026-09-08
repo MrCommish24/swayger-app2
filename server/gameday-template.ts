@@ -974,6 +974,8 @@ export const NFL_SUNDAY_SLATE_TEMPLATE: PropTemplate[] = [
   { id: "nfl_slate_early_close_games_count", phase: "pregame", question: "How many Early Slate games finish within 7 points?", answers: ["0–2", "3–5", "6+", "Tie / Multiple tied"], settlement_window: "End Early Slate" },
 
   { id: "nfl_slate_late_qb_passing_yards", phase: "halftime", question: "Which Late Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_rushing_yards", phase: "halftime", question: "Which Late Slate RB has the most rushing yards?", answers: ["{{SLATE_RBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_receiving_yards", phase: "halftime", question: "Which Late Slate WR/TE has the most receiving yards?", answers: ["{{SLATE_RECEIVERS}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_team_points", phase: "halftime", question: "Which Late Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_highest_total_game", phase: "halftime", question: "Which Late Slate game has the highest combined score?", answers: ["{{SLATE_LATE_GAMES}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_overtime", phase: "halftime", question: "Will any Late Slate game go to overtime?", answers: ["Yes", "No"], settlement_window: "End Late Slate" },
@@ -984,7 +986,7 @@ export const NFL_SUNDAY_SLATE_TEMPLATE: PropTemplate[] = [
   { id: "nfl_slate_snf_margin", phase: "fourth", question: "What is the Sunday Night final margin?", answers: ["1–7", "8–14", "15+", "Tie / Multiple tied"], settlement_window: "End Game" },
 ];
 
-// Early Slate: 8 | Late Slate: 5 | Sunday Night: 3
+// Early Slate: 8 | Late Slate: 7 | Sunday Night: 3
 export const NFL_SUNDAY_SLATE_DEFAULT_PROP_IDS = NFL_SUNDAY_SLATE_TEMPLATE.map((prop) => prop.id);
 
 export function resolvePlaceholders(

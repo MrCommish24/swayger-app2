@@ -936,6 +936,12 @@ type SundaySlateConfig = {
   qb_candidates: string[];
   rb_candidates: string[];
   receiver_candidates: string[];
+  early_qb_candidates: string[];
+  late_qb_candidates: string[];
+  early_rb_candidates: string[];
+  late_rb_candidates: string[];
+  early_receiver_candidates: string[];
+  late_receiver_candidates: string[];
   team_candidates: string[];
   game_candidates: string[];
 };
@@ -963,19 +969,48 @@ function normalizeSundaySlateConfig(value: unknown): SundaySlateConfig | null {
     qb_candidates: normalizeSlateList(raw.qb_candidates),
     rb_candidates: normalizeSlateList(raw.rb_candidates),
     receiver_candidates: normalizeSlateList(raw.receiver_candidates),
+    early_qb_candidates: normalizeSlateList(raw.early_qb_candidates),
+    late_qb_candidates: normalizeSlateList(raw.late_qb_candidates),
+    early_rb_candidates: normalizeSlateList(raw.early_rb_candidates),
+    late_rb_candidates: normalizeSlateList(raw.late_rb_candidates),
+    early_receiver_candidates: normalizeSlateList(raw.early_receiver_candidates),
+    late_receiver_candidates: normalizeSlateList(raw.late_receiver_candidates),
     team_candidates: normalizeSlateList(raw.team_candidates),
     game_candidates: normalizeSlateList(raw.game_candidates),
   };
+  const hasWindowCandidates = (
+    globalCandidates: string[],
+    earlyCandidates: string[],
+    lateCandidates: string[],
+  ) => globalCandidates.length > 0 ||
+    (earlyCandidates.length > 0 && lateCandidates.length > 0);
   if (
     !config.sunday_night_teams[0] || !config.sunday_night_teams[1] ||
     !config.early_matchups.length || !config.late_matchups.length ||
-    !config.qb_candidates.length || !config.rb_candidates.length ||
-    !config.receiver_candidates.length || !config.team_candidates.length
+    !hasWindowCandidates(config.qb_candidates, config.early_qb_candidates, config.late_qb_candidates) ||
+    !hasWindowCandidates(config.rb_candidates, config.early_rb_candidates, config.late_rb_candidates) ||
+    !hasWindowCandidates(
+      config.receiver_candidates,
+      config.early_receiver_candidates,
+      config.late_receiver_candidates,
+    ) ||
+    !config.team_candidates.length
   ) return null;
   if (!config.game_candidates.length) {
     config.game_candidates = [...new Set([...earlyMatchups, ...lateMatchups])];
   }
   return config;
+}
+
+function getSundaySlateRepresentativeQbs(
+  slate: SundaySlateConfig,
+): [string, string] {
+  const candidates = [
+    ...slate.qb_candidates,
+    ...slate.early_qb_candidates,
+    ...slate.late_qb_candidates,
+  ];
+  return [candidates[0], candidates[1] ?? candidates[0]];
 }
 
 const WEEKLY_SLATE_CANDIDATE_FIELDS = [
@@ -985,6 +1020,12 @@ const WEEKLY_SLATE_CANDIDATE_FIELDS = [
   "qb_candidates",
   "rb_candidates",
   "receiver_candidates",
+  "early_qb_candidates",
+  "late_qb_candidates",
+  "early_rb_candidates",
+  "late_rb_candidates",
+  "early_receiver_candidates",
+  "late_receiver_candidates",
   "team_candidates",
   "game_candidates",
 ] as const;
@@ -992,7 +1033,7 @@ const WEEKLY_SLATE_CANDIDATE_FIELDS = [
 type WeeklySlateCandidateField = (typeof WEEKLY_SLATE_CANDIDATE_FIELDS)[number];
 
 const WEEKLY_SLATE_SELECT =
-  "id, season_year, week_number, slate_name, slate_label, status, early_matchups, late_matchups, sunday_night_teams, qb_candidates, rb_candidates, receiver_candidates, team_candidates, game_candidates, created_by_user_id, created_by_email, approved_by_user_id, approved_by_email, approved_at, published_at, archived_at, created_at, updated_at";
+  "id, season_year, week_number, slate_name, slate_label, status, early_matchups, late_matchups, sunday_night_teams, qb_candidates, rb_candidates, receiver_candidates, early_qb_candidates, late_qb_candidates, early_rb_candidates, late_rb_candidates, early_receiver_candidates, late_receiver_candidates, team_candidates, game_candidates, created_by_user_id, created_by_email, approved_by_user_id, approved_by_email, approved_at, published_at, archived_at, created_at, updated_at";
 
 function normalizeWeeklySlateText(value: unknown, maxLength: number): string | null {
   if (value === null || value === undefined) return null;
@@ -1039,6 +1080,12 @@ function serializeWeeklySlate(row: any) {
     qb_candidates: row.qb_candidates ?? [],
     rb_candidates: row.rb_candidates ?? [],
     receiver_candidates: row.receiver_candidates ?? [],
+    early_qb_candidates: row.early_qb_candidates ?? [],
+    late_qb_candidates: row.late_qb_candidates ?? [],
+    early_rb_candidates: row.early_rb_candidates ?? [],
+    late_rb_candidates: row.late_rb_candidates ?? [],
+    early_receiver_candidates: row.early_receiver_candidates ?? [],
+    late_receiver_candidates: row.late_receiver_candidates ?? [],
     team_candidates: row.team_candidates ?? [],
     game_candidates: row.game_candidates ?? [],
     created_by_user_id: row.created_by_user_id ?? null,
@@ -1142,15 +1189,27 @@ function resolveSundaySlateAnswers(
   slate: SundaySlateConfig,
   phase: "pregame" | "halftime" | "fourth",
 ): string[] {
+  const isEarly = phase === "pregame";
+  const scopedQbs = isEarly ? slate.early_qb_candidates : slate.late_qb_candidates;
+  const scopedRbs = isEarly ? slate.early_rb_candidates : slate.late_rb_candidates;
+  const scopedReceivers = isEarly
+    ? slate.early_receiver_candidates
+    : slate.late_receiver_candidates;
   const scopedTeams = phase === "pregame"
     ? deriveMatchupTeams(slate.early_matchups)
     : phase === "halftime"
     ? deriveMatchupTeams(slate.late_matchups)
     : slate.sunday_night_teams;
   const tokenOptions: Record<string, string[]> = {
-    "{{SLATE_QBS}}": withUniqueOutcomeOptions(slate.qb_candidates),
-    "{{SLATE_RBS}}": withUniqueOutcomeOptions(slate.rb_candidates),
-    "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(slate.receiver_candidates),
+    "{{SLATE_QBS}}": withUniqueOutcomeOptions(
+      scopedQbs.length ? scopedQbs : slate.qb_candidates,
+    ),
+    "{{SLATE_RBS}}": withUniqueOutcomeOptions(
+      scopedRbs.length ? scopedRbs : slate.rb_candidates,
+    ),
+    "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(
+      scopedReceivers.length ? scopedReceivers : slate.receiver_candidates,
+    ),
     "{{SLATE_TEAMS}}": withUniqueOutcomeOptions(scopedTeams),
     "{{SLATE_EARLY_GAMES}}": withUniqueOutcomeOptions(slate.early_matchups, false),
     "{{SLATE_LATE_GAMES}}": withUniqueOutcomeOptions(slate.late_matchups, false),
@@ -1183,6 +1242,8 @@ async function createPrivateSundaySlateRoom(
   input: SundaySlateRoomInput,
 ): Promise<SundaySlateRoomResult> {
   const { slateConfig } = input;
+  const [representativeQbA, representativeQbB] =
+    getSundaySlateRepresentativeQbs(slateConfig);
   let roomCode: string | undefined;
   try {
     roomCode = await generateUniqueRoomCode(supabase);
@@ -1194,8 +1255,8 @@ async function createPrivateSundaySlateRoom(
     room_name: input.roomName.trim(),
     team_a_name: slateConfig.sunday_night_teams[0],
     team_b_name: slateConfig.sunday_night_teams[1],
-    team_a_star: slateConfig.qb_candidates[0],
-    team_b_star: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0],
+    team_a_star: representativeQbA,
+    team_b_star: representativeQbB,
     game_date: parseGameDate(input.gameDate),
     host_user_id: null,
     status: "active",
@@ -1232,8 +1293,8 @@ async function createPrivateSundaySlateRoom(
   const vars = {
     TEAM_A: slateConfig.sunday_night_teams[0],
     TEAM_B: slateConfig.sunday_night_teams[1],
-    STAR_A: slateConfig.qb_candidates[0],
-    STAR_B: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0],
+    STAR_A: representativeQbA,
+    STAR_B: representativeQbB,
   };
 
   try {
@@ -2154,8 +2215,18 @@ export function registerGamedayRoutes(app: Express) {
     if (!Array.isArray(existing.sunday_night_teams) || existing.sunday_night_teams.length !== 2) {
       missing.push("sunday_night_teams (exactly two teams required)");
     }
-    for (const field of ["qb_candidates", "rb_candidates", "receiver_candidates", "team_candidates", "game_candidates"]) {
+    for (const field of ["team_candidates", "game_candidates"]) {
       if (!hasItems(field)) missing.push(field);
+    }
+    for (const candidateGroup of [
+      ["qb_candidates", "early_qb_candidates", "late_qb_candidates"],
+      ["rb_candidates", "early_rb_candidates", "late_rb_candidates"],
+      ["receiver_candidates", "early_receiver_candidates", "late_receiver_candidates"],
+    ]) {
+      const [globalField, earlyField, lateField] = candidateGroup;
+      if (!hasItems(globalField) && !(hasItems(earlyField) && hasItems(lateField))) {
+        missing.push(`${globalField} or both ${earlyField} and ${lateField}`);
+      }
     }
     if (missing.length > 0) {
       res.status(400).json({
@@ -2256,6 +2327,12 @@ export function registerGamedayRoutes(app: Express) {
       qb_candidates: slate.qb_candidates,
       rb_candidates: slate.rb_candidates,
       receiver_candidates: slate.receiver_candidates,
+      early_qb_candidates: slate.early_qb_candidates,
+      late_qb_candidates: slate.late_qb_candidates,
+      early_rb_candidates: slate.early_rb_candidates,
+      late_rb_candidates: slate.late_rb_candidates,
+      early_receiver_candidates: slate.early_receiver_candidates,
+      late_receiver_candidates: slate.late_receiver_candidates,
       team_candidates: slate.team_candidates,
       game_candidates: slate.game_candidates,
     });
@@ -2787,14 +2864,17 @@ export function registerGamedayRoutes(app: Express) {
     const normalizedSlateConfig = isSundaySlate ? normalizeSundaySlateConfig(slate_config) : null;
     if (isSundaySlate && !normalizedSlateConfig) {
       res.status(400).json({
-        error: "Sunday Slate needs Early and Late matchups, Sunday Night teams, and QB, RB, WR/TE, and team candidates.",
+        error: "Sunday Slate needs Early and Late matchups, Sunday Night teams, team candidates, and either global or complete Early/Late QB, RB, and WR/TE candidates.",
       });
       return;
     }
+    const representativeQbs = normalizedSlateConfig
+      ? getSundaySlateRepresentativeQbs(normalizedSlateConfig)
+      : null;
     const effectiveTeamA = isSundaySlate ? normalizedSlateConfig!.sunday_night_teams[0] : team_a_name?.trim();
     const effectiveTeamB = isSundaySlate ? normalizedSlateConfig!.sunday_night_teams[1] : team_b_name?.trim();
-    const effectiveStarA = isSundaySlate ? normalizedSlateConfig!.qb_candidates[0] : team_a_star?.trim();
-    const effectiveStarB = isSundaySlate ? (normalizedSlateConfig!.qb_candidates[1] ?? normalizedSlateConfig!.qb_candidates[0]) : team_b_star?.trim();
+    const effectiveStarA = isSundaySlate ? representativeQbs![0] : team_a_star?.trim();
+    const effectiveStarB = isSundaySlate ? representativeQbs![1] : team_b_star?.trim();
     if (!room_name || !effectiveTeamA || !effectiveTeamB || !effectiveStarA || !effectiveStarB) {
       res.status(400).json({ error: "Missing required room details." });
       return;

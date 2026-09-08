@@ -153,9 +153,9 @@ async function main() {
 
     const sundayTemplate = await request("/api/gameday/template?sport=nfl&template_type=nfl_sunday_slate");
     expect(
-      "Sunday Slate template returns all 16 format-specific defaults",
-      sundayTemplate.status === 200 && sundayTemplate.body.template?.length === 16 &&
-        sundayTemplate.body.defaultPropIds?.length === 16,
+      "Sunday Slate template returns all 18 format-specific defaults",
+      sundayTemplate.status === 200 && sundayTemplate.body.template?.length === 18 &&
+        sundayTemplate.body.defaultPropIds?.length === 18,
       JSON.stringify(sundayTemplate.body),
     );
     expect(
@@ -177,6 +177,12 @@ async function main() {
         qb_candidates: ["Lamar Jackson", "Josh Allen", "Patrick Mahomes"],
         rb_candidates: ["Derrick Henry", "Saquon Barkley"],
         receiver_candidates: ["Justin Jefferson", "CeeDee Lamb"],
+        early_qb_candidates: [" Early QB Only ", "", "Early QB Only"],
+        late_qb_candidates: ["Late QB Only"],
+        early_rb_candidates: ["Early RB Only"],
+        late_rb_candidates: ["Late RB Only"],
+        early_receiver_candidates: ["Early WR Only"],
+        late_receiver_candidates: ["Late WR Only"],
         team_candidates: ["Bears", "Packers", "Eagles", "Cowboys", "Chiefs", "Raiders", "Rams", "Seahawks"],
         game_candidates: ["Bears vs Packers", "Eagles vs Cowboys", "Chiefs vs Raiders", "Rams vs Seahawks"],
       },
@@ -199,21 +205,51 @@ async function main() {
     const lateSlate = sundayCards.find((card: any) => card.phase === "halftime");
     const sundayNight = sundayCards.find((card: any) => card.phase === "fourth");
     expect(
-      "Sunday Slate creates Early, Late, and Sunday Night cards with 8/5/3 props",
+      "Sunday Slate creates Early, Late, and Sunday Night cards with 8/7/3 props",
       sundayData.status === 200 && sundayCards.length === 3 &&
         earlySlate?.title === "Early Slate Picks" && earlySlate?.gameday_props?.length === 8 &&
-        lateSlate?.title === "Late Slate Picks" && lateSlate?.gameday_props?.length === 5 &&
+        lateSlate?.title === "Late Slate Picks" && lateSlate?.gameday_props?.length === 7 &&
         sundayNight?.title === "Sunday Night Picks" && sundayNight?.gameday_props?.length === 3,
       JSON.stringify(sundayCards.map((card: any) => ({ title: card.title, count: card.gameday_props?.length }))),
     );
     expect(
       "Sunday Slate resolves candidate options and includes Other plus tie settlement paths",
-      earlySlate?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Lamar Jackson") &&
+      earlySlate?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Early QB Only") &&
         prop.answer_options?.includes("Other") && prop.answer_options?.includes("Tie / Multiple tied")) &&
         earlySlate?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Bears vs Packers")) &&
         sundayNight?.gameday_props?.some((prop: any) => prop.answer_options?.includes("Baltimore Ravens")) &&
         !JSON.stringify(sundayCards).includes("{{SLATE_"),
       JSON.stringify(sundayCards),
+    );
+    const playerOptionsByTemplate = Object.fromEntries(
+      sundayCards.flatMap((card: any) => card.gameday_props ?? [])
+        .filter((prop: any) => [
+          "nfl_slate_early_qb_passing_yards",
+          "nfl_slate_early_rushing_yards",
+          "nfl_slate_early_receiving_yards",
+          "nfl_slate_late_qb_passing_yards",
+          "nfl_slate_late_rushing_yards",
+          "nfl_slate_late_receiving_yards",
+        ].includes(prop.template_prop_id))
+        .map((prop: any) => [prop.template_prop_id, prop.answer_options]),
+    );
+    expect(
+      "Sunday Slate player props prefer their explicit Early or Late candidate lists",
+      playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Early QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Late QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Lamar Jackson") &&
+        playerOptionsByTemplate.nfl_slate_early_rushing_yards?.includes("Early RB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_rushing_yards?.includes("Late RB Only") &&
+        playerOptionsByTemplate.nfl_slate_early_receiving_yards?.includes("Early WR Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_receiving_yards?.includes("Late WR Only") &&
+        playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Late QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Early QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Lamar Jackson") &&
+        playerOptionsByTemplate.nfl_slate_late_rushing_yards?.includes("Late RB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_rushing_yards?.includes("Early RB Only") &&
+        playerOptionsByTemplate.nfl_slate_late_receiving_yards?.includes("Late WR Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_receiving_yards?.includes("Early WR Only"),
+      JSON.stringify(playerOptionsByTemplate),
     );
     const earlyTeamProps = earlySlate?.gameday_props?.filter((prop: any) =>
       ["nfl_slate_early_team_points", "nfl_slate_early_fewest_points_allowed"].includes(prop.template_prop_id)
@@ -265,6 +301,61 @@ async function main() {
       sundayPublic.status === 200 && sundayPublic.body.room?.template_type === "nfl_sunday_slate" &&
         Array.isArray(sundayPublic.body.room?.slate_config?.qb_candidates),
       JSON.stringify(sundayPublic.body),
+    );
+
+    const legacySlateCreated = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: {
+        ...sundaySlatePayload,
+        room_name: `Legacy Sunday Slate ${runId}`,
+        slate_config: {
+          ...sundaySlatePayload.slate_config,
+          early_qb_candidates: undefined,
+          late_qb_candidates: undefined,
+          early_rb_candidates: undefined,
+          late_rb_candidates: undefined,
+          early_receiver_candidates: undefined,
+          late_receiver_candidates: undefined,
+        },
+      },
+    });
+    const legacySlateRoomId = legacySlateCreated.body.room_id as string;
+    if (legacySlateRoomId) roomIds.push(legacySlateRoomId);
+    const legacySlateData = legacySlateRoomId
+      ? await request(`/api/gameday/rooms/${legacySlateRoomId}/host-data`, { token: host.token })
+      : { status: 0, body: {} };
+    const legacyPlayerProps = (legacySlateData.body.cards ?? [])
+      .flatMap((card: any) => card.gameday_props ?? [])
+      .filter((prop: any) => [
+        "nfl_slate_early_qb_passing_yards",
+        "nfl_slate_early_rushing_yards",
+        "nfl_slate_early_receiving_yards",
+        "nfl_slate_late_qb_passing_yards",
+        "nfl_slate_late_rushing_yards",
+        "nfl_slate_late_receiving_yards",
+      ].includes(prop.template_prop_id));
+    expect(
+      "legacy global player candidates remain the fallback for every player prop",
+      legacySlateCreated.status === 200 &&
+        legacyPlayerProps.length === 6 &&
+        legacyPlayerProps.every((prop: any) =>
+          !prop.answer_options.includes("Early QB Only") &&
+          !prop.answer_options.includes("Late QB Only")
+        ) &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_early_qb_passing_yards")
+          ?.answer_options.includes("Lamar Jackson") &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_early_rushing_yards")
+          ?.answer_options.includes("Derrick Henry") &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_early_receiving_yards")
+          ?.answer_options.includes("Justin Jefferson") &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_late_qb_passing_yards")
+          ?.answer_options.includes("Lamar Jackson") &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_late_rushing_yards")
+          ?.answer_options.includes("Derrick Henry") &&
+        legacyPlayerProps.find((prop: any) => prop.template_prop_id === "nfl_slate_late_receiving_yards")
+          ?.answer_options.includes("Justin Jefferson"),
+      JSON.stringify(legacySlateData.body),
     );
 
     const joinedAuthed = await request(`/api/gameday/rooms/${roomId}/join`, {

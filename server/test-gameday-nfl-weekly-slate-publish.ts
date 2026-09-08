@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 34;
+const EXPECTED_ASSERTIONS = 35;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -80,6 +80,12 @@ async function main() {
     qb_candidates: [" Lamar Jackson ", "Josh Allen"],
     rb_candidates: [" Derrick Henry ", "Saquon Barkley"],
     receiver_candidates: [" Justin Jefferson ", "CeeDee Lamb"],
+    early_qb_candidates: [" Early QB Only ", "", "Early QB Only"],
+    late_qb_candidates: [" Late QB Only "],
+    early_rb_candidates: [" Early RB Only "],
+    late_rb_candidates: [" Late RB Only "],
+    early_receiver_candidates: [" Early WR Only "],
+    late_receiver_candidates: [" Late WR Only "],
     team_candidates: [" Bears ", "Packers"],
     game_candidates: [" Bears vs Packers ", "Chiefs vs Raiders"],
   };
@@ -342,9 +348,9 @@ async function main() {
       (await countRows("gameday_rooms")) - roomCountBeforePublish === 2,
     );
     expect(
-      "published Sunday Slate rooms expand to three cards and sixteen props each",
+      "published Sunday Slate rooms expand to three cards and eighteen props each",
       (await countRows("gameday_pick_cards")) - cardCountBeforePublish === 6 &&
-        (await countRows("gameday_props")) - propCountBeforePublish === 32,
+        (await countRows("gameday_props")) - propCountBeforePublish === 36,
     );
     expect(
       "publishing creates no picks, standings, settlement, or receipt side effects",
@@ -442,13 +448,15 @@ async function main() {
           room.source === "discord" &&
           room.sport === "nfl" &&
           room.template_type === "nfl_sunday_slate" &&
-          room.slate_config?.sunday_night_teams?.[0] === "Ravens",
+          room.slate_config?.sunday_night_teams?.[0] === "Ravens" &&
+          JSON.stringify(room.slate_config?.early_qb_candidates) === JSON.stringify(["Early QB Only"]) &&
+          JSON.stringify(room.slate_config?.late_receiver_candidates) === JSON.stringify(["Late WR Only"]),
         ),
       rooms.error?.message,
     );
     const publishedCards = await service
       .from("gameday_pick_cards")
-      .select("id, phase")
+      .select("id, room_id, phase")
       .in("room_id", roomIds);
     const publishedProps = await service
       .from("gameday_props")
@@ -461,6 +469,41 @@ async function main() {
       .filter((prop: any) => prop.template_prop_id === "nfl_slate_early_team_points");
     const publishedLateTeamProps = (publishedProps.data ?? [])
       .filter((prop: any) => prop.template_prop_id === "nfl_slate_late_team_points");
+    const firstRoomCardIds = (publishedCards.data ?? [])
+      .filter((card: any) => card.room_id === roomIds[0])
+      .map((card: any) => card.id);
+    const firstRoomProps = (publishedProps.data ?? [])
+      .filter((prop: any) => firstRoomCardIds.includes(prop.card_id));
+    const playerOptionsByTemplate = Object.fromEntries(
+      firstRoomProps
+        .filter((prop: any) => [
+          "nfl_slate_early_qb_passing_yards",
+          "nfl_slate_early_rushing_yards",
+          "nfl_slate_early_receiving_yards",
+          "nfl_slate_late_qb_passing_yards",
+          "nfl_slate_late_rushing_yards",
+          "nfl_slate_late_receiving_yards",
+        ].includes(prop.template_prop_id))
+        .map((prop: any) => [prop.template_prop_id, prop.answer_options]),
+    );
+    expect(
+      "published player props use scoped candidates without cross-window or global leakage",
+      playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Early QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Late QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_qb_passing_yards?.includes("Lamar Jackson") &&
+        playerOptionsByTemplate.nfl_slate_early_rushing_yards?.includes("Early RB Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_rushing_yards?.includes("Late RB Only") &&
+        playerOptionsByTemplate.nfl_slate_early_receiving_yards?.includes("Early WR Only") &&
+        !playerOptionsByTemplate.nfl_slate_early_receiving_yards?.includes("Late WR Only") &&
+        playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Late QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Early QB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_qb_passing_yards?.includes("Lamar Jackson") &&
+        playerOptionsByTemplate.nfl_slate_late_rushing_yards?.includes("Late RB Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_rushing_yards?.includes("Early RB Only") &&
+        playerOptionsByTemplate.nfl_slate_late_receiving_yards?.includes("Late WR Only") &&
+        !playerOptionsByTemplate.nfl_slate_late_receiving_yards?.includes("Early WR Only"),
+      JSON.stringify(playerOptionsByTemplate),
+    );
     expect(
       "published room options remain scoped to each Sunday Slate window",
       !publishedCards.error &&
@@ -509,7 +552,7 @@ async function main() {
       "republishing does not create duplicate rooms, cards, props, or instances",
       (await countRows("gameday_rooms")) === roomCountBeforePublish + 2 &&
         (await countRows("gameday_pick_cards")) === cardCountBeforePublish + 6 &&
-        (await countRows("gameday_props")) === propCountBeforePublish + 32 &&
+        (await countRows("gameday_props")) === propCountBeforePublish + 36 &&
         (await countRows("nfl_weekly_slate_room_instances")) === instanceCountBeforeDryRun + 2,
     );
   } finally {

@@ -8348,6 +8348,8 @@ var NFL_SUNDAY_SLATE_TEMPLATE = [
   { id: "nfl_slate_early_closest_game", phase: "pregame", question: "Which Early Slate game has the closest final margin?", answers: ["{{SLATE_EARLY_GAMES}}"], settlement_window: "End Early Slate" },
   { id: "nfl_slate_early_close_games_count", phase: "pregame", question: "How many Early Slate games finish within 7 points?", answers: ["0\u20132", "3\u20135", "6+", "Tie / Multiple tied"], settlement_window: "End Early Slate" },
   { id: "nfl_slate_late_qb_passing_yards", phase: "halftime", question: "Which Late Slate QB has the most passing yards?", answers: ["{{SLATE_QBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_rushing_yards", phase: "halftime", question: "Which Late Slate RB has the most rushing yards?", answers: ["{{SLATE_RBS}}"], settlement_window: "End Late Slate" },
+  { id: "nfl_slate_late_receiving_yards", phase: "halftime", question: "Which Late Slate WR/TE has the most receiving yards?", answers: ["{{SLATE_RECEIVERS}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_team_points", phase: "halftime", question: "Which Late Slate team scores the most points?", answers: ["{{SLATE_TEAMS}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_highest_total_game", phase: "halftime", question: "Which Late Slate game has the highest combined score?", answers: ["{{SLATE_LATE_GAMES}}"], settlement_window: "End Late Slate" },
   { id: "nfl_slate_late_overtime", phase: "halftime", question: "Will any Late Slate game go to overtime?", answers: ["Yes", "No"], settlement_window: "End Late Slate" },
@@ -9098,14 +9100,33 @@ function normalizeSundaySlateConfig(value) {
     qb_candidates: normalizeSlateList(raw.qb_candidates),
     rb_candidates: normalizeSlateList(raw.rb_candidates),
     receiver_candidates: normalizeSlateList(raw.receiver_candidates),
+    early_qb_candidates: normalizeSlateList(raw.early_qb_candidates),
+    late_qb_candidates: normalizeSlateList(raw.late_qb_candidates),
+    early_rb_candidates: normalizeSlateList(raw.early_rb_candidates),
+    late_rb_candidates: normalizeSlateList(raw.late_rb_candidates),
+    early_receiver_candidates: normalizeSlateList(raw.early_receiver_candidates),
+    late_receiver_candidates: normalizeSlateList(raw.late_receiver_candidates),
     team_candidates: normalizeSlateList(raw.team_candidates),
     game_candidates: normalizeSlateList(raw.game_candidates)
   };
-  if (!config.sunday_night_teams[0] || !config.sunday_night_teams[1] || !config.early_matchups.length || !config.late_matchups.length || !config.qb_candidates.length || !config.rb_candidates.length || !config.receiver_candidates.length || !config.team_candidates.length) return null;
+  const hasWindowCandidates = (globalCandidates, earlyCandidates, lateCandidates) => globalCandidates.length > 0 || earlyCandidates.length > 0 && lateCandidates.length > 0;
+  if (!config.sunday_night_teams[0] || !config.sunday_night_teams[1] || !config.early_matchups.length || !config.late_matchups.length || !hasWindowCandidates(config.qb_candidates, config.early_qb_candidates, config.late_qb_candidates) || !hasWindowCandidates(config.rb_candidates, config.early_rb_candidates, config.late_rb_candidates) || !hasWindowCandidates(
+    config.receiver_candidates,
+    config.early_receiver_candidates,
+    config.late_receiver_candidates
+  ) || !config.team_candidates.length) return null;
   if (!config.game_candidates.length) {
     config.game_candidates = [.../* @__PURE__ */ new Set([...earlyMatchups, ...lateMatchups])];
   }
   return config;
+}
+function getSundaySlateRepresentativeQbs(slate) {
+  const candidates = [
+    ...slate.qb_candidates,
+    ...slate.early_qb_candidates,
+    ...slate.late_qb_candidates
+  ];
+  return [candidates[0], candidates[1] ?? candidates[0]];
 }
 var WEEKLY_SLATE_CANDIDATE_FIELDS = [
   "early_matchups",
@@ -9114,10 +9135,16 @@ var WEEKLY_SLATE_CANDIDATE_FIELDS = [
   "qb_candidates",
   "rb_candidates",
   "receiver_candidates",
+  "early_qb_candidates",
+  "late_qb_candidates",
+  "early_rb_candidates",
+  "late_rb_candidates",
+  "early_receiver_candidates",
+  "late_receiver_candidates",
   "team_candidates",
   "game_candidates"
 ];
-var WEEKLY_SLATE_SELECT = "id, season_year, week_number, slate_name, slate_label, status, early_matchups, late_matchups, sunday_night_teams, qb_candidates, rb_candidates, receiver_candidates, team_candidates, game_candidates, created_by_user_id, created_by_email, approved_by_user_id, approved_by_email, approved_at, published_at, archived_at, created_at, updated_at";
+var WEEKLY_SLATE_SELECT = "id, season_year, week_number, slate_name, slate_label, status, early_matchups, late_matchups, sunday_night_teams, qb_candidates, rb_candidates, receiver_candidates, early_qb_candidates, late_qb_candidates, early_rb_candidates, late_rb_candidates, early_receiver_candidates, late_receiver_candidates, team_candidates, game_candidates, created_by_user_id, created_by_email, approved_by_user_id, approved_by_email, approved_at, published_at, archived_at, created_at, updated_at";
 function normalizeWeeklySlateText(value, maxLength) {
   if (value === null || value === void 0) return null;
   if (typeof value !== "string") return null;
@@ -9157,6 +9184,12 @@ function serializeWeeklySlate(row) {
     qb_candidates: row.qb_candidates ?? [],
     rb_candidates: row.rb_candidates ?? [],
     receiver_candidates: row.receiver_candidates ?? [],
+    early_qb_candidates: row.early_qb_candidates ?? [],
+    late_qb_candidates: row.late_qb_candidates ?? [],
+    early_rb_candidates: row.early_rb_candidates ?? [],
+    late_rb_candidates: row.late_rb_candidates ?? [],
+    early_receiver_candidates: row.early_receiver_candidates ?? [],
+    late_receiver_candidates: row.late_receiver_candidates ?? [],
     team_candidates: row.team_candidates ?? [],
     game_candidates: row.game_candidates ?? [],
     created_by_user_id: row.created_by_user_id ?? null,
@@ -9236,11 +9269,21 @@ function deriveMatchupTeams(matchups) {
   )];
 }
 function resolveSundaySlateAnswers(answers, vars, slate, phase) {
+  const isEarly = phase === "pregame";
+  const scopedQbs = isEarly ? slate.early_qb_candidates : slate.late_qb_candidates;
+  const scopedRbs = isEarly ? slate.early_rb_candidates : slate.late_rb_candidates;
+  const scopedReceivers = isEarly ? slate.early_receiver_candidates : slate.late_receiver_candidates;
   const scopedTeams = phase === "pregame" ? deriveMatchupTeams(slate.early_matchups) : phase === "halftime" ? deriveMatchupTeams(slate.late_matchups) : slate.sunday_night_teams;
   const tokenOptions = {
-    "{{SLATE_QBS}}": withUniqueOutcomeOptions(slate.qb_candidates),
-    "{{SLATE_RBS}}": withUniqueOutcomeOptions(slate.rb_candidates),
-    "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(slate.receiver_candidates),
+    "{{SLATE_QBS}}": withUniqueOutcomeOptions(
+      scopedQbs.length ? scopedQbs : slate.qb_candidates
+    ),
+    "{{SLATE_RBS}}": withUniqueOutcomeOptions(
+      scopedRbs.length ? scopedRbs : slate.rb_candidates
+    ),
+    "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(
+      scopedReceivers.length ? scopedReceivers : slate.receiver_candidates
+    ),
     "{{SLATE_TEAMS}}": withUniqueOutcomeOptions(scopedTeams),
     "{{SLATE_EARLY_GAMES}}": withUniqueOutcomeOptions(slate.early_matchups, false),
     "{{SLATE_LATE_GAMES}}": withUniqueOutcomeOptions(slate.late_matchups, false)
@@ -9249,6 +9292,7 @@ function resolveSundaySlateAnswers(answers, vars, slate, phase) {
 }
 async function createPrivateSundaySlateRoom(supabase, input) {
   const { slateConfig } = input;
+  const [representativeQbA, representativeQbB] = getSundaySlateRepresentativeQbs(slateConfig);
   let roomCode;
   try {
     roomCode = await generateUniqueRoomCode(supabase);
@@ -9259,8 +9303,8 @@ async function createPrivateSundaySlateRoom(supabase, input) {
     room_name: input.roomName.trim(),
     team_a_name: slateConfig.sunday_night_teams[0],
     team_b_name: slateConfig.sunday_night_teams[1],
-    team_a_star: slateConfig.qb_candidates[0],
-    team_b_star: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0],
+    team_a_star: representativeQbA,
+    team_b_star: representativeQbB,
     game_date: parseGameDate(input.gameDate),
     host_user_id: null,
     status: "active",
@@ -9291,8 +9335,8 @@ async function createPrivateSundaySlateRoom(supabase, input) {
   const vars = {
     TEAM_A: slateConfig.sunday_night_teams[0],
     TEAM_B: slateConfig.sunday_night_teams[1],
-    STAR_A: slateConfig.qb_candidates[0],
-    STAR_B: slateConfig.qb_candidates[1] ?? slateConfig.qb_candidates[0]
+    STAR_A: representativeQbA,
+    STAR_B: representativeQbB
   };
   try {
     for (const cardDef of cardPhases) {
@@ -9997,8 +10041,18 @@ function registerGamedayRoutes(app2) {
     if (!Array.isArray(existing.sunday_night_teams) || existing.sunday_night_teams.length !== 2) {
       missing.push("sunday_night_teams (exactly two teams required)");
     }
-    for (const field of ["qb_candidates", "rb_candidates", "receiver_candidates", "team_candidates", "game_candidates"]) {
+    for (const field of ["team_candidates", "game_candidates"]) {
       if (!hasItems(field)) missing.push(field);
+    }
+    for (const candidateGroup of [
+      ["qb_candidates", "early_qb_candidates", "late_qb_candidates"],
+      ["rb_candidates", "early_rb_candidates", "late_rb_candidates"],
+      ["receiver_candidates", "early_receiver_candidates", "late_receiver_candidates"]
+    ]) {
+      const [globalField, earlyField, lateField] = candidateGroup;
+      if (!hasItems(globalField) && !(hasItems(earlyField) && hasItems(lateField))) {
+        missing.push(`${globalField} or both ${earlyField} and ${lateField}`);
+      }
     }
     if (missing.length > 0) {
       res2.status(400).json({
@@ -10073,6 +10127,12 @@ function registerGamedayRoutes(app2) {
       qb_candidates: slate.qb_candidates,
       rb_candidates: slate.rb_candidates,
       receiver_candidates: slate.receiver_candidates,
+      early_qb_candidates: slate.early_qb_candidates,
+      late_qb_candidates: slate.late_qb_candidates,
+      early_rb_candidates: slate.early_rb_candidates,
+      late_rb_candidates: slate.late_rb_candidates,
+      early_receiver_candidates: slate.early_receiver_candidates,
+      late_receiver_candidates: slate.late_receiver_candidates,
       team_candidates: slate.team_candidates,
       game_candidates: slate.game_candidates
     });
@@ -10478,14 +10538,15 @@ function registerGamedayRoutes(app2) {
     const normalizedSlateConfig = isSundaySlate ? normalizeSundaySlateConfig(slate_config) : null;
     if (isSundaySlate && !normalizedSlateConfig) {
       res2.status(400).json({
-        error: "Sunday Slate needs Early and Late matchups, Sunday Night teams, and QB, RB, WR/TE, and team candidates."
+        error: "Sunday Slate needs Early and Late matchups, Sunday Night teams, team candidates, and either global or complete Early/Late QB, RB, and WR/TE candidates."
       });
       return;
     }
+    const representativeQbs = normalizedSlateConfig ? getSundaySlateRepresentativeQbs(normalizedSlateConfig) : null;
     const effectiveTeamA = isSundaySlate ? normalizedSlateConfig.sunday_night_teams[0] : team_a_name?.trim();
     const effectiveTeamB = isSundaySlate ? normalizedSlateConfig.sunday_night_teams[1] : team_b_name?.trim();
-    const effectiveStarA = isSundaySlate ? normalizedSlateConfig.qb_candidates[0] : team_a_star?.trim();
-    const effectiveStarB = isSundaySlate ? normalizedSlateConfig.qb_candidates[1] ?? normalizedSlateConfig.qb_candidates[0] : team_b_star?.trim();
+    const effectiveStarA = isSundaySlate ? representativeQbs[0] : team_a_star?.trim();
+    const effectiveStarB = isSundaySlate ? representativeQbs[1] : team_b_star?.trim();
     if (!room_name || !effectiveTeamA || !effectiveTeamB || !effectiveStarA || !effectiveStarB) {
       res2.status(400).json({ error: "Missing required room details." });
       return;

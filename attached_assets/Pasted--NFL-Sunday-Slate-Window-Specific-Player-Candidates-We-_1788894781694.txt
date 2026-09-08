@@ -1,0 +1,191 @@
+# NFL Sunday Slate Window-Specific Player Candidates
+
+We tested the NFL Sunday Slate room and fixed team/game scoping successfully.
+
+Current status:
+- Early team props now only show Early Slate teams.
+- Late team props now only show Late Slate teams.
+- Early/Late game props are correctly scoped.
+- Sunday Night team props correctly use only Sunday Night teams.
+- Discord posting flow is already live-tested and passing.
+- Backend publish engine and bot delivery API are passing.
+
+Remaining issue:
+Player props are still using global player candidate lists. That means an “Early Slate QB/RB/WR” prop can still show players from Late Slate or Sunday Night games.
+
+Example problem:
+“Which Early Slate QB has the most passing yards?” should not include late-window or Sunday Night QBs.
+
+Objective:
+Add explicit window-specific player candidate support for NFL Sunday Slate rooms so Early Slate player props only show Early candidates and Late Slate player props only show Late candidates.
+
+Do not use ESPN, sports APIs, odds APIs, or automated player-team mapping.
+Do not change Discord bot code.
+Do not change publishing architecture.
+Do not post to Discord.
+Do not start settlement, receipts, reminders, billing, Admin Console, or Task #55.
+
+## Desired data support
+
+Add support for optional scoped candidate fields in NFL Sunday Slate slate_config and master slate flow:
+
+- `early_qb_candidates`
+- `late_qb_candidates`
+- `early_rb_candidates`
+- `late_rb_candidates`
+- `early_receiver_candidates`
+- `late_receiver_candidates`
+
+These should be manually provided by Swayger admin when creating the weekly master slate.
+
+Keep existing global fields for backward compatibility:
+
+- `qb_candidates`
+- `rb_candidates`
+- `receiver_candidates`
+
+## Behavior rules
+
+For Early Slate player props:
+
+- Prefer `early_qb_candidates` for Early Slate QB passing yards.
+- Prefer `early_rb_candidates` for Early Slate RB rushing yards.
+- Prefer `early_receiver_candidates` for Early Slate WR/TE receiving yards.
+- If the scoped list is missing/empty, fall back to the existing global list for backward compatibility.
+
+For Late Slate player props:
+
+- Prefer `late_qb_candidates` for Late Slate QB passing yards.
+- Prefer `late_rb_candidates` for Late Slate RB rushing yards.
+- Prefer `late_receiver_candidates` for Late Slate WR/TE receiving yards.
+- If the scoped list is missing/empty, fall back to the existing global list for backward compatibility.
+
+For Sunday Night:
+
+- Do not add player props unless they already exist.
+- Existing Sunday Night team props should continue using only `sunday_night_teams`.
+
+## Master slate model
+
+Update `nfl_weekly_slate_templates` support to accept/store these new optional JSONB arrays:
+
+- `early_qb_candidates`
+- `late_qb_candidates`
+- `early_rb_candidates`
+- `late_rb_candidates`
+- `early_receiver_candidates`
+- `late_receiver_candidates`
+
+If this requires a Supabase migration, provide the exact migration file and stop for migration handoff before marking PASS.
+
+Normalization should match existing candidate normalization:
+
+- trim values
+- remove empty values
+- remove control characters
+- dedupe exact matches
+- preserve order
+
+## Approval validation
+
+For approval, update validation so a slate can be approved if either:
+
+A. scoped candidate lists exist for the relevant player props, or  
+B. legacy global candidate lists exist
+
+Do not break older slates.
+
+Recommended approval behavior:
+
+- If scoped fields are present, validate them.
+- If scoped fields are absent, allow legacy global candidate lists.
+- Do not require both scoped and global fields.
+
+## Publish behavior
+
+When publishing an approved master slate:
+
+- copy the scoped candidate fields into `slate_config`
+- generate rooms using scoped candidates where available
+- preserve existing global candidates for backward compatibility
+- do not mutate prior posted rows or existing stored payloads
+
+## Direct room creation behavior
+
+If direct NFL Sunday Slate room creation supports slate_config payloads, update it to also accept these scoped fields.
+
+Existing clients using only global player lists should continue to work.
+
+## Tests
+
+Add/update regression tests to verify:
+
+1. Master slate create accepts scoped player candidate fields.
+2. Scoped player candidate fields are normalized.
+3. Empty scoped candidate values are removed.
+4. Duplicate scoped candidate values are deduped.
+5. Approval succeeds when scoped player candidates are provided.
+6. Approval still succeeds for legacy global player candidates.
+7. Publishing copies scoped candidate fields into room `slate_config`.
+8. Early Slate QB prop uses `early_qb_candidates` when provided.
+9. Early Slate RB prop uses `early_rb_candidates` when provided.
+10. Early Slate WR/TE prop uses `early_receiver_candidates` when provided.
+11. Late Slate QB prop uses `late_qb_candidates` when provided.
+12. Late Slate RB prop uses `late_rb_candidates` when provided.
+13. Late Slate WR/TE prop uses `late_receiver_candidates` when provided.
+14. Early player props do not include Late-only players when scoped fields are provided.
+15. Early player props do not include Sunday Night-only players when scoped fields are provided.
+16. Late player props do not include Early-only players when scoped fields are provided.
+17. Legacy fallback still works when scoped fields are missing.
+18. Existing team/game scoping remains correct.
+19. Existing NFL Sunday Slate room creation still works.
+20. Existing NFL Single Game room creation still works.
+21. Weekly slate publish engine still passes.
+22. Bot delivery API still passes.
+23. Web Game Day regression still passes.
+24. Server build passes.
+
+Run relevant gates:
+
+- NFL weekly master slate lifecycle regression
+- NFL weekly slate publish engine regression
+- NFL slate bot delivery API regression
+- NFL Game Day regression
+- Web Game Day regression
+- Discord subscriptions regression if touched
+- Server build
+
+Report exact assertion counts.
+
+## Fresh safe-slot test room
+
+After implementation and migration, if needed, create one fresh safe-slot user-test room only if I approve it.
+
+Do not create live test rooms without approval if project instructions prohibit it.
+
+## Final report
+
+Return:
+
+A. Executive summary  
+B. Data model changes  
+C. Slate config changes  
+D. Prop generation behavior  
+E. Backward compatibility  
+F. Files changed  
+G. Migration handoff, if any  
+H. Test results  
+I. Whether a fresh safe-slot user-test room is recommended  
+
+Answer:
+
+“Are NFL Sunday Slate player candidates now scoped correctly for pilot use?”
+
+Use:
+- YES
+- YES, WITH CONDITIONS
+- NO
+
+End with:
+
+NFL SUNDAY SLATE PLAYER CANDIDATE SCOPING STATUS: PASS / FAIL
