@@ -14,3 +14,9 @@ The hub must trigger participant-room loading from the completed authenticated h
 **Why:** A valid host session could load host and Fantasy data while never issuing the joined-room request, leaving correctly linked private rooms invisible.
 
 **How to apply:** After session verification resolves host status, load joined rooms for both host and non-host users; clear them only when the session is absent.
+
+The user-facing Game Day tab and the host room-management hub are separate product surfaces. Participant re-entry belongs on the tab users reach from primary navigation, above Fantasy Leagues.
+
+**Why:** Adding re-entry only to host management leaves the normal Game Day tab unchanged even though backend tests and the management route appear correct.
+
+**How to apply:** Verify navigation ownership from the tab layout before placing user-facing hub sections, and make regression checks target the primary tab component rather than any screen containing similar Game Day copy.

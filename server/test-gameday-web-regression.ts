@@ -107,12 +107,12 @@ async function main() {
     const unauthenticatedMyRooms = await request("/api/gameday/my-rooms");
     expect("joined-room listing requires authentication", unauthenticatedMyRooms.status === 401);
     const hubSource = await readFile(
-      `${process.cwd()}/app/gameday/index.tsx`,
+      `${process.cwd()}/app/(tabs)/index.tsx`,
       "utf8",
     );
     expect(
-      "Game Day Hub renders Continue Playing",
-      hubSource.includes("Continue Playing"),
+      "visible Game Day tab renders Continue Playing",
+      hubSource.includes("CONTINUE PLAYING"),
     );
     expect(
       "Continue cards route through the room-code link",

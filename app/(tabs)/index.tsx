@@ -17,6 +17,7 @@ import { getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
 import { fantasyFetch, getArchivedLeagues, restoreLeague, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
+import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
 
@@ -30,6 +31,15 @@ interface PublicGDRoom {
   game_date: string | null;
   status: string;
   room_code: string | null;
+}
+
+interface JoinedGDRoom {
+  room_id: string;
+  room_code: string | null;
+  room_name: string;
+  sport: string | null;
+  template_type: string | null;
+  game_date: string | null;
 }
 
 // ─── My Swaygers summary card ──────────────────────────────────────────────────
@@ -476,6 +486,64 @@ function MoreRoomsStrip({ rooms, totalRooms }: { rooms: PublicGDRoom[]; totalRoo
   );
 }
 
+function ContinuePlayingSection() {
+  const router = useRouter();
+  const { session, user } = useAuth();
+  const joinedRoomsQuery = useQuery<{ rooms: JoinedGDRoom[] }>({
+    queryKey: ["gameday", "my-rooms", user?.id],
+    queryFn: () =>
+      gamedayFetch<{ rooms: JoinedGDRoom[] }>(
+        "/api/gameday/my-rooms",
+        {},
+        { session },
+      ),
+    enabled: !!session && !!user,
+    staleTime: 30 * 1000,
+  });
+
+  const rooms = joinedRoomsQuery.data?.rooms ?? [];
+  if (!session || (!joinedRoomsQuery.isLoading && rooms.length === 0)) return null;
+
+  return (
+    <View style={continueStyles.section}>
+      <Text style={continueStyles.sectionLabel}>CONTINUE PLAYING</Text>
+      {joinedRoomsQuery.isLoading ? (
+        <ActivityIndicator color={C.tint} size="small" style={continueStyles.loading} />
+      ) : (
+        rooms.map((room) => (
+          <Pressable
+            key={room.room_id}
+            disabled={!room.room_code}
+            onPress={() => room.room_code && router.push(`/g/${room.room_code}` as never)}
+            style={({ pressed }) => [
+              continueStyles.card,
+              pressed && continueStyles.cardPressed,
+            ]}
+          >
+            <View style={continueStyles.cardBody}>
+              <Text style={continueStyles.roomName} numberOfLines={1}>
+                {room.room_name}
+              </Text>
+              <Text style={continueStyles.meta}>
+                {room.template_type === "nfl_sunday_slate"
+                  ? "NFL Sunday Slate"
+                  : room.template_type === "nfl_single_game"
+                    ? "NFL Single Game"
+                    : room.sport
+                      ? `${room.sport.toUpperCase()} Game Day`
+                      : "Game Day"}
+                {room.game_date ? ` · ${room.game_date}` : ""}
+                {" · Active"}
+              </Text>
+            </View>
+            <Text style={continueStyles.cta}>Continue →</Text>
+          </Pressable>
+        ))
+      )}
+    </View>
+  );
+}
+
 // ─── Game Day Home Screen ─────────────────────────────────────────────────────
 export default function GameDayHomeScreen() {
   const router = useRouter();
@@ -552,7 +620,7 @@ export default function GameDayHomeScreen() {
             <Text style={homeStyles.emptyEmoji}>🏟️</Text>
             <Text style={homeStyles.emptyTitle}>Nothing live right now</Text>
             <Text style={homeStyles.emptySub}>
-              Game Day Rooms are group pick'em competitions that open before and during featured games.
+              Game Day Rooms are group pick’em competitions that open before and during featured games.
             </Text>
             <Text style={homeStyles.emptyInvite}>
               Have an invite link? Open it from your text or group chat to join directly.
@@ -562,6 +630,8 @@ export default function GameDayHomeScreen() {
           <MySwaygersCard />
         </>
       )}
+
+      <ContinuePlayingSection />
 
       {/* ── Fantasy Swayger — always visible after Game Day content ─────── */}
       <FantasySection />
@@ -628,6 +698,54 @@ const homeStyles = StyleSheet.create({
     fontSize: 14,
     color: C.textSecondary,
     fontWeight: "500" as const,
+  },
+});
+
+const continueStyles = StyleSheet.create({
+  section: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700" as const,
+    letterSpacing: 1,
+    color: C.textMuted,
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  loading: {
+    alignSelf: "flex-start",
+    marginLeft: 8,
+  },
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+    marginBottom: 10,
+    flexDirection: "row" as const,
+    alignItems: "center",
+  },
+  cardPressed: { opacity: 0.82 },
+  cardBody: { flex: 1, paddingRight: 12 },
+  roomName: {
+    fontSize: 16,
+    fontWeight: "700" as const,
+    color: C.text,
+  },
+  meta: {
+    fontSize: 12,
+    color: C.textSecondary,
+    marginTop: 5,
+  },
+  cta: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    color: C.tint,
   },
 });
 
