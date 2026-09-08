@@ -1,0 +1,108 @@
+# NFL Sunday Slate Candidate Scoping Fix
+
+We tested a real-looking NFL Sunday Slate room in the Swayger Test Server.
+
+The Discord posting flow works, and the room UI looks clean. However, the live user experience revealed a candidate-scoping issue.
+
+Problem:
+Early Slate props are showing options from the full Sunday slate, including late-window and Sunday Night players/teams.
+
+Example:
+The room had 8 early games, so “Which Early Slate team scores the most points?” should only show the 16 teams from those 8 early games. Instead, it also showed late/SNF teams like Cardinals, Chargers, Dolphins, Raiders, Packers, Vikings, Commanders, Eagles, Cowboys, and Giants.
+
+The same issue likely affects:
+- Early Slate QB most passing yards
+- Early Slate RB most rushing yards
+- Early Slate WR/TE most receiving yards
+- Early Slate team most points
+- Early Slate team allows fewest points
+
+Objective:
+Fix NFL Sunday Slate prop option generation so each pick window only uses candidates relevant to that window.
+
+Do not change architecture broadly.
+Do not change Discord bot code.
+Do not change publishing flow.
+Do not change settlement, receipts, reminders, billing, sports APIs, or Admin Console.
+Do not post to Discord.
+Do not mutate existing posted rows.
+
+## Desired behavior
+
+For Early Slate props:
+- Use only early slate teams/games/players.
+- Team options should be derived from `early_matchups`.
+- Game options should be the `early_matchups`.
+- Player candidates should be scoped to early games if the slate config supports scoped player candidates.
+
+For Late Slate props:
+- Use only late slate teams/games/players.
+- Team options should be derived from `late_matchups`.
+- Game options should be the `late_matchups`.
+- Player candidates should be scoped to late games if the slate config supports scoped player candidates.
+
+For Sunday Night props:
+- Use only `sunday_night_teams`.
+- Do not include full-slate team candidates.
+
+## Important product rule
+
+If the current data model only has global player candidate lists, do not guess player-team mapping unless a safe mapping already exists.
+
+In that case, propose the smallest safe enhancement:
+- add optional scoped candidate fields, such as:
+  - early_qb_candidates
+  - late_qb_candidates
+  - early_rb_candidates
+  - late_rb_candidates
+  - early_receiver_candidates
+  - late_receiver_candidates
+- or support a structured candidate config by phase/window
+
+But do not overbuild with ESPN or sports API integration.
+
+## Minimum immediate fix
+
+At minimum, fix team and game option scoping:
+- Early team props should only show teams from early_matchups
+- Early game props should only show early_matchups
+- Late team props should only show teams from late_matchups
+- Late game props should only show late_matchups
+- Sunday Night team props should only show sunday_night_teams
+
+For player props, either:
+A. scope them correctly if the current config supports it, or
+B. explain the current limitation and propose the smallest data-model/API change required.
+
+## Tests
+
+Add or update regression tests to verify:
+
+1. Early Slate team props only include teams from early_matchups.
+2. Early Slate team props do not include late slate teams.
+3. Early Slate team props do not include Sunday Night teams.
+4. Early Slate game props only include early_matchups.
+5. Late Slate team props only include teams from late_matchups.
+6. Late Slate team props do not include early teams unless the same team somehow appears in both, which should not happen.
+7. Late Slate game props only include late_matchups.
+8. Sunday Night props only include sunday_night_teams.
+9. Other and Tie / Multiple tied behavior remains appropriate.
+10. Existing NFL Sunday Slate room creation still works.
+11. Existing NFL Single Game room creation still works.
+12. Master slate publish engine still works.
+13. Bot delivery API still works.
+14. Discord posting payload generation is unchanged except for scoped room options.
+15. No Discord bot code changed.
+16. Server build passes.
+
+Please return:
+- root cause
+- exact fix
+- whether player candidates can be scoped with current data model
+- files changed
+- test results
+- whether a new safe-slot test room should be created after the fix
+
+End with:
+
+NFL SUNDAY SLATE CANDIDATE SCOPING STATUS: PASS / FAIL
