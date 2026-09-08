@@ -32,6 +32,17 @@ interface RoomSummary {
   archived_at?: string | null;
 }
 
+interface JoinedRoom {
+  room_id: string;
+  room_code: string | null;
+  room_name: string;
+  status: string;
+  sport: string | null;
+  template_type: string | null;
+  game_date: string | null;
+  participant_id: string;
+}
+
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
   active: "Live",
@@ -67,6 +78,8 @@ export default function GameDayHub() {
   // ── Fantasy leagues (any signed-in user, independent of host status) ──────
   const [fantasyLeagues, setFantasyLeagues] = useState<FantasyLeague[]>([]);
   const [fantasyLoading, setFantasyLoading] = useState(false);
+  const [joinedRooms, setJoinedRooms] = useState<JoinedRoom[]>([]);
+  const [joinedRoomsLoading, setJoinedRoomsLoading] = useState(false);
 
   /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
   function cleanError(raw: string): string {
@@ -88,6 +101,23 @@ export default function GameDayHub() {
       // Silently ignore — Fantasy section shows the "Create" card as fallback
     } finally {
       setFantasyLoading(false);
+    }
+  }, [session]);
+
+  const fetchJoinedRooms = useCallback(async () => {
+    if (!session) return;
+    setJoinedRoomsLoading(true);
+    try {
+      const data = await gamedayFetch<{ rooms: JoinedRoom[] }>(
+        "/api/gameday/my-rooms",
+        {},
+        { session }
+      );
+      setJoinedRooms(data.rooms);
+    } catch {
+      setJoinedRooms([]);
+    } finally {
+      setJoinedRoomsLoading(false);
     }
   }, [session]);
 
@@ -132,7 +162,7 @@ export default function GameDayHub() {
         setIsHost(false);
         setLoading(false);
       });
-  }, [authLoading, session?.access_token]);
+  }, [authLoading, session, fetchFantasyLeagues, fetchJoinedRooms]);
 
   useEffect(() => {
     if (isHost === null) return;
@@ -148,13 +178,54 @@ export default function GameDayHub() {
   useEffect(() => {
     if (authLoading || !session) return;
     fetchFantasyLeagues();
+    fetchJoinedRooms();
   }, [authLoading, session?.access_token]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchRooms(true);
+    if (isHost) fetchRooms(true);
     fetchFantasyLeagues();
+    fetchJoinedRooms().finally(() => setRefreshing(false));
   };
+
+  function joinedRoomLabel(room: JoinedRoom): string {
+    if (room.template_type === "nfl_sunday_slate") return "NFL Sunday Slate";
+    if (room.template_type === "nfl_single_game") return "NFL Single Game";
+    if (room.sport) return `${room.sport.toUpperCase()} Game Day`;
+    return "Game Day";
+  }
+
+  function renderContinuePlaying() {
+    if (!session || (!joinedRoomsLoading && joinedRooms.length === 0)) return null;
+    return (
+      <View style={styles.continueSection}>
+        <Text style={styles.fantasySectionLabel}>Continue Playing</Text>
+        {joinedRoomsLoading ? (
+          <ActivityIndicator color={C.tint} size="small" style={{ alignSelf: "flex-start" }} />
+        ) : (
+          joinedRooms.map((room) => (
+            <TouchableOpacity
+              key={room.room_id}
+              style={styles.continueCard}
+              onPress={() => room.room_code && router.push(`/g/${room.room_code}` as never)}
+              disabled={!room.room_code}
+              activeOpacity={0.75}
+            >
+              <View style={styles.continueCardBody}>
+                <Text style={styles.continueRoomName} numberOfLines={1}>{room.room_name}</Text>
+                <Text style={styles.continueMeta}>
+                  {joinedRoomLabel(room)}
+                  {room.game_date ? ` · ${formatDate(room.game_date)}` : ""}
+                  {" · Active"}
+                </Text>
+              </View>
+              <Text style={styles.continueCta}>Continue →</Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </View>
+    );
+  }
 
   // ── Fantasy section — rendered in both host and non-host signed-in views ──
   function renderFantasySection() {
@@ -267,9 +338,10 @@ export default function GameDayHub() {
           <Text style={styles.emptyIcon}>🏀</Text>
           <Text style={styles.emptyTitle}>Game Day Swayger</Text>
           <Text style={styles.emptySubtitle}>
-            Get the room link from your host to join tonight's picks.
+            Get the room link from your host to join tonight’s picks.
           </Text>
         </View>
+        {renderContinuePlaying()}
         {renderFantasySection()}
       </ScrollView>
     );
@@ -317,6 +389,8 @@ export default function GameDayHub() {
           <Text style={styles.newBtnText}>+ New Room</Text>
         </TouchableOpacity>
       </View>
+
+      {renderContinuePlaying()}
 
       {error ? (
         <View style={styles.errorBox}>
@@ -541,6 +615,24 @@ const styles = StyleSheet.create({
 
   // Non-host hero block
   nonHostHero: { alignItems: "center", paddingTop: 40, paddingBottom: 32, gap: 12 },
+
+  // Authenticated participant re-entry
+  continueSection: { marginBottom: 20 },
+  continueCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+  },
+  continueCardBody: { flex: 1 },
+  continueRoomName: { color: C.text, fontSize: 16, fontWeight: "700" },
+  continueMeta: { color: C.textSecondary, fontSize: 13, marginTop: 5 },
+  continueCta: { color: C.tint, fontSize: 14, fontWeight: "700" },
 
   // Fantasy section
   fantasySection: { marginTop: 8, paddingTop: 24, borderTopWidth: 1, borderTopColor: C.border },

@@ -10365,6 +10365,46 @@ function registerGamedayRoutes(app2) {
     }
     res2.json({ rooms: rooms ?? [] });
   });
+  app2.get("/api/gameday/my-rooms", async (req, res2) => {
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res2.status(401).json({ error: "Invalid or expired Supabase token" });
+      return;
+    }
+    const supabase = getServiceSupabase();
+    const { data: participants, error: participantsError } = await supabase.from("gameday_participants").select("id, room_id").eq("user_id", user.id).eq("is_guest", false);
+    if (participantsError) {
+      console.error("[gameday] my-rooms participant lookup error:", participantsError.message);
+      res2.status(500).json({ error: "Could not load joined Game Day rooms" });
+      return;
+    }
+    const participantRows = participants ?? [];
+    if (participantRows.length === 0) {
+      res2.json({ rooms: [] });
+      return;
+    }
+    const participantIdByRoomId = new Map(
+      participantRows.map((participant) => [participant.room_id, participant.id])
+    );
+    const { data: rooms, error: roomsError } = await supabase.from("gameday_rooms").select("id, room_code, room_name, status, sport, template_type, game_date, created_at").in("id", [...participantIdByRoomId.keys()]).is("archived_at", null).eq("status", "active").order("created_at", { ascending: false });
+    if (roomsError) {
+      console.error("[gameday] my-rooms room lookup error:", roomsError.message);
+      res2.status(500).json({ error: "Could not load joined Game Day rooms" });
+      return;
+    }
+    res2.json({
+      rooms: (rooms ?? []).map((room) => ({
+        room_id: room.id,
+        room_code: room.room_code,
+        room_name: room.room_name,
+        status: room.status,
+        sport: room.sport ?? null,
+        template_type: room.template_type ?? null,
+        game_date: room.game_date ?? null,
+        participant_id: participantIdByRoomId.get(room.id)
+      }))
+    });
+  });
   app2.get("/api/gameday/rooms", async (req, res2) => {
     const user = await getVerifiedGamedayUser(req);
     if (!user) {

@@ -2618,6 +2618,66 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ rooms: rooms ?? [] });
   });
 
+  // ── GET /api/gameday/my-rooms ───────────────────────────────────────────
+  // Returns active rooms the authenticated user has joined. Private rooms are
+  // visible here only through the caller's own non-guest participant row.
+  app.get("/api/gameday/my-rooms", async (req: Request, res: Response) => {
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Invalid or expired Supabase token" });
+      return;
+    }
+
+    const supabase = getServiceSupabase();
+    const { data: participants, error: participantsError } = await supabase
+      .from("gameday_participants")
+      .select("id, room_id")
+      .eq("user_id", user.id)
+      .eq("is_guest", false);
+
+    if (participantsError) {
+      console.error("[gameday] my-rooms participant lookup error:", participantsError.message);
+      res.status(500).json({ error: "Could not load joined Game Day rooms" });
+      return;
+    }
+
+    const participantRows = participants ?? [];
+    if (participantRows.length === 0) {
+      res.json({ rooms: [] });
+      return;
+    }
+
+    const participantIdByRoomId = new Map(
+      participantRows.map((participant: any) => [participant.room_id, participant.id]),
+    );
+    const { data: rooms, error: roomsError } = await supabase
+      .from("gameday_rooms")
+      .select("id, room_code, room_name, status, sport, template_type, game_date, created_at")
+      .in("id", [...participantIdByRoomId.keys()])
+      .is("archived_at", null)
+      .eq("status", "active")
+      .order("created_at", { ascending: false });
+
+    if (roomsError) {
+      console.error("[gameday] my-rooms room lookup error:", roomsError.message);
+      res.status(500).json({ error: "Could not load joined Game Day rooms" });
+      return;
+    }
+
+    res.json({
+      rooms: (rooms ?? []).map((room: any) => ({
+        room_id: room.id,
+        room_code: room.room_code,
+        room_name: room.room_name,
+        status: room.status,
+        sport: room.sport ?? null,
+        template_type: room.template_type ?? null,
+        game_date: room.game_date ?? null,
+        participant_id: participantIdByRoomId.get(room.id),
+      })),
+    });
+  });
+
   // ── GET /api/gameday/rooms ──────────────────────────────────────────────
   // Returns all rooms created by the authenticated host, newest first.
   app.get("/api/gameday/rooms", async (req: Request, res: Response) => {

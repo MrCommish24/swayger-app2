@@ -2,6 +2,7 @@ import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { readFile } from "node:fs/promises";
 
 let passed = 0;
 let failed = 0;
@@ -37,6 +38,7 @@ async function main() {
   const password = `Test-${runId}-A1!`;
   const hostEmail = `${runId}-host@example.test`;
   const playerEmail = `${runId}-player@example.test`;
+  const unrelatedEmail = `${runId}-unrelated@example.test`;
   process.env.GAMEDAY_HOST_EMAILS = hostEmail;
   process.env.GAMEDAY_ADMIN_EMAILS = hostEmail;
 
@@ -100,6 +102,22 @@ async function main() {
 
     const host = await makeUser(hostEmail);
     const player = await makeUser(playerEmail);
+    const unrelated = await makeUser(unrelatedEmail);
+
+    const unauthenticatedMyRooms = await request("/api/gameday/my-rooms");
+    expect("joined-room listing requires authentication", unauthenticatedMyRooms.status === 401);
+    const hubSource = await readFile(
+      `${process.cwd()}/app/gameday/index.tsx`,
+      "utf8",
+    );
+    expect(
+      "Game Day Hub renders Continue Playing",
+      hubSource.includes("Continue Playing"),
+    );
+    expect(
+      "Continue cards route through the room-code link",
+      hubSource.includes("router.push(`/g/${room.room_code}`"),
+    );
 
     const isHost = await request("/api/gameday/is-host", { token: host.token });
     expect(
@@ -133,6 +151,13 @@ async function main() {
     if (!roomId) throw new Error("No room ID returned");
     roomIds.push(roomId);
 
+    const beforeJoin = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "authenticated user has no joined rooms before participating",
+      beforeJoin.status === 200 && beforeJoin.body.rooms?.length === 0,
+      JSON.stringify(beforeJoin.body),
+    );
+
     const rooms = await request("/api/gameday/rooms", { token: host.token });
     expect(
       "host room listing contains the new web room",
@@ -140,6 +165,8 @@ async function main() {
         (rooms.body.rooms ?? []).some((r: any) => r.id === roomId),
       JSON.stringify(rooms.body),
     );
+    const participantHostRooms = await request("/api/gameday/rooms", { token: player.token });
+    expect("host-only room listing remains forbidden to participants", participantHostRooms.status === 403);
 
     const hostData = await request(`/api/gameday/rooms/${roomId}/host-data`, {
       token: host.token,
@@ -197,6 +224,25 @@ async function main() {
         joinAuthed.body.participant?.is_guest === false,
       JSON.stringify(joinAuthed.body),
     );
+    const joinedRooms = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "authenticated participant sees joined active NBA room",
+      joinedRooms.status === 200 &&
+        joinedRooms.body.rooms?.some(
+          (room: any) =>
+            room.room_id === roomId &&
+            room.room_code === created.body.room_code &&
+            room.participant_id === joinAuthed.body.participant?.id,
+        ),
+      JSON.stringify(joinedRooms.body),
+    );
+    const unrelatedRooms = await request("/api/gameday/my-rooms", { token: unrelated.token });
+    expect(
+      "unrelated authenticated user cannot see a room they did not join",
+      unrelatedRooms.status === 200 &&
+        !unrelatedRooms.body.rooms?.some((room: any) => room.room_id === roomId),
+      JSON.stringify(unrelatedRooms.body),
+    );
     const guestName = `Guest ${runId}`;
     const joinGuest = await request(`/api/gameday/rooms/${roomId}/join`, {
       method: "POST",
@@ -210,6 +256,143 @@ async function main() {
       JSON.stringify(joinGuest.body),
     );
     const guestSession = joinGuest.body.guest_session_id as string;
+
+    const privateSlateCode = `GDS-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const privateSlate = await service
+      .from("gameday_rooms")
+      .insert({
+        room_name: `Private Sunday Slate ${runId}`,
+        team_a_name: "Cowboys",
+        team_b_name: "Giants",
+        team_a_star: "Dak Prescott",
+        team_b_star: "Malik Nabers",
+        game_date: "2026-09-13",
+        status: "active",
+        source: "discord",
+        is_private: true,
+        sport: "nfl",
+        template_type: "nfl_sunday_slate",
+        room_code: privateSlateCode,
+      })
+      .select("id")
+      .single();
+    if (privateSlate.error || !privateSlate.data) {
+      throw new Error(`Private Sunday Slate fixture failed: ${privateSlate.error?.message}`);
+    }
+    roomIds.push(privateSlate.data.id);
+    const privateParticipant = await service
+      .from("gameday_participants")
+      .insert({
+        room_id: privateSlate.data.id,
+        user_id: player.id,
+        display_name: `Slate Player ${runId}`,
+        is_guest: false,
+      })
+      .select("id")
+      .single();
+    if (privateParticipant.error) throw privateParticipant.error;
+
+    const privateMyRooms = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "signed-in participant sees joined private NFL Sunday Slate",
+      privateMyRooms.status === 200 &&
+        privateMyRooms.body.rooms?.some(
+          (room: any) =>
+            room.room_id === privateSlate.data.id &&
+            room.room_code === privateSlateCode &&
+            room.template_type === "nfl_sunday_slate" &&
+            room.participant_id === privateParticipant.data?.id,
+        ),
+      JSON.stringify(privateMyRooms.body),
+    );
+    const unrelatedPrivateRooms = await request("/api/gameday/my-rooms", { token: unrelated.token });
+    expect(
+      "private joined room remains hidden from unrelated authenticated user",
+      unrelatedPrivateRooms.status === 200 &&
+        !unrelatedPrivateRooms.body.rooms?.some((room: any) => room.room_id === privateSlate.data.id),
+      JSON.stringify(unrelatedPrivateRooms.body),
+    );
+    const publicRooms = await request("/api/gameday/public-rooms");
+    expect(
+      "private joined room remains excluded from public discovery",
+      publicRooms.status === 200 &&
+        !publicRooms.body.rooms?.some((room: any) => room.id === privateSlate.data.id),
+      JSON.stringify(publicRooms.body),
+    );
+
+    const singleGameCode = `GDS-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const singleGame = await service
+      .from("gameday_rooms")
+      .insert({
+        room_name: `NFL Single Game ${runId}`,
+        team_a_name: "Alpha",
+        team_b_name: "Beta",
+        team_a_star: "A Quarterback",
+        team_b_star: "B Quarterback",
+        status: "active",
+        source: "app",
+        is_private: true,
+        sport: "nfl",
+        template_type: "nfl_single_game",
+        room_code: singleGameCode,
+      })
+      .select("id")
+      .single();
+    if (singleGame.error || !singleGame.data) throw singleGame.error;
+    roomIds.push(singleGame.data.id);
+    const singleGameParticipant = await service.from("gameday_participants").insert({
+      room_id: singleGame.data.id,
+      user_id: player.id,
+      display_name: `Single Game Player ${runId}`,
+      is_guest: false,
+    });
+    if (singleGameParticipant.error) throw singleGameParticipant.error;
+    const withSingleGame = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "joined NFL Single Game room follows the same re-entry rule",
+      withSingleGame.status === 200 &&
+        withSingleGame.body.rooms?.some(
+          (room: any) =>
+            room.room_id === singleGame.data.id &&
+            room.room_code === singleGameCode &&
+            room.template_type === "nfl_single_game",
+        ),
+      JSON.stringify(withSingleGame.body),
+    );
+
+    const guestOnlyCode = `GDS-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const guestOnlyRoom = await service
+      .from("gameday_rooms")
+      .insert({
+        room_name: `Guest Only ${runId}`,
+        team_a_name: "Gamma",
+        team_b_name: "Delta",
+        team_a_star: "G Star",
+        team_b_star: "D Star",
+        status: "active",
+        source: "app",
+        is_private: true,
+        sport: "nba",
+        room_code: guestOnlyCode,
+      })
+      .select("id")
+      .single();
+    if (guestOnlyRoom.error || !guestOnlyRoom.data) throw guestOnlyRoom.error;
+    roomIds.push(guestOnlyRoom.data.id);
+    const guestOnlyParticipant = await service.from("gameday_participants").insert({
+      room_id: guestOnlyRoom.data.id,
+      display_name: `Guest Only ${runId}`,
+      is_guest: true,
+      guest_session_id: `gs_${runId}`,
+    });
+    if (guestOnlyParticipant.error) throw guestOnlyParticipant.error;
+    const afterGuestOnly = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "guest-only room is not exposed to signed-in users",
+      afterGuestOnly.status === 200 &&
+        !afterGuestOnly.body.rooms?.some((room: any) => room.room_id === guestOnlyRoom.data.id),
+      JSON.stringify(afterGuestOnly.body),
+    );
 
     const open = await request(`/api/gameday/cards/${pregame.id}/open`, {
       method: "PATCH",
@@ -332,6 +515,20 @@ async function main() {
       archived.status === 200 && archived.body.ok === true,
       JSON.stringify(archived.body),
     );
+    const archivedParticipant = await service.from("gameday_participants").insert({
+      room_id: duplicated.body.room_id,
+      user_id: player.id,
+      display_name: `Archived Player ${runId}`,
+      is_guest: false,
+    });
+    if (archivedParticipant.error) throw archivedParticipant.error;
+    const afterArchive = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "archived joined rooms are excluded",
+      afterArchive.status === 200 &&
+        !afterArchive.body.rooms?.some((room: any) => room.room_id === duplicated.body.room_id),
+      JSON.stringify(afterArchive.body),
+    );
 
     const locked = await request(`/api/gameday/cards/${pregame.id}/lock`, {
       method: "PATCH",
@@ -360,6 +557,13 @@ async function main() {
       "human host finalizes owned web room",
       finalized.status === 200 && finalized.body.ok === true,
       JSON.stringify(finalized.body),
+    );
+    const afterFinalize = await request("/api/gameday/my-rooms", { token: player.token });
+    expect(
+      "finalized joined rooms are excluded",
+      afterFinalize.status === 200 &&
+        !afterFinalize.body.rooms?.some((room: any) => room.room_id === roomId),
+      JSON.stringify(afterFinalize.body),
     );
     const finalStandings = await request(
       `/api/gameday/rooms/${roomId}/final-standings`,

@@ -1,0 +1,118 @@
+Approved. Please implement the smallest safe version of Game Day Hub re-entry for authenticated users.
+
+Task:
+Add authenticated participant-room re-entry to the existing `/gameday` Game Day Hub.
+
+Do not build a new hub.
+Do not change public discovery.
+Do not broaden the host-only `/api/gameday/rooms` endpoint.
+Do not include guest-only rooms in this first version.
+Do not create rooms.
+Do not post to Discord.
+Do not change Discord bot code.
+Do not change master slate publishing.
+Do not change settlement, receipts, reminders, billing, sports APIs, Admin Console, or Task #55.
+
+## Backend
+
+Add:
+
+GET `/api/gameday/my-rooms`
+
+Requirements:
+1. Require a valid Supabase authenticated session.
+2. Derive the user ID only from the verified session/token.
+3. Do not accept user ID from query parameters or request body.
+4. Query `gameday_participants` for rows where:
+   - `user_id = verified authenticated user id`
+   - `is_guest = false`
+5. Join/fetch associated `gameday_rooms`.
+6. Include private rooms only through this participant relationship.
+7. Exclude archived rooms.
+8. Initially include active/non-finalized rooms only.
+9. Return minimum fields needed by the hub:
+   - room_id
+   - room_code
+   - room_name
+   - status
+   - sport
+   - template_type
+   - game_date if available
+   - sanitized slate/date label if available
+   - participant_id
+   - current phase/card label if easy and safe
+10. Route links should use `/g/{roomCode}`.
+
+Privacy/security:
+- Private Discord rooms must remain excluded from `/api/gameday/public-rooms`.
+- Unrelated authenticated users must not see private rooms they did not join.
+- Host-control endpoint `/api/gameday/rooms` should remain unchanged.
+- Service role should not be exposed client-side.
+
+## Frontend
+
+Update existing Game Day Hub:
+
+- Route: `/gameday`
+- Component/file: `app/gameday/index.tsx`
+
+Add a section:
+
+Section title:
+`Continue Playing`
+
+Placement:
+- Below the existing Game Day heading/message.
+- Above Fantasy Leagues.
+- Keep host controls separate and unchanged.
+
+Show for authenticated users, including non-hosts.
+
+Card content:
+- Room name
+- Template/sport label, e.g. `NFL Sunday Slate`
+- Slate/date label if available
+- Current status/phase if available
+- CTA: `Continue`
+- Link: `/g/{roomCode}`
+
+Do not show the section if there are no joined active rooms.
+
+Guest behavior:
+- Do not attempt to show guest-only participation in this version.
+- Do not merge guest session history into authenticated hub.
+
+## Tests
+
+Add/update tests to verify:
+
+1. Signed-in user who joined a private NFL Sunday Slate sees it in Continue Playing.
+2. Signed-in user who did not join that private room does not see it.
+3. Private rooms remain excluded from public discovery.
+4. Host-only `/api/gameday/rooms` behavior is unchanged.
+5. Existing host Game Day Hub behavior still works.
+6. Non-host authenticated user can see Continue Playing if they joined a room.
+7. Guest-only participant rooms are not exposed to signed-in users.
+8. Joined NBA/Game Day rooms and NFL Single Game rooms can appear if they meet the same rules.
+9. Archived rooms are excluded.
+10. Finalized rooms are excluded for this first version.
+11. Continue cards link to `/g/{roomCode}`.
+12. Web Game Day regression passes.
+13. Server build passes.
+
+Do not create persistent live rooms unless test fixtures are cleaned up.
+
+Return:
+
+A. Implementation summary
+B. Endpoint behavior
+C. Hub UI behavior
+D. Privacy/security confirmation
+E. Files changed
+F. Tests run and assertion counts
+G. Any limitations
+H. Whether this is ready for pilot use
+
+End with:
+
+GAME DAY HUB NFL SUNDAY SLATE RE-ENTRY STATUS: PASS / FAIL
