@@ -1,0 +1,176 @@
+We are ready to create a real-looking NFL Week 1 Sunday Slate for live user testing in the Swayger Test Server.
+
+Do not implement new code.
+Do not change architecture.
+Do not post to Discord.
+Do not mark anything posted or failed.
+Do not publish to any guild except the Swayger Test Server.
+
+Goal:
+Create, approve, and publish one NFL Weekly Master Slate for Sunday, September 13, 2026, using the existing admin/master slate and publish APIs.
+
+Test guild only:
+- discord_guild_id: 1505427577005932554
+- guild name: Swayger Test Server
+- expected Game Day channel: game-day-swayger-test
+- expected receipt channel: swayger-receipts
+
+Slate name:
+NFL Sunday Slate — Week 1
+
+Slate label:
+Sunday, September 13
+
+Reward text:
+Game Day Champ for the week
+
+Source schedule:
+Use the following Sunday Week 1 schedule. This slate intentionally excludes the Wednesday Patriots-Seahawks game, the Thursday 49ers-Rams game, and the Monday Broncos-Chiefs game.
+
+Early matchups, 1:00 PM ET:
+- Bears at Panthers
+- Buccaneers at Bengals
+- Saints at Lions
+- Bills at Texans
+- Ravens at Colts
+- Browns at Jaguars
+- Falcons at Steelers
+- Jets at Titans
+
+Late matchups, 4:25 PM ET:
+- Cardinals at Chargers
+- Dolphins at Raiders
+- Packers at Vikings
+- Commanders at Eagles
+
+Sunday Night teams:
+- Cowboys
+- Giants
+
+Candidate lists:
+
+qb_candidates:
+- Caleb Williams
+- Bryce Young
+- Baker Mayfield
+- Joe Burrow
+- Jared Goff
+- Josh Allen
+- C.J. Stroud
+- Lamar Jackson
+- Justin Herbert
+- Jordan Love
+- Jalen Hurts
+- Dak Prescott
+
+rb_candidates:
+- Chuba Hubbard
+- Chase Brown
+- Jahmyr Gibbs
+- James Cook
+- Derrick Henry
+- Bijan Robinson
+- Breece Hall
+- Tony Pollard
+- Josh Jacobs
+- Saquon Barkley
+- Ashton Jeanty
+- Omarion Hampton
+
+receiver_candidates:
+- DJ Moore
+- Tetairoa McMillan
+- Mike Evans
+- Ja’Marr Chase
+- Amon-Ra St. Brown
+- Garrett Wilson
+- Nico Collins
+- Zay Flowers
+- Ladd McConkey
+- Jayden Reed
+- A.J. Brown
+- CeeDee Lamb
+
+team_candidates:
+- Bears
+- Panthers
+- Buccaneers
+- Bengals
+- Saints
+- Lions
+- Bills
+- Texans
+- Ravens
+- Colts
+- Browns
+- Jaguars
+- Falcons
+- Steelers
+- Jets
+- Titans
+- Cardinals
+- Chargers
+- Dolphins
+- Raiders
+- Packers
+- Vikings
+- Commanders
+- Eagles
+- Cowboys
+- Giants
+
+game_candidates:
+- Bears at Panthers
+- Buccaneers at Bengals
+- Saints at Lions
+- Bills at Texans
+- Ravens at Colts
+- Browns at Jaguars
+- Falcons at Steelers
+- Jets at Titans
+- Cardinals at Chargers
+- Dolphins at Raiders
+- Packers at Vikings
+- Commanders at Eagles
+- Cowboys at Giants
+
+Please do the following:
+
+1. Confirm the Swayger Test Server NFL Slate subscription is active.
+   - If disabled, stop and tell me to enable it in Discord first.
+2. Create a new weekly master slate using the existing admin API.
+3. Approve the master slate.
+4. Dry run publish scoped only to guild:
+   1505427577005932554
+5. Actual publish scoped only to guild:
+   1505427577005932554
+6. Confirm exactly one new private NFL Sunday Slate Game Day room instance was created.
+7. Confirm the instance has:
+   - status = post_ready
+   - sport = nfl
+   - template_type = nfl_sunday_slate
+   - is_private = true
+   - correct discord_guild_id
+   - correct discord_channel_id
+   - canonical room_url using https://www.swayger.app/g/{roomCode}
+   - post_payload.message populated with pilot-ready copy
+8. Confirm the bot delivery endpoint returns exactly this post_ready instance when filtered to:
+   - discord_guild_id=1505427577005932554
+   - limit=1
+
+Return:
+- master_slate_id
+- room_instance_id
+- room_id
+- room_code
+- room_url
+- post_payload.message preview
+- whether I can run this Discord command next:
+
+/swayger gameday publish-pending-nfl-slates guild_only:true limit:1
+
+Do not post to Discord.
+Do not mark posted or failed.
+Do not create more than one room instance.
+Do not publish to any other guild.
+Do not start settlement, receipts, reminders, billing, sports APIs, or Admin Console work.
