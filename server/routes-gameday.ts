@@ -1124,16 +1124,34 @@ function withUniqueOutcomeOptions(options: string[], includeOther = true): strin
   return next;
 }
 
+function deriveMatchupTeams(matchups: string[]): string[] {
+  return [...new Set(
+    matchups.flatMap((matchup) => {
+      const teams = matchup
+        .split(/\s+(?:at|vs\.?|@)\s+/i)
+        .map((team) => team.trim())
+        .filter(Boolean);
+      return teams.length === 2 ? teams : [];
+    }),
+  )];
+}
+
 function resolveSundaySlateAnswers(
   answers: string[],
   vars: { TEAM_A: string; TEAM_B: string; STAR_A: string; STAR_B: string },
   slate: SundaySlateConfig,
+  phase: "pregame" | "halftime" | "fourth",
 ): string[] {
+  const scopedTeams = phase === "pregame"
+    ? deriveMatchupTeams(slate.early_matchups)
+    : phase === "halftime"
+    ? deriveMatchupTeams(slate.late_matchups)
+    : slate.sunday_night_teams;
   const tokenOptions: Record<string, string[]> = {
     "{{SLATE_QBS}}": withUniqueOutcomeOptions(slate.qb_candidates),
     "{{SLATE_RBS}}": withUniqueOutcomeOptions(slate.rb_candidates),
     "{{SLATE_RECEIVERS}}": withUniqueOutcomeOptions(slate.receiver_candidates),
-    "{{SLATE_TEAMS}}": withUniqueOutcomeOptions(slate.team_candidates),
+    "{{SLATE_TEAMS}}": withUniqueOutcomeOptions(scopedTeams),
     "{{SLATE_EARLY_GAMES}}": withUniqueOutcomeOptions(slate.early_matchups, false),
     "{{SLATE_LATE_GAMES}}": withUniqueOutcomeOptions(slate.late_matchups, false),
   };
@@ -1240,7 +1258,7 @@ async function createPrivateSundaySlateRoom(
         const { error: propError } = await supabase.from("gameday_props").insert({
           card_id: card.id,
           question: resolvePlaceholders(tmpl.question, vars),
-          answer_options: resolveSundaySlateAnswers(tmpl.answers, vars, slateConfig),
+          answer_options: resolveSundaySlateAnswers(tmpl.answers, vars, slateConfig, cardDef.phase),
           display_order: i,
           status: "pending",
           template_prop_id: tmpl.id,
@@ -2930,7 +2948,7 @@ export function registerGamedayRoutes(app: Express) {
           card_id: card.id,
           question: resolvePlaceholders(tmpl.question, vars),
           answer_options: isSundaySlate
-            ? resolveSundaySlateAnswers(tmpl.answers, vars, normalizedSlateConfig!)
+            ? resolveSundaySlateAnswers(tmpl.answers, vars, normalizedSlateConfig!, cardDef.phase)
             : tmpl.answers.map((a) => resolvePlaceholders(a, vars)),
           display_order: i,
           status: "pending",

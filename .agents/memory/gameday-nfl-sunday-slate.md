@@ -18,6 +18,19 @@ one-correct-answer settlement engine. Apply the dedicated additive Supabase
 migration before enabling Slate room creation; retain legacy read/duplicate
 fallbacks until the database has it.
 
+Team and game answer options are scoped by pick window: derive Early and Late
+team options from that window's matchup strings, and use the two configured
+Sunday Night teams for SNF props. Player options remain global until the input
+model provides explicit window-specific player lists.
+
+**Why:** The slate does not store player-to-team mappings, so inferring player
+windows would create incorrect choices. Matchups already provide a reliable,
+explicit boundary for team and game options.
+
+**How to apply:** Parse teams only from matchup strings with an explicit `at`,
+`vs`, `vs.`, or `@` separator. Never use the global team list as a fallback for
+window-specific props, and never guess a player's team or window.
+
 For Discord subscription lifecycle, use the existing `status` column as the
 source of truth for disabling. Preserve the guild row; optional enable flags or
 disable-audit columns may be written only when an already-deployed schema has

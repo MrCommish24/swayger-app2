@@ -23,7 +23,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 33;
+const EXPECTED_ASSERTIONS = 34;
 
 function expect(label: string, condition: unknown, detail?: string) {
   if (condition) {
@@ -445,6 +445,43 @@ async function main() {
           room.slate_config?.sunday_night_teams?.[0] === "Ravens",
         ),
       rooms.error?.message,
+    );
+    const publishedCards = await service
+      .from("gameday_pick_cards")
+      .select("id, phase")
+      .in("room_id", roomIds);
+    const publishedProps = await service
+      .from("gameday_props")
+      .select("card_id, template_prop_id, answer_options")
+      .in("card_id", (publishedCards.data ?? []).map((card: any) => card.id));
+    const phaseByCardId = new Map(
+      (publishedCards.data ?? []).map((card: any) => [card.id, card.phase]),
+    );
+    const publishedEarlyTeamProps = (publishedProps.data ?? [])
+      .filter((prop: any) => prop.template_prop_id === "nfl_slate_early_team_points");
+    const publishedLateTeamProps = (publishedProps.data ?? [])
+      .filter((prop: any) => prop.template_prop_id === "nfl_slate_late_team_points");
+    expect(
+      "published room options remain scoped to each Sunday Slate window",
+      !publishedCards.error &&
+        !publishedProps.error &&
+        publishedEarlyTeamProps.length === 2 &&
+        publishedEarlyTeamProps.every((prop: any) =>
+            phaseByCardId.get(prop.card_id) === "pregame" &&
+            prop.answer_options.includes("Bears") &&
+            prop.answer_options.includes("Packers") &&
+            !prop.answer_options.includes("Chiefs") &&
+            !prop.answer_options.includes("Raiders")
+          ) &&
+        publishedLateTeamProps.length === 2 &&
+        publishedLateTeamProps.every((prop: any) =>
+            phaseByCardId.get(prop.card_id) === "halftime" &&
+            prop.answer_options.includes("Chiefs") &&
+            prop.answer_options.includes("Raiders") &&
+            !prop.answer_options.includes("Bears") &&
+            !prop.answer_options.includes("Packers")
+          ),
+      publishedCards.error?.message ?? publishedProps.error?.message,
     );
 
     const repeat = await request(

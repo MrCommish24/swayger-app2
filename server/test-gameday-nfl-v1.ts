@@ -215,6 +215,50 @@ async function main() {
         !JSON.stringify(sundayCards).includes("{{SLATE_"),
       JSON.stringify(sundayCards),
     );
+    const earlyTeamProps = earlySlate?.gameday_props?.filter((prop: any) =>
+      ["nfl_slate_early_team_points", "nfl_slate_early_fewest_points_allowed"].includes(prop.template_prop_id)
+    ) ?? [];
+    const earlyGameProps = earlySlate?.gameday_props?.filter((prop: any) =>
+      ["nfl_slate_early_highest_total_game", "nfl_slate_early_closest_game"].includes(prop.template_prop_id)
+    ) ?? [];
+    const lateTeamProps = lateSlate?.gameday_props?.filter((prop: any) =>
+      ["nfl_slate_late_team_points", "nfl_slate_late_fewest_points_allowed"].includes(prop.template_prop_id)
+    ) ?? [];
+    const lateGameProps = lateSlate?.gameday_props?.filter((prop: any) =>
+      prop.template_prop_id === "nfl_slate_late_highest_total_game"
+    ) ?? [];
+    expect(
+      "Sunday Slate team and game options stay isolated to their pick window",
+      earlyTeamProps.length === 2 &&
+        earlyTeamProps.every((prop: any) =>
+          ["Bears", "Packers", "Eagles", "Cowboys"].every((team) => prop.answer_options.includes(team)) &&
+          ["Chiefs", "Raiders", "Rams", "Seahawks"].every((team) => !prop.answer_options.includes(team))
+        ) &&
+        earlyGameProps.length === 2 &&
+        earlyGameProps.every((prop: any) =>
+          prop.answer_options.includes("Bears vs Packers") &&
+          prop.answer_options.includes("Eagles vs Cowboys") &&
+          !prop.answer_options.includes("Chiefs vs Raiders")
+        ) &&
+        lateTeamProps.length === 2 &&
+        lateTeamProps.every((prop: any) =>
+          ["Chiefs", "Raiders", "Rams", "Seahawks"].every((team) => prop.answer_options.includes(team)) &&
+          ["Bears", "Packers", "Eagles", "Cowboys"].every((team) => !prop.answer_options.includes(team))
+        ) &&
+        lateGameProps.length === 1 &&
+        lateGameProps[0].answer_options.includes("Chiefs vs Raiders") &&
+        lateGameProps[0].answer_options.includes("Rams vs Seahawks") &&
+        !lateGameProps[0].answer_options.includes("Bears vs Packers") &&
+        sundayNight?.gameday_props?.filter((prop: any) =>
+          ["nfl_slate_snf_winner", "nfl_slate_snf_first_score"].includes(prop.template_prop_id)
+        ).every((prop: any) =>
+          prop.answer_options.includes("Baltimore Ravens") &&
+          prop.answer_options.includes("Buffalo Bills") &&
+          !prop.answer_options.includes("Bears") &&
+          !prop.answer_options.includes("Chiefs")
+        ),
+      JSON.stringify(sundayCards),
+    );
     const sundayPublic = sundayRoomId ? await request(`/api/gameday/rooms/${sundayRoomId}`) : { status: 0, body: {} };
     expect(
       "public Sunday Slate room exposes safe format context",
