@@ -154,15 +154,20 @@ export default function GameDayHub() {
     if (!session) {
       setIsHost(false);
       setLoading(false);
+      setJoinedRooms([]);
       return;
     }
     gamedayFetch<{ isHost: boolean }>("/api/gameday/is-host", {}, { session })
-      .then((d) => setIsHost(d.isHost))
+      .then((d) => {
+        setIsHost(d.isHost);
+        fetchJoinedRooms();
+      })
       .catch(() => {
         setIsHost(false);
         setLoading(false);
+        fetchJoinedRooms();
       });
-  }, [authLoading, session, fetchFantasyLeagues, fetchJoinedRooms]);
+  }, [authLoading, session, fetchJoinedRooms]);
 
   useEffect(() => {
     if (isHost === null) return;
@@ -178,8 +183,7 @@ export default function GameDayHub() {
   useEffect(() => {
     if (authLoading || !session) return;
     fetchFantasyLeagues();
-    fetchJoinedRooms();
-  }, [authLoading, session?.access_token]);
+  }, [authLoading, session, fetchFantasyLeagues]);
 
   const onRefresh = () => {
     setRefreshing(true);
