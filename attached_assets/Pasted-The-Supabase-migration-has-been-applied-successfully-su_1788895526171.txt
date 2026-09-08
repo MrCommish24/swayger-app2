@@ -1,0 +1,56 @@
+The Supabase migration has been applied successfully:
+
+supabase/gameday-nfl-weekly-master-slate-scoped-player-candidates.sql
+
+Please proceed with post-migration validation.
+
+Run the database-backed regression gates now:
+
+1. NFL Game Day regression
+2. Weekly master-slate lifecycle regression
+3. Weekly publishing regression
+4. Bot delivery API regression
+5. Web Game Day regression
+6. Discord subscriptions regression if relevant
+7. Server build
+
+Please specifically confirm:
+
+- `nfl_weekly_slate_templates` now has:
+  - early_qb_candidates
+  - late_qb_candidates
+  - early_rb_candidates
+  - late_rb_candidates
+  - early_receiver_candidates
+  - late_receiver_candidates
+
+- The two new Late Slate player prop definitions exist:
+  - nfl_slate_late_rushing_yards
+  - nfl_slate_late_receiving_yards
+
+- Direct NFL Sunday Slate room creation works with scoped player candidates.
+- Weekly master-slate creation accepts scoped player candidates.
+- Scoped candidates are normalized.
+- Approval works when scoped candidates are complete.
+- Approval still works for legacy global-only candidates.
+- Incomplete scoped-only candidate groups are rejected.
+- Publishing copies scoped candidates into room slate_config.
+- Early player props only use Early scoped candidates when provided.
+- Late player props only use Late scoped candidates when provided.
+- Early player props do not include Late-only or Sunday Night-only players when scoped fields are provided.
+- Late player props do not include Early-only players when scoped fields are provided.
+- Legacy fallback still works when scoped fields are missing.
+- Existing team/game scoping remains correct.
+- Existing NFL Single Game still works.
+- Bot delivery API still works.
+- Discord post payload structure remains unchanged.
+- No Discord posting occurred.
+- No settlement, receipts, reminders, billing, sports APIs, Admin Console, or Task #55 work was added.
+
+Return exact assertion counts.
+
+After the regressions pass, do not create a fresh safe-slot room yet. Stop and ask me before creating any live/test room.
+
+End with:
+
+NFL SUNDAY SLATE PLAYER CANDIDATE SCOPING STATUS: PASS / FAIL
