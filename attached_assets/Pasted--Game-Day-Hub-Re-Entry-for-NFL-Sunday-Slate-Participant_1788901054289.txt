@@ -1,0 +1,162 @@
+# Game Day Hub Re-Entry for NFL Sunday Slate Participants
+
+We need to inspect and improve the existing Swayger Game Day Hub re-entry journey for NFL Sunday Slate rooms.
+
+Context:
+Swayger already has an existing Game Day Hub in the app. It currently shows areas such as:
+- Live Game Day
+- More rooms available
+- One-on-one Swayger links
+- Fantasy Leagues below that
+
+We do not want to build a separate new hub. We want NFL Sunday Slate rooms to fit into the existing Game Day Hub experience.
+
+Observed user issue:
+A user joined the NFL Sunday Slate from the Discord link, made picks as a signed-in Swayger member on mobile, closed the room, then reopened the Swayger app. They could not find the NFL Sunday Slate again from inside Swayger.
+
+This is a problem because NFL Sunday Slate is multi-window:
+- Early Slate Picks
+- Late Slate Picks
+- Sunday Night Picks
+- Final Receipts
+
+Users need a clear way to return after joining.
+
+Goal:
+Inspect the current Game Day Hub implementation and identify the smallest safe change needed so an authenticated Swayger user can re-enter active NFL Sunday Slate rooms they have joined.
+
+Do not implement yet unless the change is clearly small and low-risk. First inspect and report.
+
+## What to inspect
+
+Please inspect:
+
+1. Existing Game Day Hub route/component.
+2. Existing data queries used by the hub.
+3. How “Live Game Day” rooms are currently selected.
+4. How “More rooms available” rooms are currently selected.
+5. Whether private rooms are intentionally excluded from public discovery.
+6. Whether joined rooms for the current authenticated user are already queryable.
+7. Whether Game Day participants are linked to authenticated users.
+8. Whether guest participants are linked differently.
+9. Whether NFL Sunday Slate rooms have:
+   - sport = nfl
+   - template_type = nfl_sunday_slate
+   - source/room_source = discord, if applicable
+   - is_private = true
+   - status active/open/not finalized
+   - room_code
+10. Whether a signed-in user who has submitted picks in a private room can be identified as a participant and routed back to `/g/{roomCode}`.
+
+## Desired user journey
+
+For a signed-in user:
+
+1. User clicks Discord room link.
+2. User joins NFL Sunday Slate as an authenticated Swayger member.
+3. User makes picks.
+4. User closes the browser/app.
+5. Later, user opens Swayger directly.
+6. Existing Game Day Hub shows a section like:
+   - “Your Active Game Day Rooms”
+   - “Continue Playing”
+   - or “Rooms You Joined”
+7. The NFL Sunday Slate appears there.
+8. Tapping it opens `/g/{roomCode}`.
+
+## Product rules
+
+Important:
+- Do not expose private Discord rooms publicly.
+- Do not show all private rooms to all users.
+- Only show a private room to:
+  - a user who joined it,
+  - a host/admin/creator if applicable,
+  - or someone arriving through the direct room link.
+- Do not change public discovery rules.
+- Do not change Discord posting logic.
+- Do not change master slate publishing.
+- Do not change settlement, receipts, reminders, billing, sports APIs, or Admin Console.
+- Do not create new rooms.
+- Do not post to Discord.
+
+## Preferred implementation if feasible
+
+If the current schema supports it, add a small authenticated-user re-entry section to the existing Game Day Hub:
+
+Section label options:
+- “Continue Playing”
+- “Your Active Game Day Rooms”
+- “Rooms You Joined”
+
+I prefer “Continue Playing” if it fits the UI.
+
+Card content:
+- Room name
+- Sport/template label if available, e.g. “NFL Sunday Slate”
+- Slate/date label if available
+- Current status, e.g. “Early Slate Picks open”
+- User progress if easy, e.g. “8/18 picks made” or “Early Slate complete”
+- CTA: “Open Room” or “Continue”
+
+Route:
+- `/g/{roomCode}`
+
+Query rules:
+- Only authenticated users.
+- Query rooms where the current user is a participant or has submitted picks.
+- Include private rooms only when joined by that user.
+- Include active/open/non-finalized rooms.
+- Optionally include recently finalized rooms later, but do not add that unless easy.
+
+## If implementation is not feasible yet
+
+If the current schema does not reliably link authenticated users to Game Day participants, report the gap clearly and propose the smallest schema/API change.
+
+Potential minimal fix:
+- Ensure `gameday_participants` stores authenticated `user_id` when a signed-in user joins.
+- Add a backend endpoint like:
+  GET `/api/gameday/my-rooms`
+  returning rooms joined by the current authenticated user.
+- Hub consumes that endpoint and renders “Continue Playing.”
+
+But do not overbuild.
+
+## Tests / verification
+
+Please report:
+
+1. Current hub route/component names.
+2. Current hub data sources/endpoints.
+3. Whether private joined rooms can already be queried safely.
+4. Whether authenticated participants are linked to user IDs.
+5. Recommended smallest change.
+6. Whether you implemented it or stopped for approval.
+
+If implementing, add/update tests verifying:
+
+1. Signed-in user who joined a private NFL Sunday Slate sees it in Game Day Hub.
+2. Signed-in user who did not join that private room does not see it.
+3. Public/private discovery behavior is unchanged.
+4. Existing Live Game Day and More Rooms sections still work.
+5. Joined NBA/single-game rooms still work if applicable.
+6. Guest-only rooms are not incorrectly shown to unrelated signed-in users.
+7. Link routes to `/g/{roomCode}`.
+8. Server build passes.
+9. Web Game Day regression passes.
+
+Do not create live rooms unless test fixtures are cleaned up.
+
+Final report should include:
+
+A. Root cause of missing re-entry
+B. Existing hub behavior
+C. Recommended UX placement
+D. Data/privacy rules
+E. Files changed, if any
+F. Tests run
+G. Whether this is ready for pilot use
+
+End with:
+
+GAME DAY HUB NFL SUNDAY SLATE RE-ENTRY STATUS: PASS / NEEDS APPROVAL / FAIL
