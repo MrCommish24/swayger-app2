@@ -34,6 +34,7 @@ import {
 import { CompetitionReceipt } from "@/components/fantasy/CompetitionReceipt";
 import { CompactCompetitionReceipt } from "@/components/fantasy/CompactCompetitionReceipt";
 import { buildDraftDayReceiptShareText } from "@/lib/fantasy-receipt-share";
+import { Analytics } from "@/lib/posthog";
 import Colors from "@/constants/colors";
 import * as Sharing from "expo-sharing";
 import { captureRef } from "react-native-view-shot";
@@ -57,6 +58,16 @@ export default function DraftDayReceiptScreen() {
   const [shortReceiptUrl, setShortReceiptUrl] = useState<string | null>(null);
   const captureCardRef = useRef<View | null>(null);
   const aliasPromiseRef = useRef<Promise<string> | null>(null);
+  const receiptViewedRef = useRef(false);
+
+  const analyticsContext = useCallback((viewerRole?: "commissioner" | "co_commissioner" | "member") => ({
+    league_id: leagueId,
+    season_id: seasonId,
+    experience_type: "draft_day" as const,
+    competition_type: "draft_day" as const,
+    viewer_role: viewerRole ?? detail?.viewer?.role,
+    is_guest: !session,
+  }), [detail?.viewer?.role, leagueId, seasonId, session]);
 
   const load = useCallback(async (quiet = false) => {
     if (!leagueId || !seasonId || (!session && !guestToken)) return;
@@ -74,13 +85,17 @@ export default function DraftDayReceiptScreen() {
       ]);
       setReceipt(receiptData);
       setDetail(seasonData);
+      if (!receiptViewedRef.current) {
+        receiptViewedRef.current = true;
+        Analytics.fantasyReceiptViewed(analyticsContext(seasonData.viewer?.role));
+      }
     } catch (e: any) {
       setError(e.message ?? "Failed to load the Draft Day receipt");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [leagueId, seasonId, session, guestToken]);
+  }, [analyticsContext, leagueId, seasonId, session, guestToken]);
 
   useEffect(() => {
     if (!authLoading && !guestTokenLoading) load();
@@ -88,6 +103,10 @@ export default function DraftDayReceiptScreen() {
 
   const canShare = detail?.viewer?.role === "commissioner" ||
     detail?.viewer?.role === "co_commissioner";
+
+  const trackReceiptShared = useCallback((shareSurface: string) => {
+    Analytics.fantasyReceiptShared(analyticsContext(), { share_surface: shareSurface });
+  }, [analyticsContext]);
 
   const ensureShortReceiptUrl = useCallback(async (): Promise<string> => {
     if (shortReceiptUrl) return shortReceiptUrl;
@@ -115,7 +134,10 @@ export default function DraftDayReceiptScreen() {
       await navigator.share({ title: "Swayger Draft Day Receipt", text: message, url });
       return;
     }
-    await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+    const result = await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+    if (result.action === Share.dismissedAction) {
+      throw new Error("Share dismissed");
+    }
   }, []);
 
   const handleShare = useCallback(async () => {
@@ -152,6 +174,7 @@ export default function DraftDayReceiptScreen() {
             text: message,
             files: [file],
           });
+          trackReceiptShared("web_share");
         } else {
           const downloadUrl = URL.createObjectURL(blob);
           const link = document.createElement("a");
@@ -162,6 +185,7 @@ export default function DraftDayReceiptScreen() {
           await Clipboard.setStringAsync(message);
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
+          trackReceiptShared("download_copy");
         }
       } else {
         const target = captureCardRef.current;
@@ -176,8 +200,10 @@ export default function DraftDayReceiptScreen() {
             dialogTitle: "Share Draft Day Receipt",
             UTI: "public.png",
           });
+          trackReceiptShared("native_share");
         } else {
           await fallbackToTextShare(message, url);
+          trackReceiptShared("text_share");
         }
       }
     } catch (e: any) {
@@ -188,6 +214,7 @@ export default function DraftDayReceiptScreen() {
         try {
           const url = shortReceiptUrl ?? await ensureShortReceiptUrl();
           await fallbackToTextShare(buildDraftDayReceiptShareText(receipt, url), url);
+          trackReceiptShared("text_share");
         } catch {
           // Restricted preview environments may expose neither capture nor share.
         }
@@ -201,6 +228,7 @@ export default function DraftDayReceiptScreen() {
     receipt,
     sharing,
     shortReceiptUrl,
+    trackReceiptShared,
   ]);
 
   const handleCopy = useCallback(async () => {
@@ -208,12 +236,13 @@ export default function DraftDayReceiptScreen() {
     try {
       const url = await ensureShortReceiptUrl();
       await Clipboard.setStringAsync(url);
+      Analytics.fantasyReceiptLinkCopied(analyticsContext());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard may be unavailable in a restricted preview environment.
     }
-  }, [copied, ensureShortReceiptUrl]);
+  }, [analyticsContext, copied, ensureShortReceiptUrl]);
 
   if (authLoading || guestTokenLoading || (loading && !receipt)) {
     return (

@@ -45,6 +45,7 @@ import {
   type ParsedRow,
 } from "@/lib/bulk-import-parser";
 import Colors from "@/constants/colors";
+import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -95,6 +96,8 @@ export default function BulkImportScreen() {
   const [commName, setCommName]           = useState<string | null>(null);
   const [commTeam, setCommTeam]           = useState<string | null>(null);
   const [loadingLeague, setLoadingLeague] = useState(true);
+  const [viewerRole, setViewerRole] = useState<"commissioner" | "co_commissioner">("commissioner");
+  const membersImportedTracked = useRef(false);
 
   useEffect(() => {
     if (!session || !leagueId || !seasonId) return;
@@ -104,6 +107,7 @@ export default function BulkImportScreen() {
       { session }
     ).then((det) => {
       const myRole = det.viewer?.role;
+      if (myRole === "commissioner" || myRole === "co_commissioner") setViewerRole(myRole);
       // Redirect non-commissioners
       if (myRole !== "commissioner" && myRole !== "co_commissioner") {
         router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
@@ -222,6 +226,26 @@ export default function BulkImportScreen() {
         }
         return newRows;
       });
+
+      if (!membersImportedTracked.current) {
+        if (res.created_count > 0) {
+          const context: FantasyAnalyticsContext = {
+            league_id: leagueId,
+            season_id: seasonId,
+            experience_type: "draft_day",
+            competition_type: "draft_day",
+            viewer_role: viewerRole,
+            is_guest: false,
+          };
+          Analytics.fantasyMembersImported(context, {
+            member_count: res.created_count,
+            requested_member_count: members.length,
+            replayed_count: res.replayed_count,
+            failed_count: res.failed_count,
+          });
+          membersImportedTracked.current = true;
+        }
+      }
 
       setStep("results");
     } catch (e: any) {

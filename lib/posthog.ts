@@ -19,7 +19,7 @@ export function getPostHog(): PostHog | null {
 
 // ─── Identity ────────────────────────────────────────────────────────────────
 
-export function identifyUser(userId: string, properties?: Record<string, unknown>) {
+export function identifyUser(userId: string, properties?: Record<string, any>) {
   getPostHog()?.identify(userId, properties);
 }
 
@@ -29,13 +29,13 @@ export function resetUser() {
 
 // ─── Event helpers ────────────────────────────────────────────────────────────
 
-export function capture(event: string, properties?: Record<string, unknown>) {
+export function capture(event: string, properties?: Record<string, any>) {
   getPostHog()?.capture(event, properties);
 }
 
 // ─── Screen tracking ─────────────────────────────────────────────────────────
 
-export function trackScreen(screenName: string, properties?: Record<string, unknown>) {
+export function trackScreen(screenName: string, properties?: Record<string, any>) {
   getPostHog()?.screen(screenName, properties);
 }
 
@@ -122,7 +122,77 @@ function pCtx(ctx?: GDParticipantCtx | null): Record<string, unknown> {
   };
 }
 
+export interface FantasyAnalyticsContext {
+  league_id: string;
+  season_id: string;
+  week_number?: number;
+  experience_type: "draft_day" | "weekly";
+  competition_type: "draft_day" | "weekly";
+  viewer_role?: "commissioner" | "co_commissioner" | "member";
+  is_guest?: boolean;
+  source?: string;
+}
+
+function fCtx(
+  ctx: FantasyAnalyticsContext,
+  extra?: Record<string, string | number | boolean | null | undefined>,
+): Record<string, unknown> {
+  return {
+    league_id: ctx.league_id,
+    season_id: ctx.season_id,
+    experience_type: ctx.experience_type,
+    competition_type: ctx.competition_type,
+    ...(ctx.week_number !== undefined ? { week_number: ctx.week_number } : {}),
+    ...(ctx.viewer_role ? { viewer_role: ctx.viewer_role } : {}),
+    ...(ctx.is_guest !== undefined ? { is_guest: ctx.is_guest } : {}),
+    ...(ctx.source ? { source: ctx.source } : {}),
+    ...Object.fromEntries(
+      Object.entries(extra ?? {}).filter(([, value]) => value !== undefined && value !== null),
+    ),
+  };
+}
+
 export const Analytics = {
+  // ── Fantasy pilot funnel ─────────────────────────────────────────────────────
+  fantasyLeagueCreated: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_league_created", fCtx(ctx, extra)),
+  fantasyMembersImported: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_members_imported", fCtx(ctx, extra)),
+  fantasyInviteShared: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_invite_shared", fCtx(ctx, extra)),
+  fantasySeatClaimed: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_seat_claimed", fCtx(ctx, extra)),
+  fantasyWeekCreated: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_created", fCtx(ctx, extra)),
+  fantasyWeekPublished: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_published", fCtx(ctx, extra)),
+  fantasyWeekLinkShared: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_link_shared", fCtx(ctx, extra)),
+  fantasyWeekViewed: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_viewed", fCtx(ctx, extra)),
+  fantasyWeekPickStarted: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_pick_started", fCtx(ctx, extra)),
+  fantasyWeekPickSubmitted: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_pick_submitted", fCtx(ctx, extra)),
+  fantasyWeekPickCompleted: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_pick_completed", fCtx(ctx, extra)),
+  fantasyWeekLocked: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_locked", fCtx(ctx, extra)),
+  fantasyLeaguePicksViewed: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_league_picks_viewed", fCtx(ctx, extra)),
+  fantasyWeekSettlementStarted: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_settlement_started", fCtx(ctx, extra)),
+  fantasyWeekFinalized: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_finalized", fCtx(ctx, extra)),
+  fantasyWeekResultsViewed: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_results_viewed", fCtx(ctx, extra)),
+  fantasyReceiptViewed: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_receipt_viewed", fCtx(ctx, extra)),
+  fantasyReceiptShared: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_receipt_shared", fCtx(ctx, extra)),
+  fantasyReceiptLinkCopied: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_receipt_link_copied", fCtx(ctx, extra)),
+
   // ── Auth funnel ─────────────────────────────────────────────────────────────
   authScreenViewed: (platform: string) =>
     capture("auth_screen_viewed", { platform }),

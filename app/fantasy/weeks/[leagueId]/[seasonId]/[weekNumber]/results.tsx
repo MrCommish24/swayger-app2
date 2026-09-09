@@ -27,6 +27,7 @@ import {
   DraftDayResultsLeaderboardEntry,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -43,6 +44,7 @@ export default function WeeklyResultsScreen() {
   const [data, setData]       = useState<WeeklyResults | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  const hasTrackedView = React.useRef(false);
 
   const auth = session ? { session } : guestToken ? { guestToken } : {};
 
@@ -54,6 +56,21 @@ export default function WeeklyResultsScreen() {
     try {
       const d = await getWeeklyResults(leagueId, seasonId, wn, auth);
       setData(d);
+       if (d.finalized && !hasTrackedView.current) {
+         hasTrackedView.current = true;
+         Analytics.fantasyWeekResultsViewed({
+           league_id: leagueId,
+           season_id: seasonId,
+           week_number: wn,
+           experience_type: "weekly",
+           competition_type: "weekly",
+           viewer_role: "member",
+           is_guest: !session,
+          }, {
+           question_count: d.total_competition_props ?? d.my_competition_picks?.length ?? 0,
+           pick_count: d.my_competition_picks?.length ?? 0,
+         });
+       }
     } catch (e: any) {
       setError(e.message ?? "Failed to load results");
     } finally {

@@ -34,6 +34,7 @@ import {
   WeeklyTemplate,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -64,6 +65,7 @@ export default function WeeklySetupScreen() {
   const [rewardMode, setRewardMode]         = useState<"season_default" | "custom" | "none">("none");
   const [rewardAmount, setRewardAmount]     = useState("");
   const [rewardDesc, setRewardDesc]         = useState("");
+  const publishTracked = React.useRef(false);
 
   const auth = session ? { session } : {};
 
@@ -166,7 +168,27 @@ export default function WeeklySetupScreen() {
           : rewardMode === "custom"
           ? { description: rewardDesc.trim() || null, amount_display: rewardAmount.trim() || null }
           : { description: null, amount_display: null };
-      await publishWeekly(leagueId, seasonId, wn, ordered, { session }, effectiveReward);
+      const result = await publishWeekly(leagueId, seasonId, wn, ordered, { session }, effectiveReward);
+      const context: FantasyAnalyticsContext = {
+        league_id: leagueId,
+        season_id: seasonId,
+        week_number: wn,
+        experience_type: "weekly",
+        competition_type: "weekly",
+        viewer_role: "commissioner",
+        is_guest: false,
+      };
+      if (!result.already_existed && !publishTracked.current) {
+        Analytics.fantasyWeekPublished(context, {
+          question_count: ordered.length,
+          already_existed: false,
+        });
+        Analytics.fantasyWeekCreated(context, {
+          question_count: ordered.length,
+          already_existed: false,
+        });
+        publishTracked.current = true;
+      }
       // Navigate back to hub — useFocusEffect there will quiet-refresh
       router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
     } catch (e: any) {

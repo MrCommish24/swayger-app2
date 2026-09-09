@@ -1,0 +1,593 @@
+We are doing a focused instrumentation audit before the Swayger Fantasy Week 1 pilot.
+
+# TASK — SWAYGER FANTASY PILOT ANALYTICS AUDIT
+
+This is NOT a new product phase.
+
+We are preparing to launch Swayger Fantasy Weekly Edition across approximately 3–4 real fantasy leagues.
+
+The purpose of this task is to verify that our existing analytics and product events are sufficient to answer the behavioral questions that matter most during the pilot.
+
+Do not redesign PostHog.
+Do not add a large analytics framework.
+Do not instrument every click.
+
+We want the smallest set of reliable events and properties required to reconstruct:
+
+1. Commissioner funnel
+2. Member funnel
+3. Weekly retention
+4. Receipt/social engagement
+
+==================================================
+1. FIRST — AUDIT EXISTING ANALYTICS
+==================================================
+
+Inspect:
+
+- `lib/posthog.ts`
+- Fantasy setup screens
+- Fantasy join/claim flows
+- Draft Day screens
+- Weekly setup/publish/play/results
+- League Picks
+- Global Receipt / receipt sharing
+- short receipt links
+- commissioner weekly workflow
+- archive/restore where relevant
+- current analytics wrappers/helpers
+- any existing `posthog.capture(...)`
+- any server-side analytics if present
+
+Return a complete list of EXISTING Fantasy-related PostHog events.
+
+For each event identify:
+
+- event name
+- where fired
+- when fired
+- relevant properties
+- whether commissioner/member/guest can trigger it
+- whether it is duplicated
+- whether it fires reliably
+- whether it is enough for the pilot funnel
+
+Do not assume an event exists because a similar Game Day event exists.
+
+==================================================
+2. PILOT QUESTIONS WE MUST BE ABLE TO ANSWER
+==================================================
+
+The analytics implementation must allow us to answer:
+
+COMMISSIONER:
+
+1. Did the commissioner create/setup the league?
+2. Did members get imported?
+3. Did the commissioner publish Week 1?
+4. Did the commissioner share the Week 1 link?
+5. Did the commissioner lock the week?
+6. Did the commissioner resolve/finalize the week?
+7. Did the commissioner share the receipt?
+8. Did the commissioner create/publish Week 2?
+
+MEMBER:
+
+9. How many eligible members viewed the Week?
+10. How many claimed their seat?
+11. How many started making picks?
+12. How many submitted at least one pick?
+13. How many completed the competition?
+14. How many viewed League Picks after lock?
+15. How many viewed final results?
+16. How many viewed the global receipt?
+17. How many returned for Week 2?
+
+RETENTION / SOCIAL:
+
+18. Week 1 participation rate
+19. Week 2 participation rate
+20. Week 1 → Week 2 returning participant rate
+21. League Picks engagement rate
+22. Receipt view rate
+23. Receipt share/copy behavior
+24. Commissioner repeat-week rate
+
+If current analytics cannot answer these questions, identify exactly what is missing.
+
+==================================================
+3. REQUIRED EVENT MODEL
+==================================================
+
+Prefer consistent names using existing project naming conventions.
+
+Target event set:
+
+`fantasy_league_created`
+
+`fantasy_members_imported`
+
+`fantasy_invite_shared`
+
+`fantasy_seat_claimed`
+
+`fantasy_week_created`
+
+`fantasy_week_published`
+
+`fantasy_week_link_shared`
+
+`fantasy_week_viewed`
+
+`fantasy_week_pick_started`
+
+`fantasy_week_pick_submitted`
+
+`fantasy_week_pick_completed`
+
+`fantasy_week_locked`
+
+`fantasy_league_picks_viewed`
+
+`fantasy_week_settlement_started`
+
+`fantasy_week_finalized`
+
+`fantasy_week_results_viewed`
+
+`fantasy_receipt_viewed`
+
+`fantasy_receipt_shared`
+
+`fantasy_receipt_link_copied`
+
+If equivalent events already exist:
+reuse them rather than creating duplicates.
+
+Do not rename working historical events unless necessary.
+
+==================================================
+4. EVENT DEFINITIONS
+==================================================
+
+Be precise.
+
+Examples:
+
+`fantasy_week_viewed`
+fires when an authorized member successfully opens a Week Swayger play/results route.
+
+Do NOT fire on failed/unauthorized route attempts.
+
+`fantasy_week_pick_started`
+fires once per competition per participant when the first competition-scope pick is saved.
+
+Do not fire repeatedly for every edit.
+
+`fantasy_week_pick_submitted`
+may fire on pick save if useful, but do not confuse this with completion.
+
+`fantasy_week_pick_completed`
+fires when the participant has answered all competition-scope Week props for the current published card.
+
+This should be idempotent per participant/week where practical.
+
+`fantasy_week_locked`
+fires when commissioner successfully locks the Week.
+
+`fantasy_week_finalized`
+fires only after successful finalization.
+
+`fantasy_league_picks_viewed`
+fires only when League Picks are actually revealed/viewable after lock.
+
+`fantasy_receipt_viewed`
+fires when the finalized Global Receipt successfully loads.
+
+`fantasy_receipt_shared`
+fires when Share action is initiated successfully according to existing platform conventions.
+
+`fantasy_receipt_link_copied`
+fires when Copy Receipt Link succeeds.
+
+==================================================
+5. STANDARD PROPERTIES
+==================================================
+
+Where applicable, events should carry:
+
+`league_id`
+`season_id`
+`week_number`
+`experience_type`
+`competition_type`
+
+Participant/viewer context:
+
+`viewer_role`
+values conceptually:
+- commissioner
+- co_commissioner
+- member
+
+`is_guest`
+boolean
+
+Competition context where useful:
+
+`eligible_count`
+`played_count`
+`waiting_count`
+`question_count`
+
+Share context where useful:
+
+`share_surface`
+examples:
+- native_share
+- copy_link
+
+Navigation/source where reliably known:
+
+`source`
+examples:
+- invite
+- reminder
+- hub
+- results
+- receipt
+- direct_link
+
+Do not fabricate source if not known.
+
+==================================================
+6. IDENTITY / PRIVACY RULES
+==================================================
+
+Do NOT send:
+
+- guest tokens
+- auth tokens
+- recovery tokens
+- claim IDs
+- email addresses
+- phone numbers
+- private receipt short codes if unnecessary
+- raw personal secrets
+
+Stable internal IDs such as:
+
+league_id
+season_id
+
+are acceptable if consistent with current analytics conventions.
+
+If user/member IDs are already handled through PostHog identify conventions:
+reuse existing identity strategy.
+
+Do not introduce a separate identity system.
+
+==================================================
+7. LEAGUE-LEVEL ANALYTICS
+==================================================
+
+We need to segment results by league.
+
+Verify that `league_id` is present on all core Week events.
+
+If not, add it.
+
+We need to be able to compare:
+
+Pilot League A
+Pilot League B
+Pilot League C
+Pilot League D
+
+without relying on names.
+
+==================================================
+8. WEEK-LEVEL ANALYTICS
+==================================================
+
+`week_number` must be present on all recurring Weekly competition events.
+
+This is critical for:
+
+Week 1 vs Week 2 retention.
+
+Do not use timestamps alone to infer the week.
+
+==================================================
+9. COMMISSIONER FUNNEL
+==================================================
+
+Make sure these successful events exist or equivalent:
+
+League Created
+→ Members Imported
+→ Week Created
+→ Week Published
+→ Week Link Shared
+→ Week Locked
+→ Week Finalized
+→ Receipt Shared
+→ Next Week Published
+
+If there is no clean existing event for any stage:
+add the smallest missing instrumentation.
+
+==================================================
+10. MEMBER FUNNEL
+==================================================
+
+Make sure these successful events exist or equivalent:
+
+Invite / Week Viewed
+→ Seat Claimed
+→ Week Viewed
+→ Pick Started
+→ Pick Completed
+→ League Picks Viewed
+→ Results Viewed
+→ Receipt Viewed
+→ Week 2 Viewed / Completed
+
+Avoid overcounting repeated page reloads.
+
+PostHog events may fire repeatedly for page views, but completion milestones should be deliberate.
+
+==================================================
+11. PARTICIPATION DEFINITIONS
+==================================================
+
+Use product/database truth where appropriate.
+
+We already have concepts like:
+
+eligible_count
+played_count
+waiting_count
+
+Do not rebuild those calculations in analytics if existing backend summary endpoints already calculate them correctly.
+
+If sending those counts with events:
+reuse backend-derived values.
+
+Define:
+
+PLAYED
+= participant has at least one saved competition-scope pick
+
+COMPLETED
+= participant answered all competition-scope weekly questions
+
+Keep these concepts separate.
+
+==================================================
+12. WEEK 1 → WEEK 2 RETENTION
+==================================================
+
+Ensure analytics can identify:
+
+same participant or PostHog user
+same league
+Week 1 activity
+Week 2 activity
+
+We should be able to determine:
+
+- Week 1 participants
+- Week 2 participants
+- returning Week 1 participants who participated again in Week 2
+
+Guest users are important.
+
+Inspect whether durable guest identity maps consistently into PostHog.
+
+If guest identity cannot be reliably followed week-to-week:
+report the limitation rather than inventing tracking.
+
+Do not change the Fantasy claim identity architecture solely for analytics.
+
+==================================================
+13. RECEIPT ANALYTICS
+==================================================
+
+Task #62/#63 introduced Global Draft Day Receipt and share behavior.
+
+Audit existing receipt events.
+
+We eventually need equivalent Weekly receipt events, but DO NOT build Weekly receipt functionality during this task.
+
+For existing receipt surfaces make sure we can distinguish:
+
+`competition_type`
+or
+`experience_type`
+
+so Draft Day receipt activity does not get confused with Weekly receipt activity later.
+
+==================================================
+14. SHORT LINK ANALYTICS
+==================================================
+
+Task #63 added short receipt aliases.
+
+If a safe existing analytics convention exists:
+capture short-link opened.
+
+Do not expose private short codes unnecessarily.
+
+A property such as:
+
+destination_type = draft_day_receipt
+
+is sufficient if code itself is not useful.
+
+Do not make this a blocker for Weekly pilot analytics.
+
+==================================================
+15. ANALYTICS RELIABILITY
+==================================================
+
+For every proposed event, verify whether it fires:
+
+- before action
+- after successful action
+- on failure
+- more than once
+
+Prefer successful milestone events AFTER server confirmation.
+
+Examples:
+
+Do not capture `fantasy_week_published`
+before publish API success.
+
+Do not capture `fantasy_week_finalized`
+before finalize succeeds.
+
+==================================================
+16. DUPLICATION AUDIT
+==================================================
+
+Look for:
+
+- duplicate capture calls
+- multiple page mounts
+- React rerenders causing repeated milestone events
+- guest/account upgrade causing double events
+- repeated `useEffect` page-view events
+
+Do not over-engineer dedupe for normal page views.
+
+Do fix obvious milestone duplication.
+
+==================================================
+17. ADD ONLY MISSING EVENTS
+==================================================
+
+After auditing:
+
+categorize events:
+
+A. EXISTING + GOOD
+B. EXISTING BUT MISSING PROPERTIES
+C. MISSING — ADD
+D. NOT NEEDED FOR PILOT
+
+Only implement B and C.
+
+Do not add instrumentation merely because it might be useful someday.
+
+==================================================
+18. POSTHOG DASHBOARD SUPPORT
+==================================================
+
+The final event/property model should support dashboards for:
+
+A. Pilot League Health
+B. Commissioner Funnel
+C. Member Funnel
+D. Week 1 → Week 2 Retention
+E. Social/Receipt Engagement
+
+Do NOT configure PostHog itself.
+
+Return exact dashboard/filter instructions for me to configure manually.
+
+==================================================
+19. TESTS
+==================================================
+
+Add lightweight tests where practical for:
+
+- event helper names
+- required property presence
+- no token leakage
+- successful-action timing
+- completion detection
+- guest/member role properties
+
+Do not create brittle tests around PostHog network requests if the project does not already use that pattern.
+
+==================================================
+20. REGRESSION
+==================================================
+
+Run:
+
+- Fantasy setup
+- claims
+- weekly setup/publish
+- weekly play
+- lock
+- League Picks
+- finalization
+- receipt/share analytics where touched
+- existing PostHog helpers
+
+Then run:
+server build
+web export
+targeted lint
+
+Return exact totals.
+
+==================================================
+21. IMPORTANT — NO PRODUCT CHANGES
+==================================================
+
+Do NOT change:
+
+- scoring
+- settlement
+- weekly questions
+- membership
+- claims
+- commissioner permissions
+- UI behavior
+- receipt content
+- league setup behavior
+
+This is instrumentation only.
+
+==================================================
+22. RETURN
+==================================================
+
+Return:
+
+# SWAYGER FANTASY PILOT ANALYTICS AUDIT REPORT
+
+1. Existing Fantasy events
+2. Existing event properties
+3. Commissioner funnel coverage
+4. Member funnel coverage
+5. Retention coverage
+6. Guest identity tracking
+7. Receipt/share coverage
+8. Missing events
+9. Missing properties
+10. Duplicate/unreliable events found
+11. Instrumentation changes made
+12. Files changed
+13. Tests added
+14. Regression totals
+15. Privacy/security review
+16. Known analytics limitations
+17. Exact PostHog dashboard setup instructions
+18. Exact pilot metrics we will be able to answer
+
+Then STOP.
+
+Do not begin another feature.
+
+Final status:
+
+SWAYGER FANTASY PILOT ANALYTICS READY
+
+or
+
+ANALYTICS GAPS REMAIN

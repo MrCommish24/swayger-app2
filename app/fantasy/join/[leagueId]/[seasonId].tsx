@@ -45,6 +45,7 @@ import {
 } from "@/lib/fantasy-api";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -173,7 +174,7 @@ export default function JoinLeagueScreen() {
           ? { session }
           : { guestToken: guestToken! };
 
-      await fantasyFetch<ClaimSeatResponse>(
+      const claimResult = await fantasyFetch<ClaimSeatResponse>(
         `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/claim`,
         {
           method: "POST",
@@ -181,6 +182,17 @@ export default function JoinLeagueScreen() {
         },
         auth
       );
+      if (!claimResult.already_existed) {
+        Analytics.fantasySeatClaimed({
+         league_id: leagueId,
+         season_id: seasonId,
+         ...(weekNumber ? { week_number: weekNumber } : {}),
+         experience_type: weekNumber ? "weekly" : "draft_day",
+         competition_type: weekNumber ? "weekly" : "draft_day",
+         viewer_role: selectedSeat.role,
+         is_guest: !session,
+        });
+      }
       // After a successful guest claim, upgrade nudge flow:
       //   • Week-context (wn set)    → show inline upgrade nudge, pendingDest = Week N play
       //   • No week context          → route to hub with ?joined=1 so the hub welcome

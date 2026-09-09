@@ -35,6 +35,7 @@ import {
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 import { AnswerSelector } from "@/components/fantasy/AnswerSelector";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -57,6 +58,10 @@ export default function WeeklyPlayScreen() {
   const [picks, setPicks]           = useState<Record<string, string>>({});
   // propId → "saving" | "saved" | "error"
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
+  const hasTrackedWeekView = useRef(false);
+  const hasTrackedPickStarted = useRef(false);
+  const hasTrackedPickCompleted = useRef(false);
+  const confirmedPicksRef = useRef<Record<string, string>>({});
 
   const auth = session ? { session } : guestToken ? { guestToken } : {};
 
@@ -69,6 +74,25 @@ export default function WeeklyPlayScreen() {
       const data = await getWeeklyPlay(leagueId, seasonId, wn, auth);
       setState(data);
       setPicks(data.my_picks ?? {});
+      confirmedPicksRef.current = data.my_picks ?? {};
+      hasTrackedPickStarted.current = Object.keys(data.my_picks ?? {}).length > 0;
+      hasTrackedPickCompleted.current =
+        data.props.length > 0 && data.props.every((prop) => Boolean(data.my_picks?.[prop.id]));
+      if (!hasTrackedWeekView.current) {
+        hasTrackedWeekView.current = true;
+        Analytics.fantasyWeekViewed({
+          league_id: leagueId,
+          season_id: seasonId,
+          week_number: wn,
+          experience_type: "weekly",
+          competition_type: "weekly",
+          viewer_role: "member",
+          is_guest: !session,
+        }, {
+          question_count: data.props.length,
+          pick_count: Object.keys(data.my_picks ?? {}).length,
+        });
+      }
       setErrorIsNonMember(false);
     } catch (e: any) {
       const msg: string = e.message ?? "Failed to load Week picks";
@@ -95,6 +119,39 @@ export default function WeeklyPlayScreen() {
     try {
       await submitWeeklyPick(leagueId, seasonId, wn, propId, answerId, auth);
       setPickStatus(prev => ({ ...prev, [propId]: "saved" }));
+      const nextPicks = { ...confirmedPicksRef.current, [propId]: answerId };
+      confirmedPicksRef.current = nextPicks;
+      const context = {
+        league_id: leagueId,
+        season_id: seasonId,
+        week_number: wn,
+        experience_type: "weekly" as const,
+        competition_type: "weekly" as const,
+        viewer_role: "member" as const,
+        is_guest: !session,
+      };
+      if (!hasTrackedPickStarted.current) {
+        hasTrackedPickStarted.current = true;
+        Analytics.fantasyWeekPickStarted(context, {
+          question_count: state.props.length,
+          pick_count: Object.keys(nextPicks).length,
+        });
+      }
+      Analytics.fantasyWeekPickSubmitted(context, {
+        question_count: state.props.length,
+        pick_count: Object.keys(nextPicks).length,
+      });
+      if (
+        !hasTrackedPickCompleted.current &&
+        state.props.length > 0 &&
+        state.props.every((prop) => Boolean(nextPicks[prop.id]))
+      ) {
+        hasTrackedPickCompleted.current = true;
+        Analytics.fantasyWeekPickCompleted(context, {
+          question_count: state.props.length,
+          pick_count: Object.keys(nextPicks).length,
+        });
+      }
     } catch (e: any) {
       // Revert to previous pick
       setPicks(prev => {

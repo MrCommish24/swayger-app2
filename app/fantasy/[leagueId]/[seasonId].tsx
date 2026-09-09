@@ -60,6 +60,7 @@ import {
   SeasonStandings,
 } from "@/lib/fantasy-api";
 import { FantasyInviteSheet } from "@/components/fantasy/FantasyInviteSheet";
+import { Analytics } from "@/lib/posthog";
 
 // ── Phase 5.3: Commissioner next-action helper ────────────────────────────────
 // Derives the single most important commissioner action from current hub state.
@@ -1105,7 +1106,17 @@ export default function LeagueHubScreen() {
     if (!leagueId || !seasonId) return;
     try {
       const url = buildInviteUrl(leagueId, seasonId);
-      await Share.share({ message: `Join my fantasy league on Swayger! ${url}`, url });
+      const shareResult = await Share.share({ message: `Join my fantasy league on Swayger! ${url}`, url });
+      if (shareResult.action !== Share.dismissedAction && detail) {
+        Analytics.fantasyInviteShared({
+          league_id: leagueId,
+          season_id: seasonId,
+          experience_type: "draft_day",
+          competition_type: "draft_day",
+          viewer_role: detail.viewer?.role,
+          is_guest: false,
+        }, { share_method: "system" });
+      }
     } catch { /* user cancelled */ }
   };
 
@@ -1603,7 +1614,22 @@ export default function LeagueHubScreen() {
                         setWeeklyLockError(null);
                         setLockingWeekly(true);
                         try {
-                          await lockWeekly(leagueId, seasonId, wn, { session });
+                          const lockResult = await lockWeekly(leagueId, seasonId, wn, { session });
+                          if (!lockResult.already_locked) {
+                            Analytics.fantasyWeekLocked({
+                              league_id: leagueId,
+                              season_id: seasonId,
+                              week_number: wn,
+                              experience_type: "weekly",
+                              competition_type: "weekly",
+                              viewer_role: detail?.viewer?.role,
+                              is_guest: false,
+                            }, {
+                              already_locked: false,
+                              played_count: cw.played_count ?? 0,
+                              eligible_count: cw.eligible_count ?? 0,
+                            });
+                          }
                           setWeeklySummary((prev) => prev && prev.current_week ? {
                             ...prev,
                             current_week: { ...prev.current_week, card_status: "locked" as const },
@@ -1639,7 +1665,21 @@ export default function LeagueHubScreen() {
                         setWeeklyFinalizeError(null);
                         setFinalizingWeekly(true);
                         try {
-                          await finalizeWeekly(leagueId, seasonId, wn, { session });
+                           const finalizeResult = await finalizeWeekly(leagueId, seasonId, wn, { session });
+                           if (!finalizeResult.already_finalized) {
+                             Analytics.fantasyWeekFinalized({
+                            league_id: leagueId,
+                            season_id: seasonId,
+                            week_number: wn,
+                            experience_type: "weekly",
+                            competition_type: "weekly",
+                            viewer_role: detail?.viewer?.role,
+                            is_guest: false,
+                          }, {
+                            resolved_count: cw.settled_count ?? 0,
+                            finalized_successfully: true,
+                             });
+                           }
                           fetchDetail(true);
                         } catch (e: any) {
                           setWeeklyFinalizeError(e.message?.includes("unsettled")
@@ -1657,7 +1697,18 @@ export default function LeagueHubScreen() {
                           ? `Week ${wn} Swayger is live 🏈\n\nDraft Day is over. Now let's see who really knows this league.\n\nMake your picks before they lock:\n\n${url}`
                           : `Week ${wn} Swayger is live 🏈\n\nThink you know our league better than everyone else?\n\nMake your Week ${wn} picks before they lock.\n\n${url}`;
                         try {
-                          await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                           const shareResult = await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                           if (shareResult.action !== Share.dismissedAction) {
+                             Analytics.fantasyWeekLinkShared({
+                            league_id: leagueId,
+                            season_id: seasonId,
+                            week_number: wn,
+                            experience_type: "weekly",
+                            competition_type: "weekly",
+                            viewer_role: detail?.viewer?.role,
+                            is_guest: false,
+                             }, { share_method: "system", reminder: false });
+                           }
                         } catch { }
                       }}
                       onShareReminder={async () => {
@@ -1666,12 +1717,32 @@ export default function LeagueHubScreen() {
                         const people  = waiting === 1 ? "person hasn't" : "people haven't";
                         const message = `Week ${wn} Swayger reminder 👀\n\n${waiting} ${people} made their picks.\n\nStill time to make your Week ${wn} picks:\n\n${url}`;
                         try {
-                          await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                           const shareResult = await Share.share(Platform.OS === "ios" ? { message, url } : { message });
+                           if (shareResult.action !== Share.dismissedAction) {
+                             Analytics.fantasyWeekLinkShared({
+                            league_id: leagueId,
+                            season_id: seasonId,
+                            week_number: wn,
+                            experience_type: "weekly",
+                            competition_type: "weekly",
+                            viewer_role: detail?.viewer?.role,
+                            is_guest: false,
+                             }, { share_method: "system", reminder: true });
+                           }
                         } catch { }
                       }}
                       onCopyLink={async () => {
                         const url = buildWeekUrl(leagueId, seasonId, wn);
                         await Clipboard.setStringAsync(url);
+                        Analytics.fantasyWeekLinkShared({
+                          league_id: leagueId,
+                          season_id: seasonId,
+                          week_number: wn,
+                          experience_type: "weekly",
+                          competition_type: "weekly",
+                          viewer_role: detail?.viewer?.role,
+                          is_guest: false,
+                        }, { share_method: "clipboard", reminder: false });
                       }}
                       onShowQR={() => {
                         setWeeklyQRUrl(buildWeekUrl(leagueId, seasonId, wn));

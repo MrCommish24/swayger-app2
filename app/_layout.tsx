@@ -160,7 +160,7 @@ function RootLayoutNav() {
         } catch (_) {}
         registerOneSignalUser(session.user.id);
       }
-      identifyUser(session.user.id, { email: session.user.email });
+      identifyUser(session.user.id);
     } else {
       resetUser();
       if (Platform.OS === "web") {
@@ -171,16 +171,14 @@ function RootLayoutNav() {
     }
   }, [session?.user?.id]);
 
-  // Re-identify once the profile loads so PostHog gets username + display name.
+  // Re-identify once the profile loads without sending email or other contact data.
   // This merges the anonymous pre-session events with the real person profile.
   useEffect(() => {
     if (session?.user?.id && profile) {
       identifyUser(session.user.id, {
-        email: session.user.email,
         username: profile.username,
         display_name: profile.display_name ?? profile.username,
         $name: profile.display_name ?? profile.username,
-        $email: session.user.email,
       });
       if (Platform.OS === "web") {
         // Store username so page-load OneSignal path can tag the user

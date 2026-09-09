@@ -42,6 +42,7 @@ import {
 } from "@/lib/fantasy-api";
 import { parsePasteText } from "@/lib/bulk-import-parser";
 import Colors from "@/constants/colors";
+import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -102,6 +103,8 @@ export default function FantasySetupScreen() {
 
   // ── Result ──────────────────────────────────────────────────────────────────
   const [setupResult, setSetupResult] = useState<SetupLeagueResponse | null>(null);
+  const leagueCreatedTracked = useRef(false);
+  const membersImportedTracked = useRef(false);
 
   // ── Derived validity ─────────────────────────────────────────────────────────
   const step0Valid = leagueName.trim().length > 0 && displayName.trim().length > 0;
@@ -270,6 +273,18 @@ export default function FantasySetupScreen() {
           { session }
         );
         setSetupResult(setup);
+        if (!leagueCreatedTracked.current) {
+          const context: FantasyAnalyticsContext = {
+            league_id: setup.league_id,
+            season_id: setup.season_id,
+            experience_type: "draft_day",
+            competition_type: "draft_day",
+            viewer_role: "commissioner",
+            is_guest: false,
+          };
+          Analytics.fantasyLeagueCreated(context, { participant_count: participants.length });
+          leagueCreatedTracked.current = true;
+        }
       }
 
       // 2. Add non-commissioner participants only.
@@ -278,6 +293,7 @@ export default function FantasySetupScreen() {
       // commissioner — that was the source of the partial-state gap.
       const nonCommissioners = participants.filter((p) => !p.isCommissioner);
 
+      let createdMemberCount = 0;
       for (const p of nonCommissioners) {
         let idempotencyKey = participantIdempotencyKeys.current.get(p.id);
         if (!idempotencyKey) {
@@ -287,7 +303,7 @@ export default function FantasySetupScreen() {
               : `fantasy-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
           participantIdempotencyKeys.current.set(p.id, idempotencyKey);
         }
-        await fantasyFetch(
+        const participantResult = await fantasyFetch<{ already_exists: boolean }>(
           `/api/fantasy/leagues/${setup.league_id}/seasons/${setup.season_id}/participants`,
           {
             method: "POST",
@@ -299,6 +315,24 @@ export default function FantasySetupScreen() {
           },
           { session }
         );
+        if (!participantResult.already_exists) createdMemberCount += 1;
+      }
+
+      if (!membersImportedTracked.current && createdMemberCount > 0) {
+        const context: FantasyAnalyticsContext = {
+          league_id: setup.league_id,
+          season_id: setup.season_id,
+          experience_type: "draft_day",
+          competition_type: "draft_day",
+          viewer_role: "commissioner",
+          is_guest: false,
+        };
+        Analytics.fantasyMembersImported(context, {
+          member_count: createdMemberCount,
+          total_member_count: participants.length,
+          replayed_count: nonCommissioners.length - createdMemberCount,
+        });
+        membersImportedTracked.current = true;
       }
 
       setStep(4);

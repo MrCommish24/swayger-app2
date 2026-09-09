@@ -29,6 +29,7 @@ import {
   DraftDaySettlementLeaderboardEntry,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -56,6 +57,8 @@ export default function WeeklySettleScreen() {
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   // local correct answers (updated optimistically)
   const [localAnswers, setLocalAnswers] = useState<Record<string, string[]>>({});
+  const settlementStartedTracked = React.useRef(false);
+  const finalizedTracked = React.useRef(false);
 
   const auth = session ? { session } : {};
 
@@ -86,6 +89,22 @@ export default function WeeklySettleScreen() {
     setSettling(prev => ({ ...prev, [propId]: true }));
     try {
       const response = await settleWeeklyProp(leagueId, seasonId, wn, propId, answerIds, { session });
+      if (!response.idempotent && !response.was_correction && !settlementStartedTracked.current) {
+        const context: FantasyAnalyticsContext = {
+          league_id: leagueId,
+          season_id: seasonId,
+          week_number: wn,
+          experience_type: "weekly",
+          competition_type: "weekly",
+          viewer_role: "commissioner",
+          is_guest: false,
+        };
+        Analytics.fantasyWeekSettlementStarted(context, {
+          prop_count: data?.competition_props.length ?? 0,
+          resolved_count: 1,
+        });
+        settlementStartedTracked.current = true;
+      }
       setLocalAnswers(prev => ({ ...prev, [propId]: response.correct_answer_ids ?? answerIds }));
       // Refresh to get updated leaderboard
       const d = await getWeeklySettlement(leagueId, seasonId, wn, { session });
@@ -108,7 +127,23 @@ export default function WeeklySettleScreen() {
     setFinalizeError(null);
     setFinalizing(true);
     try {
-      await finalizeWeekly(leagueId, seasonId, wn, { session });
+      const finalizeResult = await finalizeWeekly(leagueId, seasonId, wn, { session });
+      if (!finalizeResult.already_finalized && !finalizedTracked.current) {
+        const context: FantasyAnalyticsContext = {
+          league_id: leagueId,
+          season_id: seasonId,
+          week_number: wn,
+          experience_type: "weekly",
+          competition_type: "weekly",
+          viewer_role: "commissioner",
+          is_guest: false,
+        };
+        Analytics.fantasyWeekFinalized(context, {
+          resolved_count: Object.keys(localAnswers).length,
+          finalized_successfully: true,
+        });
+        finalizedTracked.current = true;
+      }
       goToHub(router, leagueId, seasonId);
     } catch (e: any) {
       setFinalizeError(e.message ?? "Failed to finalize. Please try again.");

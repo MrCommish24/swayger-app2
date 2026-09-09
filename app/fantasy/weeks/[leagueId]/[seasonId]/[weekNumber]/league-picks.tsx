@@ -30,6 +30,7 @@ import {
 } from "@/lib/fantasy-api";
 import { LeaguePicks } from "@/components/fantasy/LeaguePicks";
 import Colors from "@/constants/colors";
+import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -48,6 +49,7 @@ export default function WeeklyLeaguePicksScreen() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
+  const hasTrackedView = React.useRef(false);
 
   const auth = session ? { session } : guestToken ? { guestToken } : {};
 
@@ -64,6 +66,21 @@ export default function WeeklyLeaguePicksScreen() {
         return;
       }
       setData(resp);
+       if (!hasTrackedView.current) {
+         hasTrackedView.current = true;
+         Analytics.fantasyLeaguePicksViewed({
+           league_id: leagueId,
+           season_id: seasonId,
+           week_number: wn,
+           experience_type: "weekly",
+           competition_type: "weekly",
+           viewer_role: "member",
+           is_guest: !session,
+          }, {
+           question_count: resp.props.length,
+           pick_count: resp.props.reduce((sum, prop) => sum + prop.total_picks, 0),
+         });
+       }
     } catch (e: any) {
       setError(e.message ?? "Failed to load League Picks");
     } finally {
