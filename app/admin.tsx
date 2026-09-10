@@ -201,6 +201,18 @@ const IMPACT_REVIEW_AD_TYPES: { value: ImpactReviewAdType | null; label: string 
   { value: "BANNER", label: "Banners" },
   { value: "COUPON", label: "Coupons" },
 ];
+const IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS = 30;
+const IMPACT_REVIEW_KEYWORD_MAX_LENGTH = 100;
+
+function normalizeImpactReviewAdType(value: unknown): ImpactReviewAdType | null {
+  return value === "TEXT_LINK" || value === "BANNER" || value === "COUPON"
+    ? value
+    : null;
+}
+
+function normalizeImpactReviewKeyword(value: string): string {
+  return value.trim().slice(0, IMPACT_REVIEW_KEYWORD_MAX_LENGTH);
+}
 
 function formatImpactDate(value: string | null) {
   if (!value) return null;
@@ -566,12 +578,23 @@ export default function AdminScreen() {
     setImpactReviewError(null);
     try {
       const url = new URL("/api/admin/impact/review", getApiUrl());
-      if (nextAdType) url.searchParams.set("ad_type", nextAdType);
-      if (nextKeyword.trim()) url.searchParams.set("keyword", nextKeyword.trim());
+      const safeAdType = normalizeImpactReviewAdType(nextAdType);
+      const safeKeyword = normalizeImpactReviewKeyword(nextKeyword);
+      url.searchParams.set("updated_within_days", String(IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS));
+      if (safeAdType) url.searchParams.set("ad_type", safeAdType);
+      if (safeKeyword) url.searchParams.set("keyword", safeKeyword);
       const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
       const json = await res.json();
       if (!res.ok || !json.ok) {
-        setImpactReviewError(json.error ?? "Could not load Impact review.");
+        if (res.status === 400 || json.code === "IMPACT_REVIEW_QUERY_INVALID") {
+          setImpactReviewError(`Review filter error: ${json.error ?? "Choose a supported ad type and a keyword of 100 characters or fewer."}`);
+        } else if (json.code === "IMPACT_PROVIDER_ERROR" || res.status >= 502) {
+          setImpactReviewError(`Impact provider error: ${json.error ?? "Impact could not return the review inventory."}`);
+        } else if (res.status === 401) {
+          setImpactReviewError("Admin authorization expired. Unlock the admin screen again.");
+        } else {
+          setImpactReviewError(json.error ?? "Could not load Impact review.");
+        }
         return;
       }
       setImpactReview(json as ImpactReviewResponse);
@@ -1510,11 +1533,12 @@ export default function AdminScreen() {
           <TextInput
             style={[styles.input, styles.impactKeywordInput]}
             value={impactKeyword}
-            onChangeText={setImpactKeyword}
+            onChangeText={(value) => setImpactKeyword(value.slice(0, IMPACT_REVIEW_KEYWORD_MAX_LENGTH))}
             placeholder="Filter name or deal text"
             placeholderTextColor={Colors.dark.tabIconDefault}
             autoCapitalize="none"
             autoCorrect={false}
+            maxLength={IMPACT_REVIEW_KEYWORD_MAX_LENGTH}
             onSubmitEditing={() => savedToken && loadImpactReview(savedToken)}
           />
           <Pressable

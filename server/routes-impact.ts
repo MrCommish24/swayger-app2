@@ -22,6 +22,8 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 
 const IMPACT_AD_TYPES = new Set<ImpactAdType>(["TEXT_LINK", "BANNER", "COUPON"]);
+const IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS = 30;
+const IMPACT_REVIEW_KEYWORD_MAX_LENGTH = 100;
 
 function queryString(value: unknown): string | null {
   return typeof value === "string" ? value.trim() || null : null;
@@ -31,21 +33,30 @@ function parseReviewOptions(req: Request): {
   adType: ImpactAdType | null;
   keyword: string | null;
   updatedWithinDays: number;
-} | { error: string } {
+} | { error: string; code: "IMPACT_REVIEW_QUERY_INVALID" } {
   const rawAdType = queryString(req.query.ad_type);
   if (rawAdType && !IMPACT_AD_TYPES.has(rawAdType as ImpactAdType)) {
-    return { error: "ad_type must be TEXT_LINK, BANNER, or COUPON." };
+    return {
+      error: "ad_type must be TEXT_LINK, BANNER, or COUPON.",
+      code: "IMPACT_REVIEW_QUERY_INVALID",
+    };
   }
 
   const rawDays = queryString(req.query.updated_within_days);
-  const updatedWithinDays = rawDays ? Number(rawDays) : 30;
+  const updatedWithinDays = rawDays ? Number(rawDays) : IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS;
   if (!Number.isInteger(updatedWithinDays) || updatedWithinDays < 1 || updatedWithinDays > 90) {
-    return { error: "updated_within_days must be an integer from 1 to 90." };
+    return {
+      error: "updated_within_days must be an integer from 1 to 90.",
+      code: "IMPACT_REVIEW_QUERY_INVALID",
+    };
   }
 
   const keyword = queryString(req.query.keyword);
-  if (keyword && keyword.length > 100) {
-    return { error: "keyword must be 100 characters or fewer." };
+  if (keyword && keyword.length > IMPACT_REVIEW_KEYWORD_MAX_LENGTH) {
+    return {
+      error: `keyword must be ${IMPACT_REVIEW_KEYWORD_MAX_LENGTH} characters or fewer.`,
+      code: "IMPACT_REVIEW_QUERY_INVALID",
+    };
   }
 
   return {
@@ -151,7 +162,7 @@ export function registerImpactRoutes(app: Express): void {
 
     const options = parseReviewOptions(req);
     if ("error" in options) {
-      res.status(400).json({ ok: false, error: options.error });
+      res.status(400).json({ ok: false, error: options.error, code: options.code });
       return;
     }
 

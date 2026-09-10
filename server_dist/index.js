@@ -16861,22 +16861,33 @@ function requireAdmin3(req, res2) {
   return true;
 }
 var IMPACT_AD_TYPES = /* @__PURE__ */ new Set(["TEXT_LINK", "BANNER", "COUPON"]);
+var IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS = 30;
+var IMPACT_REVIEW_KEYWORD_MAX_LENGTH = 100;
 function queryString(value) {
   return typeof value === "string" ? value.trim() || null : null;
 }
 function parseReviewOptions(req) {
   const rawAdType = queryString(req.query.ad_type);
   if (rawAdType && !IMPACT_AD_TYPES.has(rawAdType)) {
-    return { error: "ad_type must be TEXT_LINK, BANNER, or COUPON." };
+    return {
+      error: "ad_type must be TEXT_LINK, BANNER, or COUPON.",
+      code: "IMPACT_REVIEW_QUERY_INVALID"
+    };
   }
   const rawDays = queryString(req.query.updated_within_days);
-  const updatedWithinDays = rawDays ? Number(rawDays) : 30;
+  const updatedWithinDays = rawDays ? Number(rawDays) : IMPACT_REVIEW_DEFAULT_UPDATED_WITHIN_DAYS;
   if (!Number.isInteger(updatedWithinDays) || updatedWithinDays < 1 || updatedWithinDays > 90) {
-    return { error: "updated_within_days must be an integer from 1 to 90." };
+    return {
+      error: "updated_within_days must be an integer from 1 to 90.",
+      code: "IMPACT_REVIEW_QUERY_INVALID"
+    };
   }
   const keyword = queryString(req.query.keyword);
-  if (keyword && keyword.length > 100) {
-    return { error: "keyword must be 100 characters or fewer." };
+  if (keyword && keyword.length > IMPACT_REVIEW_KEYWORD_MAX_LENGTH) {
+    return {
+      error: `keyword must be ${IMPACT_REVIEW_KEYWORD_MAX_LENGTH} characters or fewer.`,
+      code: "IMPACT_REVIEW_QUERY_INVALID"
+    };
   }
   return {
     adType: rawAdType,
@@ -16969,7 +16980,7 @@ function registerImpactRoutes(app2) {
     if (!requireAdmin3(req, res2)) return;
     const options = parseReviewOptions(req);
     if ("error" in options) {
-      res2.status(400).json({ ok: false, error: options.error });
+      res2.status(400).json({ ok: false, error: options.error, code: options.code });
       return;
     }
     try {
