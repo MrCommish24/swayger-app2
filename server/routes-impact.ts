@@ -3,6 +3,7 @@ import {
   ImpactAuthenticationError,
   ImpactConfigurationError,
   ImpactProviderError,
+  getImpactInventory,
   listJoinedImpactPrograms,
 } from "./impact-client";
 
@@ -62,6 +63,49 @@ export function registerImpactRoutes(app: Express): void {
         ok: false,
         error: "Impact request failed.",
         code: "IMPACT_REQUEST_FAILED",
+      });
+    }
+  });
+
+  app.get("/api/admin/impact/inventory", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+
+    try {
+      const inventory = await getImpactInventory();
+      res.json({ ok: true, ...inventory });
+    } catch (error) {
+      if (error instanceof ImpactConfigurationError) {
+        res.status(503).json({
+          ok: false,
+          error: "Impact integration is not configured.",
+          code: error.code,
+        });
+        return;
+      }
+
+      if (error instanceof ImpactAuthenticationError) {
+        res.status(502).json({
+          ok: false,
+          error: "Impact authentication failed.",
+          code: error.code,
+        });
+        return;
+      }
+
+      if (error instanceof ImpactProviderError) {
+        res.status(error.status === 504 ? 504 : 502).json({
+          ok: false,
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+
+      console.error("[impact] inventory request failed");
+      res.status(502).json({
+        ok: false,
+        error: "Impact inventory request failed.",
+        code: "IMPACT_INVENTORY_REQUEST_FAILED",
       });
     }
   });
