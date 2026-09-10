@@ -16418,6 +16418,140 @@ function registerFantasyRoutes(app2) {
   );
 }
 
+// server/impact-client.ts
+var IMPACT_API_BASE_URL = "https://api.impact.com";
+var IMPACT_REQUEST_TIMEOUT_MS = 1e4;
+var ImpactConfigurationError = class extends Error {
+  code = "IMPACT_NOT_CONFIGURED";
+};
+var ImpactAuthenticationError = class extends Error {
+  code = "IMPACT_AUTHENTICATION_FAILED";
+};
+var ImpactProviderError = class extends Error {
+  code = "IMPACT_PROVIDER_ERROR";
+  status;
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+};
+function asNullableString(value) {
+  return typeof value === "string" ? value : value == null ? null : String(value);
+}
+function getImpactConfiguration() {
+  const accountSid = process.env.IMPACT_ACCOUNT_SID?.trim();
+  const accessToken = process.env.IMPACT_API_ACCESS_TOKEN?.trim();
+  if (!accountSid || !accessToken) {
+    throw new ImpactConfigurationError(
+      "Impact account credentials are not configured."
+    );
+  }
+  return { accountSid, accessToken };
+}
+async function listJoinedImpactPrograms() {
+  const { accountSid, accessToken } = getImpactConfiguration();
+  const endpoint = `${IMPACT_API_BASE_URL}/Mediapartners/${encodeURIComponent(accountSid)}/Campaigns`;
+  const authorization = Buffer.from(`${accountSid}:${accessToken}`).toString("base64");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMPACT_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Basic ${authorization}`
+      },
+      signal: controller.signal
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new ImpactAuthenticationError("Impact rejected the configured credentials.");
+    }
+    if (!response.ok) {
+      throw new ImpactProviderError(
+        `Impact returned an upstream error (${response.status}).`,
+        response.status
+      );
+    }
+    const payload = await response.json();
+    const campaigns = Array.isArray(payload.Campaigns) ? payload.Campaigns : [];
+    return campaigns.map((campaign) => {
+      const row = campaign && typeof campaign === "object" ? campaign : {};
+      return {
+        program_id: asNullableString(row.CampaignId),
+        program_name: asNullableString(row.CampaignName),
+        brand_id: asNullableString(row.AdvertiserId),
+        brand_name: asNullableString(row.AdvertiserName),
+        status: asNullableString(row.ContractStatus)
+      };
+    });
+  } catch (error) {
+    if (error instanceof ImpactConfigurationError || error instanceof ImpactAuthenticationError || error instanceof ImpactProviderError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ImpactProviderError("Impact request timed out.", 504);
+    }
+    throw new ImpactProviderError("Impact request failed.", 502);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// server/routes-impact.ts
+function requireAdmin3(req, res2) {
+  const configuredToken = process.env.MM_ADMIN_TOKEN;
+  const requestToken = req.headers["x-admin-token"];
+  if (!configuredToken || requestToken !== configuredToken) {
+    res2.status(401).json({ ok: false, error: "Unauthorized" });
+    return false;
+  }
+  return true;
+}
+function registerImpactRoutes(app2) {
+  app2.get("/api/admin/impact/joined-programs", async (req, res2) => {
+    if (!requireAdmin3(req, res2)) return;
+    try {
+      const programs = await listJoinedImpactPrograms();
+      res2.json({
+        ok: true,
+        count: programs.length,
+        programs
+      });
+    } catch (error) {
+      if (error instanceof ImpactConfigurationError) {
+        res2.status(503).json({
+          ok: false,
+          error: "Impact integration is not configured.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactAuthenticationError) {
+        res2.status(502).json({
+          ok: false,
+          error: "Impact authentication failed.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactProviderError) {
+        res2.status(error.status === 504 ? 504 : 502).json({
+          ok: false,
+          error: error.message,
+          code: error.code
+        });
+        return;
+      }
+      console.error("[impact] joined-programs request failed");
+      res2.status(502).json({
+        ok: false,
+        error: "Impact request failed.",
+        code: "IMPACT_REQUEST_FAILED"
+      });
+    }
+  });
+}
+
 // server/routes.ts
 function getSupabase4() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -16627,6 +16761,7 @@ async function registerRoutes(app2) {
   registerPropsRoutes(app2);
   registerGamedayRoutes(app2);
   registerFantasyRoutes(app2);
+  registerImpactRoutes(app2);
   const httpServer = createServer(app2);
   return httpServer;
 }
