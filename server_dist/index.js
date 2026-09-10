@@ -16793,6 +16793,9 @@ function impactRowMatchesKeyword(row, keyword) {
     row.DealDescription
   ].some((value) => asNullableString(value)?.toLowerCase().includes(normalizedKeyword));
 }
+function formatImpactAdsDateFilter(value) {
+  return value.toISOString().replace(/\.\d{3}Z$/, "+00:00");
+}
 async function getImpactReview(options = {}) {
   const fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
   const updatedWithinDays = options.updatedWithinDays ?? 30;
@@ -16803,10 +16806,10 @@ async function getImpactReview(options = {}) {
     (program) => program.program_id && program.status?.toLowerCase() === "active"
   );
   const now = Date.now();
-  const updatedDateStart = new Date(
+  const updatedDateStart = formatImpactAdsDateFilter(new Date(
     now - updatedWithinDays * 24 * 60 * 60 * 1e3
-  ).toISOString();
-  const updatedDateEnd = new Date(now).toISOString();
+  ));
+  const updatedDateEnd = formatImpactAdsDateFilter(new Date(now));
   const totals = { deals: 0, ads: 0, creatives: 0 };
   const reviewPrograms = [];
   for (const program of activePrograms) {
