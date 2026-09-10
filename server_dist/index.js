@@ -16421,6 +16421,8 @@ function registerFantasyRoutes(app2) {
 // server/impact-client.ts
 var IMPACT_API_BASE_URL = "https://api.impact.com";
 var IMPACT_REQUEST_TIMEOUT_MS = 1e4;
+var IMPACT_INVENTORY_PAGE_SIZE = 50;
+var IMPACT_INVENTORY_MAX_PAGES = 100;
 var ImpactConfigurationError = class extends Error {
   code = "IMPACT_NOT_CONFIGURED";
 };
@@ -16436,7 +16438,45 @@ var ImpactProviderError = class extends Error {
   }
 };
 function asNullableString(value) {
-  return typeof value === "string" ? value : value == null ? null : String(value);
+  if (value == null) return null;
+  const stringValue = typeof value === "string" ? value : String(value);
+  return stringValue.trim() ? stringValue : null;
+}
+function asNullableNumber(value) {
+  if (value == null || value === "") return null;
+  const numberValue = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function readCollection(payload, key) {
+  const value = payload[key];
+  return Array.isArray(value) ? value.map(asRecord) : [];
+}
+function readMetaNumber(payload, key) {
+  const value = asNullableNumber(payload[key]);
+  return value == null ? null : Math.max(0, Math.floor(value));
+}
+function withPagination(path6, page) {
+  const separator = path6.includes("?") ? "&" : "?";
+  return `${path6}${separator}PageSize=${IMPACT_INVENTORY_PAGE_SIZE}&Page=${page}`;
+}
+function normalizeDate2(value) {
+  return asNullableString(value);
+}
+function normalizeStatus(value) {
+  const status = asNullableString(value);
+  return status ? status.toLowerCase() : null;
+}
+function parsePromotionDates(value) {
+  const dates = asNullableString(value);
+  if (!dates) return { start_at: null, end_at: null };
+  const [start, end] = dates.split("/", 2);
+  return {
+    start_at: normalizeDate2(start),
+    end_at: normalizeDate2(end)
+  };
 }
 function getImpactConfiguration() {
   const accountSid = process.env.IMPACT_ACCOUNT_SID?.trim();
@@ -16448,9 +16488,9 @@ function getImpactConfiguration() {
   }
   return { accountSid, accessToken };
 }
-async function listJoinedImpactPrograms() {
+async function fetchImpactJson(path6) {
   const { accountSid, accessToken } = getImpactConfiguration();
-  const endpoint = `${IMPACT_API_BASE_URL}/Mediapartners/${encodeURIComponent(accountSid)}/Campaigns`;
+  const endpoint = `${IMPACT_API_BASE_URL}${path6}`;
   const authorization = Buffer.from(`${accountSid}:${accessToken}`).toString("base64");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), IMPACT_REQUEST_TIMEOUT_MS);
@@ -16472,29 +16512,267 @@ async function listJoinedImpactPrograms() {
         response.status
       );
     }
-    const payload = await response.json();
-    const campaigns = Array.isArray(payload.Campaigns) ? payload.Campaigns : [];
-    return campaigns.map((campaign) => {
-      const row = campaign && typeof campaign === "object" ? campaign : {};
-      return {
-        program_id: asNullableString(row.CampaignId),
-        program_name: asNullableString(row.CampaignName),
-        brand_id: asNullableString(row.AdvertiserId),
-        brand_name: asNullableString(row.AdvertiserName),
-        status: asNullableString(row.ContractStatus)
-      };
-    });
+    return asRecord(await response.json());
   } catch (error) {
     if (error instanceof ImpactConfigurationError || error instanceof ImpactAuthenticationError || error instanceof ImpactProviderError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
+    if (error && typeof error === "object" && "name" in error && error.name === "AbortError") {
       throw new ImpactProviderError("Impact request timed out.", 504);
     }
     throw new ImpactProviderError("Impact request failed.", 502);
   } finally {
     clearTimeout(timeout);
   }
+}
+async function listImpactRows(path6, collectionKey) {
+  const rows = [];
+  let total = null;
+  for (let page = 1; page <= IMPACT_INVENTORY_MAX_PAGES; page += 1) {
+    const payload = await fetchImpactJson(withPagination(path6, page));
+    const pageRows = readCollection(payload, collectionKey);
+    const pageTotal = readMetaNumber(payload, "@total");
+    if (pageTotal != null) total = pageTotal;
+    rows.push(...pageRows);
+    if (pageRows.length === 0 || total != null && rows.length >= total || pageRows.length < IMPACT_INVENTORY_PAGE_SIZE) {
+      return { rows, total };
+    }
+  }
+  throw new ImpactProviderError("Impact inventory pagination limit reached.", 502);
+}
+async function listJoinedImpactPrograms() {
+  const { rows } = await listImpactRows(
+    `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Campaigns`,
+    "Campaigns"
+  );
+  return rows.map((row) => {
+    const campaign = row;
+    return {
+      program_id: asNullableString(campaign.CampaignId),
+      program_name: asNullableString(campaign.CampaignName),
+      brand_id: asNullableString(campaign.AdvertiserId),
+      brand_name: asNullableString(campaign.AdvertiserName),
+      status: asNullableString(campaign.ContractStatus)
+    };
+  });
+}
+function getProgramFields(row, program) {
+  return {
+    program_id: program.program_id,
+    program_name: program.program_name,
+    brand_id: asNullableString(row.AdvertiserId) ?? program.brand_id,
+    brand_name: asNullableString(row.AdvertiserName) ?? program.brand_name
+  };
+}
+function normalizeCommonItem(row, program, resourceType, fetchedAt) {
+  return {
+    provider: "impact",
+    ...getProgramFields(row, program),
+    resource_type: resourceType,
+    external_id: null,
+    title: null,
+    description: null,
+    status: null,
+    availability: null,
+    start_at: null,
+    end_at: null,
+    promo_code: null,
+    discount_type: null,
+    discount_amount: null,
+    discount_currency: null,
+    discount_percent: null,
+    minimum_purchase_amount: null,
+    maximum_savings_amount: null,
+    tracking_url: null,
+    landing_page_url: null,
+    creative_url: null,
+    creative_type: null,
+    creative_width: null,
+    creative_height: null,
+    source_updated_at: null,
+    fetched_at: fetchedAt
+  };
+}
+function normalizePromotion(row, program, fetchedAt) {
+  const item = normalizeCommonItem(row, program, "promotion", fetchedAt);
+  const dates = parsePromotionDates(row.PromotionEffectiveDates);
+  return {
+    ...item,
+    external_id: asNullableString(row.PromotionIds),
+    title: asNullableString(row.PromotionTitle),
+    availability: "available_to_partner",
+    start_at: dates.start_at,
+    end_at: dates.end_at,
+    promo_code: asNullableString(row.GenericRedemptionCode)
+  };
+}
+function normalizeDeal(row, program, fetchedAt) {
+  const item = normalizeCommonItem(row, program, "deal", fetchedAt);
+  return {
+    ...item,
+    external_id: asNullableString(row.Id),
+    title: asNullableString(row.Name),
+    description: asNullableString(row.Description),
+    status: normalizeStatus(row.State),
+    start_at: normalizeDate2(row.StartDate),
+    end_at: normalizeDate2(row.EndDate),
+    promo_code: asNullableString(row.DefaultPromoCode),
+    discount_type: asNullableString(row.DiscountType),
+    discount_amount: asNullableNumber(row.DiscountAmount),
+    discount_currency: asNullableString(row.DiscountCurrency),
+    discount_percent: asNullableNumber(row.DiscountPercent),
+    minimum_purchase_amount: asNullableNumber(row.MinimumPurchaseAmount),
+    maximum_savings_amount: asNullableNumber(row.MaximumSavingsAmount),
+    source_updated_at: normalizeDate2(row.DateLastUpdated)
+  };
+}
+function normalizeAd(row, program, fetchedAt) {
+  const item = normalizeCommonItem(row, program, "ad", fetchedAt);
+  return {
+    ...item,
+    external_id: asNullableString(row.Id),
+    title: asNullableString(row.Name),
+    description: asNullableString(row.Description) ?? asNullableString(row.DealDescription),
+    availability: "available_to_partner",
+    start_at: normalizeDate2(row.StartDate) ?? normalizeDate2(row.DealStartDate),
+    end_at: normalizeDate2(row.EndDate) ?? normalizeDate2(row.DealEndDate),
+    promo_code: asNullableString(row.DealDefaultPromoCode),
+    discount_type: asNullableString(row.DiscountType),
+    discount_amount: asNullableNumber(row.DiscountAmount),
+    discount_currency: asNullableString(row.DiscountCurrency),
+    discount_percent: asNullableNumber(row.DiscountPercent),
+    minimum_purchase_amount: asNullableNumber(row.MinimumPurchaseAmount),
+    maximum_savings_amount: asNullableNumber(row.MaximumSavingsAmount),
+    tracking_url: asNullableString(row.TrackingLink),
+    landing_page_url: asNullableString(row.LandingPageUrl),
+    creative_url: asNullableString(row.CreativeUrl),
+    creative_type: asNullableString(row.Type),
+    creative_width: asNullableNumber(row.Width),
+    creative_height: asNullableNumber(row.Height),
+    source_updated_at: normalizeDate2(row.DealDateLastUpdated)
+  };
+}
+function normalizePromoCode(row, program, fetchedAt) {
+  const item = normalizeCommonItem(row, program, "promo_code", fetchedAt);
+  return {
+    ...item,
+    external_id: asNullableString(row.Id) ?? asNullableString(row.Code),
+    title: asNullableString(row.DealName) ?? asNullableString(row.CampaignName),
+    status: normalizeStatus(row.State),
+    availability: "available_to_partner",
+    start_at: normalizeDate2(row.StartDate),
+    end_at: normalizeDate2(row.EndDate),
+    promo_code: asNullableString(row.Code)
+  };
+}
+function emptyCounts() {
+  return {
+    promotions: 0,
+    deals: 0,
+    ads: 0,
+    creatives: 0,
+    promo_codes: 0,
+    total: 0
+  };
+}
+function countItems(items) {
+  const counts = emptyCounts();
+  for (const item of items) {
+    counts.total += 1;
+    if (item.resource_type === "promotion") counts.promotions += 1;
+    if (item.resource_type === "deal") counts.deals += 1;
+    if (item.resource_type === "ad") {
+      counts.ads += 1;
+      if (item.creative_url) counts.creatives += 1;
+    }
+    if (item.resource_type === "promo_code") counts.promo_codes += 1;
+  }
+  return counts;
+}
+function addCounts(target, source) {
+  target.promotions += source.promotions;
+  target.deals += source.deals;
+  target.ads += source.ads;
+  target.creatives += source.creatives;
+  target.promo_codes += source.promo_codes;
+  target.total += source.total;
+}
+function matchedProgramForPromotion(row, programs) {
+  const explicitProgramId = asNullableString(row.CampaignId) ?? asNullableString(row.ProgramId);
+  if (explicitProgramId) {
+    return programs.find((program) => program.program_id === explicitProgramId) ?? null;
+  }
+  const advertiserId = asNullableString(row.AdvertiserId);
+  const matches = programs.filter((program) => program.brand_id === advertiserId);
+  return matches.length === 1 ? matches[0] : null;
+}
+async function getImpactInventory() {
+  const fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const programs = await listJoinedImpactPrograms();
+  const activePrograms = programs.filter(
+    (program) => program.program_id && program.status?.toLowerCase() === "active"
+  );
+  const activeProgramIds = new Set(activePrograms.map((program) => program.program_id));
+  const promotionResult = await listImpactRows(
+    `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Promotions`,
+    "Promotions"
+  );
+  const accountPromotions = promotionResult.rows;
+  const promotionsByProgram = /* @__PURE__ */ new Map();
+  const unassignedPromotions = [];
+  for (const row of accountPromotions) {
+    const program = matchedProgramForPromotion(row, activePrograms);
+    if (!program?.program_id || !activeProgramIds.has(program.program_id)) {
+      unassignedPromotions.push(normalizePromotion(row, {
+        program_id: null,
+        program_name: null,
+        brand_id: asNullableString(row.AdvertiserId),
+        brand_name: asNullableString(row.AdvertiserName),
+        status: null
+      }, fetchedAt));
+      continue;
+    }
+    const existing = promotionsByProgram.get(program.program_id) ?? [];
+    existing.push(normalizePromotion(row, program, fetchedAt));
+    promotionsByProgram.set(program.program_id, existing);
+  }
+  const inventoryPrograms = [];
+  const totals = emptyCounts();
+  for (const program of activePrograms) {
+    const programId = program.program_id;
+    const dealResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Campaigns/${encodeURIComponent(programId)}/Deals`,
+      "Deals"
+    );
+    const adResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Ads?CampaignId=${encodeURIComponent(programId)}`,
+      "Ads"
+    );
+    const promoCodeResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/PromoCodes?ProgramId=${encodeURIComponent(programId)}`,
+      "PromoCodes"
+    );
+    const items = [
+      ...promotionsByProgram.get(programId) ?? [],
+      ...dealResult.rows.map((row) => normalizeDeal(row, program, fetchedAt)),
+      ...adResult.rows.map((row) => normalizeAd(row, program, fetchedAt)),
+      ...promoCodeResult.rows.map((row) => normalizePromoCode(row, program, fetchedAt))
+    ];
+    const counts = countItems(items);
+    addCounts(totals, counts);
+    inventoryPrograms.push({ program, counts, items });
+  }
+  const unassignedCounts = countItems(unassignedPromotions);
+  addCounts(totals, unassignedCounts);
+  return {
+    provider: "impact",
+    fetched_at: fetchedAt,
+    page_size: IMPACT_INVENTORY_PAGE_SIZE,
+    active_program_count: inventoryPrograms.length,
+    programs: inventoryPrograms,
+    unassigned_account_promotions: unassignedPromotions,
+    totals
+  };
 }
 
 // server/routes-impact.ts
@@ -16547,6 +16825,44 @@ function registerImpactRoutes(app2) {
         ok: false,
         error: "Impact request failed.",
         code: "IMPACT_REQUEST_FAILED"
+      });
+    }
+  });
+  app2.get("/api/admin/impact/inventory", async (req, res2) => {
+    if (!requireAdmin3(req, res2)) return;
+    try {
+      const inventory = await getImpactInventory();
+      res2.json({ ok: true, ...inventory });
+    } catch (error) {
+      if (error instanceof ImpactConfigurationError) {
+        res2.status(503).json({
+          ok: false,
+          error: "Impact integration is not configured.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactAuthenticationError) {
+        res2.status(502).json({
+          ok: false,
+          error: "Impact authentication failed.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactProviderError) {
+        res2.status(error.status === 504 ? 504 : 502).json({
+          ok: false,
+          error: error.message,
+          code: error.code
+        });
+        return;
+      }
+      console.error("[impact] inventory request failed");
+      res2.status(502).json({
+        ok: false,
+        error: "Impact inventory request failed.",
+        code: "IMPACT_INVENTORY_REQUEST_FAILED"
       });
     }
   });
