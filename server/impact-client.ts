@@ -73,6 +73,35 @@ export type ImpactInventory = {
   totals: ImpactInventoryCounts;
 };
 
+export type ImpactAdType = "TEXT_LINK" | "BANNER" | "COUPON";
+
+export type ImpactReviewProgram = {
+  program: ImpactJoinedProgram;
+  deals: ImpactInventoryItem[];
+  ads: ImpactInventoryItem[];
+  counts: {
+    deals: number;
+    ads: number;
+    creatives: number;
+  };
+};
+
+export type ImpactReview = {
+  provider: "impact";
+  fetched_at: string;
+  page_size: number;
+  updated_within_days: number;
+  ad_type: ImpactAdType | null;
+  keyword: string | null;
+  active_program_count: number;
+  programs: ImpactReviewProgram[];
+  totals: {
+    deals: number;
+    ads: number;
+    creatives: number;
+  };
+};
+
 export class ImpactConfigurationError extends Error {
   code = "IMPACT_NOT_CONFIGURED";
 }
@@ -134,9 +163,13 @@ function readMetaNumber(payload: Record<string, unknown>, key: string): number |
   return value == null ? null : Math.max(0, Math.floor(value));
 }
 
-function withPagination(path: string, page: number): string {
+function withPagination(
+  path: string,
+  page: number,
+  pageSize = IMPACT_INVENTORY_PAGE_SIZE,
+): string {
   const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}PageSize=${IMPACT_INVENTORY_PAGE_SIZE}&Page=${page}`;
+  return `${path}${separator}PageSize=${pageSize}&Page=${page}`;
 }
 
 function normalizeDate(value: unknown): string | null {
@@ -220,12 +253,17 @@ async function fetchImpactJson(path: string): Promise<Record<string, unknown>> {
   }
 }
 
-async function listImpactRows(path: string, collectionKey: string): Promise<ImpactPagedRows> {
+async function listImpactRows(
+  path: string,
+  collectionKey: string,
+  pageSize = IMPACT_INVENTORY_PAGE_SIZE,
+  maxPages = IMPACT_INVENTORY_MAX_PAGES,
+): Promise<ImpactPagedRows> {
   const rows: ImpactProviderRow[] = [];
   let total: number | null = null;
 
-  for (let page = 1; page <= IMPACT_INVENTORY_MAX_PAGES; page += 1) {
-    const payload = await fetchImpactJson(withPagination(path, page));
+  for (let page = 1; page <= maxPages; page += 1) {
+    const payload = await fetchImpactJson(withPagination(path, page, pageSize));
     const pageRows = readCollection(payload, collectionKey);
     const pageTotal = readMetaNumber(payload, "@total");
     if (pageTotal != null) total = pageTotal;
@@ -233,7 +271,7 @@ async function listImpactRows(path: string, collectionKey: string): Promise<Impa
 
     if (pageRows.length === 0 ||
         (total != null && rows.length >= total) ||
-        pageRows.length < IMPACT_INVENTORY_PAGE_SIZE) {
+        pageRows.length < pageSize) {
       return { rows, total };
     }
   }
@@ -518,6 +556,100 @@ export async function getImpactInventory(): Promise<ImpactInventory> {
     active_program_count: inventoryPrograms.length,
     programs: inventoryPrograms,
     unassigned_account_promotions: unassignedPromotions,
+    totals,
+  };
+}
+
+function isCurrentImpactDeal(row: ImpactProviderRow, now: number): boolean {
+  if (normalizeStatus(row.State) !== "active") return false;
+
+  const start = asNullableString(row.StartDate);
+  const end = asNullableString(row.EndDate);
+  const startTime = start ? Date.parse(start) : Number.NaN;
+  const endTime = end ? Date.parse(end) : Number.NaN;
+
+  if (Number.isFinite(startTime) && startTime > now) return false;
+  if (Number.isFinite(endTime) && endTime < now) return false;
+  return true;
+}
+
+function impactRowMatchesKeyword(row: ImpactProviderRow, keyword: string): boolean {
+  const normalizedKeyword = keyword.toLowerCase();
+  return [
+    row.Name,
+    row.Description,
+    row.DealName,
+    row.DealDescription,
+  ].some((value) => asNullableString(value)?.toLowerCase().includes(normalizedKeyword));
+}
+
+export async function getImpactReview(options: {
+  adType?: ImpactAdType | null;
+  keyword?: string | null;
+  updatedWithinDays?: number;
+} = {}): Promise<ImpactReview> {
+  const fetchedAt = new Date().toISOString();
+  const updatedWithinDays = options.updatedWithinDays ?? 30;
+  const keyword = options.keyword?.trim() || null;
+  const adType = options.adType ?? null;
+  const programs = await listJoinedImpactPrograms();
+  const activePrograms = programs.filter(
+    (program) => program.program_id && program.status?.toLowerCase() === "active",
+  );
+  const now = Date.now();
+  const updatedDateStart = new Date(
+    now - updatedWithinDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const updatedDateEnd = new Date(now).toISOString();
+  const totals = { deals: 0, ads: 0, creatives: 0 };
+  const reviewPrograms: ImpactReviewProgram[] = [];
+
+  for (const program of activePrograms) {
+    const programId = program.program_id as string;
+    const dealsResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Campaigns/${encodeURIComponent(programId)}/Deals`,
+      "Deals",
+    );
+    const adFilters = [
+      `CampaignId=${encodeURIComponent(programId)}`,
+      `UpdatedDateStart=${encodeURIComponent(updatedDateStart)}`,
+      `UpdatedDateEnd=${encodeURIComponent(updatedDateEnd)}`,
+    ];
+    if (adType) adFilters.push(`Type=${encodeURIComponent(adType)}`);
+    const adsResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Ads?${adFilters.join("&")}`,
+      "Ads",
+    );
+
+    const deals = dealsResult.rows
+      .filter((row) => isCurrentImpactDeal(row, now))
+      .map((row) => normalizeDeal(row, program, fetchedAt))
+      .sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+    const ads = adsResult.rows
+      .filter((row) => !keyword || impactRowMatchesKeyword(row, keyword))
+      .map((row) => normalizeAd(row, program, fetchedAt))
+      .sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+    const counts = {
+      deals: deals.length,
+      ads: ads.length,
+      creatives: ads.filter((ad) => Boolean(ad.creative_url)).length,
+    };
+
+    totals.deals += counts.deals;
+    totals.ads += counts.ads;
+    totals.creatives += counts.creatives;
+    reviewPrograms.push({ program, deals, ads, counts });
+  }
+
+  return {
+    provider: "impact",
+    fetched_at: fetchedAt,
+    page_size: IMPACT_INVENTORY_PAGE_SIZE,
+    updated_within_days: updatedWithinDays,
+    ad_type: adType,
+    keyword,
+    active_program_count: reviewPrograms.length,
+    programs: reviewPrograms,
     totals,
   };
 }

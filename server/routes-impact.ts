@@ -1,8 +1,10 @@
 import type { Express, Request, Response } from "express";
 import {
   ImpactAuthenticationError,
+  ImpactAdType,
   ImpactConfigurationError,
   ImpactProviderError,
+  getImpactReview,
   getImpactInventory,
   listJoinedImpactPrograms,
 } from "./impact-client";
@@ -17,6 +19,40 @@ function requireAdmin(req: Request, res: Response): boolean {
   }
 
   return true;
+}
+
+const IMPACT_AD_TYPES = new Set<ImpactAdType>(["TEXT_LINK", "BANNER", "COUPON"]);
+
+function queryString(value: unknown): string | null {
+  return typeof value === "string" ? value.trim() || null : null;
+}
+
+function parseReviewOptions(req: Request): {
+  adType: ImpactAdType | null;
+  keyword: string | null;
+  updatedWithinDays: number;
+} | { error: string } {
+  const rawAdType = queryString(req.query.ad_type);
+  if (rawAdType && !IMPACT_AD_TYPES.has(rawAdType as ImpactAdType)) {
+    return { error: "ad_type must be TEXT_LINK, BANNER, or COUPON." };
+  }
+
+  const rawDays = queryString(req.query.updated_within_days);
+  const updatedWithinDays = rawDays ? Number(rawDays) : 30;
+  if (!Number.isInteger(updatedWithinDays) || updatedWithinDays < 1 || updatedWithinDays > 90) {
+    return { error: "updated_within_days must be an integer from 1 to 90." };
+  }
+
+  const keyword = queryString(req.query.keyword);
+  if (keyword && keyword.length > 100) {
+    return { error: "keyword must be 100 characters or fewer." };
+  }
+
+  return {
+    adType: rawAdType as ImpactAdType | null,
+    keyword,
+    updatedWithinDays,
+  };
 }
 
 export function registerImpactRoutes(app: Express): void {
@@ -106,6 +142,55 @@ export function registerImpactRoutes(app: Express): void {
         ok: false,
         error: "Impact inventory request failed.",
         code: "IMPACT_INVENTORY_REQUEST_FAILED",
+      });
+    }
+  });
+
+  app.get("/api/admin/impact/review", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+
+    const options = parseReviewOptions(req);
+    if ("error" in options) {
+      res.status(400).json({ ok: false, error: options.error });
+      return;
+    }
+
+    try {
+      const review = await getImpactReview(options);
+      res.json({ ok: true, ...review });
+    } catch (error) {
+      if (error instanceof ImpactConfigurationError) {
+        res.status(503).json({
+          ok: false,
+          error: "Impact integration is not configured.",
+          code: error.code,
+        });
+        return;
+      }
+
+      if (error instanceof ImpactAuthenticationError) {
+        res.status(502).json({
+          ok: false,
+          error: "Impact authentication failed.",
+          code: error.code,
+        });
+        return;
+      }
+
+      if (error instanceof ImpactProviderError) {
+        res.status(error.status === 504 ? 504 : 502).json({
+          ok: false,
+          error: error.message,
+          code: error.code,
+        });
+        return;
+      }
+
+      console.error("[impact] review request failed");
+      res.status(502).json({
+        ok: false,
+        error: "Impact review request failed.",
+        code: "IMPACT_REVIEW_REQUEST_FAILED",
       });
     }
   });
