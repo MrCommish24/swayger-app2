@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, ActivityIndicator, Alert, Platform, Modal,
+  StyleSheet, ActivityIndicator, Alert, Platform, Modal, Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -74,6 +74,64 @@ interface SQQueue {
   events: SQEvent[];
 }
 
+type ImpactReviewAdType = "TEXT_LINK" | "BANNER" | "COUPON";
+
+interface ImpactReviewItem {
+  provider: "impact";
+  program_id: string | null;
+  program_name: string | null;
+  brand_id: string | null;
+  brand_name: string | null;
+  resource_type: "deal" | "ad";
+  external_id: string | null;
+  title: string | null;
+  description: string | null;
+  status: string | null;
+  availability: "available_to_partner" | null;
+  start_at: string | null;
+  end_at: string | null;
+  promo_code: string | null;
+  discount_type: string | null;
+  discount_amount: number | null;
+  discount_currency: string | null;
+  discount_percent: number | null;
+  minimum_purchase_amount: number | null;
+  maximum_savings_amount: number | null;
+  tracking_url: string | null;
+  landing_page_url: string | null;
+  creative_url: string | null;
+  creative_type: string | null;
+  creative_width: number | null;
+  creative_height: number | null;
+  source_updated_at: string | null;
+  fetched_at: string;
+}
+
+interface ImpactReviewProgram {
+  program: {
+    program_id: string | null;
+    program_name: string | null;
+    brand_id: string | null;
+    brand_name: string | null;
+    status: string | null;
+  };
+  deals: ImpactReviewItem[];
+  ads: ImpactReviewItem[];
+  counts: { deals: number; ads: number; creatives: number };
+}
+
+interface ImpactReviewResponse {
+  ok: boolean;
+  fetched_at: string;
+  page_size: number;
+  updated_within_days: number;
+  ad_type: ImpactReviewAdType | null;
+  keyword: string | null;
+  active_program_count: number;
+  programs: ImpactReviewProgram[];
+  totals: { deals: number; ads: number; creatives: number };
+}
+
 interface PropDef {
   id: string;
   stat: string;
@@ -137,6 +195,24 @@ function cdtTimeToISO(date: string, timeStr: string): string {
 }
 
 const DEFAULT_CDT_TIME = "5:45 PM";
+const IMPACT_REVIEW_AD_TYPES: { value: ImpactReviewAdType | null; label: string }[] = [
+  { value: null, label: "All ads" },
+  { value: "TEXT_LINK", label: "Text links" },
+  { value: "BANNER", label: "Banners" },
+  { value: "COUPON", label: "Coupons" },
+];
+
+function formatImpactDate(value: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function impactCreativeSource(value: string) {
+  return value.startsWith("//") ? `https:${value}` : value;
+}
 
 export default function AdminScreen() {
   const insets = useSafeAreaInsets();
@@ -188,6 +264,17 @@ export default function AdminScreen() {
   const [sqSettleSubmitting, setSqSettleSubmitting] = useState(false);
   const [sqSettleResult, setSqSettleResult] = useState<{ ok: boolean; message: string; refresh_required?: boolean } | null>(null);
 
+  // Impact Commercial Review — read-only, internal shortlist only.
+  const [impactReview, setImpactReview] = useState<ImpactReviewResponse | null>(null);
+  const [impactReviewLoading, setImpactReviewLoading] = useState(false);
+  const [impactReviewError, setImpactReviewError] = useState<string | null>(null);
+  const [impactAdType, setImpactAdType] = useState<ImpactReviewAdType | null>(null);
+  const [impactKeyword, setImpactKeyword] = useState("");
+  const [impactShortlisted, setImpactShortlisted] = useState<Set<string>>(new Set());
+  const [impactFullLoading, setImpactFullLoading] = useState(false);
+  const [impactFullSummary, setImpactFullSummary] = useState<{ ads: number; deals: number; fetched_at: string } | null>(null);
+  const [impactFullError, setImpactFullError] = useState<string | null>(null);
+
   // Prop Library
   const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
   const [libProps, setLibProps] = useState<any[]>([]);
@@ -210,6 +297,7 @@ export default function AdminScreen() {
         loadNights(t);
         loadPropLibrary(t, libSport);
         loadSettlementQueue(t);
+        loadImpactReview(t);
         if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
       }
     });
@@ -456,6 +544,7 @@ export default function AdminScreen() {
     loadNights(t);
     loadPropLibrary(t, libSport);
     loadSettlementQueue(t);
+    loadImpactReview(t);
     if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
   }
 
@@ -463,6 +552,73 @@ export default function AdminScreen() {
     await AsyncStorage.removeItem(ADMIN_TOKEN_KEY);
     setSavedToken(null);
     setNights([]);
+    setImpactReview(null);
+    setImpactFullSummary(null);
+    setImpactShortlisted(new Set());
+  }
+
+  async function loadImpactReview(
+    t: string,
+    nextAdType: ImpactReviewAdType | null = impactAdType,
+    nextKeyword: string = impactKeyword,
+  ) {
+    setImpactReviewLoading(true);
+    setImpactReviewError(null);
+    try {
+      const url = new URL("/api/admin/impact/review", getApiUrl());
+      if (nextAdType) url.searchParams.set("ad_type", nextAdType);
+      if (nextKeyword.trim()) url.searchParams.set("keyword", nextKeyword.trim());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": t } });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setImpactReviewError(json.error ?? "Could not load Impact review.");
+        return;
+      }
+      setImpactReview(json as ImpactReviewResponse);
+    } catch {
+      setImpactReviewError("Could not reach the Impact review endpoint.");
+    } finally {
+      setImpactReviewLoading(false);
+    }
+  }
+
+  async function loadFullImpactInventory() {
+    if (!savedToken || impactFullLoading) return;
+    setImpactFullLoading(true);
+    setImpactFullError(null);
+    try {
+      const url = new URL("/api/admin/impact/inventory", getApiUrl());
+      const res = await fetch(url.toString(), { headers: { "x-admin-token": savedToken } });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setImpactFullError(json.error ?? "Could not load the full inventory.");
+        return;
+      }
+      setImpactFullSummary({
+        ads: json.totals?.ads ?? 0,
+        deals: json.totals?.deals ?? 0,
+        fetched_at: json.fetched_at,
+      });
+    } catch {
+      setImpactFullError("Could not reach the full inventory endpoint.");
+    } finally {
+      setImpactFullLoading(false);
+    }
+  }
+
+  function toggleImpactShortlist(item: ImpactReviewItem) {
+    const key = `${item.resource_type}:${item.program_id ?? "unknown"}:${item.external_id ?? item.title ?? "item"}`;
+    setImpactShortlisted((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function isImpactShortlisted(item: ImpactReviewItem) {
+    const key = `${item.resource_type}:${item.program_id ?? "unknown"}:${item.external_id ?? item.title ?? "item"}`;
+    return impactShortlisted.has(key);
   }
 
   async function loadNights(t: string) {
@@ -1308,6 +1464,275 @@ export default function AdminScreen() {
       </View>
       )}
 
+      {/* ── Impact Commercial Review ───────────────────────────────────────── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>Commercial Review</Text>
+            <Text style={styles.sectionSub}>
+              Private Impact review · recent inventory only · no automatic publishing
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => savedToken && loadImpactReview(savedToken)}
+            style={styles.refreshBtn}
+            disabled={impactReviewLoading}
+          >
+            <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
+          </Pressable>
+        </View>
+
+        <View style={styles.impactFilterGroup}>
+          <Text style={styles.label}>Ad type</Text>
+          <View style={styles.impactFilterRow}>
+            {IMPACT_REVIEW_AD_TYPES.map((option) => {
+              const selected = impactAdType === option.value;
+              return (
+                <Pressable
+                  key={option.label}
+                  style={[styles.impactFilterBtn, selected && styles.impactFilterBtnSelected]}
+                  onPress={() => {
+                    setImpactAdType(option.value);
+                    if (savedToken) loadImpactReview(savedToken, option.value, impactKeyword);
+                  }}
+                  disabled={impactReviewLoading}
+                >
+                  <Text style={[styles.impactFilterText, selected && styles.impactFilterTextSelected]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.impactKeywordRow}>
+          <TextInput
+            style={[styles.input, styles.impactKeywordInput]}
+            value={impactKeyword}
+            onChangeText={setImpactKeyword}
+            placeholder="Filter name or deal text"
+            placeholderTextColor={Colors.dark.tabIconDefault}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={() => savedToken && loadImpactReview(savedToken)}
+          />
+          <Pressable
+            style={[styles.impactApplyBtn, impactReviewLoading && { opacity: 0.5 }]}
+            onPress={() => savedToken && loadImpactReview(savedToken)}
+            disabled={impactReviewLoading}
+          >
+            <Text style={styles.impactApplyText}>Apply</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.impactReviewNote}>
+          Ads are limited to the last {impactReview?.updated_within_days ?? 30} days using Impact’s documented date filters.
+          Ads are labeled “available to partner,” not approved.
+        </Text>
+
+        {impactReviewLoading && (
+          <ActivityIndicator color={NBA_GOLD} style={{ marginVertical: 12 }} />
+        )}
+
+        {impactReviewError && (
+          <Text style={[styles.createMsg, { color: "#F87171" }]}>⚠ {impactReviewError}</Text>
+        )}
+
+        {!impactReviewLoading && impactReview && (
+          <>
+            <View style={styles.impactSummaryBar}>
+              <Text style={styles.impactSummaryText}>
+                {impactReview.active_program_count} active program{impactReview.active_program_count === 1 ? "" : "s"}
+              </Text>
+              <Text style={styles.impactSummaryDot}>·</Text>
+              <Text style={styles.impactSummaryText}>{impactReview.totals.deals} active deals</Text>
+              <Text style={styles.impactSummaryDot}>·</Text>
+              <Text style={styles.impactSummaryText}>
+                {impactReview.totals.ads} recent ads
+              </Text>
+              <Text style={styles.impactSummaryDot}>·</Text>
+              <Text style={styles.impactSummaryText}>
+                {impactReview.totals.creatives} creatives
+              </Text>
+            </View>
+
+            {impactReview.programs.map((program) => (
+              <View key={program.program.program_id ?? program.program.program_name} style={styles.impactProgramCard}>
+                <View style={styles.impactProgramHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.impactBrandName}>
+                      {program.program.brand_name ?? "Unknown brand"}
+                    </Text>
+                    <Text style={styles.impactProgramName}>
+                      {program.program.program_name ?? "Unnamed program"}
+                    </Text>
+                  </View>
+                  <View style={styles.impactProgramCounts}>
+                    <Text style={styles.impactCountText}>{program.counts.deals} deals</Text>
+                    <Text style={styles.impactCountText}>{program.counts.ads} ads</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.impactGroupLabel}>Active deals</Text>
+                {program.deals.length === 0 ? (
+                  <Text style={styles.impactEmptyText}>No active deals returned.</Text>
+                ) : (
+                  program.deals.map((deal) => (
+                    <View key={`deal:${deal.external_id}`} style={styles.impactOfferCard}>
+                      <View style={styles.impactOfferHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.impactOfferTitle}>{deal.title ?? "Untitled deal"}</Text>
+                          <Text style={styles.impactStatusText}>
+                            {(deal.status ?? "active").toUpperCase()} · Impact deal
+                          </Text>
+                        </View>
+                        <Pressable
+                          style={[
+                            styles.impactShortlistBtn,
+                            isImpactShortlisted(deal) && styles.impactShortlistBtnSelected,
+                          ]}
+                          onPress={() => toggleImpactShortlist(deal)}
+                        >
+                          <Ionicons
+                            name={isImpactShortlisted(deal) ? "checkmark" : "bookmark-outline"}
+                            size={14}
+                            color={isImpactShortlisted(deal) ? "#000" : Colors.dark.tint}
+                          />
+                          <Text style={[
+                            styles.impactShortlistText,
+                            isImpactShortlisted(deal) && styles.impactShortlistTextSelected,
+                          ]}>
+                            {isImpactShortlisted(deal) ? "Shortlisted" : "Select for Swayger"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {deal.description && <Text style={styles.impactOfferDescription}>{deal.description}</Text>}
+                      <View style={styles.impactDetailRow}>
+                        {deal.discount_amount != null && (
+                          <Text style={styles.impactDetailText}>
+                            {deal.discount_currency ?? ""}{deal.discount_amount} {deal.discount_type?.toLowerCase() ?? "discount"}
+                          </Text>
+                        )}
+                        {deal.discount_percent != null && (
+                          <Text style={styles.impactDetailText}>{deal.discount_percent}% off</Text>
+                        )}
+                        {deal.minimum_purchase_amount != null && (
+                          <Text style={styles.impactDetailText}>
+                            Min {deal.discount_currency ?? "$"}{deal.minimum_purchase_amount}
+                          </Text>
+                        )}
+                      </View>
+                      {deal.promo_code && (
+                        <Text style={styles.impactCodeText}>Promo code: {deal.promo_code}</Text>
+                      )}
+                      {(deal.start_at || deal.end_at) && (
+                        <Text style={styles.impactMetaText}>
+                          {formatImpactDate(deal.start_at) ?? "Now"} – {formatImpactDate(deal.end_at) ?? "No end date"}
+                        </Text>
+                      )}
+                    </View>
+                  ))
+                )}
+
+                <Text style={styles.impactGroupLabel}>Recent ads and creatives</Text>
+                {program.ads.length === 0 ? (
+                  <Text style={styles.impactEmptyText}>No recent ads match the current filters.</Text>
+                ) : (
+                  program.ads.map((ad) => (
+                    <View key={`ad:${ad.external_id}`} style={styles.impactAdCard}>
+                      {ad.creative_url && (
+                        <Image
+                          source={{ uri: impactCreativeSource(ad.creative_url) }}
+                          style={styles.impactCreativePreview}
+                          resizeMode="contain"
+                        />
+                      )}
+                      <View style={{ flex: 1, gap: 5 }}>
+                        <View style={styles.impactOfferHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.impactOfferTitle}>{ad.title ?? "Untitled ad"}</Text>
+                            <Text style={styles.impactStatusText}>
+                              {ad.creative_type ?? "AD"} · Available to partner
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={[
+                              styles.impactShortlistBtn,
+                              isImpactShortlisted(ad) && styles.impactShortlistBtnSelected,
+                            ]}
+                            onPress={() => toggleImpactShortlist(ad)}
+                          >
+                            <Ionicons
+                              name={isImpactShortlisted(ad) ? "checkmark" : "bookmark-outline"}
+                              size={14}
+                              color={isImpactShortlisted(ad) ? "#000" : Colors.dark.tint}
+                            />
+                            <Text style={[
+                              styles.impactShortlistText,
+                              isImpactShortlisted(ad) && styles.impactShortlistTextSelected,
+                            ]}>
+                              {isImpactShortlisted(ad) ? "Shortlisted" : "Select for Swayger"}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {ad.description && <Text style={styles.impactOfferDescription}>{ad.description}</Text>}
+                        <View style={styles.impactDetailRow}>
+                          {ad.creative_width && ad.creative_height && (
+                            <Text style={styles.impactDetailText}>
+                              {ad.creative_width}×{ad.creative_height}
+                            </Text>
+                          )}
+                          {ad.promo_code && (
+                            <Text style={styles.impactCodeText}>Code: {ad.promo_code}</Text>
+                          )}
+                          <Text style={styles.impactDetailText}>
+                            {ad.tracking_url ? "Tracking link ready" : "No tracking link"}
+                          </Text>
+                        </View>
+                        {ad.landing_page_url && (
+                          <Text style={styles.impactUrlText} numberOfLines={1}>
+                            Landing page: {ad.landing_page_url}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            ))}
+          </>
+        )}
+
+        <View style={styles.impactFullInventoryBox}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.impactFullTitle}>Full inventory</Text>
+            <Text style={styles.impactFullSub}>
+              Separate, on-demand load of the complete Impact inventory. This can take up to a minute.
+            </Text>
+          </View>
+          <Pressable
+            style={[styles.impactFullBtn, impactFullLoading && { opacity: 0.5 }]}
+            onPress={loadFullImpactInventory}
+            disabled={impactFullLoading}
+          >
+            {impactFullLoading
+              ? <ActivityIndicator size="small" color="#000" />
+              : <Text style={styles.impactFullBtnText}>Load full</Text>}
+          </Pressable>
+        </View>
+        {impactFullError && <Text style={[styles.createMsg, { color: "#F87171" }]}>⚠ {impactFullError}</Text>}
+        {impactFullSummary && (
+          <Text style={styles.impactFullResult}>
+            Full inventory loaded: {impactFullSummary.deals} deals · {impactFullSummary.ads} ads
+            {" · "}{formatImpactDate(impactFullSummary.fetched_at) ?? "just now"}
+          </Text>
+        )}
+        <Text style={styles.impactInternalNote}>
+          Shortlists stay in this admin session only. Nothing is published or assigned to Fantasy Weekly or Game Day.
+        </Text>
+      </View>
+
       {/* ── Prop Library ── */}
       <View style={styles.section}>
         <View style={styles.sectionHeaderRow}>
@@ -1692,7 +2117,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end",
   },
   sqModalSheet: {
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: 16, paddingHorizontal: 20, paddingBottom: 40,
     gap: 12,
@@ -1750,5 +2175,120 @@ const styles = StyleSheet.create({
   },
   sqModalConfirmBtnText: {
     fontSize: 15, fontWeight: "700", color: "#000",
+  },
+
+  // ── Impact Commercial Review ─────────────────────────────────────────────
+  impactFilterGroup: { gap: 6 },
+  impactFilterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  impactFilterBtn: {
+    borderWidth: 1, borderColor: Colors.dark.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 7,
+    backgroundColor: Colors.dark.background,
+  },
+  impactFilterBtnSelected: {
+    borderColor: Colors.dark.tint, backgroundColor: `${Colors.dark.tint}20`,
+  },
+  impactFilterText: { fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "600" },
+  impactFilterTextSelected: { color: Colors.dark.tint },
+  impactKeywordRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  impactKeywordInput: { flex: 1 },
+  impactApplyBtn: {
+    backgroundColor: Colors.dark.tint, borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
+  impactApplyText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  impactReviewNote: {
+    fontSize: 11, color: Colors.dark.tabIconDefault, lineHeight: 16,
+  },
+  impactSummaryBar: {
+    flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6,
+    backgroundColor: Colors.dark.background, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    paddingHorizontal: 12, paddingVertical: 9,
+  },
+  impactSummaryText: { fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "700" },
+  impactSummaryDot: { fontSize: 11, color: Colors.dark.tabIconDefault },
+  impactProgramCard: {
+    backgroundColor: Colors.dark.background, borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.dark.border, padding: 12, gap: 10,
+  },
+  impactProgramHeader: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
+  },
+  impactBrandName: { fontSize: 15, color: Colors.dark.text, fontWeight: "800" },
+  impactProgramName: { fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2 },
+  impactProgramCounts: { alignItems: "flex-end", gap: 2 },
+  impactCountText: { fontSize: 10, color: Colors.dark.tabIconDefault, fontWeight: "700" },
+  impactGroupLabel: {
+    fontSize: 10, color: Colors.dark.textSecondary, fontWeight: "800",
+    letterSpacing: 0.8, textTransform: "uppercase", marginTop: 3,
+  },
+  impactEmptyText: {
+    fontSize: 12, color: Colors.dark.tabIconDefault, fontStyle: "italic",
+  },
+  impactOfferCard: {
+    backgroundColor: Colors.dark.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border, padding: 11, gap: 7,
+  },
+  impactOfferHeader: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+  },
+  impactOfferTitle: { flex: 1, fontSize: 13, color: Colors.dark.text, fontWeight: "800" },
+  impactStatusText: {
+    fontSize: 9, color: Colors.dark.tint, fontWeight: "800",
+    letterSpacing: 0.5, textTransform: "uppercase", marginTop: 3,
+  },
+  impactOfferDescription: { fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 17 },
+  impactDetailRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, alignItems: "center" },
+  impactDetailText: {
+    fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "600",
+  },
+  impactCodeText: {
+    fontSize: 11, color: "#FBBF24", fontWeight: "800",
+  },
+  impactMetaText: { fontSize: 10, color: Colors.dark.tabIconDefault },
+  impactAdCard: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    backgroundColor: Colors.dark.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border, padding: 10,
+  },
+  impactCreativePreview: {
+    width: 76, height: 60, borderRadius: 7,
+    backgroundColor: Colors.dark.background,
+  },
+  impactUrlText: {
+    fontSize: 10, color: Colors.dark.tabIconDefault,
+  },
+  impactShortlistBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    borderWidth: 1, borderColor: Colors.dark.tint, borderRadius: 7,
+    paddingHorizontal: 7, paddingVertical: 6,
+  },
+  impactShortlistBtnSelected: {
+    backgroundColor: "#34D399", borderColor: "#34D399",
+  },
+  impactShortlistText: {
+    color: Colors.dark.tint, fontSize: 9, fontWeight: "800",
+  },
+  impactShortlistTextSelected: { color: "#000" },
+  impactFullInventoryBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    borderWidth: 1, borderColor: "#FBBF2450", borderRadius: 10,
+    backgroundColor: "#FBBF2408", padding: 11,
+  },
+  impactFullTitle: { color: "#FBBF24", fontSize: 12, fontWeight: "800" },
+  impactFullSub: {
+    color: Colors.dark.tabIconDefault, fontSize: 10, lineHeight: 14, marginTop: 2,
+  },
+  impactFullBtn: {
+    backgroundColor: "#FBBF24", borderRadius: 8,
+    paddingHorizontal: 11, paddingVertical: 9,
+  },
+  impactFullBtnText: { color: "#000", fontSize: 11, fontWeight: "800" },
+  impactFullResult: { color: "#34D399", fontSize: 11, textAlign: "center" },
+  impactInternalNote: {
+    color: Colors.dark.tabIconDefault, fontSize: 10,
+    textAlign: "center", lineHeight: 14,
   },
 });

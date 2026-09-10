@@ -16458,9 +16458,9 @@ function readMetaNumber(payload, key) {
   const value = asNullableNumber(payload[key]);
   return value == null ? null : Math.max(0, Math.floor(value));
 }
-function withPagination(path6, page) {
+function withPagination(path6, page, pageSize = IMPACT_INVENTORY_PAGE_SIZE) {
   const separator = path6.includes("?") ? "&" : "?";
-  return `${path6}${separator}PageSize=${IMPACT_INVENTORY_PAGE_SIZE}&Page=${page}`;
+  return `${path6}${separator}PageSize=${pageSize}&Page=${page}`;
 }
 function normalizeDate2(value) {
   return asNullableString(value);
@@ -16525,16 +16525,16 @@ async function fetchImpactJson(path6) {
     clearTimeout(timeout);
   }
 }
-async function listImpactRows(path6, collectionKey) {
+async function listImpactRows(path6, collectionKey, pageSize = IMPACT_INVENTORY_PAGE_SIZE, maxPages = IMPACT_INVENTORY_MAX_PAGES) {
   const rows = [];
   let total = null;
-  for (let page = 1; page <= IMPACT_INVENTORY_MAX_PAGES; page += 1) {
-    const payload = await fetchImpactJson(withPagination(path6, page));
+  for (let page = 1; page <= maxPages; page += 1) {
+    const payload = await fetchImpactJson(withPagination(path6, page, pageSize));
     const pageRows = readCollection(payload, collectionKey);
     const pageTotal = readMetaNumber(payload, "@total");
     if (pageTotal != null) total = pageTotal;
     rows.push(...pageRows);
-    if (pageRows.length === 0 || total != null && rows.length >= total || pageRows.length < IMPACT_INVENTORY_PAGE_SIZE) {
+    if (pageRows.length === 0 || total != null && rows.length >= total || pageRows.length < pageSize) {
       return { rows, total };
     }
   }
@@ -16774,6 +16774,81 @@ async function getImpactInventory() {
     totals
   };
 }
+function isCurrentImpactDeal(row, now) {
+  if (normalizeStatus(row.State) !== "active") return false;
+  const start = asNullableString(row.StartDate);
+  const end = asNullableString(row.EndDate);
+  const startTime = start ? Date.parse(start) : Number.NaN;
+  const endTime = end ? Date.parse(end) : Number.NaN;
+  if (Number.isFinite(startTime) && startTime > now) return false;
+  if (Number.isFinite(endTime) && endTime < now) return false;
+  return true;
+}
+function impactRowMatchesKeyword(row, keyword) {
+  const normalizedKeyword = keyword.toLowerCase();
+  return [
+    row.Name,
+    row.Description,
+    row.DealName,
+    row.DealDescription
+  ].some((value) => asNullableString(value)?.toLowerCase().includes(normalizedKeyword));
+}
+async function getImpactReview(options = {}) {
+  const fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const updatedWithinDays = options.updatedWithinDays ?? 30;
+  const keyword = options.keyword?.trim() || null;
+  const adType = options.adType ?? null;
+  const programs = await listJoinedImpactPrograms();
+  const activePrograms = programs.filter(
+    (program) => program.program_id && program.status?.toLowerCase() === "active"
+  );
+  const now = Date.now();
+  const updatedDateStart = new Date(
+    now - updatedWithinDays * 24 * 60 * 60 * 1e3
+  ).toISOString();
+  const updatedDateEnd = new Date(now).toISOString();
+  const totals = { deals: 0, ads: 0, creatives: 0 };
+  const reviewPrograms = [];
+  for (const program of activePrograms) {
+    const programId = program.program_id;
+    const dealsResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Campaigns/${encodeURIComponent(programId)}/Deals`,
+      "Deals"
+    );
+    const adFilters = [
+      `CampaignId=${encodeURIComponent(programId)}`,
+      `UpdatedDateStart=${encodeURIComponent(updatedDateStart)}`,
+      `UpdatedDateEnd=${encodeURIComponent(updatedDateEnd)}`
+    ];
+    if (adType) adFilters.push(`Type=${encodeURIComponent(adType)}`);
+    const adsResult = await listImpactRows(
+      `/Mediapartners/${encodeURIComponent(getImpactConfiguration().accountSid)}/Ads?${adFilters.join("&")}`,
+      "Ads"
+    );
+    const deals = dealsResult.rows.filter((row) => isCurrentImpactDeal(row, now)).map((row) => normalizeDeal(row, program, fetchedAt)).sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+    const ads = adsResult.rows.filter((row) => !keyword || impactRowMatchesKeyword(row, keyword)).map((row) => normalizeAd(row, program, fetchedAt)).sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
+    const counts = {
+      deals: deals.length,
+      ads: ads.length,
+      creatives: ads.filter((ad) => Boolean(ad.creative_url)).length
+    };
+    totals.deals += counts.deals;
+    totals.ads += counts.ads;
+    totals.creatives += counts.creatives;
+    reviewPrograms.push({ program, deals, ads, counts });
+  }
+  return {
+    provider: "impact",
+    fetched_at: fetchedAt,
+    page_size: IMPACT_INVENTORY_PAGE_SIZE,
+    updated_within_days: updatedWithinDays,
+    ad_type: adType,
+    keyword,
+    active_program_count: reviewPrograms.length,
+    programs: reviewPrograms,
+    totals
+  };
+}
 
 // server/routes-impact.ts
 function requireAdmin3(req, res2) {
@@ -16784,6 +16859,30 @@ function requireAdmin3(req, res2) {
     return false;
   }
   return true;
+}
+var IMPACT_AD_TYPES = /* @__PURE__ */ new Set(["TEXT_LINK", "BANNER", "COUPON"]);
+function queryString(value) {
+  return typeof value === "string" ? value.trim() || null : null;
+}
+function parseReviewOptions(req) {
+  const rawAdType = queryString(req.query.ad_type);
+  if (rawAdType && !IMPACT_AD_TYPES.has(rawAdType)) {
+    return { error: "ad_type must be TEXT_LINK, BANNER, or COUPON." };
+  }
+  const rawDays = queryString(req.query.updated_within_days);
+  const updatedWithinDays = rawDays ? Number(rawDays) : 30;
+  if (!Number.isInteger(updatedWithinDays) || updatedWithinDays < 1 || updatedWithinDays > 90) {
+    return { error: "updated_within_days must be an integer from 1 to 90." };
+  }
+  const keyword = queryString(req.query.keyword);
+  if (keyword && keyword.length > 100) {
+    return { error: "keyword must be 100 characters or fewer." };
+  }
+  return {
+    adType: rawAdType,
+    keyword,
+    updatedWithinDays
+  };
 }
 function registerImpactRoutes(app2) {
   app2.get("/api/admin/impact/joined-programs", async (req, res2) => {
@@ -16863,6 +16962,49 @@ function registerImpactRoutes(app2) {
         ok: false,
         error: "Impact inventory request failed.",
         code: "IMPACT_INVENTORY_REQUEST_FAILED"
+      });
+    }
+  });
+  app2.get("/api/admin/impact/review", async (req, res2) => {
+    if (!requireAdmin3(req, res2)) return;
+    const options = parseReviewOptions(req);
+    if ("error" in options) {
+      res2.status(400).json({ ok: false, error: options.error });
+      return;
+    }
+    try {
+      const review = await getImpactReview(options);
+      res2.json({ ok: true, ...review });
+    } catch (error) {
+      if (error instanceof ImpactConfigurationError) {
+        res2.status(503).json({
+          ok: false,
+          error: "Impact integration is not configured.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactAuthenticationError) {
+        res2.status(502).json({
+          ok: false,
+          error: "Impact authentication failed.",
+          code: error.code
+        });
+        return;
+      }
+      if (error instanceof ImpactProviderError) {
+        res2.status(error.status === 504 ? 504 : 502).json({
+          ok: false,
+          error: error.message,
+          code: error.code
+        });
+        return;
+      }
+      console.error("[impact] review request failed");
+      res2.status(502).json({
+        ok: false,
+        error: "Impact review request failed.",
+        code: "IMPACT_REVIEW_REQUEST_FAILED"
       });
     }
   });
