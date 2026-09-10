@@ -583,6 +583,12 @@ function impactRowMatchesKeyword(row: ImpactProviderRow, keyword: string): boole
   ].some((value) => asNullableString(value)?.toLowerCase().includes(normalizedKeyword));
 }
 
+function formatImpactAdsDateFilter(value: Date): string {
+  // Partner Ads accepts an explicit numeric timezone offset, but rejects
+  // fractional seconds and the trailing UTC "Z" form.
+  return value.toISOString().replace(/\.\d{3}Z$/, "+00:00");
+}
+
 export async function getImpactReview(options: {
   adType?: ImpactAdType | null;
   keyword?: string | null;
@@ -597,10 +603,10 @@ export async function getImpactReview(options: {
     (program) => program.program_id && program.status?.toLowerCase() === "active",
   );
   const now = Date.now();
-  const updatedDateStart = new Date(
+  const updatedDateStart = formatImpactAdsDateFilter(new Date(
     now - updatedWithinDays * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  const updatedDateEnd = new Date(now).toISOString();
+  ));
+  const updatedDateEnd = formatImpactAdsDateFilter(new Date(now));
   const totals = { deals: 0, ads: 0, creatives: 0 };
   const reviewPrograms: ImpactReviewProgram[] = [];
 
