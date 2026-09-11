@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, TextInput, Pressable, ScrollView,
-  StyleSheet, ActivityIndicator, Alert, Platform, Modal, Image,
+  StyleSheet, ActivityIndicator, Alert, Platform, Modal, Image, Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -226,6 +226,82 @@ function impactCreativeSource(value: string) {
   return value.startsWith("//") ? `https:${value}` : value;
 }
 
+type ImpactPreviewMode = "game_day" | "fantasy_weekly";
+
+function ImpactPreviewCard({
+  item,
+  mode,
+  onOpenTracking,
+}: {
+  item: ImpactReviewItem;
+  mode: ImpactPreviewMode;
+  onOpenTracking: () => void;
+}) {
+  const brand = item.brand_name ?? item.program_name ?? "Partner offer";
+  const title = item.title ?? "Special offer";
+  const discount = item.discount_percent != null
+    ? `${item.discount_percent}% off`
+    : item.discount_amount != null
+      ? `${item.discount_currency ?? ""}${item.discount_amount} off`
+      : null;
+  const ctaLabel = item.tracking_url ? `Shop ${brand}` : "Affiliate link unavailable";
+
+  return (
+    <View style={[
+      styles.impactPreviewMock,
+      mode === "fantasy_weekly"
+        ? styles.impactPreviewMockFantasy
+        : styles.impactPreviewMockGameDay,
+    ]}>
+      <View style={styles.impactPreviewMockTopline}>
+        <Text style={styles.impactPreviewMockEyebrow}>
+          {mode === "fantasy_weekly" ? "WEEKLY BONUS" : "GAME DAY OFFER"}
+        </Text>
+        <Text style={styles.impactPreviewMockPreviewLabel}>PREVIEW</Text>
+      </View>
+
+      {mode === "game_day" && item.creative_url && (
+        <Image
+          source={{ uri: impactCreativeSource(item.creative_url) }}
+          style={styles.impactPreviewCreative}
+          resizeMode="contain"
+        />
+      )}
+
+      <View style={styles.impactPreviewMockBody}>
+        <Text style={styles.impactPreviewBrand}>{brand}</Text>
+        <Text style={styles.impactPreviewTitle}>{title}</Text>
+        {item.description && (
+          <Text style={styles.impactPreviewDescription}>{item.description}</Text>
+        )}
+
+        <View style={styles.impactPreviewMetaRow}>
+          {discount && <Text style={styles.impactPreviewMeta}>{discount}</Text>}
+          {item.discount_type && !discount && (
+            <Text style={styles.impactPreviewMeta}>{item.discount_type}</Text>
+          )}
+          {item.promo_code && (
+            <Text style={styles.impactPreviewCode}>Code: {item.promo_code}</Text>
+          )}
+        </View>
+
+        <Pressable
+          style={[styles.impactPreviewCta, !item.tracking_url && styles.impactPreviewCtaDisabled]}
+          onPress={onOpenTracking}
+          disabled={!item.tracking_url}
+        >
+          <Text style={styles.impactPreviewCtaText}>{ctaLabel}</Text>
+          {item.tracking_url && <Ionicons name="arrow-forward" size={15} color="#000" />}
+        </Pressable>
+
+        <Text style={styles.impactPreviewDisclosure}>
+          Affiliate disclosure: Swayger may earn a commission if you use this link.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function AdminScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
@@ -283,6 +359,8 @@ export default function AdminScreen() {
   const [impactAdType, setImpactAdType] = useState<ImpactReviewAdType | null>(null);
   const [impactKeyword, setImpactKeyword] = useState("");
   const [impactShortlisted, setImpactShortlisted] = useState<Set<string>>(new Set());
+  const [impactPreviewItem, setImpactPreviewItem] = useState<ImpactReviewItem | null>(null);
+  const [impactPreviewMode, setImpactPreviewMode] = useState<ImpactPreviewMode>("game_day");
   const [impactFullLoading, setImpactFullLoading] = useState(false);
   const [impactFullSummary, setImpactFullSummary] = useState<{ ads: number; deals: number; fetched_at: string } | null>(null);
   const [impactFullError, setImpactFullError] = useState<string | null>(null);
@@ -567,6 +645,7 @@ export default function AdminScreen() {
     setImpactReview(null);
     setImpactFullSummary(null);
     setImpactShortlisted(new Set());
+    setImpactPreviewItem(null);
   }
 
   async function loadImpactReview(
@@ -642,6 +721,16 @@ export default function AdminScreen() {
   function isImpactShortlisted(item: ImpactReviewItem) {
     const key = `${item.resource_type}:${item.program_id ?? "unknown"}:${item.external_id ?? item.title ?? "item"}`;
     return impactShortlisted.has(key);
+  }
+
+  function openImpactPreview(item: ImpactReviewItem) {
+    setImpactPreviewMode("game_day");
+    setImpactPreviewItem(item);
+  }
+
+  function openImpactTrackingLink() {
+    const trackingUrl = impactPreviewItem?.tracking_url;
+    if (trackingUrl) void Linking.openURL(trackingUrl);
   }
 
   async function loadNights(t: string) {
@@ -1321,6 +1410,93 @@ export default function AdminScreen() {
                   </Pressable>
                 </View>
               </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Impact Commercial Preview Modal ─────────────────────────────── */}
+      <Modal
+        visible={impactPreviewItem !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setImpactPreviewItem(null)}
+      >
+        <View style={styles.impactPreviewOverlay}>
+          <View style={styles.impactPreviewSheet}>
+            <View style={styles.impactPreviewHandle} />
+            <View style={styles.impactPreviewHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.impactPreviewTitleText}>Commercial Preview</Text>
+                <Text style={styles.impactPreviewSubtitle}>
+                  Admin-only mockup · nothing is live or assigned
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close commercial preview"
+                onPress={() => setImpactPreviewItem(null)}
+                style={styles.impactPreviewClose}
+              >
+                <Ionicons name="close" size={20} color={Colors.dark.textSecondary} />
+              </Pressable>
+            </View>
+
+            {impactPreviewItem && (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.impactPreviewContent}
+              >
+                <View style={styles.impactPreviewNotice}>
+                  <Ionicons name="eye-outline" size={16} color="#FBBF24" />
+                  <Text style={styles.impactPreviewNoticeText}>
+                    PREVIEW ONLY — this offer is not published, attached to a room, or assigned to Fantasy Weekly.
+                  </Text>
+                </View>
+
+                <View style={styles.impactPreviewModeRow}>
+                  {([
+                    { value: "game_day" as const, label: "Game Day" },
+                    { value: "fantasy_weekly" as const, label: "Fantasy Weekly" },
+                  ]).map((option) => {
+                    const selected = impactPreviewMode === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        style={[
+                          styles.impactPreviewModeBtn,
+                          selected && styles.impactPreviewModeBtnSelected,
+                        ]}
+                        onPress={() => setImpactPreviewMode(option.value)}
+                      >
+                        <Text style={[
+                          styles.impactPreviewModeText,
+                          selected && styles.impactPreviewModeTextSelected,
+                        ]}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <ImpactPreviewCard
+                  item={impactPreviewItem}
+                  mode={impactPreviewMode}
+                  onOpenTracking={openImpactTrackingLink}
+                />
+
+                <Text style={styles.impactPreviewFooterNote}>
+                  The CTA uses Impact’s returned tracking link. Opening it may count as an affiliate click,
+                  but it does not publish or assign this offer.
+                </Text>
+
+                <Pressable
+                  style={styles.impactPreviewDoneBtn}
+                  onPress={() => setImpactPreviewItem(null)}
+                >
+                  <Text style={styles.impactPreviewDoneText}>Done</Text>
+                </Pressable>
+              </ScrollView>
             )}
           </View>
         </View>
