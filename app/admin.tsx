@@ -1787,25 +1787,36 @@ export default function AdminScreen() {
                             {(deal.status ?? "active").toUpperCase()} · Impact deal
                           </Text>
                         </View>
-                        <Pressable
-                          style={[
-                            styles.impactShortlistBtn,
-                            isImpactShortlisted(deal) && styles.impactShortlistBtnSelected,
-                          ]}
-                          onPress={() => toggleImpactShortlist(deal)}
-                        >
-                          <Ionicons
-                            name={isImpactShortlisted(deal) ? "checkmark" : "bookmark-outline"}
-                            size={14}
-                            color={isImpactShortlisted(deal) ? "#000" : Colors.dark.tint}
-                          />
-                          <Text style={[
-                            styles.impactShortlistText,
-                            isImpactShortlisted(deal) && styles.impactShortlistTextSelected,
-                          ]}>
-                            {isImpactShortlisted(deal) ? "Shortlisted" : "Select for Swayger"}
-                          </Text>
-                        </Pressable>
+                        <View style={styles.impactOfferActions}>
+                          <Pressable
+                            style={[
+                              styles.impactShortlistBtn,
+                              isImpactShortlisted(deal) && styles.impactShortlistBtnSelected,
+                            ]}
+                            onPress={() => toggleImpactShortlist(deal)}
+                          >
+                            <Ionicons
+                              name={isImpactShortlisted(deal) ? "checkmark" : "bookmark-outline"}
+                              size={14}
+                              color={isImpactShortlisted(deal) ? "#000" : Colors.dark.tint}
+                            />
+                            <Text style={[
+                              styles.impactShortlistText,
+                              isImpactShortlisted(deal) && styles.impactShortlistTextSelected,
+                            ]}>
+                              {isImpactShortlisted(deal) ? "Shortlisted" : "Select for Swayger"}
+                            </Text>
+                          </Pressable>
+                          {isImpactShortlisted(deal) && (
+                            <Pressable
+                              style={styles.impactPreviewBtn}
+                              onPress={() => openImpactPreview(deal)}
+                            >
+                              <Ionicons name="eye-outline" size={14} color={Colors.dark.text} />
+                              <Text style={styles.impactPreviewBtnText}>Preview</Text>
+                            </Pressable>
+                          )}
+                        </View>
                       </View>
                       {deal.description && <Text style={styles.impactOfferDescription}>{deal.description}</Text>}
                       <View style={styles.impactDetailRow}>
@@ -1856,25 +1867,36 @@ export default function AdminScreen() {
                               {ad.creative_type ?? "AD"} · Available to partner
                             </Text>
                           </View>
-                          <Pressable
-                            style={[
-                              styles.impactShortlistBtn,
-                              isImpactShortlisted(ad) && styles.impactShortlistBtnSelected,
-                            ]}
-                            onPress={() => toggleImpactShortlist(ad)}
-                          >
-                            <Ionicons
-                              name={isImpactShortlisted(ad) ? "checkmark" : "bookmark-outline"}
-                              size={14}
-                              color={isImpactShortlisted(ad) ? "#000" : Colors.dark.tint}
-                            />
-                            <Text style={[
-                              styles.impactShortlistText,
-                              isImpactShortlisted(ad) && styles.impactShortlistTextSelected,
-                            ]}>
-                              {isImpactShortlisted(ad) ? "Shortlisted" : "Select for Swayger"}
-                            </Text>
-                          </Pressable>
+                          <View style={styles.impactOfferActions}>
+                            <Pressable
+                              style={[
+                                styles.impactShortlistBtn,
+                                isImpactShortlisted(ad) && styles.impactShortlistBtnSelected,
+                              ]}
+                              onPress={() => toggleImpactShortlist(ad)}
+                            >
+                              <Ionicons
+                                name={isImpactShortlisted(ad) ? "checkmark" : "bookmark-outline"}
+                                size={14}
+                                color={isImpactShortlisted(ad) ? "#000" : Colors.dark.tint}
+                              />
+                              <Text style={[
+                                styles.impactShortlistText,
+                                isImpactShortlisted(ad) && styles.impactShortlistTextSelected,
+                              ]}>
+                                {isImpactShortlisted(ad) ? "Shortlisted" : "Select for Swayger"}
+                              </Text>
+                            </Pressable>
+                            {isImpactShortlisted(ad) && (
+                              <Pressable
+                                style={styles.impactPreviewBtn}
+                                onPress={() => openImpactPreview(ad)}
+                              >
+                                <Ionicons name="eye-outline" size={14} color={Colors.dark.text} />
+                                <Text style={styles.impactPreviewBtnText}>Preview</Text>
+                              </Pressable>
+                            )}
+                          </View>
                         </View>
                         {ad.description && <Text style={styles.impactOfferDescription}>{ad.description}</Text>}
                         <View style={styles.impactDetailRow}>
@@ -2377,6 +2399,140 @@ const styles = StyleSheet.create({
     fontSize: 15, fontWeight: "700", color: "#000",
   },
 
+  // ── Impact Commercial Preview ───────────────────────────────────────────
+  impactPreviewOverlay: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    padding: 16, backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  impactPreviewSheet: {
+    width: "100%", maxWidth: 620, maxHeight: "92%",
+    backgroundColor: Colors.dark.surface, borderRadius: 20,
+    borderWidth: 1, borderColor: Colors.dark.borderStrong,
+    overflow: "hidden",
+  },
+  impactPreviewHandle: {
+    width: 42, height: 4, borderRadius: 4,
+    alignSelf: "center", marginTop: 10,
+    backgroundColor: Colors.dark.borderStrong,
+  },
+  impactPreviewHeader: {
+    flexDirection: "row", alignItems: "flex-start", gap: 12,
+    paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10,
+  },
+  impactPreviewTitleText: {
+    color: Colors.dark.text, fontSize: 20, fontWeight: "800",
+  },
+  impactPreviewSubtitle: {
+    color: Colors.dark.textSecondary, fontSize: 11, lineHeight: 16, marginTop: 3,
+  },
+  impactPreviewClose: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: Colors.dark.background,
+  },
+  impactPreviewContent: {
+    paddingHorizontal: 18, paddingBottom: 22, gap: 14,
+  },
+  impactPreviewNotice: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    padding: 11, borderRadius: 10,
+    backgroundColor: "#FBBF2412", borderWidth: 1, borderColor: "#FBBF2450",
+  },
+  impactPreviewNoticeText: {
+    flex: 1, color: "#FBBF24", fontSize: 11, lineHeight: 16, fontWeight: "700",
+  },
+  impactPreviewModeRow: {
+    flexDirection: "row", gap: 8,
+  },
+  impactPreviewModeBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 10,
+    borderRadius: 9, borderWidth: 1, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.background,
+  },
+  impactPreviewModeBtnSelected: {
+    borderColor: Colors.dark.tint, backgroundColor: `${Colors.dark.tint}20`,
+  },
+  impactPreviewModeText: {
+    color: Colors.dark.textSecondary, fontSize: 12, fontWeight: "700",
+  },
+  impactPreviewModeTextSelected: {
+    color: Colors.dark.tint,
+  },
+  impactPreviewMock: {
+    overflow: "hidden", borderRadius: 16, borderWidth: 1,
+  },
+  impactPreviewMockGameDay: {
+    borderColor: "#FBBF2460", backgroundColor: "#11100B",
+  },
+  impactPreviewMockFantasy: {
+    borderColor: `${Colors.dark.tint}80`, backgroundColor: "#0D1020",
+  },
+  impactPreviewMockTopline: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 15, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
+  },
+  impactPreviewMockEyebrow: {
+    color: Colors.dark.textSecondary, fontSize: 10, fontWeight: "800",
+    letterSpacing: 1.2,
+  },
+  impactPreviewMockPreviewLabel: {
+    color: "#FBBF24", fontSize: 9, fontWeight: "900", letterSpacing: 1,
+  },
+  impactPreviewCreative: {
+    width: "100%", height: 118, backgroundColor: Colors.dark.background,
+  },
+  impactPreviewMockBody: {
+    padding: 16, gap: 9,
+  },
+  impactPreviewBrand: {
+    color: Colors.dark.tint, fontSize: 11, fontWeight: "800",
+    textTransform: "uppercase", letterSpacing: 0.8,
+  },
+  impactPreviewTitle: {
+    color: Colors.dark.text, fontSize: 22, lineHeight: 27, fontWeight: "800",
+  },
+  impactPreviewDescription: {
+    color: Colors.dark.textSecondary, fontSize: 13, lineHeight: 19,
+  },
+  impactPreviewMetaRow: {
+    flexDirection: "row", flexWrap: "wrap", gap: 7, alignItems: "center",
+  },
+  impactPreviewMeta: {
+    color: Colors.dark.text, fontSize: 12, fontWeight: "800",
+    backgroundColor: `${Colors.dark.tint}25`, borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 5,
+  },
+  impactPreviewCode: {
+    color: "#FBBF24", fontSize: 12, fontWeight: "800",
+    backgroundColor: "#FBBF2418", borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 5,
+  },
+  impactPreviewCta: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    minHeight: 44, borderRadius: 10, backgroundColor: NBA_GOLD,
+    paddingHorizontal: 15, paddingVertical: 11,
+  },
+  impactPreviewCtaDisabled: {
+    backgroundColor: Colors.dark.border,
+  },
+  impactPreviewCtaText: {
+    color: "#000", fontSize: 13, fontWeight: "900",
+  },
+  impactPreviewDisclosure: {
+    color: Colors.dark.textSecondary, fontSize: 10, lineHeight: 15,
+  },
+  impactPreviewFooterNote: {
+    color: Colors.dark.tabIconDefault, fontSize: 10, lineHeight: 15,
+  },
+  impactPreviewDoneBtn: {
+    alignItems: "center", paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  impactPreviewDoneText: {
+    color: Colors.dark.textSecondary, fontSize: 13, fontWeight: "700",
+  },
+
   // ── Impact Commercial Review ─────────────────────────────────────────────
   impactFilterGroup: { gap: 6 },
   impactFilterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
@@ -2434,6 +2590,10 @@ const styles = StyleSheet.create({
   impactOfferHeader: {
     flexDirection: "row", alignItems: "flex-start", gap: 8,
   },
+  impactOfferActions: {
+    flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end",
+    gap: 6, maxWidth: "58%",
+  },
   impactOfferTitle: { flex: 1, fontSize: 13, color: Colors.dark.text, fontWeight: "800" },
   impactStatusText: {
     fontSize: 9, color: Colors.dark.tint, fontWeight: "800",
@@ -2472,6 +2632,15 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint, fontSize: 9, fontWeight: "800",
   },
   impactShortlistTextSelected: { color: "#000" },
+  impactPreviewBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    borderWidth: 1, borderColor: Colors.dark.borderStrong, borderRadius: 7,
+    backgroundColor: Colors.dark.surfaceLight,
+    paddingHorizontal: 7, paddingVertical: 6,
+  },
+  impactPreviewBtnText: {
+    color: Colors.dark.text, fontSize: 9, fontWeight: "800",
+  },
   impactFullInventoryBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
     borderWidth: 1, borderColor: "#FBBF2450", borderRadius: 10,
