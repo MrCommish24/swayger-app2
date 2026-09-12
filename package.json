@@ -15,6 +15,7 @@
     "db:repair:live-draft-day-labels": "npx tsx server/migrations/repair-live-draft-day-team-labels.ts",
     "start": "npx expo start",
     "test:gameday:web": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-gameday-web-regression.ts",
+    "test:commercial": "TEST_API_BASE=http://127.0.0.1:5000 npx tsx server/test-commercial-workflow.ts",
     "test:gameday:correct-answers": "npx tsx server/gameday-correct-answers.test.ts",
     "test:gameday:discord": "npx tsx server/test-gameday-discord-isolation.ts",
     "test:gameday:visibility": "npx tsx server/test-gameday-discord-visibility.ts",

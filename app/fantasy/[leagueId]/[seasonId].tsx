@@ -61,6 +61,8 @@ import {
 } from "@/lib/fantasy-api";
 import { FantasyInviteSheet } from "@/components/fantasy/FantasyInviteSheet";
 import { Analytics } from "@/lib/posthog";
+import { getCommercialPlacement } from "@/lib/commercial-api";
+import { CommercialOfferCard } from "@/components/CommercialOfferCard";
 
 // ── Phase 5.3: Commissioner next-action helper ────────────────────────────────
 // Derives the single most important commissioner action from current hub state.
@@ -992,6 +994,7 @@ export default function LeagueHubScreen() {
   const [finalizeError, setFinalizeError]           = useState<string | null>(null);
   // ── Phase 5.2: Weekly summary (all weeks — one request) ─────────────────────
   const [weeklySummary, setWeeklySummary]       = useState<WeeklySummaryResponse | null | undefined>(undefined);
+  const [weeklyCommercialOffer, setWeeklyCommercialOffer] = useState<Awaited<ReturnType<typeof getCommercialPlacement>>>(null);
   const [lockingWeekly, setLockingWeekly]       = useState(false);
   const [unlockingWeekly, setUnlockingWeekly]   = useState(false);
   const [weeklyLockError, setWeeklyLockError]   = useState<string | null>(null);
@@ -1053,6 +1056,21 @@ export default function LeagueHubScreen() {
     if (!session && !guestToken) { setLoading(false); return; }
     fetchDetail();
   }, [authLoading, guestTokenLoading, session?.access_token, guestToken, leagueId, seasonId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const roomId = weeklySummary?.current_week?.room_id;
+    if (!roomId) {
+      setWeeklyCommercialOffer(null);
+      return;
+    }
+    getCommercialPlacement("fantasy_weekly", roomId).then((offer) => {
+      if (!cancelled) setWeeklyCommercialOffer(offer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [weeklySummary?.current_week?.room_id]);
 
   // Re-fetch quietly when the screen regains focus (e.g. navigating back from
   // the setup wizard after publishing). This is the root-cause fix for the
@@ -1594,6 +1612,13 @@ export default function LeagueHubScreen() {
                     <Text style={[styles.sectionLabel, { marginTop: 4, marginBottom: 10 }]}>
                       CURRENT SWAYGER
                     </Text>
+                    {weeklyCommercialOffer && (
+                      <CommercialOfferCard
+                        offer={weeklyCommercialOffer}
+                        targetType="fantasy_weekly"
+                        targetId={cw.room_id}
+                      />
+                    )}
                     <WeeklyCard
                       weekNumber={wn}
                       weekly={cw}

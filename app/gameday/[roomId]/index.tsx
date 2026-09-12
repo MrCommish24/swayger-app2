@@ -23,6 +23,8 @@ import {
 } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
 import { Analytics, detectEntrySource, detectUtmCampaign, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
+import { getCommercialPlacement } from "@/lib/commercial-api";
+import { CommercialOfferCard } from "@/components/CommercialOfferCard";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -174,6 +176,7 @@ export default function GameDayRoomScreen() {
 
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null);
   const [roomData, setRoomData] = useState<GDRoomResponse | null>(null);
+  const [commercialOffer, setCommercialOffer] = useState<Awaited<ReturnType<typeof getCommercialPlacement>>>(null);
   const [leaderboard, setLeaderboard] = useState<GDLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -411,6 +414,20 @@ export default function GameDayRoomScreen() {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [fetchRoom, fetchLeaderboard]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!roomId) {
+      setCommercialOffer(null);
+      return;
+    }
+    getCommercialPlacement("game_day", roomId).then((offer) => {
+      if (!cancelled) setCommercialOffer(offer);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   // Determine if user needs to join
   useEffect(() => {
@@ -854,6 +871,14 @@ export default function GameDayRoomScreen() {
           </View>
         );
       })() : null}
+
+      {commercialOffer && roomId ? (
+        <CommercialOfferCard
+          offer={commercialOffer}
+          targetType="game_day"
+          targetId={roomId}
+        />
+      ) : null}
 
       {/* Game Day Timeline */}
       {!isFinalized && (

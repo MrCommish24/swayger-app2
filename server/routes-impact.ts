@@ -9,7 +9,7 @@ import {
   listJoinedImpactPrograms,
 } from "./impact-client";
 
-function requireAdmin(req: Request, res: Response): boolean {
+export function requireAdmin(req: Request, res: Response): boolean {
   const configuredToken = process.env.MM_ADMIN_TOKEN;
   const requestToken = req.headers["x-admin-token"];
 

@@ -39,6 +39,12 @@ export function trackScreen(screenName: string, properties?: Record<string, any>
   getPostHog()?.screen(screenName, properties);
 }
 
+export interface CommercialOfferAnalyticsContext {
+  offer_id: string;
+  target_type: "fantasy_weekly" | "game_day";
+  target_id: string;
+}
+
 // ─── Named events ────────────────────────────────────────────────────────────
 // Centralised so event names stay consistent across the codebase.
 
@@ -153,6 +159,13 @@ function fCtx(
 }
 
 export const Analytics = {
+  commercialOfferRendered: (ctx: CommercialOfferAnalyticsContext) =>
+    capture("commercial_offer_rendered", ctx),
+  commercialOfferViewed: (ctx: CommercialOfferAnalyticsContext) =>
+    capture("commercial_offer_viewed", ctx),
+  commercialOfferClicked: (ctx: CommercialOfferAnalyticsContext) =>
+    capture("commercial_offer_clicked", ctx),
+
   // ── Fantasy pilot funnel ─────────────────────────────────────────────────────
   fantasyLeagueCreated: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
     capture("fantasy_league_created", fCtx(ctx, extra)),

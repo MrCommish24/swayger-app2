@@ -9,6 +9,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import { getApiUrl } from "@/lib/query-client";
 import Colors from "@/constants/colors";
+import {
+  assignCommercialOffer,
+  CommercialAssignment,
+  CommercialOffer,
+  CommercialTarget,
+  CommercialTargetType,
+  listCommercialAssignments,
+  listCommercialOffers,
+  listCommercialTargets,
+  publishCommercialAssignment,
+  saveCommercialOffer,
+} from "@/lib/commercial-api";
 
 const ADMIN_TOKEN_KEY = "swayger_admin_token";
 const NBA_GOLD = "#FFC72C";
@@ -352,7 +364,7 @@ export default function AdminScreen() {
   const [sqSettleSubmitting, setSqSettleSubmitting] = useState(false);
   const [sqSettleResult, setSqSettleResult] = useState<{ ok: boolean; message: string; refresh_required?: boolean } | null>(null);
 
-  // Impact Commercial Review — read-only, internal shortlist only.
+  // Impact Commercial Review and persisted Swayger Offer workflow.
   const [impactReview, setImpactReview] = useState<ImpactReviewResponse | null>(null);
   const [impactReviewLoading, setImpactReviewLoading] = useState(false);
   const [impactReviewError, setImpactReviewError] = useState<string | null>(null);
@@ -364,6 +376,14 @@ export default function AdminScreen() {
   const [impactFullLoading, setImpactFullLoading] = useState(false);
   const [impactFullSummary, setImpactFullSummary] = useState<{ ads: number; deals: number; fetched_at: string } | null>(null);
   const [impactFullError, setImpactFullError] = useState<string | null>(null);
+  const [commercialOffers, setCommercialOffers] = useState<CommercialOffer[]>([]);
+  const [commercialAssignments, setCommercialAssignments] = useState<CommercialAssignment[]>([]);
+  const [commercialTargets, setCommercialTargets] = useState<CommercialTarget[]>([]);
+  const [commercialTargetType, setCommercialTargetType] = useState<CommercialTargetType>("game_day");
+  const [commercialTargetPickerOfferId, setCommercialTargetPickerOfferId] = useState<string | null>(null);
+  const [commercialLoading, setCommercialLoading] = useState(false);
+  const [commercialError, setCommercialError] = useState<string | null>(null);
+  const [commercialPreviewTarget, setCommercialPreviewTarget] = useState<string | null>(null);
 
   // Prop Library
   const [libSport, setLibSport] = useState<"nba" | "soccer">("nba");
@@ -388,6 +408,7 @@ export default function AdminScreen() {
         loadPropLibrary(t, libSport);
         loadSettlementQueue(t);
         loadImpactReview(t);
+        loadCommercialWorkflow(t);
         if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
       }
     });
@@ -635,6 +656,7 @@ export default function AdminScreen() {
     loadPropLibrary(t, libSport);
     loadSettlementQueue(t);
     loadImpactReview(t);
+    loadCommercialWorkflow(t);
     if (LEGACY_GS_ENABLED) loadGsTemplProps(t, gsSport);
   }
 
@@ -646,6 +668,10 @@ export default function AdminScreen() {
     setImpactFullSummary(null);
     setImpactShortlisted(new Set());
     setImpactPreviewItem(null);
+    setCommercialOffers([]);
+    setCommercialAssignments([]);
+    setCommercialTargets([]);
+    setCommercialTargetPickerOfferId(null);
   }
 
   async function loadImpactReview(
@@ -708,6 +734,150 @@ export default function AdminScreen() {
     }
   }
 
+  async function loadCommercialWorkflow(t: string) {
+    setCommercialLoading(true);
+    setCommercialError(null);
+    try {
+      const [offers, assignments] = await Promise.all([
+        listCommercialOffers(t),
+        listCommercialAssignments(t),
+      ]);
+      setCommercialOffers(offers);
+      setCommercialAssignments(assignments);
+    } catch (error) {
+      setCommercialError(error instanceof Error ? error.message : "Could not load saved Swayger Offers.");
+    } finally {
+      setCommercialLoading(false);
+    }
+  }
+
+  async function loadCommercialTargets(type: CommercialTargetType) {
+    if (!savedToken) return;
+    setCommercialTargetType(type);
+    setCommercialError(null);
+    try {
+      setCommercialTargets(await listCommercialTargets(savedToken, type));
+    } catch (error) {
+      setCommercialError(error instanceof Error ? error.message : "Could not load eligible targets.");
+    }
+  }
+
+  function offerKey(item: Pick<ImpactReviewItem, "resource_type" | "program_id" | "external_id" | "title">) {
+    return `${item.resource_type}:${item.program_id ?? "unknown"}:${item.external_id ?? item.title ?? "item"}`;
+  }
+
+  function savedCommercialOffer(item: ImpactReviewItem) {
+    return commercialOffers.find((offer) => offerKey({
+      resource_type: offer.resource_type,
+      program_id: offer.program_id,
+      external_id: offer.external_id,
+      title: offer.title,
+    }) === offerKey(item));
+  }
+
+  async function saveImpactOffer(item: ImpactReviewItem) {
+    if (!savedToken) return;
+    setCommercialError(null);
+    try {
+      const saved = await saveCommercialOffer(savedToken, item);
+      setCommercialOffers((previous) => [
+        saved,
+        ...previous.filter((offer) => offer.id !== saved.id),
+      ]);
+    } catch (error) {
+      setCommercialError(error instanceof Error ? error.message : "Could not save the Swayger Offer.");
+    }
+  }
+
+  async function assignOfferToTarget(offerId: string, target: CommercialTarget) {
+    if (!savedToken) return;
+    setCommercialError(null);
+    try {
+      const assignment = await assignCommercialOffer(
+        savedToken,
+        offerId,
+        target.target_type,
+        target.target_id,
+      );
+      setCommercialAssignments((previous) => [
+        assignment,
+        ...previous.filter((item) => item.id !== assignment.id),
+      ]);
+      setCommercialTargetPickerOfferId(null);
+      setCommercialTargets((previous) => previous.map((item) =>
+        item.target_id === target.target_id
+          ? { ...item, published_assignment: item.published_assignment ?? null }
+          : item
+      ));
+    } catch (error) {
+      setCommercialError(error instanceof Error ? error.message : "Could not assign the Swayger Offer.");
+    }
+  }
+
+  async function setAssignmentPublished(assignment: CommercialAssignment, publish: boolean) {
+    if (!savedToken) return;
+    if (publish && Platform.OS === "web" && typeof window !== "undefined" && !window.confirm(
+      "Publish this Featured Offer to the selected participant-facing target?",
+    )) return;
+    setCommercialError(null);
+    try {
+      const updated = await publishCommercialAssignment(savedToken, assignment.id, publish);
+      setCommercialAssignments((previous) => previous.map((item) => item.id === updated.id ? updated : item));
+      setCommercialTargets((previous) => previous.map((target) =>
+        target.target_id === updated.target_id
+          ? {
+            ...target,
+            published_assignment: updated.status === "published"
+              ? { id: updated.id, offer_id: updated.offer_id, status: "published" }
+              : null,
+          }
+          : target
+      ));
+    } catch (error) {
+      setCommercialError(error instanceof Error ? error.message : "Could not update the assignment.");
+    }
+  }
+
+  function offerAsImpactItem(offer: CommercialOffer): ImpactReviewItem {
+    return {
+      provider: "impact",
+      program_id: offer.program_id,
+      program_name: offer.program_name,
+      brand_id: offer.brand_id,
+      brand_name: offer.brand_name,
+      resource_type: offer.resource_type,
+      external_id: offer.external_id,
+      title: offer.title,
+      description: offer.description,
+      status: offer.status ?? "saved",
+      availability: offer.availability as ImpactReviewItem["availability"],
+      start_at: offer.start_at,
+      end_at: offer.end_at,
+      promo_code: offer.promo_code,
+      discount_type: offer.discount_type,
+      discount_amount: offer.discount_amount,
+      discount_currency: offer.discount_currency,
+      discount_percent: offer.discount_percent,
+      minimum_purchase_amount: offer.minimum_purchase_amount,
+      maximum_savings_amount: offer.maximum_savings_amount,
+      tracking_url: offer.tracking_url,
+      landing_page_url: offer.landing_page_url,
+      creative_url: offer.creative_url,
+      creative_type: offer.creative_type,
+      creative_width: offer.creative_width,
+      creative_height: offer.creative_height,
+      source_updated_at: offer.source_updated_at,
+      fetched_at: offer.source_updated_at ?? new Date().toISOString(),
+    };
+  }
+
+  function openCommercialAssignmentPreview(assignment: CommercialAssignment) {
+    if (!assignment.offer) return;
+    setImpactPreviewMode(assignment.target_type === "fantasy_weekly" ? "fantasy_weekly" : "game_day");
+    setCommercialPreviewTarget(assignment.target?.room_name ?? assignment.target_id);
+    setImpactPreviewItem(offerAsImpactItem(assignment.offer));
+  }
+
   function toggleImpactShortlist(item: ImpactReviewItem) {
     const key = `${item.resource_type}:${item.program_id ?? "unknown"}:${item.external_id ?? item.title ?? "item"}`;
     setImpactShortlisted((previous) => {
@@ -725,6 +895,7 @@ export default function AdminScreen() {
 
   function openImpactPreview(item: ImpactReviewItem) {
     setImpactPreviewMode("game_day");
+    setCommercialPreviewTarget(null);
     setImpactPreviewItem(item);
   }
 
@@ -1429,7 +1600,7 @@ export default function AdminScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.impactPreviewTitleText}>Commercial Preview</Text>
                 <Text style={styles.impactPreviewSubtitle}>
-                  Admin-only mockup · nothing is live or assigned
+                  Admin-only {commercialPreviewTarget ? `assignment preview · ${commercialPreviewTarget}` : "mockup · nothing is live or assigned"}
                 </Text>
               </View>
               <Pressable
@@ -1449,7 +1620,9 @@ export default function AdminScreen() {
                 <View style={styles.impactPreviewNotice}>
                   <Ionicons name="eye-outline" size={16} color="#FBBF24" />
                   <Text style={styles.impactPreviewNoticeText}>
-                    PREVIEW ONLY — this offer is not published, attached to a room, or assigned to Fantasy Weekly.
+                    {commercialPreviewTarget
+                      ? `PREVIEW ONLY — exact participant-facing placement for ${commercialPreviewTarget}. Publishing remains a separate manual action.`
+                      : "PREVIEW ONLY — this offer is not published or assigned to a participant-facing target."}
                   </Text>
                 </View>
 
@@ -1816,6 +1989,19 @@ export default function AdminScreen() {
                               <Text style={styles.impactPreviewBtnText}>Preview</Text>
                             </Pressable>
                           )}
+                            {isImpactShortlisted(deal) && (
+                              savedCommercialOffer(deal) ? (
+                                <Text style={styles.commercialSavedText}>Saved</Text>
+                              ) : (
+                                <Pressable
+                                  style={styles.impactSaveBtn}
+                                  onPress={() => saveImpactOffer(deal)}
+                                >
+                                  <Ionicons name="cloud-upload-outline" size={14} color={Colors.dark.text} />
+                                  <Text style={styles.impactPreviewBtnText}>Save as Swayger Offer</Text>
+                                </Pressable>
+                              )
+                            )}
                         </View>
                       </View>
                       {deal.description && <Text style={styles.impactOfferDescription}>{deal.description}</Text>}
@@ -1896,6 +2082,19 @@ export default function AdminScreen() {
                                 <Text style={styles.impactPreviewBtnText}>Preview</Text>
                               </Pressable>
                             )}
+                            {isImpactShortlisted(ad) && (
+                              savedCommercialOffer(ad) ? (
+                                <Text style={styles.commercialSavedText}>Saved</Text>
+                              ) : (
+                                <Pressable
+                                  style={styles.impactSaveBtn}
+                                  onPress={() => saveImpactOffer(ad)}
+                                >
+                                  <Ionicons name="cloud-upload-outline" size={14} color={Colors.dark.text} />
+                                  <Text style={styles.impactPreviewBtnText}>Save as Swayger Offer</Text>
+                                </Pressable>
+                              )
+                            )}
                           </View>
                         </View>
                         {ad.description && <Text style={styles.impactOfferDescription}>{ad.description}</Text>}
@@ -1951,8 +2150,158 @@ export default function AdminScreen() {
           </Text>
         )}
         <Text style={styles.impactInternalNote}>
-          Shortlists stay in this admin session only. Nothing is published or assigned to Fantasy Weekly or Game Day.
+          Shortlists are review state. Saved Offers remain drafts until an admin assigns and manually publishes them.
         </Text>
+
+        <View style={styles.commercialWorkflowBox}>
+          <View style={styles.impactProgramHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.impactGroupLabel}>Swayger Offers</Text>
+              <Text style={styles.impactFullSub}>
+                Persist reviewed offers, assign them to an existing target, preview the exact placement, then publish manually.
+              </Text>
+            </View>
+            <Pressable
+              style={styles.refreshBtn}
+              onPress={() => savedToken && loadCommercialWorkflow(savedToken)}
+              disabled={commercialLoading}
+            >
+              <Ionicons name="refresh" size={16} color={Colors.dark.tint} />
+            </Pressable>
+          </View>
+
+          {commercialError && <Text style={[styles.createMsg, { color: "#F87171" }]}>⚠ {commercialError}</Text>}
+          {commercialLoading ? (
+            <ActivityIndicator color={NBA_GOLD} style={{ marginVertical: 16 }} />
+          ) : commercialOffers.length === 0 ? (
+            <Text style={styles.impactEmptyText}>Select an Impact item and save it as a Swayger Offer.</Text>
+          ) : (
+            commercialOffers.map((offer) => {
+              const assignments = commercialAssignments.filter((item) => item.offer_id === offer.id);
+              const pickerOpen = commercialTargetPickerOfferId === offer.id;
+              return (
+                <View key={offer.id} style={styles.commercialOfferRow}>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={styles.impactOfferTitle}>{offer.title}</Text>
+                    <Text style={styles.impactStatusText}>
+                      {offer.brand_name ?? offer.program_name ?? "Featured Offer"} · {offer.provider.toUpperCase()} · Saved draft
+                    </Text>
+                    {offer.promo_code && <Text style={styles.impactCodeText}>Code: {offer.promo_code}</Text>}
+                  </View>
+                  <View style={styles.impactOfferActions}>
+                    <Pressable
+                      style={styles.impactPreviewBtn}
+                      onPress={() => {
+                        setImpactPreviewMode("game_day");
+                        setCommercialPreviewTarget("Unassigned placement");
+                        setImpactPreviewItem(offerAsImpactItem(offer));
+                      }}
+                    >
+                      <Ionicons name="eye-outline" size={14} color={Colors.dark.text} />
+                      <Text style={styles.impactPreviewBtnText}>Preview</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.impactSaveBtn}
+                      onPress={() => {
+                        setCommercialTargetPickerOfferId(pickerOpen ? null : offer.id);
+                        if (!pickerOpen) loadCommercialTargets(commercialTargetType);
+                      }}
+                    >
+                      <Ionicons name="link-outline" size={14} color={Colors.dark.text} />
+                      <Text style={styles.impactPreviewBtnText}>Assign</Text>
+                    </Pressable>
+                  </View>
+
+                  {pickerOpen && (
+                    <View style={styles.commercialTargetPicker}>
+                      <View style={styles.impactFilterRow}>
+                        {([
+                          ["game_day", "Game Day targets"],
+                          ["fantasy_weekly", "Fantasy Weekly targets"],
+                        ] as const).map(([type, label]) => (
+                          <Pressable
+                            key={type}
+                            style={[
+                              styles.impactFilterBtn,
+                              commercialTargetType === type && styles.impactFilterBtnSelected,
+                            ]}
+                            onPress={() => loadCommercialTargets(type)}
+                          >
+                            <Text style={[
+                              styles.impactFilterText,
+                              commercialTargetType === type && styles.impactFilterTextSelected,
+                            ]}>
+                              {label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      {commercialTargets.length === 0 ? (
+                        <Text style={styles.impactEmptyText}>No eligible existing targets found.</Text>
+                      ) : commercialTargets.map((target) => {
+                        const hasActiveAssignment = Boolean(target.published_assignment);
+                        return (
+                          <View key={target.target_id} style={styles.commercialTargetRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.impactOfferTitle}>{target.label}</Text>
+                              <Text style={styles.impactStatusText}>
+                                {target.target_type === "fantasy_weekly" ? `Week ${target.week_number ?? "?"}` : target.matchup ?? "Game Day"}
+                                {" · "}{target.participant_count} participant{target.participant_count === 1 ? "" : "s"}
+                                {hasActiveAssignment ? " · Published offer already assigned" : ""}
+                              </Text>
+                            </View>
+                            <Pressable
+                              style={[styles.impactSaveBtn, hasActiveAssignment && { opacity: 0.45 }]}
+                              disabled={hasActiveAssignment}
+                              onPress={() => assignOfferToTarget(offer.id, target)}
+                            >
+                              <Text style={styles.impactPreviewBtnText}>{hasActiveAssignment ? "In use" : "Choose"}</Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {assignments.map((assignment) => (
+                    <View key={assignment.id} style={styles.commercialAssignmentRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.impactStatusText}>
+                          {assignment.target_type === "fantasy_weekly" ? "Fantasy Weekly" : "Game Day"} · {assignment.target?.room_name ?? assignment.target_id}
+                        </Text>
+                        <Text style={[
+                          styles.commercialAssignmentStatus,
+                          assignment.status === "published" && styles.commercialAssignmentPublished,
+                        ]}>
+                          {assignment.status === "published" ? "PUBLISHED" : assignment.status.toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={styles.impactOfferActions}>
+                        <Pressable
+                          style={styles.impactPreviewBtn}
+                          onPress={() => openCommercialAssignmentPreview(assignment)}
+                        >
+                          <Text style={styles.impactPreviewBtnText}>Preview assignment</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.impactSaveBtn,
+                            assignment.status === "published" && styles.impactUnpublishBtn,
+                          ]}
+                          onPress={() => setAssignmentPublished(assignment, assignment.status !== "published")}
+                        >
+                          <Text style={styles.impactPreviewBtnText}>
+                            {assignment.status === "published" ? "Unpublish" : "Publish"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              );
+            })
+          )}
+        </View>
       </View>
 
       {/* ── Prop Library ── */}
@@ -2641,6 +2990,41 @@ const styles = StyleSheet.create({
   impactPreviewBtnText: {
     color: Colors.dark.text, fontSize: 9, fontWeight: "800",
   },
+  impactSaveBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    borderWidth: 1, borderColor: "#34D39980", borderRadius: 7,
+    backgroundColor: "#34D39918",
+    paddingHorizontal: 7, paddingVertical: 6,
+  },
+  impactUnpublishBtn: {
+    borderColor: "#F8717180", backgroundColor: "#F8717118",
+  },
+  commercialSavedText: {
+    color: "#34D399", fontSize: 9, fontWeight: "800", paddingVertical: 6,
+  },
+  commercialWorkflowBox: {
+    gap: 10, padding: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: "#34D39950", backgroundColor: "#34D39908",
+  },
+  commercialOfferRow: {
+    gap: 8, padding: 10, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.dark.border, backgroundColor: Colors.dark.surface,
+  },
+  commercialTargetPicker: {
+    gap: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.dark.border,
+  },
+  commercialTargetRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
+  },
+  commercialAssignmentRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.dark.border,
+  },
+  commercialAssignmentStatus: {
+    color: "#FBBF24", fontSize: 9, fontWeight: "900", letterSpacing: 0.6,
+  },
+  commercialAssignmentPublished: { color: "#34D399" },
   impactFullInventoryBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
     borderWidth: 1, borderColor: "#FBBF2450", borderRadius: 10,

@@ -10,6 +10,7 @@ import { registerPropsRoutes } from "./routes-props";
 import { registerGamedayRoutes } from "./routes-gameday";
 import { registerFantasyRoutes } from "./routes-fantasy";
 import { registerImpactRoutes } from "./routes-impact";
+import { registerCommercialRoutes } from "./routes-commercial";
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -256,6 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerGamedayRoutes(app);
   registerFantasyRoutes(app);
   registerImpactRoutes(app);
+  registerCommercialRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;
