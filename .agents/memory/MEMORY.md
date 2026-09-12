@@ -32,5 +32,6 @@
 - [Fantasy Draft Day team labels](gameday-fantasy-team-labels.md) — season-member IDs stay stable while active answer labels use team names; settled snapshots remain historical.
 - [Game Day participant re-entry](gameday-participant-reentry.md) — private rooms are discoverable only through verified authenticated participant rows; guest history remains separate.
 - [Fantasy pilot analytics](fantasy-pilot-analytics.md) — success-only weekly milestones suppress replay; guest retention stays device-scoped unless the product identity model changes.
+- [PostHog browser verification](posthog-browser-verification.md) — RN web batches gzip bodies; inspect fetch-boundary bytes, not Playwright request postData alone.
 - [Impact commercial review](impact-commercial-review.md) — review is read-only; shortlist state must remain internal/session-local until a separate approval decision.
 - [Game Day commercial workflow](gameday-commercial-workflow.md) — saved provider-neutral offers use explicit assignments and manual publish; participant reads stay normalized and fail open.
