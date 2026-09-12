@@ -6,14 +6,16 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
  * @returns {string} The API base URL
  */
 export function getApiUrl(): string {
+  // Web previews and deployments proxy API routes from the current page origin.
+  // Native clients do not have a browser origin, so they continue using the
+  // configured backend domain below.
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+
   const host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    // On web, use the current page's origin so requests are always same-origin
-    // (avoids CORS issues when the custom domain differs from the hardcoded fallback).
-    if (typeof window !== "undefined" && window.location?.origin) {
-      return window.location.origin;
-    }
     return "https://www.swayger.app";
   }
 
