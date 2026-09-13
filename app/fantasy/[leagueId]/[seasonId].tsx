@@ -1300,8 +1300,8 @@ export default function LeagueHubScreen() {
       {!showWelcome && (
         <>
           {/* Back */}
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.linkText}>← Game Day</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.replace("/(tabs)")}>
+            <Text style={styles.linkText}>← Swayger Home</Text>
           </TouchableOpacity>
 
           {/* League header */}

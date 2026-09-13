@@ -49,6 +49,9 @@ export default function WeeklyPlayScreen() {
   }>();
 
   const wn = parseInt(weekNumber ?? "1", 10);
+  const isGuest = !session && !!guestToken;
+  const handleBackToLeague = () =>
+    router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
 
   const [state, setState]           = useState<WeeklyPlayState | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -240,11 +243,7 @@ export default function WeeklyPlayScreen() {
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() =>
-            router.canGoBack()
-              ? router.back()
-              : router.replace(`/fantasy/join/${leagueId}/${seasonId}` as any)
-          }
+          onPress={handleBackToLeague}
           style={{ marginTop: 12 }}
         >
           <Text style={styles.linkText}>← Back</Text>
@@ -259,6 +258,7 @@ export default function WeeklyPlayScreen() {
   const isLocked    = state.card_status === "locked" || state.card_status === "settled";
   const pickedCount = Object.keys(picks).length;
   const total       = state.props.length;
+  const allPicksIn  = !isLocked && pickedCount === total && total > 0;
   const staleSet    = new Set(state.stale_pick_prop_ids ?? []);
 
   return (
@@ -267,8 +267,8 @@ export default function WeeklyPlayScreen() {
       contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 40 }]}
     >
       {/* Header */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-        <Text style={styles.linkText}>← {state.league_name ?? "League"}</Text>
+      <TouchableOpacity style={styles.backBtn} onPress={handleBackToLeague}>
+        <Text style={styles.linkText}>← Back to League</Text>
       </TouchableOpacity>
 
       <View style={styles.header}>
@@ -284,10 +284,26 @@ export default function WeeklyPlayScreen() {
         <Text style={styles.progressText}>
           {pickedCount} / {total} answered
         </Text>
-        {!isLocked && pickedCount === total && total > 0 && (
-          <Text style={styles.allDoneText}>✓ All picks in!</Text>
+        {allPicksIn && (
+          <Text style={styles.allDoneText}>✓ All picks in — saved automatically</Text>
         )}
       </View>
+
+      {allPicksIn && (
+        <View style={styles.completionCard}>
+          <Text style={styles.completionTitle}>You're all set.</Text>
+          <Text style={styles.completionBody}>
+            {isGuest
+              ? "Your picks are saved on this device. Head back to your league to see how to keep your spot if you switch devices."
+              : "Your picks are saved. Head back to your league whenever you're ready."}
+          </Text>
+          <TouchableOpacity style={styles.completionBtn} onPress={handleBackToLeague}>
+            <Text style={styles.completionBtnText}>
+              {isGuest ? "Back to League & Next Steps" : "Back to League"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Finalized banner — results ready */}
       {isFinalized && (
@@ -398,6 +414,17 @@ const styles = StyleSheet.create({
   progressRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
   progressText: { fontSize: 13, color: C.textMuted },
   allDoneText:  { fontSize: 13, color: "#22c55e", fontWeight: "700" },
+  completionCard: {
+    backgroundColor: "#0A1714", borderRadius: 12, borderWidth: 1, borderColor: "#22C55E80",
+    padding: 14, marginBottom: 16, gap: 8,
+  },
+  completionTitle: { fontSize: 15, fontWeight: "800", color: "#86EFAC" },
+  completionBody: { fontSize: 13, lineHeight: 19, color: C.textSecondary },
+  completionBtn: {
+    minHeight: 42, borderRadius: 9, backgroundColor: C.tint,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 14, marginTop: 2,
+  },
+  completionBtnText: { fontSize: 13, fontWeight: "800", color: "#000" },
   finalizedBanner: {
     backgroundColor: "#1A1200", borderRadius: 10, borderWidth: 1, borderColor: "#FCD34D",
     padding: 14, marginBottom: 16, flexDirection: "row", alignItems: "center", gap: 8,
