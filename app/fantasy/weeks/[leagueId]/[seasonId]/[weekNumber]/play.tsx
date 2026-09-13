@@ -291,7 +291,7 @@ export default function WeeklyPlayScreen() {
 
       {allPicksIn && (
         <View style={styles.completionCard}>
-          <Text style={styles.completionTitle}>You're all set.</Text>
+          <Text style={styles.completionTitle}>You&apos;re all set.</Text>
           <Text style={styles.completionBody}>
             {isGuest
               ? "Your picks are saved on this device. Head back to your league to see how to keep your spot if you switch devices."

@@ -36,3 +36,4 @@
 - [Impact commercial review](impact-commercial-review.md) — review is read-only; shortlist state must remain internal/session-local until a separate approval decision.
 - [Game Day commercial workflow](gameday-commercial-workflow.md) — saved provider-neutral offers use explicit assignments and manual publish; participant reads stay normalized and fail open.
 - [Expo preview API proxy](expo-preview-api-proxy.md) — Metro preview must proxy /api to the local Express workflow; production and native API origins remain separate.
+- [Fantasy shared-link navigation](fantasy-shared-link-navigation.md) — direct weekly links need explicit replace destinations; browser-history back can be inert.

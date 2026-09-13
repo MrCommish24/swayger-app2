@@ -1165,8 +1165,8 @@ export default function LeagueHubScreen() {
         <TouchableOpacity style={styles.btn} onPress={() => fetchDetail()}>
           <Text style={styles.btnText}>Retry</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 12 }}>
-          <Text style={styles.linkText}>← Back</Text>
+        <TouchableOpacity onPress={() => router.replace("/(tabs)")} style={{ marginTop: 12 }}>
+          <Text style={styles.linkText}>← Back to Swayger Home</Text>
         </TouchableOpacity>
       </View>
     );
