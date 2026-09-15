@@ -1,0 +1,193 @@
+We are now wiring the production Madden Weekly Pick Card V1 into the external Swayger Discord bot.
+
+Do NOT change code yet.
+
+The Discord bot team has completed its architecture audit and is ready to implement a one-modal Discord-native creation flow.
+
+The intended flow is:
+
+/swayger gameday madden-create
+→ Discord modal collects:
+   1. Week / Challenge Name
+   2. Reward
+   3. Pick Deadline
+   4. Matchups as multiline text
+   5. Optional Bonus Question
+→ bot parses 3–7 matchup rows
+→ bot sends ONE complete creation request
+→ backend creates the private Madden Weekly Pick Card room
+→ backend returns room identifiers/link
+→ bot immediately posts the playable room into Discord
+
+The bot should NOT need:
+- draft room state
+- a commissioner setup link
+- a second madden-publish command
+- web-based matchup completion
+
+Before Claude writes bot code, I need the exact production backend API contract.
+
+Please inspect the current Madden Weekly Pick Card creation route and implementation and return the authoritative contract.
+
+Specifically answer:
+
+A. Creation endpoint
+- Exact HTTP method
+- Exact path
+- Required authentication headers
+- Whether Discord bot authentication with GAMEDAY_BOT_API_KEY / x-api-key is accepted
+- Whether X-Discord-Guild-ID is required or supported
+
+B. Exact request body for:
+- sport=madden
+- template_type=weekly_pick_card
+
+Give the exact field names and types for:
+- week/challenge name
+- reward text
+- pick deadline
+- private/unlisted flag if applicable
+- matchups
+- Team A
+- Team B
+- optional line_text
+- optional bonus question
+- any scoring/config metadata required
+- any format_config structure required
+
+C. Matchup structure
+
+Show the exact JSON shape expected for ONE matchup and for the complete matchups array.
+
+Confirm:
+- 3–7 matchups are accepted
+- exactly two participant choices are generated per matchup
+- whether the backend creates answer options automatically from Team A / Team B
+- whether the bot must submit explicit answer options instead
+
+D. Bonus question
+
+Confirm the exact schema for the optional bonus question.
+
+Specifically:
+- Is it just a free-text question string?
+- Does it require answer options?
+- Is it numeric/free-response?
+- Is it stored as a normal gameday prop?
+- What fields must the bot send?
+
+Do not infer. Report the actual implementation.
+
+E. Deadline
+
+Confirm the exact field name and accepted format.
+
+State:
+- ISO 8601 expected?
+- timezone required?
+- UTC storage behavior?
+- validation behavior for invalid deadlines?
+
+Recommend the safest exact format for the Discord bot to send.
+
+F. One-shot creation
+
+Confirm whether POSTing the complete payload creates the fully playable Madden room in one transaction/request.
+
+I specifically need to know whether the bot can submit:
+- metadata
+- all 3–7 matchups
+- line text
+- bonus question
+- deadline
+
+in ONE request and receive a ready-to-share room.
+
+Confirm there is no required follow-up web setup/edit step.
+
+G. Privacy behavior
+
+Confirm the resulting Madden room can be:
+- private/unlisted from Swayger public discovery
+- still accessible to anyone holding the Discord-posted room link
+
+H. Response contract
+
+Show the exact response fields returned on successful creation.
+
+I need exact names/types for:
+- room_id
+- room_code
+- public_link
+- any card IDs
+- any prop IDs
+- template_type
+- sport
+- other fields the bot should rely on
+
+State whether this response matches the existing generic create-room response already consumed by the Discord bot.
+
+I. Error behavior
+
+List relevant status codes / validation errors for:
+- unauthorized bot
+- unauthorized host/guild
+- malformed matchups
+- fewer than 3 matchups
+- more than 7 matchups
+- duplicate Team A / Team B
+- invalid deadline
+- invalid bonus structure
+
+J. Example
+
+Provide one complete example request body for:
+
+Week 3 Pick Card
+Reward: +1 Physical Trait Upgrade
+Deadline: example valid ISO timestamp
+Matchups:
+- Bears vs Packers
+- Cowboys vs Eagles, line_text "Cowboys -3.5"
+- Chiefs vs Bills, line_text "O/U 48.5"
+Bonus question:
+Total combined points?
+
+And provide the representative successful response shape.
+
+IMPORTANT:
+This is a contract-inspection task only.
+
+Do not:
+- modify backend code
+- create rooms
+- run write requests
+- post to Discord
+- add endpoints
+- change Madden behavior
+- change auth
+- add payments
+- add EA/Neon integration
+- add odds/wagering
+
+Return:
+
+A. Endpoint/auth contract
+B. Request schema
+C. Matchup schema
+D. Bonus schema
+E. Deadline schema
+F. One-shot creation confirmation
+G. Privacy behavior
+H. Response schema
+I. Error contract
+J. Example request/response
+K. Whether any backend change is required before Discord implementation
+
+End with:
+
+MADDEN DISCORD BACKEND CONTRACT:
+ONE-SHOT CREATION: YES / NO
+BOT AUTH SUPPORTED: YES / NO
+BACKEND CHANGE REQUIRED: YES / NO
+READY TO HAND TO CLAUDE: YES / NO
