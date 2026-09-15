@@ -19,7 +19,18 @@ ALTER TABLE gameday_rooms
   DROP CONSTRAINT IF EXISTS gameday_rooms_sport_check;
 ALTER TABLE gameday_rooms
   ADD CONSTRAINT gameday_rooms_sport_check
-  CHECK (sport IS NULL OR sport IN ('nba', 'soccer', 'nfl', 'madden'));
+  CHECK (
+    sport IS NULL OR
+    sport IN (
+      'nba',
+      'soccer',
+      'nfl',
+      'football',
+      'basketball',
+      'baseball',
+      'madden'
+    )
+  );
 
 ALTER TABLE gameday_rooms
   DROP CONSTRAINT IF EXISTS gameday_rooms_template_type_check;
