@@ -17,7 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 23;
+const EXPECTED_ASSERTIONS = 32;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -192,6 +192,132 @@ async function main() {
     const discordRoomId = discordRoom.body.room_id as string | undefined;
     if (!discordRoomId) throw new Error("Could not continue without the Discord fixture room");
     roomIds.push(discordRoomId);
+
+    const archiveRoom = await request("/api/gameday/rooms", {
+      method: "POST",
+      bot: true,
+      body: {
+        ...roomPayload,
+        room_name: `Discord archive room ${runId}`,
+        source: "discord",
+        discord_guild_id: "GUILD_A",
+        discord_channel_id: "ARCHIVE_CHANNEL_A",
+        discord_user_id: "ARCHIVE_USER_A",
+      },
+    });
+    expect(
+      "bot can create a disposable Discord archive fixture",
+      archiveRoom.status === 200 && !!archiveRoom.body.room_id,
+      String(archiveRoom.status),
+    );
+    const archiveRoomId = archiveRoom.body.room_id as string | undefined;
+    if (!archiveRoomId) throw new Error("Could not continue without the Discord archive fixture room");
+    roomIds.push(archiveRoomId);
+
+    const missingArchiveBotKey = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
+      method: "PATCH",
+    });
+    expect(
+      "missing bot credentials cannot archive a Discord room",
+      missingArchiveBotKey.status === 401,
+      String(missingArchiveBotKey.status),
+    );
+
+    const missingArchiveGuild = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
+      method: "PATCH",
+      bot: true,
+    });
+    expect(
+      "bot archive requires a Discord guild header",
+      missingArchiveGuild.status === 400,
+      String(missingArchiveGuild.status),
+    );
+
+    const wrongArchiveGuild = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guildId: "GUILD_B",
+    });
+    expect(
+      "wrong guild cannot archive a Discord room",
+      wrongArchiveGuild.status === 403,
+      String(wrongArchiveGuild.status),
+    );
+
+    const botArchiveWebRoom = await request(`/api/gameday/rooms/${appRoom.body.room_id}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guildId: "GUILD_A",
+    });
+    expect(
+      "bot cannot archive an app-owned human room",
+      botArchiveWebRoom.status === 403,
+      String(botArchiveWebRoom.status),
+    );
+
+    const noStoredGuild = await service
+      .from("gameday_rooms")
+      .insert({
+        ...roomPayload,
+        room_name: `Discord no-guild archive room ${runId}`,
+        host_user_id: null,
+        status: "active",
+        source: "discord",
+        is_private: true,
+        discord_guild_id: null,
+      })
+      .select("id")
+      .single();
+    if (noStoredGuild.error || !noStoredGuild.data?.id) {
+      throw new Error(`Could not create no-guild archive fixture: ${noStoredGuild.error?.message ?? "unknown error"}`);
+    }
+    roomIds.push(noStoredGuild.data.id);
+    const noStoredGuildArchive = await request(`/api/gameday/rooms/${noStoredGuild.data.id}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guildId: "GUILD_A",
+    });
+    expect(
+      "bot cannot archive a Discord room without stored guild metadata",
+      noStoredGuildArchive.status === 403,
+      String(noStoredGuildArchive.status),
+    );
+
+    const archived = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guildId: "GUILD_A",
+    });
+    expect(
+      "matching guild bot can archive its Discord room",
+      archived.status === 200 && archived.body.ok === true && !archived.body.already,
+      JSON.stringify(archived.body),
+    );
+
+    const archivedAgain = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guildId: "GUILD_A",
+    });
+    expect(
+      "archiving an already archived Discord room is idempotent",
+      archivedAgain.status === 200 && archivedAgain.body.ok === true && archivedAgain.body.already === true,
+      JSON.stringify(archivedAgain.body),
+    );
+
+    const archivedRecord = await service
+      .from("gameday_rooms")
+      .select("archived_at")
+      .eq("id", archiveRoomId)
+      .single();
+    const archivedPublicRooms = await request("/api/gameday/public-rooms");
+    expect(
+      "archived Discord room is marked archived and excluded from public discovery",
+      !!archivedRecord.data?.archived_at &&
+        archivedPublicRooms.status === 200 &&
+        !(archivedPublicRooms.body.rooms ?? []).some((room: any) => room.id === archiveRoomId),
+      JSON.stringify({ archived: archivedRecord.data, publicStatus: archivedPublicRooms.status }),
+    );
 
     const publicRoom = await request(`/api/gameday/rooms/${discordRoomId}`);
     expect(

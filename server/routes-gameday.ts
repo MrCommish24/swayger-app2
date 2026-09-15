@@ -4036,11 +4036,62 @@ export function registerGamedayRoutes(app: Express) {
   app.patch(
     "/api/gameday/rooms/:roomId/archive",
     async (req: Request, res: Response) => {
+      const supabase = getServiceSupabase();
+      if (isBotApiKeyValid(req)) {
+        const discordAccess = await requireDiscordGuildRoom(
+          req,
+          res,
+          supabase,
+          req.params.roomId,
+        );
+        if (!discordAccess) return;
+
+        const { data: discordRoom } = await supabase
+          .from("gameday_rooms")
+          .select("status, archived_at, source, discord_guild_id")
+          .eq("id", req.params.roomId)
+          .single();
+
+        if (!discordRoom) {
+          res.status(404).json({ error: "Room not found" });
+          return;
+        }
+        if ((discordRoom as any).status === "finalized") {
+          res.status(400).json({
+            error: "Finalized rooms cannot be archived — they are preserved as receipts.",
+          });
+          return;
+        }
+        if ((discordRoom as any).archived_at) {
+          res.json({ ok: true, already: true });
+          return;
+        }
+
+        const archivedAt = new Date().toISOString();
+        const { error: updateError } = await supabase
+          .from("gameday_rooms")
+          .update({ archived_at: archivedAt })
+          .eq("id", req.params.roomId);
+
+        if (updateError) {
+          console.error("[gameday] Discord archive error:", updateError.message);
+          res.status(500).json({ error: "Failed to archive room" });
+          return;
+        }
+
+        await logEvent(supabase, req.params.roomId, null, null, "room_archived", {
+          archived_by: "discord",
+          source: (discordRoom as any).source,
+          discord_guild_id: discordAccess.guildId,
+        });
+        res.json({ ok: true });
+        return;
+      }
+
       const hostId = await requireGamedayHost(req, res);
       if (!hostId) return;
 
       const { roomId } = req.params;
-      const supabase = getServiceSupabase();
 
       const { data: room } = await supabase
         .from("gameday_rooms")

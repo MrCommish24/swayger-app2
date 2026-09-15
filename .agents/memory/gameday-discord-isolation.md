@@ -13,6 +13,11 @@ Bot-created Madden Weekly Pick Cards additionally require the body
 created card opens immediately so the returned link is playable without a web
 host step.
 
+The shared room archive route may soft-archive Discord rooms only through the
+valid bot credential plus matching stored guild boundary; app-owned rooms and
+rooms without guild metadata remain outside that path. Human archives still
+require the owning authenticated host.
+
 The browser does not directly query Game Day tables; it uses Express routes.
 However, the public Supabase anon client can currently read Game Day tables and
 authorization columns directly, so API response minimization does not provide

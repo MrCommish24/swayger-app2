@@ -11304,10 +11304,48 @@ ${publicLink2}`;
   app2.patch(
     "/api/gameday/rooms/:roomId/archive",
     async (req, res2) => {
+      const supabase = getServiceSupabase();
+      if (isBotApiKeyValid(req)) {
+        const discordAccess = await requireDiscordGuildRoom(
+          req,
+          res2,
+          supabase,
+          req.params.roomId
+        );
+        if (!discordAccess) return;
+        const { data: discordRoom } = await supabase.from("gameday_rooms").select("status, archived_at, source, discord_guild_id").eq("id", req.params.roomId).single();
+        if (!discordRoom) {
+          res2.status(404).json({ error: "Room not found" });
+          return;
+        }
+        if (discordRoom.status === "finalized") {
+          res2.status(400).json({
+            error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
+          });
+          return;
+        }
+        if (discordRoom.archived_at) {
+          res2.json({ ok: true, already: true });
+          return;
+        }
+        const archivedAt = (/* @__PURE__ */ new Date()).toISOString();
+        const { error: updateError2 } = await supabase.from("gameday_rooms").update({ archived_at: archivedAt }).eq("id", req.params.roomId);
+        if (updateError2) {
+          console.error("[gameday] Discord archive error:", updateError2.message);
+          res2.status(500).json({ error: "Failed to archive room" });
+          return;
+        }
+        await logEvent(supabase, req.params.roomId, null, null, "room_archived", {
+          archived_by: "discord",
+          source: discordRoom.source,
+          discord_guild_id: discordAccess.guildId
+        });
+        res2.json({ ok: true });
+        return;
+      }
       const hostId = await requireGamedayHost(req, res2);
       if (!hostId) return;
       const { roomId } = req.params;
-      const supabase = getServiceSupabase();
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at, source").eq("id", roomId).single();
       if (!room) {
         res2.status(404).json({ error: "Room not found" });
