@@ -1,0 +1,205 @@
+We have completed the Madden Discord backend contract audit.
+
+A backend change is now required before the external Swayger Discord bot can implement:
+
+/swayger gameday madden-create
+
+Current blocker:
+
+POST /api/gameday/rooms already accepts GAMEDAY_BOT_API_KEY for generic Game Day creation, but the Madden Weekly Pick Card branch explicitly rejects bot-authenticated creation with:
+
+403
+"Madden Weekly Pick Cards must be created by an authorized Game Day host"
+
+I want to enable Discord-bot creation of Madden Weekly Pick Cards using the existing generic Game Day creation endpoint.
+
+Do NOT create a second endpoint unless the current route cannot be extended cleanly and safely.
+
+PRODUCT DECISION
+
+Discord V1 will use one modal:
+
+1. Week / Challenge Name
+2. Reward
+3. Pick Deadline
+4. Matchups — multiline
+5. Optional Bonus
+
+Matchup syntax parsed by the bot:
+
+Team A | Team B
+Team A | Team B | optional line text
+
+Bonus syntax parsed by the bot:
+
+Question | Option A | Option B [| Option C...]
+
+The bot will convert those into the existing backend schema.
+
+BACKEND CHANGE REQUIRED
+
+Please modify POST /api/gameday/rooms so a valid Game Day bot can create:
+
+sport = "madden"
+template_type = "weekly_pick_card"
+
+using the exact same Madden validation and creation logic already used by authorized human Game Day hosts.
+
+SECURITY REQUIREMENTS
+
+For bot-authenticated Madden creation:
+
+1. Require valid GAMEDAY_BOT_API_KEY using the existing bot authentication mechanism.
+
+2. Require discord_guild_id in the request body.
+
+3. Require X-Discord-Guild-ID header as well.
+
+4. Require the body discord_guild_id and X-Discord-Guild-ID header to match.
+
+5. Reject missing or mismatched guild IDs.
+
+6. Preserve all existing guild-scoping protections.
+
+7. Store:
+   source = "discord"
+   discord_guild_id = supplied validated guild ID
+
+8. Accept discord_channel_id if supplied and store it using the existing Discord room metadata convention.
+
+9. Accept discord_user_id if supplied if that field is already part of the existing Discord-created room model.
+
+10. Madden rooms must remain:
+    is_private = true
+
+11. Do not weaken the existing human-host authorization path.
+
+12. Do not allow an unauthenticated or ordinary API caller to masquerade as Discord by simply passing Discord metadata.
+
+MADDEN PAYLOAD
+
+The Discord bot will send the existing production Madden schema:
+
+{
+  "room_name": "...",
+  "sport": "madden",
+  "template_type": "weekly_pick_card",
+  "pick_deadline": "<ISO 8601 with explicit Z or offset>",
+  "matchups": [
+    {
+      "team_a": "...",
+      "team_b": "...",
+      "line_text": null
+    }
+  ],
+  "format_config": {
+    "week_label": "...",
+    "reward_text": "...",
+    "minimum_matchups": 3,
+    "scoring_mode": "all_correct",
+    "bonus": {
+      "enabled": true/false,
+      "label": "... or null",
+      "answer_options": [...]
+    }
+  },
+  "discord_guild_id": "...",
+  "discord_channel_id": "...",
+  "discord_user_id": "..."
+}
+
+Do not create a new Madden payload shape.
+
+Reuse the current validation for:
+
+- 3–7 matchups
+- distinct Team A / Team B
+- max lengths
+- line_text
+- deadline
+- week label
+- scoring_mode=all_correct
+- bonus metadata
+- minimum_matchups
+- room creation
+- card creation
+- prop creation
+- cleanup on failure
+
+RESPONSE CONTRACT
+
+Keep the existing Madden successful response shape if possible:
+
+- ok
+- room_id
+- room_code
+- public_link
+- host_link
+- discord_message
+- room
+
+Do not require card_id or prop_ids for Discord creation.
+
+TESTING REQUIRED
+
+Add focused tests covering:
+
+1. Valid bot-authenticated Madden creation succeeds.
+2. Human authorized-host creation still succeeds.
+3. Invalid bot key rejected.
+4. Missing discord_guild_id rejected.
+5. Missing X-Discord-Guild-ID rejected for bot Madden creation.
+6. Header/body guild mismatch rejected.
+7. Madden bot room is stored source="discord".
+8. Madden bot room is private.
+9. discord_guild_id stored correctly.
+10. discord_channel_id stored correctly when supplied.
+11. 3–7 matchup rules unchanged.
+12. Exactly two matchup answer choices still created.
+13. Bonus with 2+ choices works.
+14. Disabled bonus works.
+15. Invalid deadline rejected.
+16. Generic NFL/Game Day bot creation remains unchanged.
+17. Human Madden creation remains unchanged.
+18. Public discovery still excludes Madden private rooms.
+19. No regression to NFL Sunday Slate.
+20. No regression to Web Game Day.
+
+Do not create persistent production rooms during automated testing.
+Clean up disposable fixtures.
+
+DO NOT:
+
+- change the Discord bot repo
+- add a new slash command
+- post to Discord
+- add EA integration
+- add NeonSportz integration
+- add payments
+- add Stripe
+- add odds
+- add wagering language
+- add automatic Madden rewards
+- refactor unrelated Game Day code
+
+After implementation return:
+
+A. Backend auth change
+B. Madden bot creation contract
+C. Guild-scope enforcement
+D. Files changed
+E. Tests and assertion counts
+F. Regression results
+G. Example bot-authenticated request
+H. Example successful response
+I. Git status
+J. Commit hash
+K. Push status
+L. Whether Claude can now implement the Discord command
+
+End with:
+
+MADDEN DISCORD BACKEND STATUS: PASS / FAIL
+BOT AUTH SUPPORTED: YES / NO
+ONE-SHOT BOT CREATION: YES / NO
+READY TO HAND TO CLAUDE: YES / NO
