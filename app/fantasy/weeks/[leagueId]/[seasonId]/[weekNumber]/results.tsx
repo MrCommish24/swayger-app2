@@ -250,6 +250,17 @@ export default function WeeklyResultsScreen() {
         <Text style={styles.leaguePicksLinkText}>🗳  View League Picks →</Text>
       </TouchableOpacity>
 
+      {/* Shared finalized receipt — does not alter the personal picks section. */}
+      <TouchableOpacity
+        style={styles.receiptLink}
+        onPress={() =>
+          router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/receipt` as any)
+        }
+        activeOpacity={0.8}
+      >
+        <Text style={styles.receiptLinkText}>🧾  Shareable Weekly Receipt →</Text>
+      </TouchableOpacity>
+
       {/* Season Standings link */}
       <TouchableOpacity
         style={styles.standingsLink}
@@ -350,6 +361,12 @@ const styles = StyleSheet.create({
     padding: 16, alignItems: "center", marginBottom: 12,
   },
   leaguePicksLinkText: { fontSize: 15, fontWeight: "700", color: C.tint },
+  receiptLink: {
+    backgroundColor: "#1A1500", borderRadius: 12,
+    borderWidth: 1, borderColor: C.accentGold,
+    padding: 16, alignItems: "center", marginBottom: 12,
+  },
+  receiptLinkText: { fontSize: 15, fontWeight: "700", color: C.accentGold },
 
   standingsLink: {
     backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.tint,

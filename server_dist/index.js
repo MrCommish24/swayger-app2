@@ -12835,9 +12835,17 @@ function _generateReceiptAliasCode() {
 async function _getOrCreateDraftDayReceiptAlias(supabase, seasonId) {
   const { data: existing, error: existingError } = await supabase.from("fantasy_draft_day_receipt_aliases").select("short_code").eq("league_season_id", seasonId).maybeSingle();
   if (existingError) throw new Error(existingError.message);
-  if (existing?.short_code) return existing.short_code;
+  if (existing?.short_code) {
+    const { data: weeklyCollision, error: collisionError } = await supabase.from("fantasy_weekly_receipt_aliases").select("league_season_id").eq("short_code", existing.short_code).maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (weeklyCollision) throw new Error("Receipt alias namespace collision");
+    return existing.short_code;
+  }
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const shortCode = _generateReceiptAliasCode();
+    const { data: weeklyCollision, error: collisionError } = await supabase.from("fantasy_weekly_receipt_aliases").select("league_season_id").eq("short_code", shortCode).maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (weeklyCollision) continue;
     const { data: inserted, error: insertError } = await supabase.from("fantasy_draft_day_receipt_aliases").insert({ league_season_id: seasonId, short_code: shortCode }).select("short_code").maybeSingle();
     if (!insertError && inserted?.short_code) {
       return inserted.short_code;
@@ -12846,6 +12854,34 @@ async function _getOrCreateDraftDayReceiptAlias(supabase, seasonId) {
       throw new Error(insertError?.message ?? "Failed to create receipt alias");
     }
     const { data: race } = await supabase.from("fantasy_draft_day_receipt_aliases").select("short_code").eq("league_season_id", seasonId).maybeSingle();
+    if (race?.short_code) return race.short_code;
+  }
+  throw new Error("Failed to generate a unique receipt alias");
+}
+async function _getOrCreateWeeklyReceiptAlias(supabase, seasonId, weekNumber) {
+  const { data: existing, error: existingError } = await supabase.from("fantasy_weekly_receipt_aliases").select("short_code").eq("league_season_id", seasonId).eq("week_number", weekNumber).maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (existing?.short_code) {
+    const { data: draftCollision, error: collisionError } = await supabase.from("fantasy_draft_day_receipt_aliases").select("league_season_id").eq("short_code", existing.short_code).maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (draftCollision) throw new Error("Receipt alias namespace collision");
+    return existing.short_code;
+  }
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = _generateReceiptAliasCode();
+    const { data: draftCollision, error: collisionError } = await supabase.from("fantasy_draft_day_receipt_aliases").select("league_season_id").eq("short_code", shortCode).maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (draftCollision) continue;
+    const { data: inserted, error: insertError } = await supabase.from("fantasy_weekly_receipt_aliases").insert({
+      league_season_id: seasonId,
+      week_number: weekNumber,
+      short_code: shortCode
+    }).select("short_code").maybeSingle();
+    if (!insertError && inserted?.short_code) return inserted.short_code;
+    if (insertError?.code !== "23505") {
+      throw new Error(insertError?.message ?? "Failed to create receipt alias");
+    }
+    const { data: race } = await supabase.from("fantasy_weekly_receipt_aliases").select("short_code").eq("league_season_id", seasonId).eq("week_number", weekNumber).maybeSingle();
     if (race?.short_code) return race.short_code;
   }
   throw new Error("Failed to generate a unique receipt alias");
@@ -12950,6 +12986,62 @@ function getCallerIdentity2(req) {
   const guestToken = req.headers["x-fantasy-guest-token"];
   if (guestToken?.trim()) return { guestToken: guestToken.trim() };
   return {};
+}
+async function getVerifiedCallerIdentity(req, supabase) {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7).trim();
+    if (!token) return {};
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data.user?.id) return {};
+    return { userId: data.user.id };
+  }
+  const guestToken = req.headers["x-fantasy-guest-token"];
+  if (guestToken?.trim()) return { guestToken: guestToken.trim() };
+  return {};
+}
+async function requireVerifiedFantasyCommissioner(req, res2, supabase, leagueId, seasonId) {
+  const identity = await getVerifiedCallerIdentity(req, supabase);
+  if (!identity.userId && !identity.guestToken) {
+    res2.status(401).json({ error: "Invalid token" });
+    return null;
+  }
+  if (!identity.userId) {
+    if (identity?.guestToken) {
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer || !["commissioner", "co_commissioner"].includes(viewer.role)) {
+        res2.status(403).json({ error: "Commissioner authority required for sharing" });
+        return null;
+      }
+      return {
+        userId: viewer.display_name ?? "guest",
+        leagueMemberId: viewer.league_member_id,
+        seasonMemberId: viewer.season_member_id
+      };
+    }
+    return null;
+  }
+  const { data: claims } = await supabase.from("fantasy_member_claims").select("league_member_id").eq("user_id", identity.userId).eq("is_active", true);
+  if (!claims?.length) {
+    res2.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+  const memberIds = claims.map((claim) => claim.league_member_id);
+  const { data: leagueMember } = await supabase.from("fantasy_league_members").select("id").eq("league_id", leagueId).eq("is_active", true).in("id", memberIds).maybeSingle();
+  if (!leagueMember) {
+    res2.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+  const { data: seasonMember } = await supabase.from("fantasy_season_members").select("id, role").eq("league_season_id", seasonId).eq("league_member_id", leagueMember.id).eq("is_active", true).in("role", ["commissioner", "co_commissioner"]).maybeSingle();
+  if (!seasonMember) {
+    res2.status(403).json({ error: "Commissioner authority required for this season" });
+    return null;
+  }
+  return {
+    userId: identity.userId,
+    leagueMemberId: leagueMember.id,
+    seasonMemberId: seasonMember.id
+  };
 }
 async function requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId) {
   const userId = requireFantasyAuth(req, res2);
@@ -14071,6 +14163,11 @@ function registerFantasyRoutes(app2) {
     async (req, res2) => {
       const { leagueId, seasonId } = req.params;
       const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
       const commissioner = await requireFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
@@ -15162,8 +15259,10 @@ function registerFantasyRoutes(app2) {
       }
     }
   );
-  async function _getWeeklyRoomAndCard(supabase, seasonId, weekNumber) {
-    const { data: room } = await supabase.from("gameday_rooms").select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", weekNumber).eq("experience_type", "fantasy").is("archived_at", null).maybeSingle();
+  async function _getWeeklyRoomAndCard(supabase, seasonId, weekNumber, includeArchived = false) {
+    let roomQuery = supabase.from("gameday_rooms").select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("week_number", weekNumber).eq("experience_type", "fantasy");
+    if (!includeArchived) roomQuery = roomQuery.is("archived_at", null);
+    const { data: room } = await roomQuery.maybeSingle();
     if (!room)
       return { ok: false, status: 404, body: { error: `No published Week ${weekNumber} competition found for this season` } };
     const { data: card } = await supabase.from("gameday_pick_cards").select("id, status, roster_revision").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
@@ -16440,6 +16539,144 @@ function registerFantasyRoutes(app2) {
         my_correct_count: myCorrectCount,
         total_competition_props: competitionProps.length
       });
+    }
+  );
+  app2.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const { data: league } = await supabase.from("fantasy_leagues").select("id, league_name").eq("id", leagueId).maybeSingle();
+      if (!league) {
+        res2.status(404).json({ error: "League not found" });
+        return;
+      }
+      const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+      if (!season) {
+        res2.status(404).json({ error: "Season not found" });
+        return;
+      }
+      const member = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!member) {
+        res2.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      if (room.status !== "finalized") {
+        res2.json({ finalized: false });
+        return;
+      }
+      const { data: props } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition").order("display_order", { ascending: true });
+      const competitionProps = (props ?? []).filter((prop) => prop.status === "settled");
+      const answerLabels = {};
+      for (const prop of competitionProps) {
+        answerLabels[prop.id] = {};
+        for (const option of Array.isArray(prop.answer_options) ? prop.answer_options : []) {
+          if (option?.id && option?.label) answerLabels[prop.id][option.id] = option.label;
+        }
+      }
+      const leaderboard = await _buildLeaderboard(supabase, room.id, competitionProps);
+      const finalStandings = leaderboard.map((entry) => ({
+        display_name: entry.display_name,
+        team_name: entry.team_name,
+        points: entry.points,
+        correct_count: entry.correct_count,
+        rank: entry.rank,
+        rank_label: entry.rank_label
+      }));
+      const topPoints = finalStandings[0]?.points ?? 0;
+      const winners = finalStandings.filter((entry) => entry.points === topPoints);
+      const { data: nextWeekRoom } = await supabase.from("gameday_rooms").select("id, status, week_number").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("experience_type", "fantasy").eq("week_number", wn + 1).is("archived_at", null).maybeSingle();
+      const nextWeekPublished = Boolean(nextWeekRoom);
+      const leaguePicksPath = `/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks`;
+      const leaguePicksApiPath = `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${wn}/league-picks`;
+      res2.json({
+        finalized: true,
+        league_name: league.league_name ?? null,
+        week: wn,
+        week_number: wn,
+        season_year: season.season_year ?? null,
+        reward_description: room.reward_description ?? null,
+        reward_amount_display: room.reward_amount_display ?? null,
+        winners,
+        standings: finalStandings,
+        final_standings: finalStandings,
+        leaderboard: finalStandings,
+        competition_props: competitionProps.map((prop) => {
+          const correctIds = _correctAnswers(prop);
+          return {
+            prop_id: prop.id,
+            question: prop.question,
+            display_order: prop.display_order,
+            point_value: prop.point_value,
+            scoring_scope: "competition",
+            correct_answer_ids: correctIds,
+            correct_answer_labels: correctIds.map(
+              (id) => answerLabels[prop.id]?.[id] ?? id
+            )
+          };
+        }),
+        total_competition_props: competitionProps.length,
+        league_picks: {
+          available: true,
+          week_number: wn,
+          path: leaguePicksPath,
+          api_path: leaguePicksApiPath
+        },
+        league_picks_path: leaguePicksPath,
+        next_week: {
+          week_number: wn + 1,
+          published: nextWeekPublished,
+          room_status: nextWeekPublished ? nextWeekRoom.status : null
+        },
+        next_week_number: wn + 1,
+        next_week_published: nextWeekPublished
+      });
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt/alias",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      const commissioner = await requireVerifiedFantasyCommissioner(req, res2, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      if (rc.room.status !== "finalized") {
+        res2.status(409).json({ error: `Week ${wn} receipt is not finalized` });
+        return;
+      }
+      try {
+        const shortCode = await _getOrCreateWeeklyReceiptAlias(supabase, seasonId, wn);
+        res2.json({ short_code: shortCode });
+      } catch (error) {
+        console.error("[fantasy-weekly-receipt-alias] create failed:", error);
+        res2.status(500).json({ error: "Unable to prepare receipt link" });
+      }
     }
   );
   app2.get(
@@ -18601,24 +18838,59 @@ function registerFantasyReceiptShortLink(app2) {
         res2.status(500).send("Unable to resolve receipt");
         return;
       }
-      if (!alias) {
-        res2.status(404).send("Receipt not found");
+      if (alias) {
+        const { data: weeklyCollision, error: weeklyCollisionError } = await supabase.from("fantasy_weekly_receipt_aliases").select("league_season_id").eq("short_code", shortCode).maybeSingle();
+        if (weeklyCollisionError) {
+          console.error("[fantasy-receipt-short-link] collision check failed:", weeklyCollisionError.message);
+          res2.status(500).send("Unable to resolve receipt");
+          return;
+        }
+        if (weeklyCollision) {
+          console.error("[fantasy-receipt-short-link] ambiguous alias namespace collision");
+          res2.status(404).send("Receipt not found");
+          return;
+        }
+        const { data: season, error: seasonError } = await supabase.from("fantasy_league_seasons").select("id, league_id").eq("id", alias.league_season_id).maybeSingle();
+        if (seasonError) {
+          console.error("[fantasy-receipt-short-link] season lookup failed:", seasonError.message);
+          res2.status(500).send("Unable to resolve receipt");
+          return;
+        }
+        if (!season) {
+          res2.status(404).send("Receipt not found");
+          return;
+        }
+        res2.setHeader("Cache-Control", "no-store");
+        res2.redirect(
+          302,
+          `/fantasy/draft-day/${season.league_id}/${season.id}/receipt`
+        );
         return;
       }
-      const { data: season, error: seasonError } = await supabase.from("fantasy_league_seasons").select("id, league_id").eq("id", alias.league_season_id).maybeSingle();
-      if (seasonError) {
-        console.error("[fantasy-receipt-short-link] season lookup failed:", seasonError.message);
+      const { data: weeklyAlias, error: weeklyAliasError } = await supabase.from("fantasy_weekly_receipt_aliases").select("league_season_id, week_number").eq("short_code", shortCode).maybeSingle();
+      if (weeklyAliasError) {
+        console.error("[fantasy-receipt-short-link] weekly alias lookup failed:", weeklyAliasError.message);
         res2.status(500).send("Unable to resolve receipt");
         return;
       }
-      if (!season) {
+      if (!weeklyAlias) {
+        res2.status(404).send("Receipt not found");
+        return;
+      }
+      const { data: weeklySeason, error: weeklySeasonError } = await supabase.from("fantasy_league_seasons").select("id, league_id").eq("id", weeklyAlias.league_season_id).maybeSingle();
+      if (weeklySeasonError) {
+        console.error("[fantasy-receipt-short-link] weekly season lookup failed:", weeklySeasonError.message);
+        res2.status(500).send("Unable to resolve receipt");
+        return;
+      }
+      if (!weeklySeason) {
         res2.status(404).send("Receipt not found");
         return;
       }
       res2.setHeader("Cache-Control", "no-store");
       res2.redirect(
         302,
-        `/fantasy/draft-day/${season.league_id}/${season.id}/receipt`
+        `/fantasy/weeks/${weeklySeason.league_id}/${weeklySeason.id}/${weeklyAlias.week_number}/receipt`
       );
     } catch (error) {
       console.error("[fantasy-receipt-short-link] unexpected error:", error);

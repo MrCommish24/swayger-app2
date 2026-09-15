@@ -184,6 +184,22 @@ export interface CompetitionReceiptData {
   total_competition_props?: number;
 }
 
+/** Shared, viewer-independent finalized receipt for one weekly competition. */
+export interface WeeklyReceiptData extends CompetitionReceiptData {
+  week_number: number;
+  week?: number;
+  standings?: CompetitionReceiptLeaderboardEntry[];
+  final_standings?: CompetitionReceiptLeaderboardEntry[];
+  league_picks?: {
+    available: boolean;
+    week_number: number;
+    path: string;
+    api_path: string;
+  };
+  next_week_published?: boolean;
+  next_week_number?: number | null;
+}
+
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info
 export interface JoinInfoSeat {
   season_member_id: string;
@@ -710,6 +726,38 @@ export async function getDraftDayReceiptAlias(
   );
 }
 
+// GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt
+export async function getWeeklyReceipt(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2],
+): Promise<WeeklyReceiptData> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/receipt`,
+    {},
+    auth,
+  );
+}
+
+// POST /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt/alias
+export interface WeeklyReceiptAlias {
+  short_code: string;
+}
+
+export async function getWeeklyReceiptAlias(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  auth: Parameters<typeof fantasyFetch>[2],
+): Promise<WeeklyReceiptAlias> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/receipt/alias`,
+    { method: "POST" },
+    auth,
+  );
+}
+
 // ── Phase 6E: League Archive / Restore ───────────────────────────────────────
 
 export interface ArchiveLeagueResult {
@@ -1044,6 +1092,34 @@ export function buildDraftDayReceiptUrl(leagueId: string, seasonId: string): str
 
 /** Build the opaque short URL for a finalized Draft Day receipt. */
 export function buildDraftDayReceiptShortUrl(shortCode: string): string {
+  const path = `/r/${shortCode}`;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+/** Build the canonical share URL for a finalized weekly receipt. */
+export function buildWeeklyReceiptUrl(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+): string {
+  const path = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/receipt`;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+/** Build the opaque short URL for a finalized weekly receipt. */
+export function buildWeeklyReceiptShortUrl(shortCode: string): string {
   const path = `/r/${shortCode}`;
   if (typeof window !== "undefined" && window.location?.origin) {
     return `${window.location.origin}${path}`;

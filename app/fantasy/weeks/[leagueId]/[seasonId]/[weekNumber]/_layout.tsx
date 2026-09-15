@@ -7,6 +7,7 @@ export default function WeeklyLayout() {
       <Stack.Screen name="play" />
       <Stack.Screen name="settle" />
       <Stack.Screen name="results" />
+      <Stack.Screen name="receipt" />
     </Stack>
   );
 }

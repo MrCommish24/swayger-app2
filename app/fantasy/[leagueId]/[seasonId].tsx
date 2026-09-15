@@ -460,19 +460,26 @@ function DraftDayCard({
 function PastWeekRow({
   label,
   onView,
+  onReceipt,
 }: {
   label: string;
   onView: () => void;
+  onReceipt: () => void;
 }) {
   return (
-    <TouchableOpacity style={styles.pastWeekRow} onPress={onView} activeOpacity={0.8}>
-      <Text style={styles.pastWeekIcon}>🏈</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.pastWeekTitle}>{label}</Text>
-        <Text style={styles.pastWeekSub}>Final Results</Text>
-      </View>
-      <Text style={styles.pastWeekArrow}>View  ›</Text>
-    </TouchableOpacity>
+    <View style={styles.pastWeekRow}>
+      <TouchableOpacity style={styles.pastWeekMain} onPress={onView} activeOpacity={0.8}>
+        <Text style={styles.pastWeekIcon}>🏈</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.pastWeekTitle}>{label}</Text>
+          <Text style={styles.pastWeekSub}>Final Results</Text>
+        </View>
+        <Text style={styles.pastWeekArrow}>View  ›</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.pastWeekReceipt} onPress={onReceipt} activeOpacity={0.8}>
+        <Text style={styles.pastWeekReceiptText}>Receipt</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -497,6 +504,7 @@ interface WeeklyCardProps {
   onSettle:            () => void;
   onFinalize:          () => void;
   onViewResults:       () => void;
+  onViewReceipt:       () => void;
   onViewStandings:     () => void;
   // Phase 5.1
   onShare:             () => void;
@@ -523,6 +531,7 @@ function WeeklyCard({
   onSettle,
   onFinalize,
   onViewResults,
+  onViewReceipt,
   onViewStandings,
   onShare,
   onShareReminder,
@@ -605,6 +614,13 @@ function WeeklyCard({
             activeOpacity={0.8}
           >
             <Text style={styles.btnText}>🏆  View Week {weekNumber} Results</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnSecondary]}
+            onPress={onViewReceipt}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.btnText, { color: C.accentGold }]}>🧾  Weekly Receipt</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.btn, styles.btnSecondary]}
@@ -1633,6 +1649,7 @@ export default function LeagueHubScreen() {
                       onPlay={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/play` as any)}
                       onSettle={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/settle` as any)}
                       onViewResults={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/results` as any)}
+                       onViewReceipt={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/receipt` as any)}
                       onViewStandings={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
                       onLock={async () => {
                         if (!session || lockingWeekly) return;
@@ -1825,6 +1842,7 @@ export default function LeagueHubScreen() {
                             key={w.week_number}
                             label={`Week ${w.week_number}`}
                             onView={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${w.week_number}/results` as any)}
+                             onReceipt={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${w.week_number}/receipt` as any)}
                           />
                         ))}
                     </View>
@@ -2205,16 +2223,32 @@ const styles = StyleSheet.create({
   pastWeekRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    gap: 8,
+    paddingLeft: 16,
+    paddingRight: 10,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: C.border,
+  },
+  pastWeekMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 4,
   },
   pastWeekIcon:  { fontSize: 20 },
   pastWeekTitle: { fontSize: 15, fontWeight: "600", color: C.text },
   pastWeekSub:   { fontSize: 12, color: C.textMuted, marginTop: 1 },
   pastWeekArrow: { fontSize: 13, color: C.tint, fontWeight: "600" },
+  pastWeekReceipt: {
+    borderWidth: 1,
+    borderColor: C.accentGold,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  pastWeekReceiptText: { color: C.accentGold, fontSize: 11, fontWeight: "700" },
 
   // NEXT UP section (Phase 5.3)
   nextUpSection: { marginBottom: 12 },

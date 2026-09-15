@@ -1,8 +1,10 @@
 import {
   buildDraftDayReceiptShareText,
+  buildWeeklyReceiptShareText,
+  getWeeklyReceiptSafeFact,
   getCompactReceiptLeaderboard,
 } from "../lib/fantasy-receipt-share";
-import type { CompetitionReceiptData } from "../lib/fantasy-api";
+import type { CompetitionReceiptData, WeeklyReceiptData } from "../lib/fantasy-api";
 
 const receipt: CompetitionReceiptData = {
   finalized: true,
@@ -45,4 +47,19 @@ const compact = getCompactReceiptLeaderboard(receipt.leaderboard!);
 assert(compact.length === 6 && compact.some((entry) => entry.display_name === "Fran"), "Compact standings retain a tie at the cutoff");
 assert(!JSON.stringify(compact).includes("question"), "Compact standings contain no question or pick data");
 
-console.log("Receipt share helper result: 6 passed, 0 failed");
+const weeklyReceipt: WeeklyReceiptData = {
+  ...receipt,
+  week_number: 3,
+  leaderboard: [
+    { display_name: "Alex", team_name: "Blue", points: 8, correct_count: 4, rank: 1, rank_label: "1" },
+    { display_name: "Casey", team_name: "Green", points: 2, correct_count: 1, rank: 2, rank_label: "2" },
+  ],
+  winners: [receipt.winners![0]],
+};
+const weeklyText = buildWeeklyReceiptShareText(weeklyReceipt, shortUrl);
+assert(weeklyText.includes("Sunday Crew's Week 3 win with 8 pts."), "Weekly share text includes league, week, and winner points");
+assert(weeklyText.endsWith(shortUrl), "Weekly share text includes the stable short URL");
+assert(getWeeklyReceiptSafeFact(weeklyReceipt) === "Lowest score: Casey (Green) with 2 pts.", "Weekly safe fact prefers the lowest scoring team");
+assert(getWeeklyReceiptSafeFact({ ...weeklyReceipt, leaderboard: [], total_competition_props: 4 }) === "4 questions settled.", "Weekly safe fact has a deterministic listed fallback");
+
+console.log("Receipt share helper result: 10 passed, 0 failed");

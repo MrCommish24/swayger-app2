@@ -9,9 +9,13 @@ const C = Colors.dark;
 
 interface CompactCompetitionReceiptProps {
   data: CompetitionReceiptData;
+  variant?: "draft_day" | "weekly";
 }
 
-export function CompactCompetitionReceipt({ data }: CompactCompetitionReceiptProps) {
+export function CompactCompetitionReceipt({
+  data,
+  variant = "draft_day",
+}: CompactCompetitionReceiptProps) {
   const winners = data.winners ?? [];
   const leaderboard = getCompactReceiptLeaderboard(data.leaderboard ?? []);
 
@@ -22,12 +26,16 @@ export function CompactCompetitionReceipt({ data }: CompactCompetitionReceiptPro
           <SwaygerMark color={C.tint} size={19} />
           <Text style={styles.brand}>SWAYGER FANTASY</Text>
         </View>
-        <Text style={styles.receiptLabel}>DRAFT DAY RECEIPT</Text>
+        <Text style={styles.receiptLabel}>
+          {variant === "weekly" ? "WEEKLY RECEIPT" : "DRAFT DAY RECEIPT"}
+        </Text>
         <Text style={styles.leagueName} numberOfLines={2}>
           {data.league_name ?? "Fantasy League"}
         </Text>
         <Text style={styles.season}>
-          Draft Day{data.season_year ? ` · ${data.season_year}` : ""}
+          {variant === "weekly"
+            ? `Week ${(data as CompetitionReceiptData & { week_number?: number }).week_number ?? ""}${data.season_year ? ` · ${data.season_year}` : ""}`
+            : `Draft Day${data.season_year ? ` · ${data.season_year}` : ""}`}
         </Text>
       </View>
 

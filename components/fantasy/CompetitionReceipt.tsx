@@ -24,6 +24,7 @@ const C = Colors.dark;
 
 interface CompetitionReceiptProps {
   data: CompetitionReceiptData;
+  variant?: "draft_day" | "weekly";
   canShare: boolean;
   sharing: boolean;
   copied: boolean;
@@ -34,6 +35,7 @@ interface CompetitionReceiptProps {
 
 export function CompetitionReceipt({
   data,
+  variant = "draft_day",
   canShare,
   sharing,
   copied,
@@ -44,6 +46,13 @@ export function CompetitionReceipt({
   const winners = data.winners ?? [];
   const leaderboard = data.leaderboard ?? [];
   const competitionProps = data.competition_props ?? [];
+  const weeklyData = variant === "weekly"
+    ? data as CompetitionReceiptData & { week_number?: number }
+    : null;
+  const competitionLabel = variant === "weekly" ? "WEEKLY RECEIPT" : "GLOBAL DRAFT DAY RECEIPT";
+  const resultTitle = variant === "weekly"
+    ? `Week ${weeklyData?.week_number ?? ""}${data.season_year ? ` · ${data.season_year}` : ""}`
+    : `Draft Day${data.season_year ? ` · ${data.season_year}` : ""}`;
 
   return (
     <View>
@@ -52,12 +61,12 @@ export function CompetitionReceipt({
           <SwaygerMark color={C.tint} size={20} />
           <Text style={styles.brandName}>SWAYGER FANTASY</Text>
         </View>
-        <Text style={styles.eyebrow}>GLOBAL DRAFT DAY RECEIPT</Text>
+        <Text style={styles.eyebrow}>{competitionLabel}</Text>
         <Text style={styles.leagueName} numberOfLines={2}>
           {data.league_name ?? "Fantasy League"}
         </Text>
         <Text style={styles.title}>
-          Draft Day{data.season_year ? ` · ${data.season_year}` : ""}
+          {resultTitle}
         </Text>
         <Text style={styles.subtitle}>
           The final league result, all in one place.
@@ -73,7 +82,7 @@ export function CompetitionReceipt({
         <View style={styles.winnerCard}>
           <Text style={styles.winnerEmoji}>🏆</Text>
           <Text style={styles.winnerEyebrow}>
-            {winners.length > 1 ? "CO-WINNERS" : "DRAFT DAY WINNER"}
+            {winners.length > 1 ? "CO-WINNERS" : variant === "weekly" ? "WEEK WINNER" : "DRAFT DAY WINNER"}
           </Text>
           {winners.map((winner, index) => (
             <WinnerRow key={`${winner.display_name}-${index}`} winner={winner} />
@@ -157,11 +166,15 @@ export function CompetitionReceipt({
             onPress={onShare}
             disabled={sharing}
             activeOpacity={0.82}
-            accessibilityLabel="Share Draft Day Receipt"
+            accessibilityLabel={variant === "weekly" ? "Share Weekly Receipt" : "Share Draft Day Receipt"}
           >
             {sharing
               ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.shareButtonText}>Share Draft Day Receipt</Text>}
+              : (
+                <Text style={styles.shareButtonText}>
+                  {variant === "weekly" ? "Share Weekly Receipt" : "Share Draft Day Receipt"}
+                </Text>
+              )}
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.copyButton, copied && styles.copyButtonCopied]}

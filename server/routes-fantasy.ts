@@ -92,10 +92,27 @@ async function _getOrCreateDraftDayReceiptAlias(
     .maybeSingle();
 
   if (existingError) throw new Error(existingError.message);
-  if (existing?.short_code) return (existing as any).short_code;
+  if (existing?.short_code) {
+    const { data: weeklyCollision, error: collisionError } = await supabase
+      .from("fantasy_weekly_receipt_aliases")
+      .select("league_season_id")
+      .eq("short_code", (existing as any).short_code)
+      .maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (weeklyCollision) throw new Error("Receipt alias namespace collision");
+    return (existing as any).short_code;
+  }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const shortCode = _generateReceiptAliasCode();
+    const { data: weeklyCollision, error: collisionError } = await supabase
+      .from("fantasy_weekly_receipt_aliases")
+      .select("league_season_id")
+      .eq("short_code", shortCode)
+      .maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (weeklyCollision) continue;
+
     const { data: inserted, error: insertError } = await supabase
       .from("fantasy_draft_day_receipt_aliases")
       .insert({ league_season_id: seasonId, short_code: shortCode })
@@ -116,6 +133,68 @@ async function _getOrCreateDraftDayReceiptAlias(
       .from("fantasy_draft_day_receipt_aliases")
       .select("short_code")
       .eq("league_season_id", seasonId)
+      .maybeSingle();
+    if (race?.short_code) return (race as any).short_code;
+  }
+
+  throw new Error("Failed to generate a unique receipt alias");
+}
+
+async function _getOrCreateWeeklyReceiptAlias(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  seasonId: string,
+  weekNumber: number,
+): Promise<string> {
+  const { data: existing, error: existingError } = await supabase
+    .from("fantasy_weekly_receipt_aliases")
+    .select("short_code")
+    .eq("league_season_id", seasonId)
+    .eq("week_number", weekNumber)
+    .maybeSingle();
+
+  if (existingError) throw new Error(existingError.message);
+  if (existing?.short_code) {
+    const { data: draftCollision, error: collisionError } = await supabase
+      .from("fantasy_draft_day_receipt_aliases")
+      .select("league_season_id")
+      .eq("short_code", (existing as any).short_code)
+      .maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (draftCollision) throw new Error("Receipt alias namespace collision");
+    return (existing as any).short_code;
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = _generateReceiptAliasCode();
+    const { data: draftCollision, error: collisionError } = await supabase
+      .from("fantasy_draft_day_receipt_aliases")
+      .select("league_season_id")
+      .eq("short_code", shortCode)
+      .maybeSingle();
+    if (collisionError) throw new Error(collisionError.message);
+    if (draftCollision) continue;
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("fantasy_weekly_receipt_aliases")
+      .insert({
+        league_season_id: seasonId,
+        week_number: weekNumber,
+        short_code: shortCode,
+      })
+      .select("short_code")
+      .maybeSingle();
+
+    if (!insertError && inserted?.short_code) return (inserted as any).short_code;
+
+    if ((insertError as any)?.code !== "23505") {
+      throw new Error(insertError?.message ?? "Failed to create receipt alias");
+    }
+
+    const { data: race } = await supabase
+      .from("fantasy_weekly_receipt_aliases")
+      .select("short_code")
+      .eq("league_season_id", seasonId)
+      .eq("week_number", weekNumber)
       .maybeSingle();
     if (race?.short_code) return (race as any).short_code;
   }
@@ -352,6 +431,101 @@ function getCallerIdentity(req: Request): { userId?: string; guestToken?: string
   const guestToken = req.headers["x-fantasy-guest-token"] as string | undefined;
   if (guestToken?.trim()) return { guestToken: guestToken.trim() };
   return {};
+}
+
+/**
+ * Cryptographically verifies bearer credentials for shared receipt reads.
+ * Guest credentials remain opaque and are validated by resolveViewer against
+ * the season's active claim rows.
+ */
+async function getVerifiedCallerIdentity(
+  req: Request,
+  supabase: ReturnType<typeof getServiceSupabase>,
+): Promise<{ userId?: string; guestToken?: string }> {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7).trim();
+    if (!token) return {};
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data.user?.id) return {};
+    return { userId: data.user.id };
+  }
+  const guestToken = req.headers["x-fantasy-guest-token"] as string | undefined;
+  if (guestToken?.trim()) return { guestToken: guestToken.trim() };
+  return {};
+}
+
+async function requireVerifiedFantasyCommissioner(
+  req: Request,
+  res: Response,
+  supabase: ReturnType<typeof getServiceSupabase>,
+  leagueId: string,
+  seasonId: string,
+): Promise<{ userId: string; leagueMemberId: string; seasonMemberId: string } | null> {
+  const identity = await getVerifiedCallerIdentity(req, supabase);
+  if (!identity.userId && !identity.guestToken) {
+    res.status(401).json({ error: "Invalid token" });
+    return null;
+  }
+  if (!identity.userId) {
+    if (identity?.guestToken) {
+      // Preserve the existing guest-claim commissioner behavior while still
+      // rejecting forged bearer credentials above.
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer || !["commissioner", "co_commissioner"].includes(viewer.role)) {
+        res.status(403).json({ error: "Commissioner authority required for sharing" });
+        return null;
+      }
+      return {
+        userId: viewer.display_name ?? "guest",
+        leagueMemberId: viewer.league_member_id,
+        seasonMemberId: viewer.season_member_id,
+      };
+    }
+    return null;
+  }
+
+  const { data: claims } = await supabase
+    .from("fantasy_member_claims")
+    .select("league_member_id")
+    .eq("user_id", identity.userId)
+    .eq("is_active", true);
+  if (!claims?.length) {
+    res.status(403).json({ error: "No active Fantasy claim found" });
+    return null;
+  }
+
+  const memberIds = (claims as any[]).map((claim) => claim.league_member_id);
+  const { data: leagueMember } = await supabase
+    .from("fantasy_league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("is_active", true)
+    .in("id", memberIds)
+    .maybeSingle();
+  if (!leagueMember) {
+    res.status(403).json({ error: "Not a member of this Fantasy league" });
+    return null;
+  }
+
+  const { data: seasonMember } = await supabase
+    .from("fantasy_season_members")
+    .select("id, role")
+    .eq("league_season_id", seasonId)
+    .eq("league_member_id", (leagueMember as any).id)
+    .eq("is_active", true)
+    .in("role", ["commissioner", "co_commissioner"])
+    .maybeSingle();
+  if (!seasonMember) {
+    res.status(403).json({ error: "Commissioner authority required for this season" });
+    return null;
+  }
+
+  return {
+    userId: identity.userId,
+    leagueMemberId: (leagueMember as any).id,
+    seasonMemberId: (seasonMember as any).id,
+  };
 }
 
 /**
@@ -2423,6 +2597,11 @@ export function registerFantasyRoutes(app: Express) {
     async (req: Request, res: Response) => {
       const { leagueId, seasonId } = req.params;
       const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
       const commissioner = await requireFantasyCommissioner(req, res, supabase, leagueId, seasonId);
       if (!commissioner) return;
       const userId = commissioner.userId;
@@ -4236,17 +4415,18 @@ export function registerFantasyRoutes(app: Express) {
   async function _getWeeklyRoomAndCard(
     supabase: ReturnType<typeof getServiceSupabase>,
     seasonId: string,
-    weekNumber: number
+    weekNumber: number,
+    includeArchived = false,
   ): Promise<{ ok: true; room: any; card: any } | { ok: false; status: number; body: object }> {
-    const { data: room } = await supabase
+    let roomQuery = supabase
       .from("gameday_rooms")
       .select("id, status, week_number, room_code, reward_description, reward_amount_display, created_at")
       .eq("league_season_id", seasonId)
       .eq("competition_type", "weekly")
       .eq("week_number", weekNumber)
-      .eq("experience_type", "fantasy")
-      .is("archived_at", null)
-      .maybeSingle();
+      .eq("experience_type", "fantasy");
+    if (!includeArchived) roomQuery = roomQuery.is("archived_at", null);
+    const { data: room } = await roomQuery.maybeSingle();
     if (!room)
       return { ok: false, status: 404, body: { error: `No published Week ${weekNumber} competition found for this season` } };
     const { data: card } = await supabase
@@ -6077,6 +6257,202 @@ export function registerFantasyRoutes(app: Express) {
         total_competition_props: competitionProps.length,
       });
     }
+  );
+
+  // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt
+  //
+  // Shared, viewer-independent Weekly artifact. This intentionally does not
+  // call the personal Results response builder: a receipt must be identical
+  // for every authorized member and must never contain a pick or correctness
+  // field belonging to the requesting member.
+  //
+  // Finalized rooms remain readable after archive. Authorization is still
+  // required and is checked against the season membership before the room is
+  // read.
+  app.get(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { data: league } = await supabase
+        .from("fantasy_leagues")
+        .select("id, league_name")
+        .eq("id", leagueId)
+        .maybeSingle();
+      if (!league) {
+        res.status(404).json({ error: "League not found" });
+        return;
+      }
+
+      const { data: season } = await supabase
+        .from("fantasy_league_seasons")
+        .select("id, season_year")
+        .eq("id", seasonId)
+        .eq("league_id", leagueId)
+        .maybeSingle();
+      if (!season) {
+        res.status(404).json({ error: "Season not found" });
+        return;
+      }
+
+      const member = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!member) {
+        res.status(403).json({ error: "Not a member of this Fantasy league season" });
+        return;
+      }
+
+      // Unlike normal Weekly reads, this historical artifact intentionally
+      // includes archived rooms.
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+
+      if ((room as any).status !== "finalized") {
+        res.json({ finalized: false });
+        return;
+      }
+
+      const { data: props } = await supabase
+        .from("gameday_props")
+        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
+        .eq("card_id", (card as any).id)
+        .eq("scoring_scope", "competition")
+        .order("display_order", { ascending: true });
+      const competitionProps = ((props ?? []) as any[]).filter((prop) => prop.status === "settled");
+
+      const answerLabels: Record<string, Record<string, string>> = {};
+      for (const prop of competitionProps) {
+        answerLabels[prop.id] = {};
+        for (const option of (Array.isArray(prop.answer_options) ? prop.answer_options : [])) {
+          if (option?.id && option?.label) answerLabels[prop.id][option.id] = option.label;
+        }
+      }
+
+      // This is the same finalized scoring source used by Weekly Results.
+      const leaderboard = await _buildLeaderboard(supabase, (room as any).id, competitionProps);
+      const finalStandings = leaderboard.map((entry: any) => ({
+        display_name: entry.display_name,
+        team_name: entry.team_name,
+        points: entry.points,
+        correct_count: entry.correct_count,
+        rank: entry.rank,
+        rank_label: entry.rank_label,
+      }));
+      const topPoints = finalStandings[0]?.points ?? 0;
+      const winners = finalStandings.filter((entry: any) => entry.points === topPoints);
+
+      // The next-week state is intentionally limited to publication metadata;
+      // no picks or member-specific state is linked into a receipt.
+      const { data: nextWeekRoom } = await supabase
+        .from("gameday_rooms")
+        .select("id, status, week_number")
+        .eq("league_season_id", seasonId)
+        .eq("competition_type", "weekly")
+        .eq("experience_type", "fantasy")
+        .eq("week_number", wn + 1)
+        .is("archived_at", null)
+        .maybeSingle();
+      const nextWeekPublished = Boolean(nextWeekRoom);
+      const leaguePicksPath = `/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks`;
+      const leaguePicksApiPath =
+        `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${wn}/league-picks`;
+
+      res.json({
+        finalized: true,
+        league_name: (league as any).league_name ?? null,
+        week: wn,
+        week_number: wn,
+        season_year: (season as any).season_year ?? null,
+        reward_description: (room as any).reward_description ?? null,
+        reward_amount_display: (room as any).reward_amount_display ?? null,
+        winners,
+        standings: finalStandings,
+        final_standings: finalStandings,
+        leaderboard: finalStandings,
+        competition_props: competitionProps.map((prop: any) => {
+          const correctIds = _correctAnswers(prop);
+          return {
+            prop_id: prop.id,
+            question: prop.question,
+            display_order: prop.display_order,
+            point_value: prop.point_value,
+            scoring_scope: "competition",
+            correct_answer_ids: correctIds,
+            correct_answer_labels: correctIds.map(
+              (id: string) => answerLabels[prop.id]?.[id] ?? id,
+            ),
+          };
+        }),
+        total_competition_props: competitionProps.length,
+        league_picks: {
+          available: true,
+          week_number: wn,
+          path: leaguePicksPath,
+          api_path: leaguePicksApiPath,
+        },
+        league_picks_path: leaguePicksPath,
+        next_week: {
+          week_number: wn + 1,
+          published: nextWeekPublished,
+          room_status: nextWeekPublished ? (nextWeekRoom as any).status : null,
+        },
+        next_week_number: wn + 1,
+        next_week_published: nextWeekPublished,
+      });
+    },
+  );
+
+  // ── POST .../weeks/:weekNumber/receipt/alias
+  //
+  // Commissioner/co-commissioner-only create-or-return operation. The alias
+  // is a pointer only; canonical Weekly receipt authorization is unchanged.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/receipt/alias",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const commissioner = await requireVerifiedFantasyCommissioner(req, res, supabase, leagueId, seasonId);
+      if (!commissioner) return;
+
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res.status(rc.status).json(rc.body);
+        return;
+      }
+      if ((rc.room as any).status !== "finalized") {
+        res.status(409).json({ error: `Week ${wn} receipt is not finalized` });
+        return;
+      }
+
+      try {
+        const shortCode = await _getOrCreateWeeklyReceiptAlias(supabase, seasonId, wn);
+        res.json({ short_code: shortCode });
+      } catch (error) {
+        console.error("[fantasy-weekly-receipt-alias] create failed:", error);
+        res.status(500).json({ error: "Unable to prepare receipt link" });
+      }
+    },
   );
 
   // ── GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/standings
