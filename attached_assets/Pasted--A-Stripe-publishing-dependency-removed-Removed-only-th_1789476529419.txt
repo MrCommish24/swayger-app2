@@ -1,0 +1,137 @@
+## A. Stripe publishing dependency removed
+
+Removed only this project configuration entry from `.replit`:
+
+```toml
+[agent]
+integrations = ["stripe:1.0.0"]
+```
+
+The `[agent]` section now keeps only:
+
+```toml
+[agent]
+stack = "EXPO"
+```
+
+The attached approval note was not added to the repository.
+
+## B. Stripe application code
+
+Stripe application code was left untouched.
+
+Unchanged files include:
+
+- `server/stripeClient.ts`
+- `server/routes-mm-special.ts`
+- `app/march-madness/index.tsx`
+- `app/march-madness/picks.tsx`
+- `scripts/seed-elite8-boost.ts`
+- `package.json`
+- Existing Stripe environment variables
+
+No live Stripe account was connected, and no Stripe secrets were removed.
+
+## C. Files changed
+
+Only one tracked file changed:
+
+```text
+.replit
+```
+
+The change removes one line:
+
+```diff
+- integrations = ["stripe:1.0.0"]
+```
+
+No Madden or Game Day files changed.
+
+## D. Tests and build
+
+Passed:
+
+```text
+npm run server:build
+```
+
+```text
+Madden Weekly Pick Card suite: 33/33 passed
+```
+
+```text
+Web Game Day regression: 39/39 assertions passed
+```
+
+The web regression uses disposable test fixtures and deletes its room IDs in a `finally` cleanup block.
+
+No Discord bot commands or Discord posts were made.
+
+No secret-looking files were included in the commit.
+
+## E. Commit hash
+
+Created local commit:
+
+```text
+854521ada57c119e8e7dca42b321d5178f03c3bf
+```
+
+Commit message:
+
+```text
+Remove Stripe publishing dependency for payment-free pilot
+```
+
+## F. Push confirmation
+
+The push did **not** complete.
+
+GitHub rejected the push again:
+
+```text
+Invalid username or token.
+Password authentication is not supported for Git operations.
+```
+
+The commit exists locally, but it is not on `origin/main`.
+
+## G. Final git status
+
+Tracked files are clean.
+
+Current refs:
+
+```text
+HEAD:
+854521ada57c119e8e7dca42b321d5178f03c3bf
+
+origin/main:
+f448bcf9cf94996bd1b09b103bc3f86a2757ae4e
+
+Commits ahead:
+1
+```
+
+The approval attachment remains untracked intentionally:
+
+```text
+?? attached_assets/Pasted-Approved-decision-This-deployment-is-intentionally-paym_1789476173761.txt
+```
+
+## H. Whether republish should now be unblocked
+
+The configuration change is correct and should remove the Stripe publishing dependency once it reaches the remote project.
+
+However, the updated `.replit` file is not yet on `origin/main`, so the deployed project and Publishing pane have not received this fix.
+
+Next required action:
+
+```bash
+git push origin main
+```
+
+After the push succeeds, verify the Publishing pane again. Do not republish until that verification is complete.
+
+STRIPE PUBLISH BLOCKER STATUS: FAIL
