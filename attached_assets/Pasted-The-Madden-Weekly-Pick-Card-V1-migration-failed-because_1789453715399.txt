@@ -1,0 +1,71 @@
+The Madden Weekly Pick Card V1 migration failed because the connected Supabase database has existing gameday_rooms rows with sport = 'football'.
+
+I ran the read-only invalid sport query and confirmed many existing rows have:
+
+sport = football
+
+Examples include Fantasy/Draft Day/Week Swayger/test rooms. These are existing live/legacy records and should not be blindly backfilled to nfl.
+
+Current schema also confirms:
+- gameday_rooms.format_config is missing
+- gameday_props.line_text is missing
+- gameday_rooms.sport exists
+- gameday_rooms.template_type exists
+
+Please correct the Madden migration so it is compatible with existing production data.
+
+Important:
+Do not mutate existing football rows.
+Do not backfill football to nfl.
+Do not delete rows.
+Do not weaken constraints more than necessary.
+Do not create Madden rooms.
+Do not post to Discord.
+Do not run Discord bot commands.
+Do not add Companion App ingestion, EA/Neon integration, odds, payments, Admin Console, or automated Discord.
+
+Required correction:
+Update the gameday_rooms sport check constraint so it allows existing valid values plus Madden.
+
+The allowed sport values should include at least:
+- nba
+- soccer
+- nfl
+- football
+- madden
+
+If there are other existing sport values in the connected database, inspect and include only legitimate legacy values.
+
+Also preserve/add the required Madden fields:
+- gameday_rooms.format_config jsonb nullable
+- gameday_props.line_text text nullable
+
+And preserve required template_type support:
+- nfl_single_game
+- nfl_sunday_slate
+- weekly_pick_card
+
+Please provide a corrected migration file or patch for:
+
+supabase/gameday-madden-weekly-pick-card-v1.sql
+
+Also provide the exact SQL I should run to verify afterward:
+
+1. sport distribution
+2. required columns exist
+3. sport constraint includes football and madden
+4. template_type constraint includes weekly_pick_card
+
+Do not apply the migration yourself.
+
+Return:
+A. Root cause
+B. Corrected migration approach
+C. Whether existing football rows are preserved
+D. Exact migration file changed
+E. Exact verification SQL
+F. Whether I can safely re-run the migration in Supabase
+
+End with:
+
+MADDEN MIGRATION COMPATIBILITY STATUS: PASS / FAIL
