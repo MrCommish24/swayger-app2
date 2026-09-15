@@ -1,0 +1,145 @@
+Approved to build the first pilot version of Madden Weekly Pick Card as an additive Game Day format.
+
+Product decision:
+Do not call this Swayger Parlay in the product UI. Use:
+
+- User-facing format: Madden Weekly Pick Card
+- Commissioner-facing label: Commissioner Pick Card
+- Internal template_type: weekly_pick_card
+- sport: madden
+
+Goal:
+Let a commissioner recreate the weekly Madden Discord pick-card/parlay behavior inside Swayger with a private room, matchup picks, manual settlement, and copy-ready Discord messaging.
+
+Do not build Neon integration.
+Do not build Madden API integration.
+Do not build odds/spread sourcing.
+Do not build sportsbook/parlay language.
+Do not build automatic Discord posting.
+Do not build subscriptions.
+Do not build automatic trait upgrades.
+Do not build exact numeric closest-to-total tiebreaking yet.
+Do not modify NFL Sunday Slate, NFL Single Game, NBA Game Day, Fantasy, or Discord subscription behavior.
+
+V1 decisions:
+1. Bonus question is optional and manually settled only.
+2. No exact numeric closest-to-total tiebreaker in V1.
+3. Winner can be commissioner-selected/confirmed after settlement.
+4. Creation is limited to existing Game Day hosts/authorized creators for the pilot.
+5. Minimum matchup rule is enforced at creation.
+6. Reward text is display-only.
+
+Build scope:
+
+A. Additive format foundation
+- Support sport = madden.
+- Support template_type = weekly_pick_card.
+- Add validated format_config for:
+  - week_label
+  - reward_text
+  - minimum_matchups
+  - scoring_mode
+  - bonus metadata if enabled
+- Use one private Game Day room.
+- Use one aggregate pregame card.
+- Each commissioner-entered matchup creates one prop with exactly two answer options.
+- Use existing pick submission, guest/auth joins, card lock, manual prop settlement, leaderboard, and finalization behavior.
+
+B. Commissioner creation flow
+Add a creation UI for authorized Game Day hosts:
+
+Label:
+Create Madden Weekly Pick Card
+
+Fields:
+- Challenge/week name
+- Reward text
+- Minimum matchup count
+- Pick deadline
+- Matchup editor:
+  - Team A
+  - Team B
+  - Optional line/spread display text
+- Optional bonus toggle:
+  - Bonus label/question
+  - Bonus answer options or manually settled choice
+- Create private room button
+
+After creation, show:
+- Private participant link
+- Copy-ready Discord message
+- Host/admin link if applicable
+
+C. Participant UI
+Reuse the current Game Day room screen, with format-aware display:
+- Show Madden Weekly Pick Card label.
+- Show week label.
+- Show reward text.
+- Show deadline.
+- Show matchup questions.
+- Show optional line text if provided.
+- Make clear picks can be edited until lock.
+- Make clear reward is administered by the commissioner.
+
+D. Host UI
+Reuse existing host controls with format-aware labels:
+- Open/lock the weekly card.
+- Manually settle matchup props.
+- Settle optional bonus prop if enabled.
+- Finalize room.
+- Display reward text.
+- If feasible, add commissioner-selected winner confirmation as a V1 manual action. If this is larger than expected, stop and report.
+
+E. Data/model rules
+- Do not use fake team/star values for Madden rooms.
+- Matchups live as props.
+- Format metadata lives in validated format_config.
+- Keep answer options as strings.
+- Do not introduce object-shaped answer options unless all shared participant/host/reveal paths are updated.
+- Public discovery should not expose private rooms.
+- Existing Game Day Hub Continue Playing should work for authenticated participants.
+
+F. Tests
+Add/update regression tests for:
+1. sport=madden accepted only where intended.
+2. template_type=weekly_pick_card accepted only where intended.
+3. Invalid formats rejected.
+4. Authorized host can create a Madden Weekly Pick Card.
+5. Unauthorized user cannot create one.
+6. Minimum matchup count enforced.
+7. Matchups create two-choice props.
+8. Optional line text displays safely.
+9. Reward text stored and displayed.
+10. Pick deadline maps to card scheduled_lock_at.
+11. Guest participant can join and submit picks.
+12. Authenticated participant can join and submit picks.
+13. Picks can be updated before lock.
+14. Picks are rejected after lock.
+15. Manual prop settlement works.
+16. Leaderboard works.
+17. Finalization works.
+18. Private rooms remain excluded from public discovery.
+19. Authenticated participant sees the room in Game Day Hub Continue Playing.
+20. Existing NFL Sunday Slate behavior remains unchanged.
+21. Existing NFL Single Game behavior remains unchanged.
+22. Existing NBA/Game Day behavior remains unchanged.
+23. Server build passes.
+24. Web Game Day regression passes.
+
+If a migration is required, create the migration and stop for migration handoff before marking PASS.
+
+Return:
+A. Implementation summary
+B. Data model changes
+C. Creation flow
+D. Participant flow
+E. Host/settlement flow
+F. What was intentionally deferred
+G. Files changed
+H. Migration handoff if needed
+I. Test results and assertion counts
+J. Whether this is ready for a Madden Discord pilot
+
+End with:
+
+MADDEN WEEKLY PICK CARD STATUS: PASS / NEEDS MIGRATION / FAIL
