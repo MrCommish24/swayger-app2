@@ -37,3 +37,4 @@
 - [Game Day commercial workflow](gameday-commercial-workflow.md) — saved provider-neutral offers use explicit assignments and manual publish; participant reads stay normalized and fail open.
 - [Expo preview API proxy](expo-preview-api-proxy.md) — Metro preview must proxy /api to the local Express workflow; production and native API origins remain separate.
 - [Fantasy shared-link navigation](fantasy-shared-link-navigation.md) — direct weekly links need explicit replace destinations; browser-history back can be inert.
+- [Madden Weekly Pick Card](gameday-madden-weekly-pick-card.md) — private aggregate pregame card; two-choice matchup props; additive Supabase migration required.

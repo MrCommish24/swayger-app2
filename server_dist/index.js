@@ -8829,6 +8829,7 @@ var PUBLIC_ROOM_FIELDS = [
   "sport",
   "template_type",
   "slate_config",
+  "format_config",
   "countdown_phase",
   "countdown_type",
   "countdown_ends_at",
@@ -9119,6 +9120,55 @@ function normalizeSundaySlateConfig(value) {
     config.game_candidates = [.../* @__PURE__ */ new Set([...earlyMatchups, ...lateMatchups])];
   }
   return config;
+}
+function normalizeWeeklyPickCardText(value, maxLength, required = false) {
+  if (typeof value !== "string") return required ? null : null;
+  const normalized = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!normalized || normalized.length > maxLength) return required ? null : null;
+  return normalized;
+}
+function normalizeWeeklyPickCardConfig(value, matchupCount) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value;
+  const weekLabel = normalizeWeeklyPickCardText(raw.week_label, 120, true);
+  const rewardText = normalizeWeeklyPickCardText(raw.reward_text, 240) ?? "";
+  const minimumRaw = raw.minimum_matchups;
+  const minimum = typeof minimumRaw === "number" ? minimumRaw : typeof minimumRaw === "string" && /^\d+$/.test(minimumRaw.trim()) ? Number(minimumRaw) : NaN;
+  const scoringMode = raw.scoring_mode === "all_correct" ? "all_correct" : null;
+  const rawBonus = raw.bonus && typeof raw.bonus === "object" && !Array.isArray(raw.bonus) ? raw.bonus : null;
+  const bonusEnabled = rawBonus?.enabled === true;
+  const bonusLabel = bonusEnabled ? normalizeWeeklyPickCardText(rawBonus?.label, 180, true) : null;
+  const bonusOptions = bonusEnabled && Array.isArray(rawBonus?.answer_options) ? [...new Set(
+    rawBonus.answer_options.filter((option) => typeof option === "string").map((option) => option.replace(/[\u0000-\u001f\u007f]/g, "").trim()).filter((option) => option.length > 0 && option.length <= 100)
+  )].slice(0, 8) : [];
+  if (!weekLabel || !Number.isInteger(minimum) || minimum < 1 || minimum > matchupCount || !scoringMode || bonusEnabled && (!bonusLabel || bonusOptions.length < 2)) {
+    return null;
+  }
+  return {
+    week_label: weekLabel,
+    reward_text: rewardText,
+    minimum_matchups: minimum,
+    scoring_mode: scoringMode,
+    bonus: {
+      enabled: bonusEnabled,
+      label: bonusLabel,
+      answer_options: bonusOptions
+    }
+  };
+}
+function normalizeWeeklyPickCardMatchups(value) {
+  if (!Array.isArray(value)) return null;
+  const matchups = value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const raw = entry;
+    const teamA = normalizeWeeklyPickCardText(raw.team_a, 100, true);
+    const teamB = normalizeWeeklyPickCardText(raw.team_b, 100, true);
+    const lineText = normalizeWeeklyPickCardText(raw.line_text, 120);
+    if (!teamA || !teamB || teamA.toLowerCase() === teamB.toLowerCase()) return null;
+    return { team_a: teamA, team_b: teamB, line_text: lineText };
+  }).filter((matchup) => matchup !== null);
+  if (matchups.length !== value.length || matchups.length < 1 || matchups.length > 32) return null;
+  return matchups;
 }
 function getSundaySlateRepresentativeQbs(slate) {
   const candidates = [
@@ -10559,19 +10609,155 @@ function registerGamedayRoutes(app2) {
       return;
     }
     const normalizedSport = (sport ?? "nba").trim().toLowerCase();
-    if (!["nba", "soccer", "nfl"].includes(normalizedSport)) {
-      res2.status(400).json({ error: "sport must be nba, soccer, or nfl" });
+    if (!["nba", "soccer", "nfl", "madden"].includes(normalizedSport)) {
+      res2.status(400).json({ error: "sport must be nba, soccer, nfl, or madden" });
       return;
     }
     const isSoccer = normalizedSport === "soccer";
     const isNfl = normalizedSport === "nfl";
     const requestedTemplateType = typeof template_type === "string" ? template_type.trim().toLowerCase() : "";
-    if (requestedTemplateType && !["nfl_single_game", "nfl_sunday_slate"].includes(requestedTemplateType)) {
-      res2.status(400).json({ error: "template_type must be nfl_single_game or nfl_sunday_slate" });
+    if (requestedTemplateType && !["nfl_single_game", "nfl_sunday_slate", "weekly_pick_card"].includes(requestedTemplateType)) {
+      res2.status(400).json({ error: "template_type must be nfl_single_game, nfl_sunday_slate, or weekly_pick_card" });
       return;
     }
-    if (requestedTemplateType && !isNfl) {
+    const isWeeklyPickCard = requestedTemplateType === "weekly_pick_card";
+    if (normalizedSport === "madden" && !isWeeklyPickCard) {
+      res2.status(400).json({ error: "Madden rooms must use template_type=weekly_pick_card" });
+      return;
+    }
+    if (requestedTemplateType && !isNfl && !isWeeklyPickCard) {
       res2.status(400).json({ error: "template_type is only supported for NFL rooms" });
+      return;
+    }
+    if (isWeeklyPickCard && normalizedSport !== "madden") {
+      res2.status(400).json({ error: "weekly_pick_card is only supported for Madden rooms" });
+      return;
+    }
+    if (isWeeklyPickCard) {
+      if (botAuthed) {
+        res2.status(403).json({ error: "Madden Weekly Pick Cards must be created by an authorized Game Day host" });
+        return;
+      }
+      const matchups = normalizeWeeklyPickCardMatchups(req.body.matchups);
+      const weeklyConfig = normalizeWeeklyPickCardConfig(
+        req.body.format_config,
+        matchups?.length ?? 0
+      );
+      const weeklyRoomName = typeof room_name === "string" ? room_name.replace(/[\u0000-\u001f\u007f]/g, "").trim() : "";
+      const deadlineRaw = typeof req.body.pick_deadline === "string" ? req.body.pick_deadline.trim() : "";
+      const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
+      const deadlineIso = deadline && !Number.isNaN(deadline.getTime()) ? deadline.toISOString() : null;
+      if (!weeklyRoomName || weeklyRoomName.length > 120) {
+        res2.status(400).json({ error: "Challenge/week name is required and must be 120 characters or fewer" });
+        return;
+      }
+      if (!matchups) {
+        res2.status(400).json({ error: "At least one valid Madden matchup with two different teams is required" });
+        return;
+      }
+      if (!weeklyConfig) {
+        res2.status(400).json({
+          error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct, and valid bonus metadata"
+        });
+        return;
+      }
+      if (!deadlineIso) {
+        res2.status(400).json({ error: "pick_deadline must be a valid ISO date-time" });
+        return;
+      }
+      const supabase2 = getServiceSupabase();
+      let roomCode2;
+      try {
+        roomCode2 = await generateUniqueRoomCode(supabase2);
+      } catch (e) {
+        console.warn("[gameday] Madden room_code generation skipped:", e);
+      }
+      const insertPayload2 = {
+        room_name: weeklyRoomName,
+        team_a_name: null,
+        team_b_name: null,
+        team_a_star: null,
+        team_b_star: null,
+        game_date: parseGameDate(game_date),
+        host_user_id: hostId,
+        status: "active",
+        source: "app",
+        is_private: true,
+        sport: "madden",
+        template_type: "weekly_pick_card",
+        format_config: weeklyConfig
+      };
+      if (roomCode2) insertPayload2.room_code = roomCode2;
+      let { data: weeklyRoom, error: weeklyRoomError } = await supabase2.from("gameday_rooms").insert(insertPayload2).select().single();
+      if (weeklyRoomError || !weeklyRoom) {
+        console.error("[gameday] Madden weekly room error:", weeklyRoomError);
+        res2.status(500).json({
+          error: `Could not create Madden Weekly Pick Card: ${weeklyRoomError?.message ?? "unknown database error"}`
+        });
+        return;
+      }
+      const cardTitle = weeklyConfig.week_label ? `${weeklyConfig.week_label} Matchups` : "Madden Weekly Matchups";
+      const { data: weeklyCard, error: weeklyCardError } = await supabase2.from("gameday_pick_cards").insert({
+        room_id: weeklyRoom.id,
+        title: cardTitle,
+        phase: "pregame",
+        status: "closed",
+        display_order: 0,
+        scheduled_lock_at: deadlineIso,
+        lock_label: `Picks lock ${deadlineIso}`
+      }).select().single();
+      if (weeklyCardError || !weeklyCard) {
+        await supabase2.from("gameday_rooms").delete().eq("id", weeklyRoom.id);
+        console.error("[gameday] Madden weekly card error:", weeklyCardError);
+        res2.status(500).json({ error: "Could not create Madden Weekly Pick Card" });
+        return;
+      }
+      const props = matchups.map((matchup, index) => ({
+        card_id: weeklyCard.id,
+        question: `Who wins: ${matchup.team_a} vs ${matchup.team_b}?`,
+        answer_options: [matchup.team_a, matchup.team_b],
+        line_text: matchup.line_text,
+        display_order: index,
+        status: "pending"
+      }));
+      if (weeklyConfig.bonus.enabled) {
+        props.push({
+          card_id: weeklyCard.id,
+          question: weeklyConfig.bonus.label ?? "Bonus question",
+          answer_options: weeklyConfig.bonus.answer_options,
+          line_text: null,
+          display_order: props.length,
+          status: "pending"
+        });
+      }
+      const { error: weeklyPropError } = await supabase2.from("gameday_props").insert(props);
+      if (weeklyPropError) {
+        await supabase2.from("gameday_rooms").delete().eq("id", weeklyRoom.id);
+        console.error("[gameday] Madden weekly props error:", weeklyPropError);
+        res2.status(500).json({ error: "Could not create Madden matchup props" });
+        return;
+      }
+      await logEvent(supabase2, weeklyRoom.id, null, hostId, "room_created", {
+        format: "weekly_pick_card",
+        sport: "madden",
+        matchup_count: matchups.length,
+        bonus_enabled: weeklyConfig.bonus.enabled
+      });
+      const returnedCode2 = weeklyRoom.room_code ?? roomCode2 ?? null;
+      const publicLink2 = returnedCode2 ? `${APP_URL2}/g/${returnedCode2}` : `${APP_URL2}/gameday/${weeklyRoom.id}`;
+      const hostLink2 = `${APP_URL2}/gameday/${weeklyRoom.id}/host`;
+      const discordMessage = `Madden Weekly Pick Card: ${weeklyConfig.week_label}
+Make your picks before the deadline:
+${publicLink2}`;
+      res2.json({
+        ok: true,
+        room_id: weeklyRoom.id,
+        room_code: returnedCode2,
+        public_link: publicLink2,
+        host_link: hostLink2,
+        discord_message: discordMessage,
+        room: weeklyRoom
+      });
       return;
     }
     const isSundaySlate = isNfl && requestedTemplateType === "nfl_sunday_slate";
@@ -10738,7 +10924,7 @@ function registerGamedayRoutes(app2) {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
       let { data: room, error } = await supabase.from("gameday_rooms").select(PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
-      if (error?.message?.includes("template_type") || error?.message?.includes("slate_config")) {
+      if (error?.message?.includes("template_type") || error?.message?.includes("slate_config") || error?.message?.includes("format_config")) {
         const legacy = await supabase.from("gameday_rooms").select(LEGACY_PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
         room = legacy.data;
         error = legacy.error;
@@ -10748,7 +10934,7 @@ function registerGamedayRoutes(app2) {
         return;
       }
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
-        "id, room_id, title, phase, status, lock_label, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, correct_answer, correct_answer_ids, status, display_order)"
+        "id, room_id, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, correct_answer, correct_answer_ids, status, display_order)"
       ).eq("room_id", roomId).order("display_order");
       const cards = (rawCards ?? []).map((card) => ({
         ...card,

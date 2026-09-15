@@ -41,10 +41,10 @@ export async function gamedayFetch<T = unknown>(
 export interface GDRoom {
   id: string;
   room_name: string;
-  team_a_name: string;
-  team_b_name: string;
-  team_a_star: string;
-  team_b_star: string;
+  team_a_name: string | null;
+  team_b_name: string | null;
+  team_a_star: string | null;
+  team_b_star: string | null;
   game_date: string | null;
   /** Present on authenticated host-data responses; intentionally omitted from public room data. */
   host_user_id?: string | null;
@@ -54,10 +54,21 @@ export interface GDRoom {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was originally created */
   source?: string | null;
-  /** "nba" | "soccer" | "nfl"; absent on rooms created before sport support. */
-  sport?: "nba" | "soccer" | "nfl" | null;
-  /** NFL rooms are either legacy-compatible single games or the Sunday Slate format. */
-  template_type?: "nfl_single_game" | "nfl_sunday_slate" | null;
+  /** "nba" | "soccer" | "nfl" | "madden"; absent on rooms created before sport support. */
+  sport?: "nba" | "soccer" | "nfl" | "madden" | null;
+  /** Explicit Game Day format. */
+  template_type?: "nfl_single_game" | "nfl_sunday_slate" | "weekly_pick_card" | null;
+  format_config?: {
+    week_label?: string;
+    reward_text?: string;
+    minimum_matchups?: number;
+    scoring_mode?: "all_correct";
+    bonus?: {
+      enabled?: boolean;
+      label?: string;
+      answer_options?: string[];
+    };
+  } | null;
   /** Public Slate candidate context; resolved options are always stored on each prop. */
   slate_config?: {
     early_matchups?: string[];
@@ -80,6 +91,7 @@ export interface GDProp {
   card_id: string;
   question: string;
   answer_options: string[];
+  line_text?: string | null;
   correct_answer: string | null;
   status: "pending" | "settled";
   display_order: number;
@@ -93,6 +105,8 @@ export interface GDCard {
   status: "closed" | "open" | "locked" | "settled";
   display_order: number;
   lock_label: string | null;
+  scheduled_open_at?: string | null;
+  scheduled_lock_at?: string | null;
   gameday_props: GDProp[];
 }
 

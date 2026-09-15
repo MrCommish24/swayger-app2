@@ -749,6 +749,9 @@ export default function GameDayRoomScreen() {
   const myFinalRank = myLbEntry?.rank ?? null;
   const myFinalSp = myLbEntry?.game_day_sp ?? null;
   const myIsWinner = myLbEntry ? myLbEntry.rank === 1 : null;
+  const weeklyCard = room.template_type === "weekly_pick_card"
+    ? cards.find((card) => card.phase === "pregame")
+    : null;
   // Has the user saved picks for this card (either this session or from a previous visit)?
   const hasSubmittedOpenCard =
     !!openCard &&
@@ -781,11 +784,32 @@ export default function GameDayRoomScreen() {
         )}
         <Text style={styles.logoSmall}>SWAYGER</Text>
         <Text style={styles.roomName}>{room.room_name}</Text>
-        <Text style={styles.matchup}>
-          {room.team_a_name} vs {room.team_b_name}
-        </Text>
+        {room.template_type === "weekly_pick_card" ? (
+          <>
+            <Text style={styles.matchup}>Madden Weekly Pick Card</Text>
+            {room.format_config?.week_label ? (
+              <Text style={styles.groupChatNote}>{room.format_config.week_label}</Text>
+            ) : null}
+            {room.format_config?.reward_text ? (
+              <Text style={styles.groupChatNote}>
+                Reward: {room.format_config.reward_text} · Administered by the commissioner
+              </Text>
+            ) : null}
+            {weeklyCard?.scheduled_lock_at ? (
+              <Text style={styles.groupChatNote}>
+                Deadline: {new Date(weeklyCard.scheduled_lock_at).toLocaleString()}
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={styles.matchup}>
+            {room.team_a_name} vs {room.team_b_name}
+          </Text>
+        )}
         <Text style={styles.groupChatNote}>
-          Keep talking in your group chat. Swayger tracks the picks, leaderboard, and receipts.
+          {room.template_type === "weekly_pick_card"
+            ? "Picks can be edited until the card locks. Swayger tracks the picks, leaderboard, and receipts."
+            : "Keep talking in your group chat. Swayger tracks the picks, leaderboard, and receipts."}
         </Text>
       </View>
 
@@ -1070,7 +1094,7 @@ function NextGameDayCTA({
   if (ctaState === "submitted") {
     return (
       <View style={styles.nextRoomCta}>
-        <Text style={styles.nextRoomSuccess}>✓ You're on the list for the next Game Day room.</Text>
+        <Text style={styles.nextRoomSuccess}>✓ You&apos;re on the list for the next Game Day room.</Text>
       </View>
     );
   }
@@ -1078,7 +1102,7 @@ function NextGameDayCTA({
   return (
     <View style={styles.nextRoomCta}>
       <Text style={styles.nextRoomTitle}>Want in on the next Game Day room?</Text>
-      <Text style={styles.nextRoomBody}>We'll let you know when the next room goes live.</Text>
+      <Text style={styles.nextRoomBody}>We&apos;ll let you know when the next room goes live.</Text>
       {ctaState === "idle" ? (
         <>
           <TouchableOpacity style={styles.nextRoomBtn} onPress={handleNotifyMe} disabled={ctaLoading}>
@@ -1109,7 +1133,7 @@ function NextGameDayCTA({
             {ctaLoading ? (
               <ActivityIndicator color="#000" size="small" />
             ) : (
-              <Text style={styles.nextRoomBtnText}>I'm In</Text>
+              <Text style={styles.nextRoomBtnText}>I&apos;m In</Text>
             )}
           </TouchableOpacity>
         </>
@@ -1176,7 +1200,7 @@ function PickCard({
       {hasUnsavedChanges ? (
         <View style={styles.updateReminderBanner}>
           <Text style={styles.updateReminderText}>
-            ⚠️ You changed a pick — tap "Update my picks →" to save it.
+            ⚠️ You changed a pick — tap &quot;Update my picks →&quot; to save it.
           </Text>
         </View>
       ) : null}
@@ -1230,6 +1254,7 @@ function PropPicker({
   return (
     <View style={styles.propBlock}>
       <Text style={styles.propQuestion}>{prop.question}</Text>
+      {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
       <View style={styles.optionsRow}>
         {prop.answer_options.map((ans) => {
           const isSelected = selected === ans;
@@ -1295,6 +1320,7 @@ function RevealCard({
         return (
           <View key={prop.id} style={styles.revealProp}>
             <Text style={styles.propQuestion}>{prop.question}</Text>
+            {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
             {isSettled && correct ? (
               <View style={styles.correctAnswerRow}>
                 <Text style={styles.correctLabel}>✓ </Text>

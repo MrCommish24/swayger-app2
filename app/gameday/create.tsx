@@ -18,8 +18,9 @@ import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
 
-type Sport = "nba" | "soccer" | "nfl";
+type Sport = "nba" | "soccer" | "nfl" | "madden";
 type NflTemplateType = "nfl_single_game" | "nfl_sunday_slate";
+type MaddenMatchup = { teamA: string; teamB: string; lineText: string };
 
 interface TemplateResponse {
   template: GDPropTemplate[];
@@ -119,6 +120,17 @@ export default function CreateGameDayRoom() {
   const [receiverCandidates, setReceiverCandidates] = useState("");
   const [teamCandidates, setTeamCandidates] = useState("");
   const [gameCandidates, setGameCandidates] = useState("");
+  const [maddenRewardText, setMaddenRewardText] = useState("");
+  const [maddenMinimumMatchups, setMaddenMinimumMatchups] = useState("3");
+  const [maddenDeadline, setMaddenDeadline] = useState("");
+  const [maddenMatchups, setMaddenMatchups] = useState<MaddenMatchup[]>([
+    { teamA: "", teamB: "", lineText: "" },
+    { teamA: "", teamB: "", lineText: "" },
+    { teamA: "", teamB: "", lineText: "" },
+  ]);
+  const [maddenBonusEnabled, setMaddenBonusEnabled] = useState(false);
+  const [maddenBonusLabel, setMaddenBonusLabel] = useState("");
+  const [maddenBonusOptions, setMaddenBonusOptions] = useState("");
 
   // Card schedules: phase key → { openAt, lockAt } in "H:MM AM/PM" CDT format
   const [schedules, setSchedules] = useState<Record<string, { openAt: string; lockAt: string }>>({});
@@ -136,10 +148,18 @@ export default function CreateGameDayRoom() {
   }, [authLoading, session?.access_token]);
 
   const isNfl = sport === "nfl";
+  const isMadden = sport === "madden";
   const isSundaySlate = isNfl && nflTemplateType === "nfl_sunday_slate";
 
   // Fetch template whenever sport or NFL format changes.
   useEffect(() => {
+    if (isMadden) {
+      setTemplate([]);
+      setDefaultPropIds([]);
+      setSelectedPropIds(new Set());
+      setTemplateLoading(false);
+      return;
+    }
     setTemplateLoading(true);
     const templateQuery = isNfl ? `&template_type=${nflTemplateType}` : "";
     gamedayFetch<TemplateResponse>(`/api/gameday/template?sport=${sport}${templateQuery}`)
@@ -150,7 +170,7 @@ export default function CreateGameDayRoom() {
       })
       .catch(() => {})
       .finally(() => setTemplateLoading(false));
-  }, [sport, isNfl, nflTemplateType]);
+  }, [sport, isNfl, isMadden, nflTemplateType]);
 
   const toggleProp = useCallback((id: string) => {
     setSelectedPropIds((prev) => {
@@ -167,7 +187,106 @@ export default function CreateGameDayRoom() {
     }));
   }
 
+  const updateMaddenMatchup = (index: number, field: keyof MaddenMatchup, value: string) => {
+    setMaddenMatchups((current) =>
+      current.map((matchup, i) => i === index ? { ...matchup, [field]: value } : matchup)
+    );
+  };
+
+  const handleMaddenCreate = async () => {
+    const minimumMatchups = Number(maddenMinimumMatchups);
+    const matchups = maddenMatchups
+      .map((matchup) => ({
+        team_a: matchup.teamA.trim(),
+        team_b: matchup.teamB.trim(),
+        line_text: matchup.lineText.trim() || undefined,
+      }))
+      .filter((matchup) => matchup.team_a || matchup.team_b);
+    const bonusOptions = candidateList(maddenBonusOptions);
+
+    if (!roomName.trim() || !maddenDeadline.trim()) {
+      setError("Add a challenge/week name and pick deadline.");
+      return;
+    }
+    if (!Number.isInteger(minimumMatchups) || minimumMatchups < 1) {
+      setError("Minimum matchup count must be a positive whole number.");
+      return;
+    }
+    if (matchups.length < minimumMatchups) {
+      setError(`Add at least ${minimumMatchups} complete matchups.`);
+      return;
+    }
+    if (matchups.some((matchup) => !matchup.team_a || !matchup.team_b || matchup.team_a.toLowerCase() === matchup.team_b.toLowerCase())) {
+      setError("Every matchup needs two different teams.");
+      return;
+    }
+    if (maddenBonusEnabled && (!maddenBonusLabel.trim() || bonusOptions.length < 2)) {
+      setError("The optional bonus needs a question and at least two answer options.");
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+    try {
+      const result = await gamedayFetch<{
+        ok: boolean;
+        room_id: string;
+        room?: { room_code?: string | null };
+      }>(
+        "/api/gameday/rooms",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            room_name: roomName.trim(),
+            sport: "madden",
+            template_type: "weekly_pick_card",
+            is_private: true,
+            pick_deadline: maddenDeadline.trim(),
+            matchups,
+            format_config: {
+              week_label: roomName.trim(),
+              reward_text: maddenRewardText.trim(),
+              minimum_matchups: minimumMatchups,
+              scoring_mode: "all_correct",
+              bonus: {
+                enabled: maddenBonusEnabled,
+                label: maddenBonusEnabled ? maddenBonusLabel.trim() : null,
+                answer_options: maddenBonusEnabled ? bonusOptions : [],
+              },
+            },
+          }),
+        },
+        { session },
+      );
+      Analytics.gamedayRoomCreated(
+        {
+          room_id: result.room_id,
+          room_code: result.room?.room_code,
+          room_source: "app",
+          room_status: "draft",
+        },
+        {
+          created_from: "app",
+          room_name: roomName.trim(),
+          sport: "madden",
+          template_type: "weekly_pick_card",
+          prop_count_total: matchups.length + (maddenBonusEnabled ? 1 : 0),
+          creator_user_id: session?.user?.id,
+        } as any,
+      );
+      router.replace(`/gameday/${result.room_id}/host` as never);
+    } catch (e: any) {
+      setError(e.message ?? "Failed to create Madden Weekly Pick Card");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleCreate = async () => {
+    if (isMadden) {
+      await handleMaddenCreate();
+      return;
+    }
     const slate_config = isSundaySlate ? {
       early_matchups: candidateList(earlyMatchups),
       late_matchups: candidateList(lateMatchups),
@@ -290,7 +409,7 @@ export default function CreateGameDayRoom() {
   if (!isHost) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.errorText}>You don't have host access.</Text>
+        <Text style={styles.errorText}>You don&apos;t have host access.</Text>
       </View>
     );
   }
@@ -310,14 +429,14 @@ export default function CreateGameDayRoom() {
 
       <Text style={styles.heading}>New Game Day Room</Text>
       <Text style={styles.subheading}>
-        Create a private prediction room for tonight's game.
+        Create a private prediction room for tonight&apos;s game.
       </Text>
 
       {/* Sport selector */}
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>SPORT</Text>
         <View style={styles.sportRow}>
-          {(["nba", "nfl", "soccer"] as Sport[]).map((s) => (
+          {(["nba", "nfl", "soccer", "madden"] as Sport[]).map((s) => (
             <TouchableOpacity
               key={s}
               style={[styles.sportBtn, sport === s && styles.sportBtnActive]}
@@ -325,7 +444,7 @@ export default function CreateGameDayRoom() {
               activeOpacity={0.75}
             >
               <Text style={[styles.sportBtnText, sport === s && styles.sportBtnTextActive]}>
-                {s === "nba" ? "🏀 NBA" : s === "nfl" ? "🏈 NFL" : "⚽ Soccer"}
+                 {s === "nba" ? "🏀 NBA" : s === "nfl" ? "🏈 NFL" : s === "soccer" ? "⚽ Soccer" : "🎮 Madden"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -351,8 +470,119 @@ export default function CreateGameDayRoom() {
         )}
       </View>
 
+      {isMadden ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>MADDEN WEEKLY PICK CARD</Text>
+          <Text style={styles.maddenIntro}>
+            Create a private commissioner card. Participants pick each matchup in Swayger; you settle the results manually after the games.
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Challenge/week name (e.g. Franchise Week 4)"
+            placeholderTextColor={C.textMuted}
+            value={roomName}
+            onChangeText={setRoomName}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Reward text (optional)"
+            placeholderTextColor={C.textMuted}
+            value={maddenRewardText}
+            onChangeText={setMaddenRewardText}
+          />
+          <View style={styles.row}>
+            <TextInput
+              style={[styles.input, styles.half]}
+              placeholder="Minimum matchups"
+              placeholderTextColor={C.textMuted}
+              keyboardType="number-pad"
+              value={maddenMinimumMatchups}
+              onChangeText={setMaddenMinimumMatchups}
+            />
+            <TextInput
+              style={[styles.input, styles.half]}
+              placeholder="Pick deadline (ISO date-time)"
+              placeholderTextColor={C.textMuted}
+              value={maddenDeadline}
+              onChangeText={setMaddenDeadline}
+            />
+          </View>
+          <Text style={styles.hint}>Example deadline: 2026-09-20T12:00:00-05:00</Text>
+
+          <Text style={styles.listLabel}>Matchups</Text>
+          {maddenMatchups.map((matchup, index) => (
+            <View key={`madden-matchup-${index}`} style={styles.maddenMatchup}>
+              <Text style={styles.schedulePhaseLabel}>MATCHUP {index + 1}</Text>
+              <View style={styles.row}>
+                <TextInput
+                  style={[styles.input, styles.half]}
+                  placeholder="Team A"
+                  placeholderTextColor={C.textMuted}
+                  value={matchup.teamA}
+                  onChangeText={(value) => updateMaddenMatchup(index, "teamA", value)}
+                />
+                <TextInput
+                  style={[styles.input, styles.half]}
+                  placeholder="Team B"
+                  placeholderTextColor={C.textMuted}
+                  value={matchup.teamB}
+                  onChangeText={(value) => updateMaddenMatchup(index, "teamB", value)}
+                />
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Optional line/spread display text"
+                placeholderTextColor={C.textMuted}
+                value={matchup.lineText}
+                onChangeText={(value) => updateMaddenMatchup(index, "lineText", value)}
+              />
+              {maddenMatchups.length > 1 ? (
+                <TouchableOpacity onPress={() => setMaddenMatchups((current) => current.filter((_, i) => i !== index))}>
+                  <Text style={styles.removeText}>Remove matchup</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ))}
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => setMaddenMatchups((current) => [...current, { teamA: "", teamB: "", lineText: "" }])}
+          >
+            <Text style={styles.secondaryBtnText}>+ Add matchup</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.bonusToggle}
+            onPress={() => setMaddenBonusEnabled((value) => !value)}
+          >
+            <View style={[styles.checkbox, maddenBonusEnabled && styles.checkboxOn]}>
+              {maddenBonusEnabled ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <Text style={styles.bonusToggleText}>Add optional manually settled bonus question</Text>
+          </TouchableOpacity>
+          {maddenBonusEnabled ? (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Bonus question"
+                placeholderTextColor={C.textMuted}
+                value={maddenBonusLabel}
+                onChangeText={setMaddenBonusLabel}
+              />
+              <TextInput
+                style={styles.textArea}
+                placeholder="Answer options, one per line or comma-separated"
+                placeholderTextColor={C.textMuted}
+                value={maddenBonusOptions}
+                onChangeText={setMaddenBonusOptions}
+                multiline
+              />
+            </>
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Room details */}
-      <View style={styles.section}>
+      {!isMadden && <View style={styles.section}>
         <Text style={styles.sectionLabel}>ROOM DETAILS</Text>
         <TextInput
           style={styles.input}
@@ -424,10 +654,10 @@ export default function CreateGameDayRoom() {
         <Text style={styles.hint}>
           Date format YYYY-MM-DD is used for card schedule conversion. Leave blank to use today.
         </Text>
-      </View>
+      </View>}
 
       {/* Card schedule */}
-      <View style={styles.section}>
+      {!isMadden && <View style={styles.section}>
         <Text style={styles.sectionLabel}>CARD SCHEDULE (OPTIONAL)</Text>
         <View style={styles.helperBox}>
           <Text style={styles.helperText}>
@@ -467,10 +697,10 @@ export default function CreateGameDayRoom() {
             </View>
           );
         })}
-      </View>
+      </View>}
 
       {/* Prop selection */}
-      <View style={styles.section}>
+      {!isMadden && <View style={styles.section}>
         <Text style={styles.sectionLabel}>SELECT PROPS</Text>
 
         <View style={styles.helperBox}>
@@ -527,7 +757,7 @@ export default function CreateGameDayRoom() {
             );
           })
         )}
-      </View>
+      </View>}
 
       {error ? <Text style={styles.errorMsg}>{error}</Text> : null}
 
@@ -539,7 +769,7 @@ export default function CreateGameDayRoom() {
         {submitting ? (
           <ActivityIndicator color="#fff" size="small" />
         ) : (
-          <Text style={styles.createBtnText}>Create Room →</Text>
+          <Text style={styles.createBtnText}>{isMadden ? "Create Madden Pick Card →" : "Create Room →"}</Text>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -593,6 +823,19 @@ const styles = StyleSheet.create({
   half: { flex: 1 },
   slateSetup: { marginTop: 2 },
   slateIntro: { fontSize: 12, lineHeight: 18, color: C.textSecondary, marginBottom: 14 },
+  maddenIntro: { fontSize: 13, lineHeight: 20, color: C.textSecondary, marginBottom: 16 },
+  maddenMatchup: {
+    backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border,
+    padding: 12, marginBottom: 12,
+  },
+  secondaryBtn: {
+    borderWidth: 1, borderColor: C.border, borderRadius: 10,
+    paddingVertical: 11, alignItems: "center", marginBottom: 16,
+  },
+  secondaryBtnText: { color: C.tint, fontSize: 14, fontWeight: "700" },
+  removeText: { color: C.danger, fontSize: 12, fontWeight: "600", marginBottom: 2 },
+  bonusToggle: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
+  bonusToggleText: { color: C.textSecondary, fontSize: 13, flex: 1 },
   listLabel: { fontSize: 12, fontWeight: "700", color: C.textSecondary, marginBottom: 6 },
   textArea: {
     minHeight: 70, textAlignVertical: "top",

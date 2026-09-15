@@ -36,6 +36,7 @@ interface Prop {
   id: string;
   question: string;
   answer_options: string[];
+  line_text?: string | null;
   correct_answer: string | null;
   status: "pending" | "settled";
   display_order: number;
@@ -53,10 +54,10 @@ interface Card {
 interface Room {
   id: string;
   room_name: string;
-  team_a_name: string;
-  team_b_name: string;
-  team_a_star: string;
-  team_b_star: string;
+  team_a_name: string | null;
+  team_b_name: string | null;
+  team_a_star: string | null;
+  team_b_star: string | null;
   game_date?: string | null;
   status: string;
   room_code?: string | null;
@@ -64,8 +65,15 @@ interface Room {
   archived_at?: string | null;
   /** "app" | "discord" — how the room was created */
   source?: string | null;
-  sport?: "nba" | "soccer" | "nfl" | null;
-  template_type?: "nfl_single_game" | "nfl_sunday_slate" | null;
+  sport?: "nba" | "soccer" | "nfl" | "madden" | null;
+  template_type?: "nfl_single_game" | "nfl_sunday_slate" | "weekly_pick_card" | null;
+  format_config?: {
+    week_label?: string;
+    reward_text?: string;
+    minimum_matchups?: number;
+    scoring_mode?: "all_correct";
+    bonus?: { enabled?: boolean; label?: string; answer_options?: string[] };
+  } | null;
   countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
   countdown_ends_at?: string | null;
@@ -533,9 +541,12 @@ export default function HostControlRoom() {
     );
     const roomSport = hostData?.room.sport ?? (inferredSoccer ? "soccer" : "nba");
     const isSundaySlate = hostData?.room.template_type === "nfl_sunday_slate";
+    const isWeeklyPickCard = hostData?.room.template_type === "weekly_pick_card";
     const texts: Record<string, string> = {
       pregame: roomSport === "soccer"
         ? `Game Day Swayger room is live for ${hostData?.room.room_name ?? "the match"}. Make your picks before kickoff:\n${url}`
+        : isWeeklyPickCard
+        ? `Madden Weekly Pick Card is live for ${hostData?.room.format_config?.week_label ?? hostData?.room.room_name}. Make your picks before the deadline:\n${url}`
         : isSundaySlate
         ? `NFL Sunday Slate is live. Lock in your Early Slate calls before the first kickoffs:\n${url}`
         : roomSport === "nfl"
@@ -599,6 +610,7 @@ export default function HostControlRoom() {
 
   const { room, cards, pick_counts, participant_count, leaderboard } = hostData;
   const isSundaySlate = room.template_type === "nfl_sunday_slate";
+  const isWeeklyPickCard = room.template_type === "weekly_pick_card";
 
   // ── Finalize readiness ───────────────────────────────────────────────────
   // A card must be locked or settled before finalization. Closed cards (not
@@ -669,12 +681,26 @@ export default function HostControlRoom() {
       )}
       {nameError ? <Text style={styles.nameErrorText}>{nameError}</Text> : null}
 
-      <Text style={styles.matchup}>
-        {room.team_a_name} vs {room.team_b_name}
-      </Text>
-      <Text style={styles.stars}>
-        {isSundaySlate ? "Sunday Night Football" : `${room.team_a_star} · ${room.team_b_star}`}
-      </Text>
+      {isWeeklyPickCard ? (
+        <>
+          <Text style={styles.matchup}>Madden Weekly Pick Card</Text>
+          {room.format_config?.week_label ? (
+            <Text style={styles.stars}>{room.format_config.week_label}</Text>
+          ) : null}
+          {room.format_config?.reward_text ? (
+            <Text style={styles.stars}>Reward: {room.format_config.reward_text}</Text>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Text style={styles.matchup}>
+            {room.team_a_name} vs {room.team_b_name}
+          </Text>
+          <Text style={styles.stars}>
+            {isSundaySlate ? "Sunday Night Football" : `${room.team_a_star} · ${room.team_b_star}`}
+          </Text>
+        </>
+      )}
 
       {/* Room link */}
       <View style={styles.linkBox}>
@@ -841,7 +867,7 @@ export default function HostControlRoom() {
         <View style={styles.cdSection}>
           <Text style={styles.cdSectionLabel}>PARTICIPANT COUNTDOWN NOTICE</Text>
           <Text style={styles.cdSectionHint}>
-            Show a manual notice to participants. This does not automatically open or lock any card — it's a communication aid only.
+             Show a manual notice to participants. This does not automatically open or lock any card — it&apos;s a communication aid only.
           </Text>
 
           {room.countdown_ends_at && countdownSecsLeft > -120 && (
@@ -1296,6 +1322,7 @@ function HostCard({
           <View key={prop.id} style={styles.propSection}>
             <View style={styles.propHeaderRow}>
               <Text style={styles.propQuestion}>{prop.question}</Text>
+            {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
               {/* Edit Result button — settled props only, not finalized */}
               {isSettled && !isFinalized && !isEditingThis && (
                 <TouchableOpacity

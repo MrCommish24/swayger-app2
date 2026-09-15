@@ -529,6 +529,8 @@ function ContinuePlayingSection() {
                   ? "NFL Sunday Slate"
                   : room.template_type === "nfl_single_game"
                     ? "NFL Single Game"
+                    : room.template_type === "weekly_pick_card"
+                      ? "Madden Weekly Pick Card"
                     : room.sport
                       ? `${room.sport.toUpperCase()} Game Day`
                       : "Game Day"}
