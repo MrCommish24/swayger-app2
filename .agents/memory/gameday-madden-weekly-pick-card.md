@@ -7,4 +7,6 @@ Madden Weekly Pick Card is a private, host-created Game Day room using one aggre
 
 **Why:** The pilot intentionally avoids sportsbook language, external Madden data, automatic Discord delivery, numeric tiebreakers, and subscription changes while reusing the existing pick, settlement, leaderboard, and finalization flows.
 
+Companion App export ingestion, EA APIs, NeonSportz, and Madden data normalization are explicitly deferred. Future import fields may prefill this format later, but Phase 1 is only the manual weekly pick-card workflow.
+
 **How to apply:** Keep the format behind `sport=madden` and `template_type=weekly_pick_card`; apply the additive Supabase migration before creating rooms because legacy representative matchup columns must accept NULL and the format metadata/line-text columns must exist.

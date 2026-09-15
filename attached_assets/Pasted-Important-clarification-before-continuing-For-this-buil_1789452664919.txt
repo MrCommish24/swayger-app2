@@ -1,0 +1,102 @@
+Important clarification before continuing:
+
+For this build, we are NOT building Madden NFL 27 Companion App export ingestion yet.
+
+The immediate product we need is:
+
+Madden Weekly Pick Card V1
+
+This should recreate the existing Discord behavior where Madden franchise commissioners post weekly pick cards/parlays for league matchups and players make picks for in-league rewards.
+
+Use the existing Game Day architecture. Do not build a separate Madden engine.
+
+Product framing:
+- User-facing: Madden Weekly Pick Card
+- Commissioner-facing: Commissioner Pick Card
+- Internal template_type: weekly_pick_card
+- sport: madden
+- Avoid “parlay” in Swayger UI except maybe commissioner-facing help copy if necessary.
+- No wagering, odds, payments, or sportsbook language.
+
+Core V1 workflow:
+
+Commissioner:
+1. Signs in as an authorized Game Day host.
+2. Creates a private Madden Weekly Pick Card.
+3. Enters:
+   - Week/challenge name
+   - Reward text
+   - Pick deadline
+   - Minimum matchup count
+   - 3–7 matchups
+   - Team A / Team B for each matchup
+   - Optional line/spread display text
+   - Optional bonus question
+4. Gets a private room link and copy-ready Discord message.
+5. Posts that link manually into the Madden Discord server.
+6. Locks the card at the deadline.
+7. Settles matchup results manually.
+8. Finalizes and manually awards the Madden reward.
+
+Participant:
+1. Opens the Swayger link from Discord.
+2. Joins as guest or signed-in user.
+3. Picks one side for each matchup.
+4. Can edit picks until lock.
+5. Sees results/leaderboard after settlement.
+
+Architecture:
+- Reuse existing Game Day rooms, cards, props, participants, picks, lock lifecycle, manual settlement, leaderboard, finalization, private links, and Continue Playing re-entry.
+- One Madden Weekly Pick Card should be one private Game Day room.
+- Use one aggregate card, likely pregame phase.
+- Each matchup should create one two-choice prop.
+- Keep answer options as strings.
+- Put Madden-specific metadata in validated format_config.
+- Do not use fake team/star values if the existing room shape expects two teams/stars; use format-aware display instead.
+
+Scoring:
+- V1 can use current correct-pick leaderboard.
+- If exact all-correct/tiebreaker logic is too large, defer it.
+- Commissioner-selected/confirmed winner is acceptable for V1 if easier.
+- Do not build exact numeric closest-to-total tiebreaking yet unless it is already trivial.
+
+Explicitly out of scope:
+- Madden Companion App export ingestion
+- EA API integration
+- NeonSportz integration
+- Odds sourcing
+- Automated Discord posting
+- Discord subscriptions for Madden
+- Automatic Madden reward/trait upgrades
+- Payments/wagers
+- Full Admin Console
+- Historical stat line generation
+- Automatic settlement from Madden data
+
+Important future compatibility:
+Design the Madden Weekly Pick Card fields so that future Madden import data can prefill them later. But do not build the import now.
+
+Before marking complete, confirm:
+1. sport=madden works only where intended.
+2. template_type=weekly_pick_card works only where intended.
+3. Commissioner can create a private Madden Weekly Pick Card.
+4. Unauthorized users cannot create one.
+5. Matchups create exactly two answer choices.
+6. Optional line text displays cleanly.
+7. Reward text displays to participants.
+8. Pick deadline maps to the card lock behavior.
+9. Guest and authenticated users can join and pick.
+10. Picks can be updated before lock.
+11. Picks are rejected after lock.
+12. Manual settlement works.
+13. Leaderboard/finalization still work.
+14. Private Madden rooms do not appear in public discovery.
+15. Signed-in participants can find the room again in Game Day Hub Continue Playing.
+16. Existing NFL Sunday Slate, NFL Single Game, NBA Game Day, Fantasy, and Discord bot behavior are unchanged.
+17. Server build passes.
+18. Web Game Day regression passes.
+
+If a migration is required, stop for migration handoff before marking PASS.
+
+End with:
+MADDEN WEEKLY PICK CARD V1 STATUS: PASS / NEEDS MIGRATION / FAIL
