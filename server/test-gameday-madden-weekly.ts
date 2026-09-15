@@ -34,6 +34,7 @@ const baseConfig = {
 const validMatchups = [
   { team_a: " Ravens ", team_b: " Bengals ", line_text: "Ravens -3" },
   { team_a: " Chiefs", team_b: " Raiders", line_text: "" },
+  { team_a: " Eagles", team_b: " Cowboys", line_text: "Eagles +2.5" },
 ];
 
 const config = normalizeWeeklyPickCardConfig(baseConfig, validMatchups.length);
@@ -82,8 +83,12 @@ check("same matchup teams are rejected", normalizeWeeklyPickCardMatchups([
 ]) === null);
 check("non-array matchups are rejected", normalizeWeeklyPickCardMatchups(null) === null);
 check("empty matchup list is rejected", normalizeWeeklyPickCardMatchups([]) === null);
-check("more than 32 matchups are rejected", normalizeWeeklyPickCardMatchups(
-  Array.from({ length: 33 }, (_, i) => ({ team_a: `A${i}`, team_b: `B${i}`, line_text: "" })),
+check("fewer than 3 matchups are rejected", normalizeWeeklyPickCardMatchups([
+  { team_a: "Ravens", team_b: "Bengals", line_text: "" },
+  { team_a: "Chiefs", team_b: "Raiders", line_text: "" },
+]) === null);
+check("more than 7 matchups are rejected", normalizeWeeklyPickCardMatchups(
+  Array.from({ length: 8 }, (_, i) => ({ team_a: `A${i}`, team_b: `B${i}`, line_text: "" })),
 ) === null);
 
 const migration = readFileSync("supabase/gameday-madden-weekly-pick-card-v1.sql", "utf8");

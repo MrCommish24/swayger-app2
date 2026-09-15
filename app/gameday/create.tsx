@@ -543,12 +543,16 @@ export default function CreateGameDayRoom() {
               ) : null}
             </View>
           ))}
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => setMaddenMatchups((current) => [...current, { teamA: "", teamB: "", lineText: "" }])}
-          >
-            <Text style={styles.secondaryBtnText}>+ Add matchup</Text>
-          </TouchableOpacity>
+          {maddenMatchups.length < 7 ? (
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => setMaddenMatchups((current) => [...current, { teamA: "", teamB: "", lineText: "" }])}
+            >
+              <Text style={styles.secondaryBtnText}>+ Add matchup</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.hint}>Weekly Pick Cards support up to 7 matchups.</Text>
+          )}
 
           <TouchableOpacity
             style={styles.bonusToggle}

@@ -9167,7 +9167,7 @@ function normalizeWeeklyPickCardMatchups(value) {
     if (!teamA || !teamB || teamA.toLowerCase() === teamB.toLowerCase()) return null;
     return { team_a: teamA, team_b: teamB, line_text: lineText };
   }).filter((matchup) => matchup !== null);
-  if (matchups.length !== value.length || matchups.length < 1 || matchups.length > 32) return null;
+  if (matchups.length !== value.length || matchups.length < 3 || matchups.length > 7) return null;
   return matchups;
 }
 function getSundaySlateRepresentativeQbs(slate) {
