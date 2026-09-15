@@ -1,0 +1,1034 @@
+We are building a focused fast-follow:
+
+# SWAYGER FANTASY WEEKLY RECEIPT V1
+## Finalized Week Results + Shareable Image + Short Link + Week 2 Re-engagement
+
+This is NOT a new product phase.
+
+Week 1 of Swayger Fantasy Weekly has now been completed in a real pilot league.
+
+Current state:
+
+- Weekly Results screen exists and looks good
+- Personal Weekly Results show:
+  - winner/co-winners
+  - standings
+  - My Picks
+  - correct answers
+- League Picks exists separately
+- Draft Day has a separate Global Draft Day Receipt
+- Draft Day also has:
+  - compact share image
+  - short receipt alias
+  - share/copy controls
+- Weekly currently does NOT have an equivalent shareable global receipt
+
+The current workaround is:
+- manually screenshot Weekly Results
+- paste screenshot into group chat
+- manually type commentary
+
+We want the product to do that.
+
+==================================================
+1. PRODUCT GOAL
+==================================================
+
+Create a finalized-only:
+
+# WEEKLY GLOBAL RECEIPT
+
+for Swayger Fantasy.
+
+It should answer:
+
+"What happened in our fantasy league this week?"
+
+not:
+
+"How did I personally do?"
+
+It should support:
+
+- league-level Week N results
+- winner/co-winners
+- compact standings
+- final correct answers
+- shareable branded image
+- short link
+- concise auto-generated share text
+- re-engagement into the next week
+
+==================================================
+2. PRESERVE EXISTING THREE-LAYER MODEL
+==================================================
+
+We want three distinct experiences:
+
+1. PERSONAL WEEKLY RESULTS
+   - existing
+   - viewer-specific
+   - includes My Picks / Your Pick
+   - keep unchanged
+
+2. WEEKLY GLOBAL RECEIPT
+   - NEW
+   - league-level
+   - identical for all authorized league members
+   - winner + standings + weekly outcomes
+   - designed for sharing
+
+3. LEAGUE PICKS
+   - existing
+   - who picked what
+   - detailed social receipts
+   - keep separate
+
+Do NOT merge all three.
+
+==================================================
+3. FIRST — INSPECT EXISTING INFRASTRUCTURE
+==================================================
+
+Before building new code, inspect and reuse:
+
+- Global Draft Day Receipt architecture
+- `CompetitionReceipt` component
+- Draft Day receipt endpoint
+- Draft Day share image/card
+- short receipt alias infrastructure from Task #63
+- `/r/:shortCode`
+- existing Fantasy Weekly Results route
+- Weekly leaderboard
+- Weekly League Picks
+- Phase 6G multi-correct handling
+- `react-native-view-shot`
+- `html2canvas`
+- `expo-sharing`
+- existing share helpers
+- PostHog Fantasy analytics helpers
+
+Do NOT duplicate working Draft Day receipt infrastructure if it can be generalized safely.
+
+==================================================
+4. PREFERRED ARCHITECTURE
+==================================================
+
+Prefer extending the existing receipt architecture so it supports:
+
+- Draft Day
+- Weekly Week N
+
+without creating two separate systems.
+
+If possible:
+
+`CompetitionReceipt`
+
+should support both:
+
+competition_type = draft_day
+competition_type = weekly
+
+Possible shared inputs:
+
+leagueName
+seasonYear
+competitionTitle
+weekNumber
+winners
+standings
+questionResults
+nextWeekState
+finalizedAt
+shareVariant
+
+Do not over-engineer.
+
+==================================================
+5. WEEKLY RECEIPT ROUTE
+==================================================
+
+Preferred route:
+
+`/fantasy/weeks/:leagueId/:seasonId/:weekNumber/receipt`
+
+or the established Expo route equivalent.
+
+Example:
+
+`app/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/receipt.tsx`
+
+Use existing navigation conventions.
+
+==================================================
+6. FINALIZED ONLY
+==================================================
+
+The Weekly Global Receipt should only become available once:
+
+Week status = finalized
+
+Before finalization:
+
+do not present a final shareable receipt.
+
+If endpoint is called pre-finalization:
+
+return established finalized=false / unavailable behavior.
+
+==================================================
+7. AUTHORIZATION
+==================================================
+
+Authorized to VIEW:
+
+- authenticated league member
+- valid guest member
+- commissioner
+- co-commissioner
+
+Receipt is NOT commissioner-only.
+
+Receipt content must be identical for all authorized viewers.
+
+Non-member:
+403 / established convention
+
+Missing auth:
+401 / established convention
+
+Do not make the receipt public.
+
+==================================================
+8. GLOBAL MEANS VIEWER-INDEPENDENT
+==================================================
+
+Weekly Global Receipt must NOT contain:
+
+- My Picks
+- Your Pick
+- viewer correctness
+- current viewer score highlight
+- guest identity
+- auth identity
+- personalized badges
+
+Same finalized Week:
+same receipt for every authorized member.
+
+==================================================
+9. RECEIPT DATA SOURCE
+==================================================
+
+Use the SAME finalized Weekly data that already powers:
+
+- Weekly Results
+- leaderboard
+- Season Standings
+- League Picks correctness
+
+Do NOT create independent scoring logic.
+
+The receipt should reuse:
+
+- finalized winners
+- final standings
+- competition-scope weekly props
+- normalized correct answer IDs
+- stable display/team snapshots
+
+==================================================
+10. WEEKLY RECEIPT CONTENT
+==================================================
+
+Suggested hierarchy:
+
+FOOD PYRAMID XX
+
+WEEK 1 RECEIPT
+
+THE RECEIPTS ARE IN.
+
+🏆 WEEK 1 WINNERS
+
+J Askew
+Destined to WIN
+20 SP
+
+J Spells
+All Eyes On Me
+20 SP
+
+FINAL STANDINGS
+
+1. J Askew — 20
+1. J Spells — 20
+3. ...
+
+Then:
+
+THE RECEIPTS
+
+Which fantasy team scores the most points this week?
+✓ Team Jasand Shootaw
+
+Which fantasy team scores the fewest points this week?
+✓ Appetite 4 Destruction
+
+Which team wins by the largest margin?
+✓ Dispimpin
+
+...
+
+Use the actual weekly prop display order.
+
+==================================================
+11. WINNER / CO-WINNER SUPPORT
+==================================================
+
+Single winner:
+
+🏆 WEEK 1 WINNER
+J Askew
+20 SP
+
+Co-winners:
+
+🏆 WEEK 1 WINNERS
+J Askew — 20 SP
+J Spells — 20 SP
+
+Do not invent a tiebreaker.
+
+Use existing leaderboard tie semantics.
+
+==================================================
+12. STANDINGS
+==================================================
+
+Global receipt screen can show the final standings.
+
+For compact receipt/share image:
+
+show top 3–5 positions.
+
+If ties extend a displayed rank:
+preserve the tie fairly.
+
+Do not arbitrarily cut one tied person.
+
+==================================================
+13. WEEKLY CORRECT ANSWERS
+==================================================
+
+Show every competition-scope weekly question and final correct answer(s).
+
+Use Phase 6G normalized multi-correct support.
+
+Single:
+
+Correct Answer
+Team A
+
+Multiple:
+
+Correct Answers
+Team A
+Team B
+
+Do NOT create a synthetic Tie result.
+
+==================================================
+14. PERSONAL WEEKLY RESULTS MUST REMAIN
+==================================================
+
+Do NOT remove or redesign the existing Weekly Results screen.
+
+It should continue to answer:
+
+"How did I do?"
+
+including:
+
+- My Picks
+- correct/incorrect
+- personal score
+- weekly result
+
+Add a clear entry point:
+
+[ View Week 1 Receipt ]
+
+and, for commissioner/co-commissioner:
+
+[ Share Week 1 Receipt ]
+
+near the winner/results header.
+
+==================================================
+15. LEAGUE PICKS REMAINS SEPARATE
+==================================================
+
+Weekly receipt should include:
+
+[ See League Picks ]
+
+or:
+
+See who picked what →
+
+Do NOT embed all picker distributions in the receipt.
+
+Receipt:
+WHAT HAPPENED?
+
+League Picks:
+WHO SAID WHAT?
+
+==================================================
+16. SHARE IMAGE
+==================================================
+
+Create a compact social result card.
+
+Do NOT simply screenshot the full Weekly Results page.
+
+Suggested share image:
+
+FOOD PYRAMID XX
+WEEK 1 · 2026
+
+FINALIZED RECEIPT
+
+🏆 WEEK 1 WINNERS
+
+J ASKEW
+Destined to WIN
+20 SP
+
+J SPELLS
+All Eyes On Me
+20 SP
+
+FINAL STANDINGS
+
+1. J Askew — 20
+1. J Spells — 20
+3. Mr Roarke — 10
+...
+
+THE RECEIPTS ARE IN.
+
+SWAYGER
+LOCK IT IN. STAND ON IT.
+
+Keep it readable in group text.
+
+==================================================
+17. SHARE IMAGE SHOULD OMIT QUESTIONS
+==================================================
+
+Do NOT put all 5–7 weekly questions on the share image.
+
+The image's job is:
+
+- winner
+- leaderboard
+- visual payoff
+- social proof
+
+The full receipt page contains the question results.
+
+==================================================
+18. LEAGUE-SPECIFIC ENGAGEMENT COPY
+==================================================
+
+This is important.
+
+The share text should not be generic boilerplate only.
+
+Use final Weekly data to produce concise league-specific copy.
+
+Target structure:
+
+1. winner/co-winner
+2. one interesting league fact
+3. Week N+1 re-engagement CTA
+4. short link
+
+Example:
+
+Food Pyramid XX — Week 1 is in the books.
+
+🏆 J Askew + J Spells tie for the win with 20 SP.
+
+📉 Fewest points this week: Appetite 4 Destruction.
+
+Week 2 is next. Get your picks in.
+
+<short link>
+
+==================================================
+19. V1 "INTERESTING FACT" RULES
+==================================================
+
+Do NOT build AI-generated trash talk.
+
+Use deterministic, factual Weekly outcomes.
+
+For V1, choose from a small safe set:
+
+A. Lowest-scoring fantasy team
+Example:
+"📉 Fewest points this week: Appetite 4 Destruction."
+
+B. Highest-scoring fantasy team
+Example:
+"🔥 Highest score this week: Team Jasand Shootaw."
+
+C. Largest-margin winner
+Example:
+"💥 Biggest win: Dispimpin."
+
+D. Smallest-margin winner
+Example:
+"😬 Closest win: Mr Roarke."
+
+Prefer one fact only.
+
+Use data already resolved in the weekly props.
+
+Do not infer facts outside final settled Weekly results.
+
+==================================================
+20. SHARE COPY TONE
+==================================================
+
+Keep it concise, league-chat friendly, and competitive.
+
+Good:
+
+Food Pyramid XX — Week 1 is in the books.
+
+🏆 J Askew + J Spells tie for the win with 20 SP.
+
+📉 Fewest points this week: Appetite 4 Destruction.
+
+Week 2 is next. Get on the board.
+
+<short URL>
+
+Avoid:
+
+- long paragraphs
+- corporate language
+- "congratulations to our valued users"
+- excessive emojis
+- insulting language
+- fabricated trash talk
+
+==================================================
+21. NEXT-WEEK CTA
+==================================================
+
+If Week N+1 is already published:
+
+include a CTA such as:
+
+"Week 2 is live. Make your picks."
+
+and preferably link to the next week's play page if product/share architecture supports a clean second link.
+
+If Week N+1 is NOT published:
+
+use:
+
+"Week 2 is next. Don't miss it."
+
+Do not block receipt sharing on next-week availability.
+
+==================================================
+22. SHORT LINK
+==================================================
+
+Weekly receipts should use the same short-link architecture pattern as Draft Day.
+
+Preferred:
+
+`swayger.app/r/<opaqueCode>`
+
+Do NOT use a giant canonical UUID URL in share text.
+
+==================================================
+23. SHORT LINK DATA MODEL — INSPECT FIRST
+==================================================
+
+Inspect Task #63 alias table:
+
+`fantasy_draft_day_receipt_aliases`
+
+Determine whether:
+
+A. it should be safely generalized
+
+OR
+
+B. Weekly should receive a separate narrowly scoped alias table
+
+Do NOT force Weekly into a Draft-Day-specific table with incorrect semantics.
+
+Preferred long-term architecture may be a generic Fantasy competition receipt alias model:
+
+receipt identity could include:
+- league_season_id
+- competition_type
+- week_number / room_id
+
+BUT:
+
+If schema change is required:
+write the smallest additive migration and STOP.
+
+Return:
+
+SQL APPLICATION REQUIRED
+
+Do not implement dependent application code before approval.
+
+==================================================
+24. SHORT LINK SECURITY
+==================================================
+
+Short URL is an alias only.
+
+It must NOT bypass membership authorization.
+
+Flow:
+
+/r/:code
+→ resolve destination
+→ canonical Weekly receipt
+→ canonical membership authorization
+
+No tokens in alias.
+
+No public receipt data in alias storage.
+
+==================================================
+25. STABLE ALIAS
+==================================================
+
+Same finalized Week receipt:
+same short alias every time.
+
+Repeated Share / Copy:
+do not create new links.
+
+Archive/restore:
+same alias remains valid.
+
+==================================================
+26. SHARE CONTROLS
+==================================================
+
+Commissioner/co-commissioner:
+
+- prominent Share Week 1 Receipt
+- Copy Receipt Link
+
+Regular member:
+
+- can VIEW the same global receipt
+- regular sharing may be allowed if trivial and consistent with Draft Day product rules
+- do not create a separate receipt
+
+Document the final share-role behavior.
+
+==================================================
+27. NATIVE SHARE
+==================================================
+
+Preferred:
+
+image + concise text + short URL
+
+Use the same Draft Day sharing infrastructure.
+
+Platform fallback:
+
+1. image + text + short link
+2. image + short text
+3. text + short link
+4. Copy Link
+
+Do not claim image sharing works on every platform if it does not.
+
+==================================================
+28. COPY LINK
+==================================================
+
+Copy Receipt Link should copy:
+
+short Weekly receipt URL
+
+not the long canonical route.
+
+Use existing clipboard success feedback.
+
+==================================================
+29. WEEKLY RECEIPT ANALYTICS
+==================================================
+
+We already added Fantasy pilot analytics.
+
+Extend existing receipt events rather than inventing new event names if appropriate.
+
+Use:
+
+`fantasy_receipt_viewed`
+`fantasy_receipt_shared`
+`fantasy_receipt_link_copied`
+
+with:
+
+`competition_type = weekly`
+`experience_type = weekly`
+`week_number = N`
+`league_id`
+`season_id`
+`viewer_role`
+`is_guest`
+
+Do NOT send:
+
+- names
+- team names
+- winner names
+- receipt content
+- URLs
+- short codes
+
+==================================================
+30. OPTIONAL WEEKLY SHARE ANALYTICS
+==================================================
+
+If consistent with current helper:
+
+include:
+
+`share_surface`
+`share_method`
+
+Do not create analytics work beyond the existing instrumentation framework.
+
+==================================================
+31. ARCHIVED LEAGUE BEHAVIOR
+==================================================
+
+Finalized Weekly receipts are historical.
+
+Authorized archived-league members should still be able to view them.
+
+Archive should not invalidate:
+
+- Weekly receipt
+- short link
+- League Picks
+- standings
+
+No operational writes required.
+
+==================================================
+32. RECEIPT PRIVACY
+==================================================
+
+Keep unauthenticated metadata generic.
+
+Do NOT expose:
+
+- league name
+- winner
+- standings
+- member names
+
+to unauthenticated preview crawlers merely to improve text-message previews.
+
+Use the existing Draft Day privacy decision.
+
+==================================================
+33. REAL PILOT FIXTURE
+==================================================
+
+Use this real Week 1 pilot case as a manual QA fixture:
+
+League:
+Food Pyramid XX
+
+Week:
+1
+
+Co-winners:
+- J Askew / Destined to WIN — 20 pts
+- J Spells / All Eyes On Me — 20 pts
+
+Resolved outcome examples include:
+
+Highest scoring fantasy team:
+Team Jasand Shootaw
+
+Fewest points:
+Appetite 4 Destruction
+
+Largest margin:
+Dispimpin
+
+Verify the receipt supports these actual values.
+
+Do not hardcode them.
+
+==================================================
+34. RE-ENGAGEMENT GOAL
+==================================================
+
+The Weekly Receipt is not just a result artifact.
+
+It should close the weekly loop:
+
+PLAY
+→ LOCK
+→ REVEAL
+→ RESOLVE
+→ FINALIZE
+→ RECEIPT
+→ WEEK N+1
+
+The share experience should help people who skipped Week 1 feel:
+
+"I should play Week 2."
+
+Do not turn this into push-notification work.
+
+==================================================
+35. COMPONENT REUSE
+==================================================
+
+Prefer reusing/generalizing:
+
+`CompetitionReceipt`
+
+and the compact Draft Day share card.
+
+Possible conceptual rename if appropriate:
+
+`FantasyCompetitionReceipt`
+`FantasyCompetitionShareCard`
+
+Only rename if it materially improves architecture.
+
+Do not perform a large refactor just for naming cleanliness.
+
+==================================================
+36. TESTS — RECEIPT
+==================================================
+
+Add focused coverage:
+
+- Weekly receipt finalized-only
+- regular member access
+- guest member access
+- commissioner/co-commissioner access
+- non-member denied
+- archived historical access
+- viewer-independent payload
+- no personal-pick leakage
+- correct winners/co-winners
+- standings consistency
+- weekly competition questions only
+- normalized multi-correct answers
+- Week number preserved
+
+==================================================
+37. TESTS — SHARE
+==================================================
+
+Verify:
+
+- single winner text
+- co-winner text
+- interesting fact selection
+- next-week published CTA
+- next-week unpublished CTA
+- short URL used
+- no UUID-heavy canonical URL
+- no viewer-specific fields
+- receipt image correct
+- Copy Link uses alias
+- share cancellation does not count as success
+
+==================================================
+38. TESTS — ANALYTICS
+==================================================
+
+Verify Weekly receipt actions emit existing events with:
+
+competition_type = weekly
+experience_type = weekly
+week_number = N
+
+No names/content/URLs/tokens sent.
+
+==================================================
+39. MANUAL QA
+==================================================
+
+Return exact steps:
+
+1. Open finalized Food Pyramid XX Week 1 Results.
+2. Verify existing personal My Picks view remains unchanged.
+3. Tap View Week 1 Receipt.
+4. Verify league name.
+5. Verify Week 1.
+6. Verify J Askew and J Spells as co-winners.
+7. Verify both have 20 pts.
+8. Verify standings.
+9. Verify final weekly questions and correct answers.
+10. Verify no My Picks / Your Pick appears.
+11. Tap See League Picks.
+12. Verify League Picks remains separate.
+13. Return to Weekly Receipt.
+14. Tap Share Week 1 Receipt.
+15. Verify branded image.
+16. Verify concise league-specific text.
+17. Verify one factual interesting outcome.
+18. Verify Week 2 CTA.
+19. Verify short URL.
+20. Send to SMS/RCS/group chat.
+21. Verify image renders cleanly.
+22. Tap short URL.
+23. Verify authorized member reaches Week 1 Receipt.
+24. Try unrelated account.
+25. Verify denied.
+26. Copy Receipt Link.
+27. Verify short URL copied.
+28. Share again.
+29. Verify same alias.
+30. Archive league.
+31. Verify historical receipt remains viewable.
+
+==================================================
+40. OUT OF SCOPE
+==================================================
+
+Do NOT build:
+
+- AI trash talk
+- comments/reactions
+- push notifications
+- public receipts
+- public leaderboards
+- new scoring
+- new settlement
+- custom vanity slugs
+- PDFs
+- videos/GIFs
+- weekly sponsor/affiliate placement
+- automated social posting
+- commissioner messaging automation
+
+==================================================
+41. IMPLEMENTATION ORDER
+==================================================
+
+Do this in order:
+
+1. inspect Draft Day receipt architecture
+2. inspect Weekly Results architecture
+3. inspect short-link schema
+4. determine whether schema change is required
+5. if schema change required:
+   write migration + STOP
+6. otherwise implement Weekly receipt endpoint
+7. build Weekly receipt screen using shared components
+8. add Results entry point
+9. add share image
+10. add short alias
+11. add share text + deterministic interesting fact
+12. add Week N+1 CTA
+13. add receipt analytics
+14. tests
+15. regressions
+16. manual QA instructions
+
+==================================================
+42. REGRESSION
+==================================================
+
+Run:
+
+- Weekly Results
+- Weekly standings
+- League Picks
+- Weekly settlement/finalization
+- Phase 6G multi-correct
+- archive historical reads
+- claims / guest authorization
+- Draft Day receipt regressions
+- Task #63 short-link/share regressions
+- Fantasy analytics suite
+
+Then:
+
+- server build
+- web export
+- targeted lint
+
+Return exact totals.
+
+==================================================
+43. RETURN
+==================================================
+
+Return:
+
+# SWAYGER FANTASY WEEKLY RECEIPT V1 REPORT
+
+1. Existing Weekly Results architecture
+2. Reused Draft Day receipt infrastructure
+3. Weekly Global Receipt architecture
+4. Short-link architecture
+5. Schema decision
+6. Authorization
+7. Viewer-independent behavior
+8. Winner/co-winner handling
+9. Standings behavior
+10. Weekly question/correct-answer behavior
+11. Share-image design
+12. Share-text design
+13. Interesting-fact logic
+14. Week N+1 re-engagement behavior
+15. League Picks integration
+16. Analytics changes
+17. Archive behavior
+18. Files changed
+19. Tests added
+20. Regression totals
+21. Bugs found/fixed
+22. Known platform limitations
+23. Exact manual QA
+
+Then STOP.
+
+Do not begin another feature.
+
+Final status:
+
+SWAYGER FANTASY WEEKLY RECEIPT V1 READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
