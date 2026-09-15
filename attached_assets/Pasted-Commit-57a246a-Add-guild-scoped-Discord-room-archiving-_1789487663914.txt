@@ -1,0 +1,106 @@
+Commit 57a246a — Add guild-scoped Discord room archiving — is now on origin/main and HEAD == origin/main.
+
+Please republish the Swayger app so the live production deployment includes:
+
+- Madden bot-authenticated room creation
+- Guild-scoped Discord room archiving
+
+Live URL:
+https://www.swayger.app
+
+After republish, run one controlled production smoke test.
+
+IMPORTANT:
+This is a backend/API smoke test only.
+
+Do not:
+- run the Discord bot
+- register slash commands
+- post anything to Discord
+- modify code
+
+Use the Swayger Test Server guild metadata only.
+
+TEST FLOW
+
+1. Create one disposable Madden Weekly Pick Card using:
+
+POST /api/gameday/rooms
+
+Headers:
+- x-api-key: existing GAMEDAY_BOT_API_KEY
+- X-Discord-Guild-ID: Swayger Test Server guild ID
+
+Body must include:
+- room_name: "Madden Discord Production Smoke Test"
+- sport: "madden"
+- template_type: "weekly_pick_card"
+- valid ISO pick_deadline
+- exactly 3 matchups
+- at least one line_text
+- enabled bonus with at least 2 answer options
+- matching discord_guild_id
+- test discord_channel_id
+- test discord_user_id
+
+2. Verify successful response:
+- ok=true
+- room_id
+- room_code
+- public_link
+- host_link
+- discord_message
+- room.source="discord"
+- room.sport="madden"
+- room.template_type="weekly_pick_card"
+- room.is_private=true
+- correct discord guild/channel/user metadata
+
+3. Verify room behavior:
+- pregame card is open
+- public_link resolves
+- room is excluded from public discovery
+- exactly 3 matchup props exist
+- each matchup has exactly 2 answer options
+- bonus prop exists with correct options
+
+4. Verify guild-scope protections:
+- missing X-Discord-Guild-ID rejected
+- missing body discord_guild_id rejected
+- header/body mismatch rejected
+
+5. Archive the disposable room using:
+
+PATCH /api/gameday/rooms/:roomId/archive
+
+Headers:
+- x-api-key: existing GAMEDAY_BOT_API_KEY
+- X-Discord-Guild-ID: matching test guild ID
+
+6. Verify:
+- archive succeeds
+- archived_at is populated
+- repeated archive is idempotent
+- archived room no longer appears as active/public
+- no active disposable smoke-test room remains
+
+Do not hard-delete any records.
+
+Return:
+
+A. Deployment status
+B. Live Madden creation result
+C. Metadata verification
+D. Matchup/bonus verification
+E. Privacy verification
+F. Guild isolation verification
+G. Archive result
+H. Idempotency result
+I. Cleanup verification
+J. Whether Claude can now register the Madden command in the test guild
+
+End with:
+
+MADDEN DISCORD PRODUCTION SMOKE STATUS: PASS / FAIL
+SAFE CLEANUP: PASS / FAIL
+READY FOR CLAUDE TEST-GUILD REGISTRATION: YES / NO
