@@ -1,0 +1,129 @@
+The app has already been manually republished after commit 57a246a was pushed.
+
+Do not block this test on deployment metadata showing a commit hash.
+
+Instead, verify the new archive implementation by probing the LIVE API behavior directly.
+
+STEP 1 — Non-mutating archive capability check
+
+Against:
+
+https://www.swayger.app
+
+Call:
+
+PATCH /api/gameday/rooms/00000000-0000-4000-8000-000000000000/archive
+
+with:
+
+- valid GAMEDAY_BOT_API_KEY
+- X-Discord-Guild-ID: Swayger Test Server guild ID
+
+Use a deliberately nonexistent room UUID so no real room can be modified.
+
+Inspect the response.
+
+Determine whether the live route is executing the NEW bot-authenticated archive logic from commit 57a246a.
+
+Specifically distinguish:
+
+- new bot-auth archive path reached, then room not found
+versus
+- old deployment behavior rejecting bot auth before room lookup
+
+Do not rely on deployment metadata for this determination.
+
+If the live API behavior confirms the new bot archive code is active, proceed immediately to STEP 2.
+
+STEP 2 — Controlled production Madden smoke test
+
+Create one disposable Madden Weekly Pick Card using the live bot-authenticated endpoint.
+
+POST /api/gameday/rooms
+
+Headers:
+- x-api-key: existing GAMEDAY_BOT_API_KEY
+- X-Discord-Guild-ID: Swayger Test Server guild ID
+
+Body must include:
+- room_name: "Madden Discord Production Smoke Test"
+- sport: "madden"
+- template_type: "weekly_pick_card"
+- valid ISO pick_deadline
+- exactly 3 matchups
+- at least one line_text
+- enabled bonus with 2 answer options
+- matching discord_guild_id
+- test discord_channel_id
+- test discord_user_id
+
+Verify:
+
+1. ok=true
+2. room_id returned
+3. room_code returned
+4. public_link returned
+5. source="discord"
+6. sport="madden"
+7. template_type="weekly_pick_card"
+8. is_private=true
+9. guild/channel/user metadata correct
+10. pregame card is open
+11. public_link resolves
+12. room is excluded from public discovery
+13. exactly 3 matchup props exist
+14. each matchup has exactly 2 choices
+15. bonus prop exists with 2 choices
+
+STEP 3 — Archive cleanup
+
+Immediately archive that exact disposable room:
+
+PATCH /api/gameday/rooms/:roomId/archive
+
+with:
+- valid GAMEDAY_BOT_API_KEY
+- matching X-Discord-Guild-ID
+
+Verify:
+- first archive succeeds
+- archived_at populated
+- second archive returns safe idempotent success
+- room is no longer active
+- room remains excluded from public discovery
+- no active smoke-test room remains
+
+STEP 4 — Guild protections
+
+Verify without leaving fixtures:
+- missing X-Discord-Guild-ID rejected
+- missing body discord_guild_id rejected on creation
+- body/header guild mismatch rejected
+
+Do not:
+- modify code
+- republish again
+- run Discord bot
+- register commands
+- post to Discord
+- hard-delete rooms
+
+Return:
+
+A. Live archive capability probe result
+B. Whether commit 57a246a behavior is confirmed live
+C. Madden creation result
+D. Room/prop verification
+E. Privacy verification
+F. Guild-isolation verification
+G. Archive result
+H. Idempotency result
+I. Cleanup result
+J. Whether Claude can register the command in the test guild
+
+End with:
+
+LIVE ARCHIVE CODE CONFIRMED: YES / NO
+MADDEN DISCORD PRODUCTION SMOKE STATUS: PASS / FAIL
+SAFE CLEANUP: PASS / FAIL
+READY FOR CLAUDE TEST-GUILD REGISTRATION: YES / NO
