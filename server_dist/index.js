@@ -10954,12 +10954,18 @@ ${publicLink2}`;
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
         "id, room_id, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, correct_answer, correct_answer_ids, status, display_order)"
       ).eq("room_id", roomId).order("display_order");
-      const cards = (rawCards ?? []).map((card) => ({
-        ...card,
-        gameday_props: [...card.gameday_props ?? []].sort(
-          (a, b) => a.display_order - b.display_order
-        )
-      }));
+      const serverNow = Date.now();
+      const cards = (rawCards ?? []).map((card) => {
+        const deadlinePassed = !!card.scheduled_lock_at && new Date(card.scheduled_lock_at).getTime() <= serverNow;
+        return {
+          ...card,
+          deadline_passed: deadlinePassed,
+          can_edit_picks: card.status === "open" && !deadlinePassed,
+          gameday_props: [...card.gameday_props ?? []].sort(
+            (a, b) => a.display_order - b.display_order
+          )
+        };
+      });
       const { userId, guestSessionId } = await getCallerIdentity(req);
       console.log(
         `[gameday] room fetch ${roomId}: userId=${userId ? userId.slice(0, 8) + "\u2026" : "null"} guest=${guestSessionId ? guestSessionId.slice(0, 8) + "\u2026" : "null"}`
@@ -11167,7 +11173,7 @@ ${publicLink2}`;
         return;
       }
       const supabase = getServiceSupabase();
-      const { data: prop } = await supabase.from("gameday_props").select("*, gameday_pick_cards(status, room_id, gameday_rooms(archived_at))").eq("id", propId).single();
+      const { data: prop } = await supabase.from("gameday_props").select("*, gameday_pick_cards(status, room_id, scheduled_lock_at, gameday_rooms(archived_at))").eq("id", propId).single();
       if (!prop) {
         res2.status(404).json({ error: "Prop not found" });
         return;
@@ -11199,6 +11205,11 @@ ${publicLink2}`;
       }
       if (!participant) {
         res2.status(401).json({ error: "Join the room first before picking" });
+        return;
+      }
+      const pickDeadline = prop.gameday_pick_cards?.scheduled_lock_at;
+      if (pickDeadline && new Date(pickDeadline).getTime() <= Date.now()) {
+        res2.status(409).json({ error: "Picks are closed for this card." });
         return;
       }
       const { data: pick, error } = await supabase.from("gameday_picks").upsert(
@@ -12794,8 +12805,9 @@ ${html.slice(0, 800)}`);
       }
       const { data: toLock } = await supabase.from("gameday_pick_cards").select("id, room_id").eq("status", "open").not("scheduled_lock_at", "is", null).lte("scheduled_lock_at", now);
       for (const card of toLock ?? []) {
-        const { data: room } = await supabase.from("gameday_rooms").select("status").eq("id", card.room_id).maybeSingle();
-        if (room?.status === "active") {
+        const { data: room } = await supabase.from("gameday_rooms").select("status, sport, template_type").eq("id", card.room_id).maybeSingle();
+        const isManualRevealMaddenCard = room?.sport === "madden" && room?.template_type === "weekly_pick_card";
+        if (room?.status === "active" && !isManualRevealMaddenCard) {
           await supabase.from("gameday_pick_cards").update({ status: "locked", updated_at: now }).eq("id", card.id);
           console.log(`[scheduler] auto-locked card ${card.id}`);
         }

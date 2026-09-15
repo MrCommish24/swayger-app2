@@ -567,6 +567,10 @@ export default function GameDayRoomScreen() {
       setPickError("This room is no longer active.");
       return;
     }
+    if (openCard.can_edit_picks === false) {
+      setPickError("Picks are closed for this card.");
+      return;
+    }
     const propIds = openCard.gameday_props.map((p) => p.id);
     const missing = propIds.filter((id) => !pendingPicks[id]);
     if (missing.length > 0) {
@@ -752,6 +756,7 @@ export default function GameDayRoomScreen() {
   const weeklyCard = room.template_type === "weekly_pick_card"
     ? cards.find((card) => card.phase === "pregame")
     : null;
+  const canEditOpenCard = openCard?.can_edit_picks !== false;
   // Has the user saved picks for this card (either this session or from a previous visit)?
   const hasSubmittedOpenCard =
     !!openCard &&
@@ -771,8 +776,8 @@ export default function GameDayRoomScreen() {
     >
       {/* Header */}
       <View style={styles.roomHeader}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Back</Text>
+        <TouchableOpacity onPress={() => router.replace("/gameday")} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>← Game Day</Text>
         </TouchableOpacity>
         {fromCaptain && (
           <TouchableOpacity
@@ -808,7 +813,11 @@ export default function GameDayRoomScreen() {
         )}
         <Text style={styles.groupChatNote}>
           {room.template_type === "weekly_pick_card"
-            ? "Picks can be edited until the card locks. Swayger tracks the picks, leaderboard, and receipts."
+            ? weeklyCard?.status === "locked" || weeklyCard?.status === "settled"
+              ? "Picks are locked. Receipts are revealed."
+              : weeklyCard?.deadline_passed
+                ? "Picks are closed. Waiting for the commissioner to reveal receipts."
+              : "Picks can be edited until the deadline. Swayger tracks the picks, leaderboard, and receipts."
             : "Keep talking in your group chat. Swayger tracks the picks, leaderboard, and receipts."}
         </Text>
       </View>
@@ -882,6 +891,8 @@ export default function GameDayRoomScreen() {
           submitting={submittingPicks}
           pickError={pickError}
           hasSubmitted={hasSubmittedOpenCard}
+          canEdit={canEditOpenCard}
+          isMaddenWeekly={room.template_type === "weekly_pick_card"}
         />
       ) : null}
 
@@ -1153,6 +1164,8 @@ function PickCard({
   submitting,
   pickError,
   hasSubmitted,
+  canEdit,
+  isMaddenWeekly,
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
@@ -1162,6 +1175,8 @@ function PickCard({
   submitting: boolean;
   pickError: string | null;
   hasSubmitted: boolean;
+  canEdit: boolean;
+  isMaddenWeekly: boolean;
 }) {
   const answered = card.gameday_props.filter((p) => myPicks[p.id]).length;
   const total = card.gameday_props.length;
@@ -1188,16 +1203,27 @@ function PickCard({
       </View>
 
       {/* Submitted confirmation — visible once picks are saved */}
-      {hasSubmitted ? (
+      {hasSubmitted && canEdit ? (
         <View style={styles.submittedInline}>
           <Text style={styles.submittedInlineText}>
-            ✓ Picks locked in. Green = confirmed. You can update until this card locks.
+            {isMaddenWeekly
+              ? "✓ Picks confirmed. You can update until the deadline."
+              : "✓ Picks locked in. Green = confirmed. You can update until this card locks."}
+          </Text>
+        </View>
+      ) : null}
+      {!canEdit ? (
+        <View style={styles.submittedInline}>
+          <Text style={styles.submittedInlineText}>
+            {isMaddenWeekly
+              ? "Picks are closed. Waiting for the commissioner to reveal receipts."
+              : "Picks are closed for this card."}
           </Text>
         </View>
       ) : null}
 
       {/* Unsaved-change reminder — amber, only when a pick was changed post-submit */}
-      {hasUnsavedChanges ? (
+      {hasUnsavedChanges && canEdit ? (
         <View style={styles.updateReminderBanner}>
           <Text style={styles.updateReminderText}>
             ⚠️ You changed a pick — tap &quot;Update my picks →&quot; to save it.
@@ -1212,6 +1238,7 @@ function PickCard({
           selected={myPicks[prop.id]}
           serverPick={serverPicks[prop.id]}
           onSelect={(ans) => onSelect(prop.id, ans)}
+          disabled={!canEdit}
         />
       ))}
 
@@ -1219,7 +1246,7 @@ function PickCard({
         <Text style={styles.errorMsg}>{pickError}</Text>
       ) : null}
 
-      <TouchableOpacity
+      {canEdit ? <TouchableOpacity
         style={[
           styles.submitBtn,
           (submitting || (!hasSubmitted && !allAnswered)) && styles.btnDisabled,
@@ -1235,7 +1262,7 @@ function PickCard({
             {hasSubmitted ? "Update my picks →" : "Lock in my picks →"}
           </Text>
         )}
-      </TouchableOpacity>
+      </TouchableOpacity> : null}
     </View>
   );
 }
@@ -1245,11 +1272,13 @@ function PropPicker({
   selected,
   serverPick,
   onSelect,
+  disabled,
 }: {
   prop: GDProp;
   selected: string | undefined;
   serverPick: string | undefined;
   onSelect: (ans: string) => void;
+  disabled: boolean;
 }) {
   return (
     <View style={styles.propBlock}>
@@ -1271,6 +1300,7 @@ function PropPicker({
                 isPending && styles.optionBtnActive,
               ]}
               onPress={() => onSelect(ans)}
+              disabled={disabled}
               activeOpacity={0.75}
             >
               <Text style={[

@@ -107,6 +107,9 @@ export interface GDCard {
   lock_label: string | null;
   scheduled_open_at?: string | null;
   scheduled_lock_at?: string | null;
+  /** Server-authoritative write state. False after the deadline even if the card remains open for manual reveal. */
+  can_edit_picks?: boolean;
+  deadline_passed?: boolean;
   gameday_props: GDProp[];
 }
 

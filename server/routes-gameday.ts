@@ -3494,12 +3494,20 @@ export function registerGamedayRoutes(app: Express) {
         .eq("room_id", roomId)
         .order("display_order");
 
-      const cards = (rawCards ?? []).map((card) => ({
-        ...card,
-        gameday_props: [...((card.gameday_props as unknown[]) ?? [])].sort(
-          (a: any, b: any) => a.display_order - b.display_order
-        ),
-      }));
+      const serverNow = Date.now();
+      const cards = (rawCards ?? []).map((card) => {
+        const deadlinePassed =
+          !!card.scheduled_lock_at &&
+          new Date(card.scheduled_lock_at).getTime() <= serverNow;
+        return {
+          ...card,
+          deadline_passed: deadlinePassed,
+          can_edit_picks: card.status === "open" && !deadlinePassed,
+          gameday_props: [...((card.gameday_props as unknown[]) ?? [])].sort(
+            (a: any, b: any) => a.display_order - b.display_order
+          ),
+        };
+      });
 
       const { userId, guestSessionId } = await getCallerIdentity(req);
       console.log(
@@ -3835,7 +3843,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: prop } = await supabase
         .from("gameday_props")
-        .select("*, gameday_pick_cards(status, room_id, gameday_rooms(archived_at))")
+        .select("*, gameday_pick_cards(status, room_id, scheduled_lock_at, gameday_rooms(archived_at))")
         .eq("id", propId)
         .single();
 
@@ -3854,7 +3862,6 @@ export function registerGamedayRoutes(app: Express) {
         res.status(400).json({ error: "This pick card is not open" });
         return;
       }
-
       const options = prop.answer_options as string[];
       if (!options.includes(selected_answer)) {
         res.status(400).json({ error: "Invalid answer option" });
@@ -3884,6 +3891,14 @@ export function registerGamedayRoutes(app: Express) {
 
       if (!participant) {
         res.status(401).json({ error: "Join the room first before picking" });
+        return;
+      }
+
+      // Check the authoritative cutoff immediately before the write so identity
+      // lookups cannot carry a request across the deadline.
+      const pickDeadline = (prop.gameday_pick_cards as any)?.scheduled_lock_at;
+      if (pickDeadline && new Date(pickDeadline).getTime() <= Date.now()) {
+        res.status(409).json({ error: "Picks are closed for this card." });
         return;
       }
 
@@ -6227,10 +6242,13 @@ export function registerGamedayRoutes(app: Express) {
       for (const card of (toLock ?? []) as any[]) {
         const { data: room } = await supabase
           .from("gameday_rooms")
-          .select("status")
+          .select("status, sport, template_type")
           .eq("id", card.room_id)
           .maybeSingle();
-        if ((room as any)?.status === "active") {
+        const isManualRevealMaddenCard =
+          (room as any)?.sport === "madden" &&
+          (room as any)?.template_type === "weekly_pick_card";
+        if ((room as any)?.status === "active" && !isManualRevealMaddenCard) {
           await supabase
             .from("gameday_pick_cards")
             .update({ status: "locked", updated_at: now })

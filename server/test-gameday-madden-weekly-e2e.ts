@@ -282,7 +282,7 @@ async function main() {
     const botProps = botCard.data?.id
       ? await service
           .from("gameday_props")
-          .select("answer_options, line_text")
+          .select("id, answer_options, line_text")
           .eq("card_id", botCard.data.id)
           .order("display_order", { ascending: true })
       : { data: null, error: new Error("Bot Madden card was not created") };
@@ -300,6 +300,35 @@ async function main() {
             prop.answer_options[1] === matchupSet[index].team_b,
         ),
       JSON.stringify({ card: botCard.data, props: botProps.data }),
+    );
+
+    const manuallyLockedBeforeDeadline = await request(
+      `/api/gameday/cards/${botCard.data?.id}/lock`,
+      {
+        method: "PATCH",
+        apiKey: botApiKey,
+        discordGuildHeader: botGuildId,
+      },
+    );
+    expect(
+      "manual Madden lock remains available before the deadline",
+      manuallyLockedBeforeDeadline.status === 200 &&
+        manuallyLockedBeforeDeadline.body.ok === true,
+      JSON.stringify(manuallyLockedBeforeDeadline.body),
+    );
+    const botProp = botProps.data?.[0];
+    const pickAfterEarlyManualLock = await request(
+      `/api/gameday/props/${botProp?.id}/pick`,
+      {
+        method: "POST",
+        guest: unique("locked-guest"),
+        body: { selected_answer: botProp?.answer_options?.[0] },
+      },
+    );
+    expect(
+      "manual Madden lock before the deadline rejects pick writes",
+      pickAfterEarlyManualLock.status === 400,
+      JSON.stringify(pickAfterEarlyManualLock.body),
     );
 
     const host = await makeUser(hostEmail);
@@ -547,12 +576,72 @@ async function main() {
       JSON.stringify(savedGuest.body.my_picks),
     );
 
+    const expiredAt = new Date(Date.now() - 1000).toISOString();
+    const { error: deadlineUpdateError } = await service
+      .from("gameday_pick_cards")
+      .update({ scheduled_lock_at: expiredAt })
+      .eq("id", card.id);
+    if (deadlineUpdateError) {
+      throw new Error(`Could not expire Madden deadline: ${deadlineUpdateError.message}`);
+    }
+
+    const joinedLateGuest = await request(`/api/gameday/rooms/${roomId}/join`, {
+      method: "POST",
+      body: { display_name: `Late Guest ${runId}` },
+    });
+    const lateGuestSession = joinedLateGuest.body.guest_session_id as string | undefined;
+    if (!lateGuestSession) throw new Error("Late guest join did not return a guest session");
+
+    const newPickAfterDeadline = await request(`/api/gameday/props/${props[0].id}/pick`, {
+      method: "POST",
+      guest: lateGuestSession,
+      body: { selected_answer: props[0].answer_options[0] },
+    });
+    expect(
+      "new picks are rejected at or after the Madden deadline",
+      newPickAfterDeadline.status === 409 &&
+        newPickAfterDeadline.body.error === "Picks are closed for this card.",
+      JSON.stringify(newPickAfterDeadline.body),
+    );
+
+    const editAfterDeadline = await request(`/api/gameday/props/${props[0].id}/pick`, {
+      method: "POST",
+      token: player.token,
+      body: { selected_answer: props[0].answer_options[0] },
+    });
+    expect(
+      "existing picks cannot be edited after the Madden deadline",
+      editAfterDeadline.status === 409 &&
+        editAfterDeadline.body.error === "Picks are closed for this card.",
+      JSON.stringify(editAfterDeadline.body),
+    );
+
+    const afterDeadline = await request(`/api/gameday/rooms/${roomId}`, {
+      token: player.token,
+    });
+    const afterDeadlineCard = (afterDeadline.body.cards ?? []).find(
+      (value: any) => value.id === card.id,
+    );
+    expect(
+      "deadline closes editing without automatically locking the Madden card",
+      afterDeadline.status === 200 &&
+        afterDeadlineCard?.status === "open" &&
+        afterDeadlineCard?.deadline_passed === true &&
+        afterDeadlineCard?.can_edit_picks === false,
+      JSON.stringify(afterDeadlineCard),
+    );
+    expect(
+      "existing picks remain readable after the Madden deadline",
+      afterDeadline.body.my_picks?.[props[0].id] === props[0].answer_options[1],
+      JSON.stringify(afterDeadline.body.my_picks),
+    );
+
     const locked = await request(`/api/gameday/cards/${card.id}/lock`, {
       method: "PATCH",
       token: host.token,
     });
     expect(
-      "Madden picks can be locked by the authorized host",
+      "commissioner can manually lock the Madden card after the deadline",
       locked.status === 200 && locked.body.ok === true,
       JSON.stringify(locked.body),
     );

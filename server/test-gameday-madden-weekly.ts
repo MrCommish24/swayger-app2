@@ -93,6 +93,7 @@ check("more than 7 matchups are rejected", normalizeWeeklyPickCardMatchups(
 
 const migration = readFileSync("supabase/gameday-madden-weekly-pick-card-v1.sql", "utf8");
 const routes = readFileSync("server/routes-gameday.ts", "utf8");
+const participantUi = readFileSync("app/gameday/[roomId]/index.tsx", "utf8");
 check("room route admits Madden before format branching", routes.includes('["nba", "soccer", "nfl", "madden"]'));
 check("room route keeps Madden limited to weekly cards", routes.includes('Madden rooms must use template_type=weekly_pick_card'));
 check("migration adds validated format_config storage", migration.includes("ADD COLUMN IF NOT EXISTS format_config JSONB"));
@@ -100,6 +101,13 @@ check("migration permits Madden rooms", migration.includes("'madden'"));
 check("migration permits weekly_pick_card", migration.includes("'weekly_pick_card'"));
 check("migration makes representative teams nullable", migration.includes("ALTER COLUMN team_a_name DROP NOT NULL"));
 check("migration adds optional line text", migration.includes("ADD COLUMN IF NOT EXISTS line_text TEXT"));
+check("pick writes enforce the shared scheduled deadline", routes.includes('res.status(409).json({ error: "Picks are closed for this card." })'));
+check("Madden weekly cards remain manual reveal instead of auto-locking", routes.includes("isManualRevealMaddenCard"));
+check("room payload exposes server-authoritative editability", routes.includes("can_edit_picks: card.status === \"open\" && !deadlinePassed"));
+check("participant confirmation copy promises edits only until the deadline", participantUi.includes("Picks confirmed. You can update until the deadline."));
+check("closed Madden copy waits for commissioner reveal", participantUi.includes("Picks are closed. Waiting for the commissioner to reveal receipts."));
+check("closed Madden cards hide the pick submission control", participantUi.includes("{canEdit ? <TouchableOpacity"));
+check("room Back control routes directly to the Game Day hub", participantUi.includes('router.replace("/gameday")'));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

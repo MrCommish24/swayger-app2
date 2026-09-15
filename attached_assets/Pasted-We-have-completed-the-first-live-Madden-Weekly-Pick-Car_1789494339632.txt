@@ -1,0 +1,195 @@
+We have completed the first live Madden Weekly Pick Card manual test and identified three important V1 product behaviors that need to be finalized before broader Discord pilot use.
+
+This task is ONLY for the Swayger web/backend.
+
+Do not modify the external Discord bot in this task.
+
+PRODUCT DECISIONS
+
+1. PICK DEADLINE MUST AUTOMATICALLY CLOSE SUBMISSIONS
+
+We should NOT rely only on the commissioner manually locking the card.
+
+The existing pick_deadline must become a server-enforced write cutoff.
+
+Behavior:
+
+Before pick_deadline:
+- participant can submit picks
+- participant can edit existing picks
+- participant can update selections
+
+At or after pick_deadline:
+- backend rejects new picks
+- backend rejects edits/updates
+- existing picks remain readable
+- no scheduler/cron is required
+- enforcement should happen server-side on every write
+
+The server is authoritative.
+
+Do not rely only on frontend disabling.
+
+Use the existing room pick_deadline value.
+
+2. COMMISSIONER LOCK IS NOW A REVEAL/FREEZE MOMENT
+
+Do not remove the existing commissioner lock flow.
+
+But conceptually separate:
+
+pick_deadline = submissions/edits automatically close
+
+commissioner lock = commissioner confirms/reveals the competition state / receipts
+
+For V1:
+- deadline closes editing automatically
+- commissioner can lock after the deadline
+- lock remains manual
+- no auto-lock scheduler
+- no cron job
+
+If the existing lock endpoint already blocks further picks, preserve that too.
+
+Deadline OR card lock should prevent writes.
+
+3. COPY / STATE LANGUAGE
+
+Update Madden participant UI language to reflect this distinction.
+
+Before deadline and before card lock:
+- user can edit picks
+
+Preferred confirmation copy:
+“Picks confirmed. You can update until the deadline.”
+
+At/after deadline but before commissioner lock:
+Preferred state/copy:
+“Picks are closed. Waiting for the commissioner to reveal receipts.”
+
+After card lock:
+Use the existing locked/reveal state as appropriate.
+
+Do not use language that implies picks are permanently locked when they are still editable.
+
+4. BACK BUTTON
+
+The current Back control on the Madden/Game Day participant page does not work correctly.
+
+Fix it.
+
+For V1:
+- Back should route to /gameday
+- label can remain “Back” or become “Game Day” if that is more consistent with the existing design
+- do not attempt a Discord deep link
+- do not build a guest dashboard in this task
+
+For authenticated users:
+- /gameday should behave as the existing Game Day Hub
+
+For guest users:
+- /gameday should load safely and not error
+- if current signed-out Game Day behavior already has a landing/promo state, reuse it
+- do not require signup just to leave the room
+
+IMPORTANT SERVER ENFORCEMENT
+
+Inspect all pick submission/update paths.
+
+For every Game Day pick write, determine whether deadline enforcement should apply generically or only for Madden Weekly Pick Card.
+
+Preferred behavior:
+- use generic server-side deadline enforcement if pick_deadline is already a generic Game Day room field and doing so is safe for existing formats
+- otherwise scope it narrowly to Madden Weekly Pick Card V1
+
+Do not introduce regressions to:
+- NFL Sunday Slate
+- NFL Single Game
+- NBA Game Day
+- Fantasy
+- existing live Game Day rooms
+
+ERROR CONTRACT
+
+When a participant attempts to submit/update at or after the deadline, return a clear deterministic response.
+
+Prefer:
+HTTP 409 or another existing conflict-style convention
+
+Example user-facing meaning:
+“Picks are closed for this card.”
+
+Do not expose raw database errors.
+
+FRONTEND
+
+When page loads:
+- compare current state returned by backend, not only local browser time
+- show read-only selections when deadline has passed
+- remove/disable Update My Picks when edits are no longer allowed
+- preserve the selections visually
+
+If there is an existing authoritative backend field/state that can expose:
+- deadline passed
+- can_edit_picks
+use or add the smallest safe representation.
+
+Do not make the frontend the only enforcement layer.
+
+TESTING REQUIRED
+
+Add tests for:
+
+1. Pick before deadline succeeds.
+2. Edit before deadline succeeds.
+3. Pick exactly at/after deadline rejected.
+4. Edit after deadline rejected.
+5. Existing picks remain readable after deadline.
+6. Card manually locked before deadline still rejects writes.
+7. Deadline passed + unlocked card rejects writes.
+8. Commissioner can still perform existing lock flow after deadline.
+9. Madden participant UI shows editable state before deadline.
+10. Madden participant UI shows closed/read-only state after deadline.
+11. “Update My Picks” unavailable after deadline.
+12. Back control routes to /gameday.
+13. Guest Back route does not error.
+14. Authenticated Back route works.
+15. Madden E2E remains green.
+16. Web Game Day regression remains green.
+17. NFL Game Day regression remains green.
+18. NFL Sunday Slate regression remains green.
+19. Discord isolation regression remains green.
+20. Fantasy unaffected.
+
+Do not:
+- add auto-lock
+- add cron/scheduler
+- add Discord activity events yet
+- add receipt reveal posting yet
+- add team dropdowns
+- change Madden matchup parsing
+- change bonus behavior
+- add payments/Stripe
+- add EA/Neon integration
+
+RETURN
+
+A. Deadline enforcement design
+B. Whether enforcement is generic or Madden-scoped
+C. Backend error contract
+D. Participant UI behavior before/after deadline
+E. Commissioner lock behavior
+F. Back button behavior
+G. Files changed
+H. Tests/assertion counts
+I. Regression results
+J. Migration requirements
+K. Git status
+L. Commit hash if committed
+M. Whether production is ready to republish
+
+End with:
+
+MADDEN DEADLINE ENFORCEMENT STATUS: PASS / FAIL
+BACK BUTTON STATUS: PASS / FAIL
+READY FOR REPUBLISH: YES / NO
