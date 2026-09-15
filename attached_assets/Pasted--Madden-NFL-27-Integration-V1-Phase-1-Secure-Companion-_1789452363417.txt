@@ -1,0 +1,284 @@
+# Madden NFL 27 Integration V1 — Phase 1: Secure Companion App Export Foundation
+
+We are ready to begin Madden NFL 27 Integration V1 for Swayger Game Day.
+
+Important context:
+This is NOT a greenfield Madden build. Swayger already has a working Game Day architecture with rooms, cards, props, participants, picks, manual settlement, leaderboards, final standings, Discord sharing, private links, and authenticated/guest participation.
+
+The Madden integration should be an input/data layer that feeds the existing Game Day engine. Do not create a separate Madden gameplay engine.
+
+New research finding:
+Madden NFL 27 Companion App supports Franchise Stats Export to a commissioner-provided third-party URL. For V1, we should use this commissioner-initiated export flow:
+
+Madden NFL 27 Franchise
+→ Madden Companion App
+→ commissioner enters Swayger export URL
+→ Companion App POSTs franchise data to Swayger
+→ Swayger captures and later normalizes it
+→ Swayger uses that data to generate franchise-aware Game Day cards
+
+Do not reverse engineer EA APIs.
+Do not scrape EA.
+Do not attempt EA OAuth.
+Do not collect EA credentials.
+Do not depend on NeonSportz.
+Do not build College Football integration in this phase.
+
+## Goal of this phase
+
+Implement only the secure Madden integration foundation and raw import capture needed to receive Companion App export payloads.
+
+This phase should answer:
+
+Can a Madden commissioner generate a secure Swayger export URL, paste it into the Madden Companion App, send franchise export data to Swayger, and have Swayger safely capture and inspect the raw payload?
+
+Do not build card generation yet.
+Do not build matchup detection yet.
+Do not build player/team/stat normalization yet, beyond minimal diagnostics.
+Do not build historical line generation.
+Do not change NFL Sunday Slate, NFL Single Game, NBA Game Day, Fantasy, Discord bot, or existing Game Day runtime behavior.
+
+## Product framing
+
+Use:
+
+- Integration name: Madden NFL 27
+- Source: madden
+- Do not use “parlay” in product UI.
+- Use Swayger Cards / Matchup Cards / Game Cards language.
+
+## Phase 1 scope
+
+### A. Data model / migrations
+
+Create the minimum additive data structures needed for secure export setup and raw import capture.
+
+Suggested tables/concepts, but inspect existing conventions first:
+
+1. `gaming_integrations`
+
+Purpose:
+Track a commissioner-owned external gaming integration.
+
+Minimum fields:
+- id
+- owner_user_id / commissioner_user_id
+- source = `madden`
+- display_name / franchise_name if known
+- status, such as pending / active / disabled
+- secure export token or token hash
+- token created/rotated timestamps
+- last_import_at
+- latest_import_summary JSONB
+- connection metadata JSONB
+- created_at
+- updated_at
+
+Security:
+- Do not expose raw token unnecessarily.
+- Prefer storing a token hash if consistent with existing security patterns.
+- The export URL should contain a high-entropy unguessable token.
+- The token should be rotatable.
+
+2. `madden_imports`
+
+Purpose:
+Store raw import attempts and diagnostics.
+
+Minimum fields:
+- id
+- integration_id
+- received_at
+- import_type if detectable, otherwise unknown
+- status: received / parsed / failed
+- payload_size
+- raw_payload JSONB or raw_body storage depending on current conventions
+- content_type
+- source_ip/user agent if safe and already captured by existing request context
+- validation_errors JSONB
+- normalized_counts JSONB
+- idempotency key or payload hash if feasible
+- created_at
+
+Do not create all normalized Madden tables yet unless absolutely necessary for Phase 1.
+
+Do not blindly add:
+- madden_teams
+- madden_players
+- madden_rosters
+- madden_matchups
+- madden_team_stats
+- madden_player_stats
+
+Those belong to Phase 2 after we inspect real payloads.
+
+### B. Secure export endpoint
+
+Add a public write endpoint similar to:
+
+POST `/api/integrations/madden/export/:token`
+
+Requirements:
+1. Accept POST requests from the Madden Companion App export flow.
+2. Identify the integration by secure token.
+3. Reject missing/invalid/disabled tokens.
+4. Enforce payload-size limits.
+5. Safely parse JSON if JSON is sent.
+6. Capture raw payload and diagnostics.
+7. Return a simple success response compatible with a third-party export client.
+8. Do not expose service-role credentials.
+9. Do not require a browser user session on the export endpoint because the Companion App is the caller.
+10. Rate-limit or abuse-protect consistent with current architecture if feasible.
+11. Unknown fields should not break import capture.
+12. Invalid required structure should produce a useful diagnostic but should not crash the server.
+13. Repeated identical payloads should be idempotent or at least detectable through a payload hash.
+
+Important:
+The export URL is effectively a write credential. Treat it like a secret.
+
+### C. Commissioner UI/API for connection setup
+
+Add an authenticated commissioner setup flow, minimal version.
+
+Create endpoints/UI that allow an authenticated authorized user to:
+
+1. Create a Madden NFL 27 integration.
+2. See the generated export URL.
+3. Rotate/regenerate the export token.
+4. Disable the integration.
+5. See latest import status:
+   - last import timestamp
+   - import type if detected
+   - payload size
+   - success/failure
+   - basic counts if detectable
+   - error message if failed
+
+Use existing auth and host/creator permission patterns if needed. For Phase 1, creation can be limited to existing Game Day hosts/authorized users if that is safer.
+
+Suggested UI route:
+- Add a small Madden integration setup surface under the existing Game Day/host/admin area if one exists.
+- Label: Connect Madden NFL 27
+- Show instructions:
+  1. Open Madden NFL Companion App.
+  2. Open the connected franchise.
+  3. Go to Stats Export.
+  4. Paste this Swayger export URL.
+  5. Export franchise data.
+  6. Return to Swayger to confirm the import was received.
+
+Do not fabricate franchise name, team count, current week, or stats unless derived from a received import.
+
+### D. Import diagnostics
+
+For Phase 1, focus on observability:
+
+Show/report:
+- integration id
+- received_at
+- status
+- import_type if detectable
+- payload_size
+- payload hash
+- validation errors if any
+- top-level payload keys
+- normalized_counts if any safe counts are trivial to detect
+
+Do not build full normalization yet.
+
+### E. Existing Game Day boundaries
+
+Preserve all existing behavior:
+
+- NFL Sunday Slate
+- NFL Single Game
+- NBA Game Day
+- Fantasy
+- Discord subscriptions
+- Discord bot delivery
+- Game Day Hub Continue Playing
+- Private/public room boundaries
+- Game Day participants and picks
+- Settlement/finalization
+
+No existing rooms should be mutated.
+
+No Discord posting.
+
+No room creation from Madden imports in Phase 1.
+
+## Security requirements
+
+The Companion Export URL is a write credential.
+
+Implement or confirm:
+
+- high-entropy unguessable token
+- token scoped to exactly one integration
+- server-side token validation
+- disabled integrations reject imports
+- payload-size limit
+- safe JSON parsing
+- no public write by franchise name/id alone
+- no service-role exposure
+- raw payload access limited to authorized users/operators
+- token rotation
+- no secret token stored in browser-readable public state unless necessary
+- rate limiting / abuse protection if feasible in current architecture
+
+## Tests
+
+Add focused tests for:
+
+1. Authorized user can create a Madden integration.
+2. Unauthorized user cannot create a Madden integration.
+3. Integration creation generates a secure export URL/token.
+4. Export endpoint accepts valid token.
+5. Export endpoint rejects missing token.
+6. Export endpoint rejects invalid token.
+7. Export endpoint rejects disabled integration.
+8. Export endpoint captures raw payload.
+9. Export endpoint records payload size.
+10. Export endpoint records payload hash or duplicate-detection value if implemented.
+11. Export endpoint handles unknown payload fields.
+12. Export endpoint handles malformed JSON safely.
+13. Export endpoint enforces payload-size limit.
+14. Latest import status updates after receipt.
+15. Token rotation invalidates old token and accepts new token.
+16. Raw import diagnostics are visible only to authorized user/operator.
+17. Existing Game Day room behavior is unchanged.
+18. Existing NFL Sunday Slate tests still pass.
+19. Existing Web Game Day regression still passes.
+20. Server build passes.
+
+If a migration is required, create it and stop for migration handoff before marking PASS.
+
+Do not create persistent live rooms.
+Do not post to Discord.
+Do not call external EA services.
+Do not add NeonSportz integration.
+
+## Final report
+
+Return:
+
+A. Implementation summary
+B. Existing architecture reused
+C. Data model/migration changes
+D. Export endpoint behavior
+E. Commissioner setup UI/API behavior
+F. Security controls
+G. Import diagnostics captured
+H. What was intentionally deferred
+I. Files changed
+J. Migration handoff if needed
+K. Test results and assertion counts
+L. Manual QA steps
+M. Git status
+N. Commit hash
+O. Push confirmation
+P. Whether this is ready for a real Madden Companion App export test
+
+End with:
+
+MADDEN NFL 27 INTEGRATION PHASE 1 STATUS: PASS / NEEDS MIGRATION / FAIL
