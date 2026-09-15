@@ -1,0 +1,57 @@
+The Madden Weekly Pick Card V1 migration has been applied.
+
+Please proceed with post-migration validation.
+
+Run the relevant database-backed and regression checks now.
+
+Confirm:
+
+1. `sport = madden` is supported only where intended.
+2. `template_type = weekly_pick_card` is supported only where intended.
+3. Authorized Game Day hosts can create a Madden Weekly Pick Card.
+4. Unauthorized users cannot create one.
+5. A private room is created.
+6. The room uses one aggregate card.
+7. Commissioner-entered matchups create exactly two answer choices.
+8. Minimum matchup count is enforced.
+9. Maximum matchup count is enforced at 7.
+10. Optional line text is stored and displayed safely.
+11. Reward text is stored and displayed.
+12. Pick deadline maps to the card lock behavior.
+13. Optional manually settled bonus question works if enabled.
+14. Guest users can join and pick.
+15. Authenticated users can join and pick.
+16. Picks can be edited before lock.
+17. Picks are rejected after lock.
+18. Manual settlement works.
+19. Leaderboard works.
+20. Finalization works.
+21. Private Madden rooms remain excluded from public discovery.
+22. Authenticated participants can find the room in Game Day Hub Continue Playing.
+23. Existing NFL Sunday Slate behavior remains unchanged.
+24. Existing NFL Single Game behavior remains unchanged.
+25. Existing NBA/Game Day behavior remains unchanged.
+26. Fantasy behavior remains unchanged.
+27. Discord bot/subscription behavior remains unchanged.
+28. Server build passes.
+29. Web Game Day regression passes.
+
+Do not create persistent live rooms unless test fixtures are cleaned up.
+Do not post to Discord.
+Do not run Discord bot commands.
+Do not add Madden Companion App ingestion.
+Do not add EA/Neon integration.
+Do not add odds, payments, wagering, automatic reward fulfillment, Admin Console, or automated Discord posting.
+
+Return:
+
+A. Migration confirmation
+B. Post-migration test results with assertion counts
+C. Files changed
+D. Any issues found
+E. Whether Madden Weekly Pick Card V1 is ready for a controlled Discord pilot
+F. Manual QA steps for me
+
+End with:
+
+MADDEN WEEKLY PICK CARD V1 STATUS: PASS / FAIL
