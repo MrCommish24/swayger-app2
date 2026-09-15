@@ -1,0 +1,58 @@
+Approved decision:
+
+This deployment is intentionally payment-free for the Madden Weekly Pick Card / Game Day pilot.
+
+Do not connect live Stripe.
+Do not add payment features.
+Do not modify Madden Weekly Pick Card behavior.
+Do not delete the existing March Madness Stripe code in this task.
+
+Please remove only the Replit publishing dependency that is blocking republish.
+
+Context:
+Replit is blocking republish because the project has:
+
+[agent]
+integrations = ["stripe:1.0.0"]
+
+and a Stripe connection attached in project/publishing configuration.
+
+Madden Weekly Pick Card V1 does not depend on Stripe. Game Day/Madden uses Supabase, Game Day routes, participants, picks, settlement, leaderboard, finalization, and private links. Stripe is only used by unrelated legacy March Madness boost routes.
+
+Required action:
+1. Remove the Stripe integration from the Replit project configuration if it is safe:
+   - Change `.replit` `[agent].integrations` so Stripe is no longer listed.
+2. Do not remove the existing Stripe application code.
+3. Do not remove existing Stripe environment variables.
+4. Do not connect Stripe.
+5. Do not create rooms.
+6. Do not post to Discord.
+7. Do not run Discord bot commands.
+8. Do not add Companion App ingestion, EA/Neon integration, odds, payments, wagers, automated rewards, Admin Console, or automated Discord work.
+
+After the config change:
+1. Run server build.
+2. Run Madden Weekly Pick Card focused suite if quick.
+3. Run Web Game Day regression if quick.
+4. Confirm no Madden/Game Day code changed.
+5. Confirm no `.env` or secrets were committed.
+6. Commit and push the config change.
+7. Confirm final git status clean and HEAD == origin/main.
+8. Tell me whether Replit Publishing should now allow republish.
+
+Important:
+Do not republish yet unless I explicitly approve after this config change.
+
+Return:
+A. What Stripe publishing dependency was removed
+B. Confirmation Stripe application code was left untouched
+C. Files changed
+D. Tests/build run
+E. Commit hash
+F. Push confirmation
+G. Final git status
+H. Whether republish should now be unblocked
+
+End with:
+
+STRIPE PUBLISH BLOCKER STATUS: RESOLVED / FAIL
