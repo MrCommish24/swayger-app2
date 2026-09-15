@@ -1,0 +1,131 @@
+The Madden Discord backend changes have now been pushed to origin/main and the app has been republished.
+
+Please run a production-safe smoke test against the LIVE deployment:
+
+https://www.swayger.app
+
+Goal:
+Confirm that the live production backend now accepts bot-authenticated Madden Weekly Pick Card creation exactly as specified.
+
+IMPORTANT:
+This is a backend smoke test only.
+Do not run the Discord bot.
+Do not register slash commands.
+Do not post anything to Discord.
+
+Use a disposable test fixture and clean it up immediately after verification.
+
+TEST 1 — valid bot-authenticated Madden creation
+
+Call:
+
+POST /api/gameday/rooms
+
+with:
+
+x-api-key: <existing GAMEDAY_BOT_API_KEY>
+X-Discord-Guild-ID: <safe disposable/test guild id>
+Content-Type: application/json
+
+Body:
+
+{
+  "room_name": "Madden Discord Smoke Test",
+  "sport": "madden",
+  "template_type": "weekly_pick_card",
+  "pick_deadline": "2026-09-20T18:00:00Z",
+  "matchups": [
+    {
+      "team_a": "Ravens",
+      "team_b": "Bengals",
+      "line_text": "Ravens -3"
+    },
+    {
+      "team_a": "Chiefs",
+      "team_b": "Raiders",
+      "line_text": null
+    },
+    {
+      "team_a": "Eagles",
+      "team_b": "Cowboys",
+      "line_text": "Eagles +2.5"
+    }
+  ],
+  "format_config": {
+    "week_label": "Madden Discord Smoke Test",
+    "reward_text": "Test reward",
+    "minimum_matchups": 3,
+    "scoring_mode": "all_correct",
+    "bonus": {
+      "enabled": true,
+      "label": "Who wins the bonus game?",
+      "answer_options": ["Home", "Away"]
+    }
+  },
+  "discord_guild_id": "<same guild id as header>",
+  "discord_channel_id": "<safe disposable/test channel id>",
+  "discord_user_id": "<safe disposable/test user id>"
+}
+
+Verify the response includes:
+
+- ok = true
+- room_id
+- room_code
+- public_link
+- host_link
+- discord_message
+- room.source = "discord"
+- room.sport = "madden"
+- room.template_type = "weekly_pick_card"
+- room.is_private = true
+- room.discord_guild_id matches request
+- room.discord_channel_id matches request
+- room.discord_user_id matches request
+
+Also verify:
+- the pregame card is open/active
+- the returned public_link resolves
+- the room is excluded from public discovery
+- exactly 3 matchup props were created
+- each matchup has exactly 2 answer options
+- the bonus prop was created with 2 answer options
+
+TEST 2 — guild-scope enforcement
+
+Without creating persistent fixtures, verify:
+- missing X-Discord-Guild-ID is rejected
+- missing body discord_guild_id is rejected
+- header/body guild mismatch is rejected
+
+TEST 3 — cleanup
+
+After the valid smoke test:
+- delete/archive the disposable Madden smoke-test room using the existing safe cleanup method
+- confirm no test participants, picks, or related fixture rows remain
+- confirm no persistent Madden smoke-test room remains
+
+Do not modify production code.
+Do not change auth behavior.
+Do not add endpoints.
+Do not change Discord code.
+Do not run Discord commands.
+Do not post to Discord.
+Do not touch Stripe, payments, EA, NeonSportz, odds, or rewards.
+
+Return:
+
+A. Live endpoint status
+B. Valid bot-auth Madden creation result
+C. Response-field verification
+D. Guild-scope enforcement results
+E. Public-link/private-discovery verification
+F. Matchup/bonus creation verification
+G. Cleanup verification
+H. Whether the live backend is now ready for Claude’s Discord bot command
+
+End with:
+
+MADDEN DISCORD PRODUCTION SMOKE STATUS: PASS / FAIL
+LIVE BOT-AUTH CREATION: PASS / FAIL
+READY FOR CLAUDE TEST-GUILD REGISTRATION: YES / NO
