@@ -10635,8 +10635,21 @@ function registerGamedayRoutes(app2) {
     }
     if (isWeeklyPickCard) {
       if (botAuthed) {
-        res2.status(403).json({ error: "Madden Weekly Pick Cards must be created by an authorized Game Day host" });
-        return;
+        const headerDiscordGuildId = normalizeDiscordGuildId(
+          req.header("x-discord-guild-id")
+        );
+        if (!headerDiscordGuildId) {
+          res2.status(400).json({
+            error: "X-Discord-Guild-ID is required for Discord Madden room creation"
+          });
+          return;
+        }
+        if (headerDiscordGuildId !== discordGuildId) {
+          res2.status(403).json({
+            error: "Discord guild header does not match discord_guild_id"
+          });
+          return;
+        }
       }
       const matchups = normalizeWeeklyPickCardMatchups(req.body.matchups);
       const weeklyConfig = normalizeWeeklyPickCardConfig(
@@ -10679,15 +10692,20 @@ function registerGamedayRoutes(app2) {
         team_a_star: null,
         team_b_star: null,
         game_date: parseGameDate(game_date),
-        host_user_id: hostId,
+        host_user_id: botAuthed ? null : hostId,
         status: "active",
-        source: "app",
+        source: botAuthed ? "discord" : "app",
         is_private: true,
         sport: "madden",
         template_type: "weekly_pick_card",
         format_config: weeklyConfig
       };
       if (roomCode2) insertPayload2.room_code = roomCode2;
+      if (botAuthed) {
+        insertPayload2.discord_guild_id = discordGuildId;
+        if (discord_channel_id) insertPayload2.discord_channel_id = discord_channel_id;
+        if (discord_user_id) insertPayload2.discord_user_id = discord_user_id;
+      }
       let { data: weeklyRoom, error: weeklyRoomError } = await supabase2.from("gameday_rooms").insert(insertPayload2).select().single();
       if (weeklyRoomError || !weeklyRoom) {
         console.error("[gameday] Madden weekly room error:", weeklyRoomError);
@@ -10701,7 +10719,7 @@ function registerGamedayRoutes(app2) {
         room_id: weeklyRoom.id,
         title: cardTitle,
         phase: "pregame",
-        status: "closed",
+        status: botAuthed ? "open" : "closed",
         display_order: 0,
         scheduled_lock_at: deadlineIso,
         lock_label: `Picks lock ${deadlineIso}`

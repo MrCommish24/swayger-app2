@@ -65,6 +65,9 @@ async function main() {
   const hostEmail = `${runId}-host@example.test`;
   const playerEmail = `${runId}-player@example.test`;
   const unrelatedEmail = `${runId}-unrelated@example.test`;
+  const botApiKey = unique("gameday-madden-bot");
+  const botGuildId = `MADDEN_GUILD_${runId}`;
+  process.env.GAMEDAY_BOT_API_KEY = botApiKey;
   process.env.GAMEDAY_HOST_EMAILS = hostEmail;
   process.env.GAMEDAY_ADMIN_EMAILS = hostEmail;
 
@@ -90,12 +93,16 @@ async function main() {
       opts: {
         method?: string;
         token?: string;
+        apiKey?: string;
+        discordGuildHeader?: string;
         guest?: string;
         body?: unknown;
       } = {},
     ) => {
       const headers: Record<string, string> = {};
       if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+      if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
+      if (opts.discordGuildHeader) headers["x-discord-guild-id"] = opts.discordGuildHeader;
       if (opts.guest) headers["X-Guest-Session"] = opts.guest;
       if (opts.body !== undefined) headers["Content-Type"] = "application/json";
       const response = await fetch(baseUrl + path, {
@@ -147,6 +154,152 @@ async function main() {
       "unauthenticated user cannot create a Madden Weekly Pick Card",
       unauthenticatedCreate.status === 401,
       JSON.stringify(unauthenticatedCreate.body),
+    );
+
+    const botPayload = {
+      ...basePayload,
+      room_name: `Discord Madden Weekly ${runId}`,
+      is_private: false,
+      discord_guild_id: botGuildId,
+      discord_channel_id: `MADDEN_CHANNEL_${runId}`,
+      discord_user_id: `MADDEN_USER_${runId}`,
+    };
+    const invalidBotKey = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: "wrong-madden-bot-key",
+      discordGuildHeader: botGuildId,
+      body: botPayload,
+    });
+    expect(
+      "invalid bot key is rejected for Madden creation",
+      invalidBotKey.status === 401,
+      JSON.stringify(invalidBotKey.body),
+    );
+
+    const missingBotGuild = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: { ...botPayload, discord_guild_id: undefined },
+    });
+    expect(
+      "bot Madden creation requires discord_guild_id in the body",
+      missingBotGuild.status === 400,
+      JSON.stringify(missingBotGuild.body),
+    );
+
+    const missingBotGuildHeader = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      body: botPayload,
+    });
+    expect(
+      "bot Madden creation requires X-Discord-Guild-ID",
+      missingBotGuildHeader.status === 400,
+      JSON.stringify(missingBotGuildHeader.body),
+    );
+
+    const mismatchedBotGuild = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: `${botGuildId}_OTHER`,
+      body: botPayload,
+    });
+    expect(
+      "bot Madden creation rejects a mismatched guild header",
+      mismatchedBotGuild.status === 403,
+      JSON.stringify(mismatchedBotGuild.body),
+    );
+
+    const invalidBotDeadline = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: { ...botPayload, pick_deadline: "not-a-date" },
+    });
+    expect(
+      "invalid Madden deadline is rejected",
+      invalidBotDeadline.status === 400,
+      JSON.stringify(invalidBotDeadline.body),
+    );
+
+    const invalidBotBonus = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: {
+        ...botPayload,
+        format_config: {
+          ...formatConfig,
+          bonus: {
+            enabled: true,
+            label: "Bonus question",
+            answer_options: ["Only one option"],
+          },
+        },
+      },
+    });
+    expect(
+      "invalid Madden bonus metadata is rejected",
+      invalidBotBonus.status === 400,
+      JSON.stringify(invalidBotBonus.body),
+    );
+
+    const botCreated = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: botPayload,
+    });
+    const botRoomId = botCreated.body.room_id as string | undefined;
+    if (botRoomId) roomIds.push(botRoomId);
+    expect(
+      "valid bot-authenticated Madden creation succeeds",
+      botCreated.status === 200 &&
+        botCreated.body.ok === true &&
+        botCreated.body.room?.sport === "madden" &&
+        botCreated.body.room?.template_type === "weekly_pick_card",
+      JSON.stringify(botCreated.body),
+    );
+    expect(
+      "bot Madden room is private and guild-scoped",
+      botCreated.body.room?.source === "discord" &&
+        botCreated.body.room?.is_private === true &&
+        botCreated.body.room?.discord_guild_id === botGuildId &&
+        botCreated.body.room?.discord_channel_id === `MADDEN_CHANNEL_${runId}` &&
+        botCreated.body.room?.discord_user_id === `MADDEN_USER_${runId}` &&
+        typeof botCreated.body.public_link === "string",
+      JSON.stringify(botCreated.body),
+    );
+    if (!botRoomId) throw new Error("Bot Madden creation did not return a room ID");
+
+    const botCard = await service
+      .from("gameday_pick_cards")
+      .select("id, status")
+      .eq("room_id", botRoomId)
+      .eq("phase", "pregame")
+      .single();
+    const botProps = botCard.data?.id
+      ? await service
+          .from("gameday_props")
+          .select("answer_options, line_text")
+          .eq("card_id", botCard.data.id)
+          .order("display_order", { ascending: true })
+      : { data: null, error: new Error("Bot Madden card was not created") };
+    expect(
+      "bot Madden room opens one playable card with matchup choices",
+      !botCard.error &&
+        botCard.data?.status === "open" &&
+        !botProps.error &&
+        (botProps.data ?? []).length === matchupSet.length + 1 &&
+        (botProps.data ?? []).slice(0, matchupSet.length).every(
+          (prop: any, index: number) =>
+            Array.isArray(prop.answer_options) &&
+            prop.answer_options.length === 2 &&
+            prop.answer_options[0] === matchupSet[index].team_a &&
+            prop.answer_options[1] === matchupSet[index].team_b,
+        ),
+      JSON.stringify({ card: botCard.data, props: botProps.data }),
     );
 
     const host = await makeUser(hostEmail);
