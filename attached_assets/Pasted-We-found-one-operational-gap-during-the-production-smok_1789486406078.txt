@@ -1,0 +1,92 @@
+We found one operational gap during the production smoke test.
+
+Bot-created Madden rooms have:
+
+source = "discord"
+host_user_id = null
+
+The existing human archive flow requires an authenticated human owner, so a bot-created Madden room currently has no safe bot-scoped cleanup/archive path.
+
+Please add the smallest safe backend change to support BOT-AUTHENTICATED ARCHIVING of Discord-owned Game Day rooms.
+
+Do NOT add hard delete.
+
+PREFERRED APPROACH
+
+Extend the existing room archive endpoint/behavior if possible rather than creating a parallel endpoint.
+
+The bot should be able to archive a room only when ALL of the following are true:
+
+1. Request has valid GAMEDAY_BOT_API_KEY.
+2. Request includes X-Discord-Guild-ID.
+3. The target room has:
+   source = "discord"
+4. The target room has a stored discord_guild_id.
+5. Stored room discord_guild_id exactly matches X-Discord-Guild-ID.
+6. The room is not already archived, or archiving again is safely idempotent.
+7. Bot auth must not allow archiving app-created/human-owned rooms merely by knowing a room ID/code.
+
+HUMAN FLOW
+
+Do not weaken or replace the current human-owner archive authorization.
+
+Existing human archive behavior must remain unchanged.
+
+DESIRED RESULT
+
+A Discord bot should be able to safely archive its own guild-scoped room after a smoke test or pilot cleanup.
+
+Use the existing archived/status convention already used by Game Day.
+
+Do not physically delete the room or related historical data.
+
+TESTS REQUIRED
+
+Add focused tests for:
+
+1. Valid bot key + matching guild + source=discord → archive succeeds.
+2. Missing bot key → rejected.
+3. Missing X-Discord-Guild-ID → rejected.
+4. Wrong guild → rejected.
+5. source=app / human-created room → bot archive rejected.
+6. Room with no discord_guild_id → rejected.
+7. Already-archived room → safe/idempotent behavior.
+8. Human-owner archive path remains unchanged.
+9. Archived room disappears from public discovery.
+10. Archived room no longer appears as active where existing Game Day logic expects that behavior.
+11. Existing NFL Sunday Slate / Game Day behavior unaffected.
+12. Madden regression remains green.
+
+After implementation:
+
+- run Madden E2E
+- run Discord isolation
+- run NFL regressions
+- run Web Game Day regression
+- run server build
+
+Do not:
+- add a delete endpoint
+- modify Discord bot code
+- create production rooms yet
+- post to Discord
+- change Madden gameplay
+- add payments/Stripe
+- add EA/Neon integration
+
+Return:
+
+A. Endpoint/route used
+B. Bot archive auth rules
+C. Guild isolation behavior
+D. Human archive behavior
+E. Files changed
+F. Test results/assertion counts
+G. Git status
+H. Commit hash
+I. Whether this enables a safe live production smoke test
+
+End with:
+
+DISCORD ROOM ARCHIVE STATUS: PASS / FAIL
+SAFE PRODUCTION SMOKE CLEANUP: YES / NO
