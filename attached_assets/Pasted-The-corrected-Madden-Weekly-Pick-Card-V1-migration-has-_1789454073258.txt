@@ -1,0 +1,101 @@
+The corrected Madden Weekly Pick Card V1 migration has now been applied to the connected Supabase project:
+
+Project ref:
+vlxvoienyxzhyaiimccp
+
+I verified the schema in Supabase.
+
+Verification results:
+
+1. Sport distribution preserved legacy data:
+- NULL: 39
+- football: 883
+- nba: 10
+- nfl: 6
+
+2. Required columns now exist:
+- gameday_rooms.format_config = jsonb, nullable
+- gameday_props.line_text = text, nullable
+- gameday_rooms.sport = text, nullable
+- gameday_rooms.template_type = text, nullable
+- representative room columns team_a_name, team_b_name, team_a_star, team_b_star are nullable
+
+3. Sport constraint now allows:
+- nba
+- soccer
+- nfl
+- football
+- basketball
+- baseball
+- madden
+
+4. Template constraint now allows:
+- nfl_single_game
+- nfl_sunday_slate
+- weekly_pick_card
+
+Please proceed with post-migration validation.
+
+Run:
+
+1. Madden Weekly Pick Card focused suite
+2. NFL regression
+3. Web Game Day regression
+4. Server build
+5. Expo web export if relevant
+6. Any focused regression needed around Game Day room creation/readback
+
+Please specifically confirm:
+
+- Authorized Game Day host can create a Madden Weekly Pick Card.
+- Unauthorized user cannot create one.
+- sport=madden and template_type=weekly_pick_card are accepted only where intended.
+- Required 3–7 matchup range is enforced.
+- Each matchup creates exactly two answer choices.
+- Optional line_text stores and displays safely.
+- format_config stores week label, reward text, minimum matchup count, scoring/bonus metadata.
+- Guest participant can join and submit picks.
+- Authenticated participant can join and submit picks.
+- Returning guest saved-pick readback works.
+- Returning authenticated saved-pick readback works.
+- Picks can be edited before lock.
+- Picks are rejected after lock.
+- Manual settlement works.
+- Leaderboard works.
+- Finalization works.
+- Private Madden rooms stay out of public discovery.
+- Signed-in participants can find Madden room in Game Day Hub Continue Playing.
+- Existing NFL Sunday Slate behavior remains unchanged.
+- Existing NFL Single Game behavior remains unchanged.
+- Existing NBA/Game Day behavior remains unchanged.
+- Fantasy and Discord bot behavior are not impacted.
+
+Please investigate and fix if these still fail:
+
+- NFL regression: Sunday Slate format-context assertion falling back to legacy room shape.
+- Web Game Day regression: returning authenticated participant saved-pick readback.
+- Web Game Day regression: returning guest saved-pick readback.
+- Fantasy permission issue only if it blocks Madden/Game Day validation.
+
+Do not create persistent live rooms unless fixtures are cleaned up.
+Do not post to Discord.
+Do not run Discord bot commands.
+Do not add Madden Companion App ingestion.
+Do not add EA/Neon integration.
+Do not add odds, payments, wagering, automatic rewards, Admin Console, or automated Discord work.
+
+Return:
+
+A. Schema verification
+B. Test results with assertion counts
+C. Root cause of any remaining failures
+D. Files changed
+E. Whether Madden Weekly Pick Card V1 is ready for controlled Discord pilot
+F. Manual QA steps
+G. Git status
+H. Commit hash if committed
+I. Push confirmation if pushed
+
+End with:
+
+MADDEN WEEKLY PICK CARD V1 STATUS: PASS / FAIL
