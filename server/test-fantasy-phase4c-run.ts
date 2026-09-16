@@ -17,6 +17,7 @@ import { execSync }     from "child_process";
 const BASE_URL = process.env.TEST_API_URL ?? "http://localhost:5000";
 const SUP_URL  = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
 const SUP_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const SUP_ANON = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const RUN_ID   = Math.random().toString(36).slice(2, 10).toUpperCase();
 const PW       = `QA_p4c_${RUN_ID}!`;
 
@@ -35,6 +36,9 @@ function note(msg: string) { console.log(INFO + msg); }
 
 // ── Supabase admin client ─────────────────────────────────────────────────────
 const service = createClient(SUP_URL, SUP_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+const auth = createClient(SUP_URL, SUP_ANON, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -73,7 +77,7 @@ async function createUser(tag: string): Promise<{ id: string; email: string }> {
   return { id: data.user.id, email };
 }
 async function signIn(email: string): Promise<string> {
-  const { data, error } = await service.auth.signInWithPassword({ email, password: PW });
+  const { data, error } = await auth.auth.signInWithPassword({ email, password: PW });
   if (error || !data.session) throw new Error(`signIn(${email}): ${error?.message}`);
   return data.session.access_token;
 }

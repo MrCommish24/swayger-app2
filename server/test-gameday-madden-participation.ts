@@ -209,7 +209,15 @@ async function main() {
     expect("cross-guild acknowledgement is rejected", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true, guild: otherGuild })).status === 403);
     expect("missing guild acknowledgement is rejected", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true })).status === 400);
     expect("invalid bot acknowledgement is rejected", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", guild })).status === 401);
-    expect("matching guild acknowledges event", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true, guild })).status === 200);
+    const firstAck = await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true, guild });
+    expect("matching guild acknowledges event", firstAck.status === 200 && !!firstAck.body.event?.delivered_at);
+    const repeatedAck = await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true, guild });
+    expect(
+      "repeated acknowledgement returns the persisted delivery timestamp",
+      repeatedAck.status === 200 &&
+        repeatedAck.body.already === true &&
+        repeatedAck.body.delivered_at === firstAck.body.event.delivered_at,
+    );
     expect("acknowledged event disappears", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 1);
     expect("unacknowledged event remains fetchable", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events[0].delivered_at === null);
 
@@ -219,7 +227,7 @@ async function main() {
     expect("disabled bonus does not add a required prop", (await eventRows(disabled.roomId)).length === 1);
     expect("disabled bonus event count starts at one", (await eventRows(disabled.roomId))[0]?.completed_participant_count === 1);
 
-    const web = await createRoom({ source: "web", discord_guild_id: null, discord_channel_id: null });
+    const web = await createRoom();
     await service.from("gameday_rooms").update({ source: "web", sport: "madden", template_type: "weekly_pick_card", host_user_id: player.id }).eq("id", web.roomId);
     const webJoin = await request(baseUrl, `/api/gameday/rooms/${web.roomId}/join`, { method: "POST", body: { display_name: "Web Participant" } });
     await pickAll(web, { guest: webJoin.body.guest_session_id });
@@ -281,11 +289,16 @@ async function main() {
   } finally {
     if (roomIds.length) await service.from("gameday_rooms").delete().in("id", roomIds);
     for (const id of userIds) await service.auth.admin.deleteUser(id);
-    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+    if (server) {
+      server.closeAllConnections?.();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
   }
 }
 
-main().catch((error) => {
-  console.error("\nMadden participation integration failed:", error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(process.exitCode ?? 0))
+  .catch((error) => {
+    console.error("\nMadden participation integration failed:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  });

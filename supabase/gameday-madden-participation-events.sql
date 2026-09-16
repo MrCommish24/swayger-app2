@@ -125,14 +125,15 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtextextended(v_room.id::TEXT, 0));
 
-  INSERT INTO public.gameday_picks (
+  INSERT INTO public.gameday_picks AS saved_pick (
     prop_id, participant_id, selected_answer, is_correct
   )
   VALUES (p_prop_id, p_participant_id, p_selected_answer, NULL)
-  ON CONFLICT (prop_id, participant_id) DO UPDATE
+  ON CONFLICT ON CONSTRAINT gameday_picks_prop_id_participant_id_key DO UPDATE
     SET selected_answer = EXCLUDED.selected_answer, is_correct = NULL,
         submitted_at = now()
-  RETURNING id, prop_id, participant_id, selected_answer, is_correct, submitted_at
+  RETURNING saved_pick.id, saved_pick.prop_id, saved_pick.participant_id,
+    saved_pick.selected_answer, saved_pick.is_correct, saved_pick.submitted_at
   INTO pick_id, prop_id, participant_id, selected_answer, is_correct, submitted_at;
 
   -- Completion is calculated from every playable prop on this card, not only
@@ -203,7 +204,7 @@ BEGIN
     participant.display_name, v_count
   FROM public.gameday_participants participant
   WHERE participant.id = p_participant_id
-    AND participant.room_id = p_room_id
+    AND participant.room_id = v_room.id
   RETURNING id INTO v_event_id;
 
   IF v_event_id IS NOT NULL THEN

@@ -9782,7 +9782,16 @@ function registerGamedayRoutes(app2) {
         return;
       }
       if (!acknowledged) {
-        res2.json({ ok: true, already: true, delivered_at: deliveredAt });
+        const { data: deliveredEvent, error: rereadError } = await supabase.from("gameday_madden_participation_events").select("delivered_at").eq("id", req.params.eventId).eq("discord_guild_id", guildId).maybeSingle();
+        if (rereadError || !deliveredEvent?.delivered_at) {
+          console.error(
+            "[gameday] Madden participation acknowledgement reread failed:",
+            rereadError?.message ?? "event remained pending"
+          );
+          res2.status(500).json({ ok: false, error: "Could not confirm Madden participation event acknowledgement" });
+          return;
+        }
+        res2.json({ ok: true, already: true, delivered_at: deliveredEvent.delivered_at });
         return;
       }
       res2.json({ ok: true, event: acknowledged });
