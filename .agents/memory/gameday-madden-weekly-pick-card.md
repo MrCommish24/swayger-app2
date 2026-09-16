@@ -16,3 +16,9 @@ For Madden Weekly cards, the stored pick deadline is a server-enforced submissio
 **Why:** The live pilot confirmed participants need an exact write cutoff while commissioners retain control over when everyone’s picks are revealed.
 
 **How to apply:** Reject all pick writes at or after the shared scheduled deadline, preserve saved-pick reads, and exclude only Madden Weekly cards from scheduled auto-lock. Do not disable scheduled auto-open or other formats’ existing schedules.
+
+Discord bot-created Madden Weekly cards may genuinely omit the deadline timestamp and provide bounded free-form display text instead. This exception never applies to app/web creation or other Game Day formats.
+
+**Why:** Discord commissioners may publish human-readable lock wording without a machine timestamp while retaining authoritative manual lock control.
+
+**How to apply:** Distinguish an absent deadline property from any supplied malformed value. Never parse display text or derive a schedule from it; null schedules remain editable until an authorized manual lock. Disabled bonus cards complete on matchup props only.
