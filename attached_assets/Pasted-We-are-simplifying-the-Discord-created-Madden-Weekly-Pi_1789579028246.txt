@@ -1,0 +1,259 @@
+We are simplifying the Discord-created Madden Weekly Pick Card pilot.
+
+BOT CHANGE ALREADY COMPLETED
+
+The Discord bot now sends Madden creation payloads WITHOUT top-level pick_deadline.
+
+Instead, it sends free-form commissioner deadline text inside format_config:
+
+{
+  "room_name": "Franchise Week 4",
+  "sport": "madden",
+  "template_type": "weekly_pick_card",
+  "matchups": [
+    {
+      "team_a": "Ravens",
+      "team_b": "Bengals",
+      "line_text": "-7"
+    }
+  ],
+  "format_config": {
+    "week_label": "Franchise Week 4",
+    "reward_text": "+1 Physical Trait Upgrade",
+    "deadline_display_text": "Sunday 1 PM CST",
+    "minimum_matchups": 3,
+    "scoring_mode": "all_correct",
+    "bonus": {
+      "enabled": false,
+      "label": null,
+      "answer_options": []
+    }
+  },
+  "discord_guild_id": "...",
+  "discord_channel_id": "...",
+  "discord_user_id": "..."
+}
+
+PRODUCT DECISION
+
+For:
+
+source = discord
+sport = madden
+template_type = weekly_pick_card
+
+we are intentionally removing automatic deadline enforcement for V1.
+
+The commissioner-entered deadline is DISPLAY TEXT ONLY.
+
+The commissioner manually locks the card.
+
+Do not require a real timestamp for this Discord Madden path.
+
+BACKEND REQUIREMENTS
+
+1. Make top-level pick_deadline optional ONLY for Discord-created Madden Weekly Pick Cards.
+
+2. Preserve existing pick_deadline behavior for:
+- web-created Madden cards
+- NFL
+- NBA
+- other Game Day formats
+
+3. Accept and persist:
+
+format_config.deadline_display_text
+
+as free-form display text.
+
+Examples:
+
+Sunday 1 PM CST
+Sunday at 1
+Before kickoff
+Week 4 kickoff
+Saturday night
+
+Do not parse it.
+
+Do not infer timezone.
+
+Do not convert it to ISO.
+
+Do not derive scheduled_lock_at from it.
+
+4. When pick_deadline is absent for this Discord Madden path:
+
+- scheduled_lock_at must remain null
+- deadline_passed must remain false while card is open
+- can_edit_picks must remain true while card is open
+- no automatic write cutoff should occur
+
+5. Manual commissioner lock remains authoritative.
+
+When card status becomes locked:
+
+- picks are no longer editable
+- existing picks remain readable
+- receipt/reveal behavior remains unchanged
+
+6. Existing generic lock behavior should be reused.
+
+Do not create a new lock system.
+
+7. Participation/FOMO behavior must still work.
+
+Since Discord Madden V1 no longer creates a bonus prop:
+
+completion = participant has a valid pick for every matchup prop.
+
+The existing participation outbox logic should continue working without modification if possible.
+
+8. Preserve the explicit disabled bonus configuration:
+
+{
+  "enabled": false,
+  "label": null,
+  "answer_options": []
+}
+
+Do not create a bonus prop.
+
+API VALIDATION
+
+Update Madden creation validation so:
+
+Discord Madden:
+- pick_deadline optional
+- deadline_display_text required/non-empty if bot supplies the free-form lock-time field
+
+Web Madden:
+- current real pick_deadline requirement remains unchanged
+
+Do not loosen validation globally.
+
+ROOM RESPONSE
+
+Expose the free-form deadline text back to participant/host clients in the room format_config.
+
+Participant UI should display:
+
+Pick Deadline / Lock Time
+Sunday 1 PM CST
+
+Do not show:
+- “No deadline”
+- fake ISO timestamp
+- timezone parser copy
+
+If the participant screen currently assumes every Madden room has a real deadline, make the smallest format-aware adjustment required.
+
+PICK WRITE LOGIC
+
+Current shared pick-write logic checks scheduled_lock_at / deadline enforcement.
+
+For Discord Madden with no scheduled_lock_at:
+
+- do not reject based on deadline
+- rely on card status=open/locked
+- archived/finalized protections remain unchanged
+
+Manual lock must still block writes.
+
+SECURITY / AUTHORIZATION
+
+Do not change:
+- guild-scoped bot auth
+- archive auth
+- lock auth
+- participation-event auth
+- public/private room behavior
+
+MIGRATION
+
+If format_config is JSONB and no schema migration is required, do not create one unnecessarily.
+
+If a DB constraint currently requires scheduled_lock_at/pick_deadline for Madden, make only the smallest additive/relaxation change needed for this Discord-specific path.
+
+Do not mutate existing rooms.
+
+TESTING REQUIRED
+
+Creation:
+1. Discord Madden without pick_deadline succeeds.
+2. deadline_display_text = "Sunday 1 PM CST" persists.
+3. deadline_display_text = "Before kickoff" persists.
+4. scheduled_lock_at is null.
+5. no bonus prop is created.
+6. 3 matchup props are created normally.
+7. room remains private/unlisted.
+
+Editing:
+8. participant can submit while card open.
+9. participant can edit while card open.
+10. participant can still edit after arbitrary wall-clock time because no scheduled cutoff exists.
+
+Manual lock:
+11. commissioner/bot lock succeeds.
+12. participant write after lock is rejected.
+13. existing picks remain readable.
+14. receipt/reveal behavior remains unchanged.
+
+Participation:
+15. partial matchup completion creates no event.
+16. all matchup props completed creates exactly one madden_picks_completed event.
+17. edit after completion creates no duplicate.
+18. second participant increments completion count.
+
+Regression:
+19. web-created Madden with real pick_deadline still enforces deadline.
+20. existing Madden deadline tests remain valid for web-created rooms.
+21. NFL behavior unchanged.
+22. NBA behavior unchanged.
+23. Discord isolation unchanged.
+24. Fantasy regressions unchanged.
+25. participation outbox tests remain green.
+
+PRODUCTION / DEPLOYMENT
+
+Do not modify the external Discord bot.
+
+After implementation:
+- commit
+- push
+- republish backend
+- run one API-only production smoke test using a disposable Discord Madden room with no pick_deadline
+
+Verify:
+- creation succeeds
+- free-form deadline text persists
+- scheduled_lock_at null
+- picks editable while open
+- participation event works
+- manual lock blocks further edits
+- cleanup/archive succeeds
+
+RETURN
+
+A. Backend contract change
+B. Validation behavior
+C. Room/write behavior
+D. Manual lock behavior
+E. Participation behavior
+F. UI/display adjustment
+G. Schema/migration changes
+H. Files changed
+I. Tests/assertion counts
+J. Regression results
+K. Commit hash
+L. Push status
+M. Republish status
+N. Production smoke result
+O. Exact final payload contract for Claude
+
+End with:
+
+FREEFORM DEADLINE BACKEND STATUS: PASS / FAIL
+MANUAL LOCK MODE WORKING: YES / NO
+PARTICIPATION OUTBOX COMPATIBLE: YES / NO
+READY FOR BOT RESTART: YES / NO
