@@ -61,6 +61,7 @@ export interface GDRoom {
   format_config?: {
     week_label?: string;
     reward_text?: string;
+    deadline_display_text?: string | null;
     minimum_matchups?: number;
     scoring_mode?: "all_correct";
     bonus?: {

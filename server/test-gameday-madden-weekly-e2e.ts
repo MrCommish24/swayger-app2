@@ -158,8 +158,18 @@ async function main() {
 
     const botPayload = {
       ...basePayload,
+      pick_deadline: undefined,
       room_name: `Discord Madden Weekly ${runId}`,
       is_private: false,
+      format_config: {
+        ...formatConfig,
+        deadline_display_text: "Sunday 1 PM CST",
+        bonus: {
+          enabled: false,
+          label: null,
+          answer_options: [],
+        },
+      },
       discord_guild_id: botGuildId,
       discord_channel_id: `MADDEN_CHANNEL_${runId}`,
       discord_user_id: `MADDEN_USER_${runId}`,
@@ -222,6 +232,37 @@ async function main() {
       invalidBotDeadline.status === 400,
       JSON.stringify(invalidBotDeadline.body),
     );
+    for (const malformedDeadline of [null, "", "Sunday at 1", 123]) {
+      const malformedBotDeadline = await request("/api/gameday/rooms", {
+        method: "POST",
+        apiKey: botApiKey,
+        discordGuildHeader: botGuildId,
+        body: { ...botPayload, pick_deadline: malformedDeadline },
+      });
+      expect(
+        `supplied malformed Madden deadline ${JSON.stringify(malformedDeadline)} is rejected`,
+        malformedBotDeadline.status === 400,
+        JSON.stringify(malformedBotDeadline.body),
+      );
+    }
+
+    const missingBotDisplayDeadline = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: {
+        ...botPayload,
+        format_config: {
+          ...botPayload.format_config,
+          deadline_display_text: undefined,
+        },
+      },
+    });
+    expect(
+      "Discord Madden without a timestamp requires free-form deadline display text",
+      missingBotDisplayDeadline.status === 400,
+      JSON.stringify(missingBotDisplayDeadline.body),
+    );
 
     const invalidBotBonus = await request("/api/gameday/rooms", {
       method: "POST",
@@ -275,7 +316,7 @@ async function main() {
 
     const botCard = await service
       .from("gameday_pick_cards")
-      .select("id, status")
+      .select("id, status, scheduled_lock_at")
       .eq("room_id", botRoomId)
       .eq("phase", "pregame")
       .single();
@@ -291,7 +332,7 @@ async function main() {
       !botCard.error &&
         botCard.data?.status === "open" &&
         !botProps.error &&
-        (botProps.data ?? []).length === matchupSet.length + 1 &&
+        (botProps.data ?? []).length === matchupSet.length &&
         (botProps.data ?? []).slice(0, matchupSet.length).every(
           (prop: any, index: number) =>
             Array.isArray(prop.answer_options) &&
@@ -300,6 +341,70 @@ async function main() {
             prop.answer_options[1] === matchupSet[index].team_b,
         ),
       JSON.stringify({ card: botCard.data, props: botProps.data }),
+    );
+    expect(
+      "Discord Madden preserves display-only deadline text without a scheduled cutoff or bonus prop",
+      botCreated.body.room?.format_config?.deadline_display_text === "Sunday 1 PM CST" &&
+        botCreated.body.room?.format_config?.bonus?.enabled === false &&
+        botCard.data?.scheduled_lock_at == null &&
+        (botProps.data ?? []).length === matchupSet.length,
+      JSON.stringify({ room: botCreated.body.room, card: botCard.data, props: botProps.data }),
+    );
+
+    const alternateDeadlineCreated = await request("/api/gameday/rooms", {
+      method: "POST",
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+      body: {
+        ...botPayload,
+        room_name: `Discord Madden Before Kickoff ${runId}`,
+        format_config: {
+          ...botPayload.format_config,
+          deadline_display_text: "Before kickoff",
+        },
+      },
+    });
+    if (alternateDeadlineCreated.body.room_id) {
+      roomIds.push(alternateDeadlineCreated.body.room_id);
+    }
+    expect(
+      "Discord Madden preserves alternate free-form deadline wording verbatim",
+      alternateDeadlineCreated.status === 200 &&
+        alternateDeadlineCreated.body.room?.format_config?.deadline_display_text === "Before kickoff",
+      JSON.stringify(alternateDeadlineCreated.body),
+    );
+
+    const botProp = botProps.data?.[0];
+    const joinedBotGuest = await request(`/api/gameday/rooms/${botRoomId}/join`, {
+      method: "POST",
+      body: { display_name: `Manual Lock Guest ${runId}` },
+    });
+    const botGuestSession = joinedBotGuest.body.guest_session_id as string | undefined;
+    const botInitialPick = await request(`/api/gameday/props/${botProp?.id}/pick`, {
+      method: "POST",
+      guest: botGuestSession,
+      body: { selected_answer: botProp?.answer_options?.[0] },
+    });
+    const botEditedPick = await request(`/api/gameday/props/${botProp?.id}/pick`, {
+      method: "POST",
+      guest: botGuestSession,
+      body: { selected_answer: botProp?.answer_options?.[1] },
+    });
+    const openBotRoom = await request(`/api/gameday/rooms/${botRoomId}`, {
+      guest: botGuestSession,
+    });
+    expect(
+      "Discord Madden picks remain editable while the manually locked card is open",
+      !!botGuestSession && botInitialPick.status === 200 && botEditedPick.status === 200,
+      JSON.stringify({ joinedBotGuest, botInitialPick, botEditedPick }),
+    );
+    expect(
+      "no-timestamp room reports an open editable card with no passed deadline",
+      openBotRoom.status === 200 &&
+        openBotRoom.body.cards?.[0]?.scheduled_lock_at == null &&
+        openBotRoom.body.cards?.[0]?.deadline_passed === false &&
+        openBotRoom.body.cards?.[0]?.can_edit_picks === true,
+      JSON.stringify(openBotRoom.body.cards?.[0]),
     );
 
     const manuallyLockedBeforeDeadline = await request(
@@ -311,24 +416,32 @@ async function main() {
       },
     );
     expect(
-      "manual Madden lock remains available before the deadline",
+      "manual Madden lock remains authoritative without a scheduled deadline",
       manuallyLockedBeforeDeadline.status === 200 &&
         manuallyLockedBeforeDeadline.body.ok === true,
       JSON.stringify(manuallyLockedBeforeDeadline.body),
     );
-    const botProp = botProps.data?.[0];
     const pickAfterEarlyManualLock = await request(
       `/api/gameday/props/${botProp?.id}/pick`,
       {
         method: "POST",
-        guest: unique("locked-guest"),
+        guest: botGuestSession,
         body: { selected_answer: botProp?.answer_options?.[0] },
       },
     );
     expect(
-      "manual Madden lock before the deadline rejects pick writes",
+      "manual Madden lock rejects later pick writes",
       pickAfterEarlyManualLock.status === 400,
       JSON.stringify(pickAfterEarlyManualLock.body),
+    );
+    const lockedBotRoom = await request(`/api/gameday/rooms/${botRoomId}`, {
+      guest: botGuestSession,
+    });
+    expect(
+      "existing Discord Madden picks remain readable after manual lock",
+      lockedBotRoom.status === 200 &&
+        lockedBotRoom.body.my_picks?.[botProp?.id] === botProp?.answer_options?.[1],
+      JSON.stringify(lockedBotRoom.body.my_picks),
     );
 
     const host = await makeUser(hostEmail);
@@ -344,6 +457,17 @@ async function main() {
       "unauthorized authenticated user cannot create a Madden Weekly Pick Card",
       unauthorizedCreate.status === 403,
       JSON.stringify(unauthorizedCreate.body),
+    );
+
+    const webCreateWithoutDeadline = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: { ...basePayload, pick_deadline: undefined },
+    });
+    expect(
+      "web-created Madden still requires a real pick deadline",
+      webCreateWithoutDeadline.status === 400,
+      JSON.stringify(webCreateWithoutDeadline.body),
     );
 
     const invalidMaddenTemplate = await request("/api/gameday/rooms", {

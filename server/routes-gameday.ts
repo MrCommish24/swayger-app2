@@ -1012,6 +1012,7 @@ type WeeklyPickCardMatchup = {
 type WeeklyPickCardConfig = {
   week_label: string;
   reward_text: string;
+  deadline_display_text: string | null;
   minimum_matchups: number;
   scoring_mode: "all_correct";
   bonus: {
@@ -1040,6 +1041,8 @@ export function normalizeWeeklyPickCardConfig(
   const raw = value as Record<string, unknown>;
   const weekLabel = normalizeWeeklyPickCardText(raw.week_label, 120, true);
   const rewardText = normalizeWeeklyPickCardText(raw.reward_text, 240) ?? "";
+  const deadlineDisplayText = normalizeWeeklyPickCardText(raw.deadline_display_text, 120);
+  const hasDeadlineDisplayText = Object.prototype.hasOwnProperty.call(raw, "deadline_display_text");
   const minimumRaw = raw.minimum_matchups;
   const minimum = typeof minimumRaw === "number"
     ? minimumRaw
@@ -1070,6 +1073,7 @@ export function normalizeWeeklyPickCardConfig(
     minimum < 1 ||
     minimum > matchupCount ||
     !scoringMode ||
+    (hasDeadlineDisplayText && !deadlineDisplayText) ||
     (bonusEnabled && (!bonusLabel || bonusOptions.length < 2))
   ) {
     return null;
@@ -1078,6 +1082,7 @@ export function normalizeWeeklyPickCardConfig(
   return {
     week_label: weekLabel,
     reward_text: rewardText,
+    deadline_display_text: deadlineDisplayText,
     minimum_matchups: minimum,
     scoring_mode: scoringMode,
     bonus: {
@@ -3188,10 +3193,14 @@ export function registerGamedayRoutes(app: Express) {
        const weeklyRoomName = typeof room_name === "string"
          ? room_name.replace(/[\u0000-\u001f\u007f]/g, "").trim()
          : "";
-       const deadlineRaw = typeof (req.body as any).pick_deadline === "string"
-         ? (req.body as any).pick_deadline.trim()
+       const hasPickDeadline = Object.prototype.hasOwnProperty.call(req.body, "pick_deadline");
+       const suppliedDeadline = (req.body as any).pick_deadline;
+       const deadlineRaw = typeof suppliedDeadline === "string"
+         ? suppliedDeadline.trim()
          : "";
-       const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
+       const hasIsoDeadlineSyntax =
+         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(deadlineRaw);
+       const deadline = hasIsoDeadlineSyntax ? new Date(deadlineRaw) : null;
        const deadlineIso = deadline && !Number.isNaN(deadline.getTime())
          ? deadline.toISOString()
          : null;
@@ -3210,8 +3219,19 @@ export function registerGamedayRoutes(app: Express) {
          });
          return;
        }
-       if (!deadlineIso) {
+       const isDiscordManualLock = botAuthed && !hasPickDeadline;
+       if (hasPickDeadline && !deadlineIso) {
          res.status(400).json({ error: "pick_deadline must be a valid ISO date-time" });
+         return;
+       }
+       if (!botAuthed && !deadlineIso) {
+         res.status(400).json({ error: "pick_deadline must be a valid ISO date-time" });
+         return;
+       }
+       if (isDiscordManualLock && !weeklyConfig.deadline_display_text) {
+         res.status(400).json({
+           error: "format_config.deadline_display_text is required when Discord Madden omits pick_deadline",
+         });
          return;
        }
 
@@ -3271,7 +3291,9 @@ export function registerGamedayRoutes(app: Express) {
             status: botAuthed ? "open" : "closed",
            display_order: 0,
            scheduled_lock_at: deadlineIso,
-           lock_label: `Picks lock ${deadlineIso}`,
+            lock_label: deadlineIso
+              ? `Picks lock ${deadlineIso}`
+              : `Picks lock ${weeklyConfig.deadline_display_text}`,
          })
          .select()
          .single();
@@ -3324,7 +3346,7 @@ export function registerGamedayRoutes(app: Express) {
          ? `${APP_URL}/g/${returnedCode}`
          : `${APP_URL}/gameday/${weeklyRoom.id}`;
        const hostLink = `${APP_URL}/gameday/${weeklyRoom.id}/host`;
-       const discordMessage = `Madden Weekly Pick Card: ${weeklyConfig.week_label}\nMake your picks before the deadline:\n${publicLink}`;
+        const discordMessage = `Madden Weekly Pick Card: ${weeklyConfig.week_label}\nPick Deadline / Lock Time: ${weeklyConfig.deadline_display_text ?? deadlineIso}\n${publicLink}`;
 
        res.json({
          ok: true,

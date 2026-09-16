@@ -26,6 +26,7 @@ function check(label: string, condition: boolean): void {
 const baseConfig = {
   week_label: "Franchise Week 4",
   reward_text: "Superstar trait upgrade",
+  deadline_display_text: " Sunday 1 PM CST ",
   minimum_matchups: 2,
   scoring_mode: "all_correct",
   bonus: { enabled: false, label: null, answer_options: [] },
@@ -41,6 +42,7 @@ const config = normalizeWeeklyPickCardConfig(baseConfig, validMatchups.length);
 check("valid weekly config is accepted", config !== null);
 check("week label is trimmed", config?.week_label === "Franchise Week 4");
 check("reward text is retained", config?.reward_text === "Superstar trait upgrade");
+check("free-form deadline display text is trimmed and retained", config?.deadline_display_text === "Sunday 1 PM CST");
 check("minimum matchup count is retained", config?.minimum_matchups === 2);
 check("all-correct scoring mode is retained", config?.scoring_mode === "all_correct");
 check("disabled bonus remains disabled", config?.bonus.enabled === false);
@@ -61,6 +63,7 @@ check("missing week label is rejected", normalizeWeeklyPickCardConfig({ ...baseC
 check("zero minimum is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 0 }, 2) === null);
 check("minimum above matchup count is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 3 }, 2) === null);
 check("unsupported scoring mode is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, scoring_mode: "most_correct" }, 2) === null);
+check("blank supplied deadline display text is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, deadline_display_text: " " }, 2) === null);
 check("bonus without a label is rejected", normalizeWeeklyPickCardConfig({
   ...baseConfig,
   bonus: { enabled: true, label: "", answer_options: ["A", "B"] },
@@ -96,6 +99,7 @@ const routes = readFileSync("server/routes-gameday.ts", "utf8");
 const participantUi = readFileSync("app/gameday/[roomId]/index.tsx", "utf8");
 check("room route admits Madden before format branching", routes.includes('["nba", "soccer", "nfl", "madden"]'));
 check("room route keeps Madden limited to weekly cards", routes.includes('Madden rooms must use template_type=weekly_pick_card'));
+check("Discord Madden may omit the timestamp only with display text", routes.includes("isDiscordManualLock") && routes.includes("format_config.deadline_display_text is required"));
 check("migration adds validated format_config storage", migration.includes("ADD COLUMN IF NOT EXISTS format_config JSONB"));
 check("migration permits Madden rooms", migration.includes("'madden'"));
 check("migration permits weekly_pick_card", migration.includes("'weekly_pick_card'"));
@@ -104,7 +108,8 @@ check("migration adds optional line text", migration.includes("ADD COLUMN IF NOT
 check("pick writes enforce the shared scheduled deadline", routes.includes('res.status(409).json({ error: "Picks are closed for this card." })'));
 check("Madden weekly cards remain manual reveal instead of auto-locking", routes.includes("isManualRevealMaddenCard"));
 check("room payload exposes server-authoritative editability", routes.includes("can_edit_picks: card.status === \"open\" && !deadlinePassed"));
-check("participant confirmation copy promises edits only until the deadline", participantUi.includes("Picks confirmed. You can update until the deadline."));
+check("participant UI displays free-form lock time without parsing it", participantUi.includes("Pick Deadline / Lock Time:") && participantUi.includes("room.format_config?.deadline_display_text"));
+check("manual-lock confirmation copy remains editable until commissioner lock", participantUi.includes("Picks confirmed. You can update until the commissioner locks the card."));
 check("closed Madden copy waits for commissioner reveal", participantUi.includes("Picks are closed. Waiting for the commissioner to reveal receipts."));
 check("closed Madden cards hide the pick submission control", participantUi.includes("{canEdit ? <TouchableOpacity"));
 check("room Back control routes directly to the Game Day hub", participantUi.includes('router.replace("/gameday")'));

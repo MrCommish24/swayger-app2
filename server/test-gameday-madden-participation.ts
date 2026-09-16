@@ -106,7 +106,9 @@ async function main() {
   const formatConfig = (enabled = true) => ({
     week_label: "Participation Test", reward_text: "Test reward", minimum_matchups: 3,
     scoring_mode: "all_correct",
-    bonus: { enabled, label: "Bonus", answer_options: ["Home", "Away"] },
+    bonus: enabled
+      ? { enabled: true, label: "Bonus", answer_options: ["Home", "Away"] }
+      : { enabled: false, label: null, answer_options: [] },
   });
 
   try {
@@ -221,11 +223,36 @@ async function main() {
     expect("acknowledged event disappears", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 1);
     expect("unacknowledged event remains fetchable", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events[0].delivered_at === null);
 
-    const disabled = await createRoom({ format_config: formatConfig(false) });
+    const disabled = await createRoom({
+      pick_deadline: undefined,
+      format_config: {
+        ...formatConfig(false),
+        deadline_display_text: "Before kickoff",
+      },
+    });
     const disabledJoin = await request(baseUrl, `/api/gameday/rooms/${disabled.roomId}/join`, { method: "POST", body: { display_name: "Disabled Bonus" } });
-    await pickAll(disabled, { guest: disabledJoin.body.guest_session_id });
-    expect("disabled bonus does not add a required prop", (await eventRows(disabled.roomId)).length === 1);
+    const disabledGuest = disabledJoin.body.guest_session_id;
+    for (const prop of disabled.props.slice(0, -1)) {
+      await request(baseUrl, `/api/gameday/props/${prop.id}/pick`, {
+        method: "POST", guest: disabledGuest, body: { selected_answer: prop.answer_options[0] },
+      });
+    }
+    expect("no-deadline disabled-bonus partial completion creates no event", (await eventRows(disabled.roomId)).length === 0);
+    const disabledFinalProp = disabled.props[disabled.props.length - 1];
+    await request(baseUrl, `/api/gameday/props/${disabledFinalProp.id}/pick`, {
+      method: "POST", guest: disabledGuest, body: { selected_answer: disabledFinalProp.answer_options[0] },
+    });
+    expect("no-deadline disabled bonus completes after every matchup prop", (await eventRows(disabled.roomId)).length === 1);
     expect("disabled bonus event count starts at one", (await eventRows(disabled.roomId))[0]?.completed_participant_count === 1);
+    await request(baseUrl, `/api/gameday/props/${disabled.props[0].id}/pick`, {
+      method: "POST", guest: disabledGuest, body: { selected_answer: disabled.props[0].answer_options[1] },
+    });
+    expect("editing a completed no-deadline card creates no duplicate", (await eventRows(disabled.roomId)).length === 1);
+    const disabledSecondJoin = await request(baseUrl, `/api/gameday/rooms/${disabled.roomId}/join`, { method: "POST", body: { display_name: "Disabled Bonus Two" } });
+    await pickAll(disabled, { guest: disabledSecondJoin.body.guest_session_id });
+    const disabledEvents = await eventRows(disabled.roomId);
+    expect("second no-deadline participant creates exactly one additional event", disabledEvents.length === 2);
+    expect("no-deadline completion count increments for the second participant", disabledEvents.map((event: any) => event.completed_participant_count).join(",") === "1,2");
 
     const web = await createRoom();
     await service.from("gameday_rooms").update({ source: "web", sport: "madden", template_type: "weekly_pick_card", host_user_id: player.id }).eq("id", web.roomId);

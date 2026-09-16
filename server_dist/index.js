@@ -9132,6 +9132,8 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
   const raw = value;
   const weekLabel = normalizeWeeklyPickCardText(raw.week_label, 120, true);
   const rewardText = normalizeWeeklyPickCardText(raw.reward_text, 240) ?? "";
+  const deadlineDisplayText = normalizeWeeklyPickCardText(raw.deadline_display_text, 120);
+  const hasDeadlineDisplayText = Object.prototype.hasOwnProperty.call(raw, "deadline_display_text");
   const minimumRaw = raw.minimum_matchups;
   const minimum = typeof minimumRaw === "number" ? minimumRaw : typeof minimumRaw === "string" && /^\d+$/.test(minimumRaw.trim()) ? Number(minimumRaw) : NaN;
   const scoringMode = raw.scoring_mode === "all_correct" ? "all_correct" : null;
@@ -9141,12 +9143,13 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
   const bonusOptions = bonusEnabled && Array.isArray(rawBonus?.answer_options) ? [...new Set(
     rawBonus.answer_options.filter((option) => typeof option === "string").map((option) => option.replace(/[\u0000-\u001f\u007f]/g, "").trim()).filter((option) => option.length > 0 && option.length <= 100)
   )].slice(0, 8) : [];
-  if (!weekLabel || !Number.isInteger(minimum) || minimum < 1 || minimum > matchupCount || !scoringMode || bonusEnabled && (!bonusLabel || bonusOptions.length < 2)) {
+  if (!weekLabel || !Number.isInteger(minimum) || minimum < 1 || minimum > matchupCount || !scoringMode || hasDeadlineDisplayText && !deadlineDisplayText || bonusEnabled && (!bonusLabel || bonusOptions.length < 2)) {
     return null;
   }
   return {
     week_label: weekLabel,
     reward_text: rewardText,
+    deadline_display_text: deadlineDisplayText,
     minimum_matchups: minimum,
     scoring_mode: scoringMode,
     bonus: {
@@ -10751,8 +10754,11 @@ function registerGamedayRoutes(app2) {
         matchups?.length ?? 0
       );
       const weeklyRoomName = typeof room_name === "string" ? room_name.replace(/[\u0000-\u001f\u007f]/g, "").trim() : "";
-      const deadlineRaw = typeof req.body.pick_deadline === "string" ? req.body.pick_deadline.trim() : "";
-      const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
+      const hasPickDeadline = Object.prototype.hasOwnProperty.call(req.body, "pick_deadline");
+      const suppliedDeadline = req.body.pick_deadline;
+      const deadlineRaw = typeof suppliedDeadline === "string" ? suppliedDeadline.trim() : "";
+      const hasIsoDeadlineSyntax = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(deadlineRaw);
+      const deadline = hasIsoDeadlineSyntax ? new Date(deadlineRaw) : null;
       const deadlineIso = deadline && !Number.isNaN(deadline.getTime()) ? deadline.toISOString() : null;
       if (!weeklyRoomName || weeklyRoomName.length > 120) {
         res2.status(400).json({ error: "Challenge/week name is required and must be 120 characters or fewer" });
@@ -10768,8 +10774,19 @@ function registerGamedayRoutes(app2) {
         });
         return;
       }
-      if (!deadlineIso) {
+      const isDiscordManualLock = botAuthed && !hasPickDeadline;
+      if (hasPickDeadline && !deadlineIso) {
         res2.status(400).json({ error: "pick_deadline must be a valid ISO date-time" });
+        return;
+      }
+      if (!botAuthed && !deadlineIso) {
+        res2.status(400).json({ error: "pick_deadline must be a valid ISO date-time" });
+        return;
+      }
+      if (isDiscordManualLock && !weeklyConfig.deadline_display_text) {
+        res2.status(400).json({
+          error: "format_config.deadline_display_text is required when Discord Madden omits pick_deadline"
+        });
         return;
       }
       const supabase2 = getServiceSupabase();
@@ -10816,7 +10833,7 @@ function registerGamedayRoutes(app2) {
         status: botAuthed ? "open" : "closed",
         display_order: 0,
         scheduled_lock_at: deadlineIso,
-        lock_label: `Picks lock ${deadlineIso}`
+        lock_label: deadlineIso ? `Picks lock ${deadlineIso}` : `Picks lock ${weeklyConfig.deadline_display_text}`
       }).select().single();
       if (weeklyCardError || !weeklyCard) {
         await supabase2.from("gameday_rooms").delete().eq("id", weeklyRoom.id);
@@ -10859,7 +10876,7 @@ function registerGamedayRoutes(app2) {
       const publicLink2 = returnedCode2 ? `${APP_URL2}/g/${returnedCode2}` : `${APP_URL2}/gameday/${weeklyRoom.id}`;
       const hostLink2 = `${APP_URL2}/gameday/${weeklyRoom.id}/host`;
       const discordMessage = `Madden Weekly Pick Card: ${weeklyConfig.week_label}
-Make your picks before the deadline:
+Pick Deadline / Lock Time: ${weeklyConfig.deadline_display_text ?? deadlineIso}
 ${publicLink2}`;
       res2.json({
         ok: true,

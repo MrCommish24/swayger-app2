@@ -800,9 +800,12 @@ export default function GameDayRoomScreen() {
                 Reward: {room.format_config.reward_text} · Administered by the commissioner
               </Text>
             ) : null}
-            {weeklyCard?.scheduled_lock_at ? (
+            {weeklyCard?.scheduled_lock_at || room.format_config?.deadline_display_text ? (
               <Text style={styles.groupChatNote}>
-                Deadline: {new Date(weeklyCard.scheduled_lock_at).toLocaleString()}
+                Pick Deadline / Lock Time:{" "}
+                {weeklyCard?.scheduled_lock_at
+                  ? new Date(weeklyCard.scheduled_lock_at).toLocaleString()
+                  : room.format_config?.deadline_display_text}
               </Text>
             ) : null}
           </>
@@ -817,7 +820,9 @@ export default function GameDayRoomScreen() {
               ? "Picks are locked. Receipts are revealed."
               : weeklyCard?.deadline_passed
                 ? "Picks are closed. Waiting for the commissioner to reveal receipts."
-              : "Picks can be edited until the deadline. Swayger tracks the picks, leaderboard, and receipts."
+              : weeklyCard?.scheduled_lock_at
+                ? "Picks can be edited until the deadline. Swayger tracks the picks, leaderboard, and receipts."
+                : "Picks can be edited until the commissioner locks the card. Swayger tracks the picks, leaderboard, and receipts."
             : "Keep talking in your group chat. Swayger tracks the picks, leaderboard, and receipts."}
         </Text>
       </View>
@@ -1207,7 +1212,9 @@ function PickCard({
         <View style={styles.submittedInline}>
           <Text style={styles.submittedInlineText}>
             {isMaddenWeekly
-              ? "✓ Picks confirmed. You can update until the deadline."
+              ? card.scheduled_lock_at
+                ? "✓ Picks confirmed. You can update until the deadline."
+                : "✓ Picks confirmed. You can update until the commissioner locks the card."
               : "✓ Picks locked in. Green = confirmed. You can update until this card locks."}
           </Text>
         </View>
