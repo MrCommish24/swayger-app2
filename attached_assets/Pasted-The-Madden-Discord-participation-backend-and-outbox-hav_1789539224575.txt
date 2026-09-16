@@ -1,0 +1,131 @@
+The Madden Discord participation backend and outbox have passed validation.
+
+Current local commits:
+
+01f13131452a6da47ab165f6394de65206f6c48e
+9b41e94bce89c589edd23a453c787b98470277c8
+
+The local branch is 2 commits ahead of origin/main.
+
+Please complete release hygiene now.
+
+1. Push both pending commits to origin/main.
+2. Verify:
+   - HEAD == origin/main
+   - ahead = 0
+   - behind = 0
+   - tracked working tree clean
+3. Confirm no secret-looking files were introduced.
+4. Confirm the migration is already applied to the live Supabase project.
+5. Republish the production app/backend.
+6. After republish, run one controlled production outbox smoke test.
+
+PRODUCTION SMOKE TEST
+
+Use one disposable Discord-created Madden Weekly Pick Card in the Swayger Test Server guild.
+
+A. Create room
+- valid bot auth
+- source=discord
+- sport=madden
+- template_type=weekly_pick_card
+- guild/channel/user metadata present
+- 3 matchups
+- enabled bonus
+- deadline in future
+
+B. Partial participant
+Submit only some required picks.
+
+Verify:
+- no participation event exists
+- pending-event endpoint returns no event for that participant
+
+C. Complete participant
+Submit the participant's final required pick.
+
+Verify:
+- exactly one madden_picks_completed event exists
+- event contains:
+  - id
+  - event_type
+  - room_id
+  - room_code
+  - room_name/week_label
+  - guild/channel IDs
+  - participant_display_name
+  - completed_participant_count = 1
+  - delivered_at = null
+- event contains no selections or answer IDs
+
+D. Duplicate protection
+Edit or resubmit a pick while participant remains complete.
+
+Verify:
+- no second event is created
+
+E. Second participant
+Complete another participant.
+
+Verify:
+- second distinct event exists
+- completed_participant_count = 2
+
+F. Bot pending API
+GET:
+/api/gameday/bot/madden-participation-events?limit=50
+
+Verify:
+- valid bot key + matching guild returns the two pending events
+- oldest first
+- other guild cannot see them
+
+G. Ack API
+Acknowledge first event.
+
+Verify:
+- delivered_at populated
+- first event no longer returned pending
+- second event remains pending
+- repeated ack returns idempotent already=true
+
+H. Retry behavior
+Do not ack second event initially.
+
+Verify:
+- repeated pending fetch still returns it
+
+Then acknowledge second event.
+
+I. Cleanup
+Archive the disposable room using the existing guild-scoped bot archive route.
+
+Confirm:
+- room no longer active
+- no active disposable room remains
+- no extra participation events were generated after archive
+- delivered events may remain as historical outbox records if that is the intended design
+
+Do not run the external Discord bot.
+Do not post anything to Discord.
+Do not modify external bot code.
+
+Return:
+
+A. Push status
+B. Republish status
+C. Partial-pick behavior
+D. Completion-event behavior
+E. Duplicate/idempotency behavior
+F. Participant-count behavior
+G. Pending API verification
+H. Ack/retry verification
+I. Guild isolation
+J. Cleanup
+K. Whether Claude can now implement and test the Discord consumer
+
+End with:
+
+MADDEN PARTICIPATION PRODUCTION STATUS: PASS / FAIL
+OUTBOX LIVE: YES / NO
+READY FOR CLAUDE CONSUMER: YES / NO
