@@ -1,0 +1,878 @@
+We are building the first social-sharing mechanic for Swayger Fantasy Weekly.
+
+# CALL YOUR SHOT — SHARE MY PICK V1
+
+Context:
+
+Swayger Fantasy Weekly now has 12 named Swayger Moments such as:
+
+- SCOREBOARD KING
+- BASEMENT WATCH
+- BIGGEST BLOWOUT
+- ESCAPE ARTIST
+- STAR POWER
+- THE 150 CLUB
+- PHOTO FINISH
+- BAD BEAT OF THE WEEK
+- WHO GETS AWAY WITH ONE?
+- FRAUD WATCH
+- HEARTBREAKER
+- STATEMENT WIN
+
+These are derived from stable `template_prop_id` values through the existing Swayger Moment registry.
+
+The next product step is to let a participant voluntarily share one of their weekly predictions into an existing league group chat.
+
+The product idea:
+
+A participant makes a prediction.
+They choose to publicly “Call Their Shot.”
+The shared message names the Swayger Moment, their prediction, and invites league mates to make their own picks.
+
+This is a distribution and engagement mechanic.
+
+It is NOT a public social feed.
+
+Core product loop:
+
+PICK
+→ CALL YOUR SHOT
+→ SHARE
+→ LEAGUE REACTS
+→ LOCK
+→ LEAGUE PICKS REVEAL
+→ SETTLEMENT
+→ RECEIPT
+
+Product principles:
+
+VOLUNTARY BEFORE-LOCK DISCLOSURE.
+ONE PICK CAN BE SHARED WITHOUT REVEALING THE REST.
+PERSONALITY FROM THE SWAYGER MOMENT.
+DEEP LINK BACK INTO THE WEEK.
+NO PUBLIC PRE-LOCK LEAGUE-PICK EXPOSURE.
+
+==================================================
+1. FIRST — AUDIT CURRENT ARCHITECTURE
+==================================================
+
+Inspect before editing:
+
+- Weekly participant play screen
+- pick selection/autosave behavior
+- completed-picks state
+- existing native/share helpers
+- Weekly receipt sharing
+- short-link infrastructure
+- current Weekly play URLs
+- guest claim / auth join flow
+- Swayger Moment registry
+- `template_prop_id`
+- participant display-name source
+- analytics event architecture
+- mobile/web native share support
+
+Determine:
+
+1. whether V1 can use the existing canonical Weekly participation URL
+2. whether a new short-link type is necessary
+3. whether share copy can be fully derived client-side/server-side from:
+   - template_prop_id
+   - selected answer
+   - participant display name
+   - week metadata
+4. whether any schema change is actually required
+
+Strong preference:
+
+NO NEW DATABASE TABLE.
+NO NEW PUBLIC PICK RECORD.
+NO PUBLIC PRE-LOCK PICK ENDPOINT.
+
+If schema is required for a core V1 requirement:
+STOP and return:
+
+SQL APPLICATION REQUIRED
+
+with the smallest additive migration.
+
+==================================================
+2. FEATURE NAMING
+==================================================
+
+Branded feature concept:
+
+CALL YOUR SHOT
+
+Primary action label:
+
+Share My Pick
+
+Use:
+
+“Call Your Shot”
+
+for completion-state promotional UX.
+
+Use:
+
+“Share Pick”
+
+or
+
+“Share My Pick”
+
+for direct actions.
+
+Do not rename existing Swayger Moments.
+
+==================================================
+3. PRIVACY MODEL
+==================================================
+
+This is critical.
+
+Before Weekly lock:
+
+- participant picks remain private by default
+- League Picks aggregate behavior remains unchanged
+- no participant’s picks may be queried publicly
+- no public API should expose saved picks
+- no pick becomes generally visible merely because sharing exists
+
+A participant may intentionally disclose exactly ONE selected pick by invoking Share My Pick.
+
+The share package may contain only information the participant deliberately chose to share:
+
+- league display name if appropriate
+- Week number
+- participant safe display name
+- Swayger Moment display title
+- their selected answer rendered safely
+- plain-English share framing
+- current Week participation URL
+- generic Swayger branding
+
+Sharing one pick must NOT reveal:
+
+- other picks
+- League Picks distribution
+- other participants’ picks
+- participant IDs
+- member IDs
+- user IDs
+- claim IDs
+- guest tokens
+- recovery tokens
+- emails
+- phone numbers
+- auth/session credentials
+
+==================================================
+4. PARTICIPANT UX — PER-QUESTION ACTION
+==================================================
+
+After a participant has selected an answer for a Weekly question, expose a subtle action on that question card:
+
+Share Pick
+
+Do not make it visually compete with the answer selector.
+
+Do not interrupt the participant automatically.
+
+Conceptually:
+
+BASEMENT WATCH
+
+Who will finish with the fewest fantasy points this week?
+
+Selected:
+All Eyez On Me
+
+[Share Pick]
+
+If the participant changes their answer later, any future share uses the updated current answer.
+
+Do not create persisted historical share-state for V1 unless already supported trivially.
+
+==================================================
+5. PARTICIPANT UX — COMPLETION STATE
+==================================================
+
+After the participant completes all required Weekly picks, add a stronger optional social CTA:
+
+CALL YOUR SHOT
+
+Supporting copy:
+
+“You’re locked in. Pick one prediction to put on the record.”
+
+Action:
+
+Choose a Pick
+
+The user should see their completed Swayger Moments and current answers.
+
+Example:
+
+CALL YOUR SHOT
+
+You’re locked in.
+Pick one prediction to put on the record.
+
+BASEMENT WATCH
+All Eyez On Me
+
+BAD BEAT OF THE WEEK
+Mr Roarke
+
+THE 150 CLUB
+Yes
+
+[Share]
+
+Do NOT force sharing.
+
+Do NOT block completion/results navigation.
+
+If the participant has not completed all picks, per-question Share Pick may still work for already-selected questions.
+
+==================================================
+6. SHARE COPY REGISTRY
+==================================================
+
+Extend the existing Swayger Moment registry/helper layer so share copy can be derived from stable `template_prop_id`.
+
+Do NOT add a database field solely for share copy.
+
+Create a reusable helper that receives conceptually:
+
+- template_prop_id
+- display_title
+- selected answer label
+- participant display name
+- league name
+- week number
+- answer target type
+
+and returns safe share text.
+
+Prefer natural Moment-specific language over generic:
+
+“I picked X.”
+
+Examples:
+
+--------------------------------------------------
+SCOREBOARD KING
+--------------------------------------------------
+
+Darius has Team Jasand Shootaw putting up the highest fantasy score this week.
+
+--------------------------------------------------
+BASEMENT WATCH
+--------------------------------------------------
+
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+--------------------------------------------------
+BIGGEST BLOWOUT
+--------------------------------------------------
+
+Darius has Dispimpin delivering the Biggest Blowout this week.
+
+--------------------------------------------------
+ESCAPE ARTIST
+--------------------------------------------------
+
+Darius has Mr Roarke surviving the closest win this week.
+
+--------------------------------------------------
+STAR POWER
+--------------------------------------------------
+
+Darius has Team Jasand Shootaw rostering the week’s highest-scoring player.
+
+--------------------------------------------------
+THE 150 CLUB — YES
+--------------------------------------------------
+
+Darius says somebody is joining the 150 Club this week.
+
+--------------------------------------------------
+THE 150 CLUB — NO
+--------------------------------------------------
+
+Darius says nobody is cracking 150 this week.
+
+--------------------------------------------------
+PHOTO FINISH — YES
+--------------------------------------------------
+
+Darius is calling a Photo Finish this week.
+
+--------------------------------------------------
+PHOTO FINISH — NO
+--------------------------------------------------
+
+Darius says no matchup finishes within 5 points this week.
+
+--------------------------------------------------
+BAD BEAT OF THE WEEK
+--------------------------------------------------
+
+Darius has Mr Roarke scoring big and still taking the L.
+
+--------------------------------------------------
+WHO GETS AWAY WITH ONE?
+--------------------------------------------------
+
+Darius has Dispimpin getting away with one this week.
+
+--------------------------------------------------
+FRAUD WATCH — YES
+--------------------------------------------------
+
+Darius is calling Fraud Watch: somebody wins with fewer than 100.
+
+--------------------------------------------------
+FRAUD WATCH — NO
+--------------------------------------------------
+
+Darius says nobody is getting away with a sub-100 win this week.
+
+--------------------------------------------------
+HEARTBREAKER — YES
+--------------------------------------------------
+
+Darius is calling a Heartbreaker: somebody scores 130+ and still loses.
+
+--------------------------------------------------
+HEARTBREAKER — NO
+--------------------------------------------------
+
+Darius says nobody drops 130+ in a loss this week.
+
+--------------------------------------------------
+STATEMENT WIN — YES
+--------------------------------------------------
+
+Darius is calling a Statement Win: somebody wins by 30+.
+
+--------------------------------------------------
+STATEMENT WIN — NO
+--------------------------------------------------
+
+Darius says nobody wins by 30+ this week.
+
+These examples establish tone.
+
+Do not hardcode participant names or team names.
+
+Use safe runtime display labels.
+
+==================================================
+7. FINAL SHARE PACKAGE
+==================================================
+
+Preferred text structure:
+
+[emoji if already supported cleanly] MOMENT TITLE
+
+<participant share sentence>
+
+Who you got?
+<Week participation link>
+
+Example:
+
+📉 BASEMENT WATCH
+
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+Who you got?
+https://www.swayger.app/...
+
+Keep this compact.
+
+Do not include all of the participant’s picks.
+
+Do not include current League Picks percentages before lock.
+
+Do not include unnecessary explanation of Swayger.
+
+==================================================
+8. LINK DESTINATION
+==================================================
+
+The shared link should send the recipient into the current Weekly Swayger participation journey.
+
+Preferred destination:
+
+existing canonical Week play/join flow.
+
+Do NOT send them to:
+
+- homepage
+- generic marketing page
+- Weekly receipt
+- static share-only page
+
+unless existing auth/claim architecture requires an intermediary.
+
+The intended recipient behavior is:
+
+see prediction
+→ react
+→ tap
+→ make their own picks
+
+Preserve:
+
+- auth routing
+- guest claim routing
+- seat identity
+- Week lock behavior
+- archived behavior
+
+==================================================
+9. SHORT LINK DECISION
+==================================================
+
+Audit whether existing short-link infrastructure can safely support a Week participation link.
+
+Do not overload finalized receipt aliases incorrectly.
+
+If an existing stable Week invite/share URL already exists:
+use it.
+
+If no short-link support exists and a full canonical Week URL is acceptable:
+use the canonical URL for V1.
+
+Do NOT add a new alias table just to shorten the URL in V1 unless there is an existing generic alias architecture that makes it trivial.
+
+Return the exact link strategy.
+
+==================================================
+10. NATIVE SHARE + COPY FALLBACK
+==================================================
+
+Use existing platform share infrastructure where available.
+
+Support:
+
+- native share sheet on mobile where supported
+- Web Share API where supported
+- copy text/link fallback
+- graceful fallback when image attachment is unavailable
+
+V1 success does NOT depend on image sharing.
+
+Text + deep link is sufficient.
+
+==================================================
+11. SHARE IMAGE — OPTIONAL ONLY
+==================================================
+
+Inspect whether existing compact receipt/image capture architecture can be reused with minimal code.
+
+If trivial, an optional compact Call Your Shot visual may contain:
+
+CALL YOUR SHOT
+
+BASEMENT WATCH
+
+Darius picked
+
+ALL EYEZ ON ME
+
+Fewest fantasy points this week
+
+Swayger Fantasy • Week 3
+
+However:
+
+Do NOT let image generation expand scope materially.
+
+If reuse is not straightforward:
+ship text + link only.
+
+Return the image decision explicitly.
+
+==================================================
+12. DISPLAY NAME SAFETY
+==================================================
+
+Use the participant’s existing league-safe display name.
+
+Do NOT use:
+
+- email
+- phone
+- auth-provider identity
+- legal profile fields
+- unrelated account metadata
+
+If no safe display name exists:
+fall back to wording that does not require identity, such as:
+
+“My pick: All Eyez On Me for Basement Watch.”
+
+Do not block sharing solely because a display name is unavailable.
+
+==================================================
+13. BEFORE / AFTER LOCK BEHAVIOR
+==================================================
+
+Before lock:
+
+- Share My Pick allowed
+- selected pick may be voluntarily disclosed
+- other picks remain private
+- League Picks remain protected per existing rules
+
+After lock:
+
+- existing shared Week link continues working
+- recipient follows existing locked-week experience
+- existing League Picks reveal rules remain unchanged
+
+Do not create special public access after lock.
+
+==================================================
+14. PICK UPDATES
+==================================================
+
+If picks remain editable before lock:
+
+- Share Pick always uses the participant’s CURRENT saved answer
+- changing a pick does not mutate a previously sent text message
+- Swayger does not attempt to revoke or update already-shared content
+
+This is expected.
+
+Do not build share-history synchronization.
+
+==================================================
+15. ANALYTICS
+==================================================
+
+Add focused analytics because this is a new behavioral loop.
+
+Events:
+
+`fantasy_pick_share_opened`
+
+Fire when the participant opens the Share Pick / Call Your Shot share composer.
+
+`fantasy_pick_shared`
+
+Fire after a share action is successfully initiated/completed where platform semantics permit.
+
+`fantasy_pick_link_copied`
+
+Fire when the share text/link is copied.
+
+`fantasy_week_opened_from_pick_share`
+
+Fire when a participant/visitor enters a Week through a Call Your Shot share link IF source attribution can be implemented cleanly.
+
+Use existing source/UTM/ref attribution architecture if available.
+
+Safe properties:
+
+- league_id
+- season_id
+- week_number
+- template_prop_id
+- viewer_role
+- is_guest
+- share_method
+- surface:
+  - question_card
+  - completion_state
+- source if safely known
+
+Do NOT send:
+
+- answer label
+- team name
+- participant name
+- share copy
+- phone/email
+- recipient data
+- tokens
+- URLs containing secrets
+
+==================================================
+16. ATTRIBUTION
+==================================================
+
+If possible without schema expansion, add a safe source indicator to the Week participation link, for example:
+
+source=pick_share
+
+or use the project’s existing analytics/UTM convention.
+
+Do not encode:
+
+- sharer identity
+- answer
+- team
+- template selection
+- tokens
+
+in query parameters.
+
+We need to know:
+
+“Did this visit come from a shared pick?”
+
+We do NOT need to know publicly:
+
+“Which person shared which pick?”
+
+==================================================
+17. CURRENT WEEK / PILOT SAFETY
+==================================================
+
+The Food Pyramid XX Week 2 pilot is already live and has active picks.
+
+This feature must not rewrite or mutate:
+
+- published props
+- current picks
+- answer options
+- settlement state
+- Week status
+- existing links
+- template IDs
+
+The feature should work against the existing Week 2 published card if safely deployable.
+
+If there is any reason it cannot safely work on the live Week 2 card:
+leave Week 2 untouched and enable beginning with future Weeks.
+
+Return the exact decision.
+
+==================================================
+18. DO NOT BUILD POST-SETTLEMENT PERSONAL RECEIPTS YET
+==================================================
+
+Future concept:
+
+“Darius called Basement Watch correctly.”
+
+or
+
+“Receipt says otherwise.”
+
+Do NOT build this now.
+
+Do not add:
+
+- personal Call Your Shot history
+- prediction-result share cards
+- correctness receipts
+- badges
+- streaks
+- social feeds
+- public profiles
+
+V1 validates pregame sharing.
+
+==================================================
+19. DO NOT CHANGE WEEKLY RECEIPT SHARING
+==================================================
+
+Existing finalized Weekly Receipt share behavior remains unchanged.
+
+Call Your Shot is a separate pregame/member-sharing surface.
+
+Do not regress:
+
+- finalized receipt short links
+- OG metadata
+- receipt authorization
+- receipt analytics
+- receipt share copy
+
+==================================================
+20. TESTS
+==================================================
+
+Add focused coverage for:
+
+- Share Pick visible only after a question has a selected answer
+- Call Your Shot completion CTA
+- one-pick selection
+- all 12 Moment share-copy variants
+- Yes/No answer-aware copy
+- participant display-name behavior
+- identity-safe fallback wording
+- current answer used after pre-lock edit
+- one shared pick does not expose other picks
+- no League Picks data in share package
+- no private IDs/tokens/contact data
+- Weekly participation link destination
+- auth/guest join preservation
+- locked-week behavior
+- canonical Week 2 immutability
+- native share fallback
+- copy fallback
+- analytics events
+- attribution marker
+- no receipt-sharing regression
+- no schema additions unless explicitly approved
+- no public pick API introduced
+
+==================================================
+21. REGRESSION
+==================================================
+
+Run:
+
+- Weekly participant play
+- autosave/update picks
+- Weekly lock
+- guest flow
+- auth flow
+- League Picks
+- Weekly results
+- Weekly receipt
+- receipt sharing
+- Swayger Moments
+- Fantasy analytics
+- week sequencing
+- Phase 6G multi-correct
+
+Then:
+
+- server production build
+- web bundle
+- iOS static bundle
+- Android static bundle
+- targeted lint
+
+Return exact totals.
+
+==================================================
+22. MANUAL QA
+==================================================
+
+Return exact manual QA steps covering:
+
+A. PER-QUESTION SHARE
+
+1. Open live Weekly card.
+2. Confirm unanswered question does not offer a misleading share action.
+3. Select a team.
+4. Confirm Share Pick appears.
+5. Open share.
+6. Verify Moment-specific wording.
+7. Verify only that one pick appears.
+8. Verify Week link.
+
+B. COMPLETION CTA
+
+1. Complete all Weekly picks.
+2. Verify Call Your Shot CTA.
+3. Open it.
+4. Choose one prediction.
+5. Share.
+6. Confirm compact copy.
+
+C. GROUP CHAT JOURNEY
+
+1. Send into GroupMe/SMS.
+2. Verify readable share text.
+3. Tap link from another device/session.
+4. Confirm recipient reaches correct Week join/play flow.
+5. Confirm no sharer’s other picks are revealed.
+
+D. YES/NO MOMENTS
+
+Test:
+- THE 150 CLUB
+- FRAUD WATCH
+- HEARTBREAKER
+- STATEMENT WIN
+
+Verify Yes and No produce natural, different copy.
+
+E. PRIVACY
+
+Confirm share output contains no:
+- IDs
+- tokens
+- email
+- phone
+- other picks
+- League Picks data
+
+F. LOCK
+
+1. Lock Week.
+2. Tap previously shared link.
+3. Verify normal locked-week behavior.
+4. Confirm League Picks follow existing reveal rules.
+
+G. WEEK 2
+
+Verify Food Pyramid XX Week 2 data was not mutated.
+
+==================================================
+23. RETURN
+==================================================
+
+Return:
+
+# CALL YOUR SHOT — SHARE MY PICK V1 REPORT
+
+1. Existing share architecture
+2. Schema decision
+3. Privacy model
+4. Per-question Share Pick UX
+5. Completion-state Call Your Shot UX
+6. Moment-specific copy architecture
+7. All 12 share-copy patterns
+8. Link/deep-link strategy
+9. Short-link decision
+10. Native share/fallback behavior
+11. Share-image decision
+12. Display-name safety
+13. Before/after-lock behavior
+14. Pick-update behavior
+15. Analytics
+16. Source attribution
+17. Food Pyramid Week 2 decision
+18. Files changed
+19. Tests added
+20. Regression totals
+21. Known limitations
+22. Exact manual QA
+23. Future post-settlement receipt compatibility
+
+Then STOP.
+
+Do not build:
+
+- personal prediction history
+- correctness receipts
+- badges
+- streaks
+- social feeds
+- public profiles
+- another feature
+
+Final status:
+
+CALL YOUR SHOT V1 READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

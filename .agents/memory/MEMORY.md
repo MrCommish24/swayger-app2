@@ -41,3 +41,4 @@
 - [Madden Discord participation outbox](gameday-madden-participation-outbox.md) — atomic completion events, service-role storage, guild-scoped at-least-once delivery, migration-first rollout.
 - [Fantasy Weekly Receipt](gameday-fantasy-weekly-receipt.md) — live weekly alias schema is applied; receipts are finalized, member-authorized, viewer-independent, and archive-readable.
 - [Fantasy Weekly Swayger Moments](gameday-fantasy-swayger-moments.md) — titles derive from stable template IDs; source-library copy may evolve, but published weekly props remain immutable.
+- [Fantasy Call Your Shot](gameday-fantasy-call-your-shot.md) — voluntary one-pick sharing stays client-side, uses confirmed answers, and links only to authorized Weekly play.

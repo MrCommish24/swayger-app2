@@ -14852,7 +14852,7 @@ function registerFantasyRoutes(app2) {
         roomId,
         viewer
       );
-      const { data: rawProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
+      const { data: rawProps } = await supabase.from("gameday_props").select("id, template_prop_id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
       const publishedProps = (rawProps ?? []).map((p) => ({
         id: p.id,
         question: p.question,
@@ -16273,7 +16273,7 @@ function registerFantasyRoutes(app2) {
         return;
       }
       const supabase = getServiceSupabase();
-      const identity = getCallerIdentity2(req);
+      const identity = await getVerifiedCallerIdentity(req, supabase);
       if (!identity.userId && !identity.guestToken) {
         res2.status(401).json({ error: "Unauthorized" });
         return;
@@ -16293,9 +16293,10 @@ function registerFantasyRoutes(app2) {
       const cardStatus = card.status;
       const cardRosterRevision = card.roster_revision ?? 0;
       const { participant_id: participantId } = await ensureFantasyParticipant(supabase, roomId, viewer);
-      const { data: rawProps } = await supabase.from("gameday_props").select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
+      const { data: rawProps } = await supabase.from("gameday_props").select("id, template_prop_id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order").eq("card_id", card.id).order("display_order", { ascending: true });
       const publishedProps = (rawProps ?? []).map((p) => ({
         id: p.id,
+        template_prop_id: p.template_prop_id ?? null,
         question: p.question,
         scoring_scope: p.scoring_scope,
         point_value: p.point_value,
@@ -16336,7 +16337,8 @@ function registerFantasyRoutes(app2) {
         my_picks: myPicks,
         my_pick_count: Object.keys(myPicks).length,
         total_props: publishedProps.length,
-        league_name: leagueName
+        league_name: leagueName,
+        viewer_display_name: viewer.display_name ?? null
       });
     }
   );

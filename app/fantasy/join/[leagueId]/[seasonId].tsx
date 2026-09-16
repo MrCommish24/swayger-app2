@@ -60,15 +60,17 @@ export default function JoinLeagueScreen() {
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
   const { guestToken, guestTokenLoading } = useFantasyGuestToken();
-  const { leagueId, seasonId, wn } = useLocalSearchParams<{
+  const { leagueId, seasonId, wn, source } = useLocalSearchParams<{
     leagueId: string;
     seasonId: string;
     /** Week number context — set when user arrived from a shared Week link. */
     wn?: string;
+    source?: string;
   }>();
 
   /** Week number from the ?wn= query param (e.g. arriving from a Week N shared link). */
   const weekNumber = wn ? parseInt(wn, 10) : null;
+  const pickShareSuffix = source === "pick_share" ? "?source=pick_share" : "";
 
   const [joinInfo, setJoinInfo] = useState<JoinInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,14 +111,18 @@ export default function JoinLeagueScreen() {
 
       // If caller already has an active claim, skip straight to hub
       if (data.my_seat) {
-        router.replace(`/fantasy/${leagueId}/${seasonId}` as any);
+        router.replace(
+          weekNumber
+            ? (`/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play${pickShareSuffix}` as any)
+            : (`/fantasy/${leagueId}/${seasonId}` as any)
+        );
       }
     } catch (e: any) {
       setLoadError(e.message ?? "Failed to load league info");
     } finally {
       setLoading(false);
     }
-  }, [leagueId, seasonId, session, guestToken]);
+  }, [leagueId, seasonId, session, guestToken, weekNumber, pickShareSuffix, router]);
 
   useEffect(() => {
     if (authLoading || guestTokenLoading) return;
@@ -144,7 +150,7 @@ export default function JoinLeagueScreen() {
   const handleChooseAccount = async () => {
     // Save the join URL (preserving week context) so auth redirects back here after sign-in
     const path = weekNumber
-      ? `/fantasy/join/${leagueId}/${seasonId}?wn=${weekNumber}`
+      ? `/fantasy/join/${leagueId}/${seasonId}?wn=${weekNumber}${source === "pick_share" ? "&source=pick_share" : ""}`
       : `/fantasy/join/${leagueId}/${seasonId}`;
     try { await AsyncStorage.setItem(PENDING_AUTH_REDIRECT_KEY, path); } catch {}
     router.push("/auth");
@@ -200,13 +206,13 @@ export default function JoinLeagueScreen() {
       // After an authenticated account claim: route directly without nudge.
       const wasGuestClaim = !session;
       if (wasGuestClaim && weekNumber) {
-        const dest = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play`;
+        const dest = `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play${pickShareSuffix}`;
         setUpgradePendingDest(dest);
         setUpgradeLmId(selectedSeat.league_member_id!);
         setShowUpgradeNudge(true);
       } else if (weekNumber) {
         router.replace(
-          `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play` as any
+          `/fantasy/weeks/${leagueId}/${seasonId}/${weekNumber}/play${pickShareSuffix}` as any
         );
       } else {
         // Guest → ?joined=1 triggers the hub welcome banner (with "Save My Spot")
@@ -271,7 +277,7 @@ export default function JoinLeagueScreen() {
             Keep your league spot on any device
           </Text>
           <Text style={styles.upgradeNudgeBody}>
-            You're in as a guest. Your league access is currently saved to this
+            You&apos;re in as a guest. Your league access is currently saved to this
             browser/device.{"\n\n"}Connect a Swayger account so you can return to
             your Draft Day and weekly Swaygers even if you switch devices or clear
             your browser.
@@ -314,7 +320,7 @@ export default function JoinLeagueScreen() {
       <View style={styles.leagueHeader}>
         <Text style={styles.sportEmoji}>{sportEmoji}</Text>
         <View style={styles.leagueHeaderText}>
-          <Text style={styles.inviteEyebrow}>YOU'VE BEEN INVITED TO JOIN</Text>
+          <Text style={styles.inviteEyebrow}>YOU&apos;VE BEEN INVITED TO JOIN</Text>
           <Text style={styles.leagueName} numberOfLines={2}>
             {league.league_name}
           </Text>

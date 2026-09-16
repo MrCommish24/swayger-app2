@@ -1066,6 +1066,8 @@ export interface WeeklyPlayState {
   my_pick_count: number;
   total_props: number;
   league_name?: string | null;
+  /** League-safe display name only. Never sourced from email or auth-provider metadata. */
+  viewer_display_name?: string | null;
 }
 
 /** Build the canonical Fantasy league invite URL.

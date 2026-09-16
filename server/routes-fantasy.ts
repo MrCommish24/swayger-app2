@@ -3405,7 +3405,7 @@ export function registerFantasyRoutes(app: Express) {
       // ── Fetch published props — strip correct_answer ──────────────────────────
       const { data: rawProps } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
+        .select("id, template_prop_id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
 
@@ -5651,7 +5651,7 @@ export function registerFantasyRoutes(app: Express) {
       if (!Number.isInteger(wn) || wn < 1) { res.status(400).json({ error: "weekNumber must be a positive integer" }); return; }
 
       const supabase = getServiceSupabase();
-      const identity = getCallerIdentity(req);
+      const identity = await getVerifiedCallerIdentity(req, supabase);
       if (!identity.userId && !identity.guestToken) { res.status(401).json({ error: "Unauthorized" }); return; }
 
       const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
@@ -5671,12 +5671,13 @@ export function registerFantasyRoutes(app: Express) {
       // Fetch props (no correct_answer)
       const { data: rawProps } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
+        .select("id, template_prop_id, question, scoring_scope, point_value, answer_options, answer_target_type, display_order")
         .eq("card_id", (card as any).id)
         .order("display_order", { ascending: true });
 
       const publishedProps = ((rawProps ?? []) as any[]).map((p: any) => ({
         id:                 p.id as string,
+        template_prop_id:   (p.template_prop_id as string | null) ?? null,
         question:           p.question as string,
         scoring_scope:      p.scoring_scope as string,
         point_value:        p.point_value as number,
@@ -5733,6 +5734,7 @@ export function registerFantasyRoutes(app: Express) {
         my_pick_count:       Object.keys(myPicks).length,
         total_props:         publishedProps.length,
         league_name:         leagueName,
+         viewer_display_name: viewer.display_name ?? null,
       });
     }
   );

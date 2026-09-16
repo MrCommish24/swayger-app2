@@ -28,15 +28,18 @@ import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   getWeeklyPlay,
   submitWeeklyPick,
+  buildWeekUrl,
   WeeklyPlayState,
   DraftDayProp,
-  DraftDayAnswerOption,
 } from "@/lib/fantasy-api";
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 import { AnswerSelector } from "@/components/fantasy/AnswerSelector";
 import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
-import { Analytics } from "@/lib/posthog";
+import { CallYourShotPick, CallYourShotSheet } from "@/components/fantasy/CallYourShotSheet";
+import { getWeeklyMoment } from "@/lib/fantasy-weekly-moments";
+import { addPickShareSource, buildFantasyPickSharePackage, PickShareMethod } from "@/lib/fantasy-pick-share";
+import { Analytics, detectEntrySource } from "@/lib/posthog";
 
 const C = Colors.dark;
 
@@ -45,8 +48,8 @@ export default function WeeklyPlayScreen() {
   const insets  = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
   const { guestToken, guestTokenLoading }   = useFantasyGuestToken();
-  const { leagueId, seasonId, weekNumber }  = useLocalSearchParams<{
-    leagueId: string; seasonId: string; weekNumber: string;
+  const { leagueId, seasonId, weekNumber, source }  = useLocalSearchParams<{
+    leagueId: string; seasonId: string; weekNumber: string; source?: string;
   }>();
 
   const wn = parseInt(weekNumber ?? "1", 10);
@@ -62,10 +65,16 @@ export default function WeeklyPlayScreen() {
   const [picks, setPicks]           = useState<Record<string, string>>({});
   // propId → "saving" | "saved" | "error"
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
+  const [sharePropId, setSharePropId] = useState<string | null>(null);
   const hasTrackedWeekView = useRef(false);
+  const hasTrackedPickShareEntry = useRef(false);
   const hasTrackedPickStarted = useRef(false);
   const hasTrackedPickCompleted = useRef(false);
   const confirmedPicksRef = useRef<Record<string, string>>({});
+  const pickSaveVersionRef = useRef<Record<string, number>>({});
+  const pickSaveChainRef = useRef<Record<string, Promise<unknown>>>({});
+  const entrySourceRef = useRef(source === "pick_share" ? "pick_share" : detectEntrySource());
 
   const auth = session ? { session } : guestToken ? { guestToken } : {};
 
@@ -92,11 +101,25 @@ export default function WeeklyPlayScreen() {
           competition_type: "weekly",
           viewer_role: "member",
           is_guest: !session,
+           source: entrySourceRef.current,
         }, {
           question_count: data.props.length,
           pick_count: Object.keys(data.my_picks ?? {}).length,
         });
       }
+       if (entrySourceRef.current === "pick_share" && !hasTrackedPickShareEntry.current) {
+         hasTrackedPickShareEntry.current = true;
+         Analytics.fantasyWeekOpenedFromPickShare({
+           league_id: leagueId,
+           season_id: seasonId,
+           week_number: wn,
+           experience_type: "weekly",
+           competition_type: "weekly",
+           viewer_role: "member",
+           is_guest: !session,
+           source: "pick_share",
+         });
+       }
       setErrorIsNonMember(false);
     } catch (e: any) {
       const msg: string = e.message ?? "Failed to load Week picks";
@@ -110,6 +133,12 @@ export default function WeeklyPlayScreen() {
   }, [leagueId, seasonId, wn, session?.access_token, guestToken]);
 
   useEffect(() => {
+    if (authLoading || guestTokenLoading || session || guestToken || !leagueId || !seasonId) return;
+    const sourceSuffix = entrySourceRef.current === "pick_share" ? "&source=pick_share" : "";
+    router.replace(`/fantasy/join/${leagueId}/${seasonId}?wn=${wn}${sourceSuffix}` as any);
+  }, [authLoading, guestTokenLoading, session, guestToken, leagueId, seasonId, wn, router]);
+
+  useEffect(() => {
     if (!authLoading && !guestTokenLoading) load();
   }, [authLoading, guestTokenLoading, load]);
 
@@ -119,12 +148,20 @@ export default function WeeklyPlayScreen() {
     // Optimistic update
     setPicks(prev => ({ ...prev, [propId]: answerId }));
     setPickStatus(prev => ({ ...prev, [propId]: "saving" }));
+    const version = (pickSaveVersionRef.current[propId] ?? 0) + 1;
+    pickSaveVersionRef.current[propId] = version;
 
     try {
-      await submitWeeklyPick(leagueId, seasonId, wn, propId, answerId, auth);
-      setPickStatus(prev => ({ ...prev, [propId]: "saved" }));
+      const previousSave = pickSaveChainRef.current[propId] ?? Promise.resolve();
+      const currentSave = previousSave
+        .catch(() => undefined)
+        .then(() => submitWeeklyPick(leagueId, seasonId, wn, propId, answerId, auth));
+      pickSaveChainRef.current[propId] = currentSave;
+      await currentSave;
       const nextPicks = { ...confirmedPicksRef.current, [propId]: answerId };
       confirmedPicksRef.current = nextPicks;
+      if (pickSaveVersionRef.current[propId] !== version) return;
+      setPickStatus(prev => ({ ...prev, [propId]: "saved" }));
       const context = {
         league_id: leagueId,
         season_id: seasonId,
@@ -156,18 +193,83 @@ export default function WeeklyPlayScreen() {
           pick_count: Object.keys(nextPicks).length,
         });
       }
-    } catch (e: any) {
+    } catch {
+      if (pickSaveVersionRef.current[propId] !== version) return;
       // Revert to previous pick
       setPicks(prev => {
         const next = { ...prev };
-        if (state.my_picks[propId]) {
-          next[propId] = state.my_picks[propId];
+        const confirmedAnswer = confirmedPicksRef.current[propId];
+        if (confirmedAnswer) {
+          next[propId] = confirmedAnswer;
         } else {
           delete next[propId];
         }
         return next;
       });
       setPickStatus(prev => ({ ...prev, [propId]: "error" }));
+    }
+  };
+
+  const weekShareUrl = buildWeekUrl(leagueId, seasonId, wn);
+  const shareUrl = addPickShareSource(weekShareUrl);
+
+  const buildPickShare = (prop: DraftDayProp): CallYourShotPick | null => {
+    const answerId = confirmedPicksRef.current[prop.id];
+    const answerLabel = prop.answer_options?.find((answer) => answer.id === answerId)?.label;
+    const moment = getWeeklyMoment(prop.template_prop_id);
+    if (!answerId || !answerLabel || !moment) return null;
+    const viewerName = state?.viewer_display_name;
+    const sharePackage = buildFantasyPickSharePackage({
+      templatePropId: prop.template_prop_id ?? "",
+      selectedAnswerLabel: answerLabel,
+      participantDisplayName: viewerName,
+      leagueName: state?.league_name,
+      weekNumber: wn,
+      participationUrl: shareUrl,
+    });
+    return {
+      propId: prop.id,
+      momentTitle: moment.title,
+      answerLabel,
+      shareText: sharePackage.text,
+      shareUrl: sharePackage.url,
+    };
+  };
+
+  const shareablePicks = state
+    ? state.props.map(buildPickShare).filter((pick): pick is CallYourShotPick => Boolean(pick))
+    : [];
+
+  const openPickShare = (propId?: string) => {
+    const prop = state?.props.find((item) => item.id === propId);
+    if (propId && (!prop || pickStatus[propId] === "saving" || !buildPickShare(prop))) return;
+    setSharePropId(propId ?? null);
+    setShareSheetOpen(true);
+    Analytics.fantasyPickShareOpened(
+      { league_id: leagueId, season_id: seasonId, week_number: wn,
+        experience_type: "weekly", competition_type: "weekly",
+        viewer_role: "member", is_guest: !session },
+      { ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
+        surface: propId ? "question_card" : "completion_state" },
+    );
+  };
+
+  const handlePickShared = (pick: CallYourShotPick, method: PickShareMethod) => {
+    const prop = state?.props.find((item) => item.id === pick.propId);
+    const context = {
+      league_id: leagueId, season_id: seasonId, week_number: wn,
+      experience_type: "weekly" as const, competition_type: "weekly" as const,
+      viewer_role: "member" as const, is_guest: !session,
+    };
+    const extra = {
+      ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
+      share_method: method,
+      surface: (sharePropId ? "question_card" : "completion_state") as "question_card" | "completion_state",
+    };
+    if (method === "copy") {
+      Analytics.fantasyPickLinkCopied(context, extra);
+    } else {
+      Analytics.fantasyPickShared(context, extra);
     }
   };
 
@@ -199,7 +301,7 @@ export default function WeeklyPlayScreen() {
         <View style={[styles.center, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
           <Text style={[styles.errorText, { fontSize: 32, marginBottom: 8 }]}>🏈</Text>
           <Text style={[styles.errorText, { marginBottom: 8, fontWeight: "700", fontSize: 17 }]}>
-            You're not recognized for this league
+            You&apos;re not recognized for this league
           </Text>
           <Text style={[styles.errorText, { color: "#999", fontSize: 14, textAlign: "center", marginBottom: 8, lineHeight: 20 }]}>
             If you already joined this league as a guest, open this link on the same browser or device you originally used.
@@ -259,7 +361,10 @@ export default function WeeklyPlayScreen() {
   const isLocked    = state.card_status === "locked" || state.card_status === "settled";
   const pickedCount = Object.keys(picks).length;
   const total       = state.props.length;
-  const allPicksIn  = !isLocked && pickedCount === total && total > 0;
+  const allPicksSaved = state.props.length > 0 && state.props.every((prop) =>
+    Boolean(picks[prop.id]) && pickStatus[prop.id] !== "saving" && pickStatus[prop.id] !== "error"
+  );
+  const allPicksIn  = !isLocked && pickedCount === total && allPicksSaved;
   const staleSet    = new Set(state.stale_pick_prop_ids ?? []);
 
   return (
@@ -292,12 +397,13 @@ export default function WeeklyPlayScreen() {
 
       {allPicksIn && (
         <View style={styles.completionCard}>
-          <Text style={styles.completionTitle}>You&apos;re all set.</Text>
+          <Text style={styles.completionTitle}>CALL YOUR SHOT</Text>
           <Text style={styles.completionBody}>
-            {isGuest
-              ? "Your picks are saved on this device. Head back to your league to see how to keep your spot if you switch devices."
-              : "Your picks are saved. Head back to your league whenever you're ready."}
+            You&apos;re locked in. Pick one prediction to put on the record.
           </Text>
+          <TouchableOpacity style={styles.shotBtn} onPress={() => openPickShare()}>
+            <Text style={styles.shotBtnText}>Choose a Pick</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.completionBtn} onPress={handleBackToLeague}>
             <Text style={styles.completionBtnText}>
               {isGuest ? "Back to League & Next Steps" : "Back to League"}
@@ -390,9 +496,25 @@ export default function WeeklyPlayScreen() {
                 undefined
               }
             />
+            {!!myPick && status !== "saving" && status !== "error" && !isLocked && (
+              <TouchableOpacity
+                style={styles.questionShare}
+                onPress={() => openPickShare(prop.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.questionShareText}>Share Pick</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       })}
+      <CallYourShotSheet
+        visible={shareSheetOpen}
+        picks={shareablePicks}
+        initialPropId={sharePropId}
+        onClose={() => { setShareSheetOpen(false); setSharePropId(null); }}
+        onShared={handlePickShared}
+      />
     </ScrollView>
   );
 }
@@ -422,6 +544,11 @@ const styles = StyleSheet.create({
   },
   completionTitle: { fontSize: 15, fontWeight: "800", color: "#86EFAC" },
   completionBody: { fontSize: 13, lineHeight: 19, color: C.textSecondary },
+  shotBtn: {
+    minHeight: 42, borderRadius: 9, backgroundColor: C.tint,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 14, marginTop: 2,
+  },
+  shotBtnText: { fontSize: 13, fontWeight: "800", color: "#000" },
   completionBtn: {
     minHeight: 42, borderRadius: 9, backgroundColor: C.tint,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 14, marginTop: 2,
@@ -462,6 +589,11 @@ const styles = StyleSheet.create({
   propPts:    { fontSize: 11, fontWeight: "700", color: C.tint },
   propQ:      { fontSize: 16, fontWeight: "700", color: C.text, lineHeight: 22 },
   staleHint:  { fontSize: 12, color: "#F59E0B", fontWeight: "600" },
+  questionShare: {
+    alignSelf: "flex-start", borderWidth: 1, borderColor: C.border, borderRadius: 7,
+    paddingHorizontal: 10, paddingVertical: 7, marginTop: -2,
+  },
+  questionShareText: { color: C.tint, fontSize: 12, fontWeight: "800" },
   // answer_options are rendered by AnswerSelector — no local answer styles needed
   btn: {
     backgroundColor: C.tint, borderRadius: 10,

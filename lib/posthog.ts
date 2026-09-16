@@ -75,7 +75,7 @@ export interface GDParticipantCtx {
  * referrer are only meaningful at first navigation.
  *
  * Supported query params (any of):
- *   ?src=qr | ?src=discord | ?source=qr | ?source=discord
+ *   ?src=qr | ?src=discord | ?source=qr | ?source=discord | ?source=pick_share
  *   ?utm_source=discord | ?utm_source=qr
  */
 export function detectEntrySource(): string {
@@ -91,6 +91,7 @@ export function detectEntrySource(): string {
     if (src === "email") return "email";
     if (src === "text" || src === "sms") return "text";
     if (src === "home_live_now") return "home_live_now";
+    if (src === "pick_share") return "pick_share";
     const ref = document.referrer ?? "";
     if (ref.includes("discord.com") || ref.includes("discord.gg")) return "discord";
     if (ref && !ref.includes(window.location.hostname)) return "direct_link";
@@ -205,6 +206,14 @@ export const Analytics = {
     capture("fantasy_receipt_shared", fCtx(ctx, extra)),
   fantasyReceiptLinkCopied: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
     capture("fantasy_receipt_link_copied", fCtx(ctx, extra)),
+  fantasyPickShareOpened: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_pick_share_opened", fCtx(ctx, extra)),
+  fantasyPickShared: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_pick_shared", fCtx(ctx, extra)),
+  fantasyPickLinkCopied: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_pick_link_copied", fCtx(ctx, extra)),
+  fantasyWeekOpenedFromPickShare: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_week_opened_from_pick_share", fCtx(ctx, extra)),
 
   // ── Auth funnel ─────────────────────────────────────────────────────────────
   authScreenViewed: (platform: string) =>
