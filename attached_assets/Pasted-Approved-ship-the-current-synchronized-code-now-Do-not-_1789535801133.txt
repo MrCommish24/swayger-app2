@@ -1,0 +1,74 @@
+Approved: ship the current synchronized code now.
+
+Do not rewrite Git history in this step.
+
+Current origin/main:
+200610e
+
+The remaining issue is non-secret attachment/history hygiene only. Madden and Weekly Receipt V2 code are present and validated.
+
+Please:
+
+1. Republish the current production app from origin/main.
+2. Confirm deployment succeeds.
+3. Run the controlled Madden deadline/back-navigation production smoke test.
+
+Verify:
+
+BEFORE DEADLINE
+- participant can submit picks
+- participant can edit picks
+- can_edit_picks=true
+- deadline_passed=false
+- UI says:
+  “Picks confirmed. You can update until the deadline.”
+
+AFTER DEADLINE
+- existing picks remain readable
+- controls become read-only
+- Update My Picks is unavailable
+- attempted edit returns HTTP 409
+- response:
+  “Picks are closed for this card.”
+- can_edit_picks=false
+- deadline_passed=true
+- receipts are NOT automatically revealed
+
+MANUAL LOCK / REVEAL
+- commissioner can manually lock after deadline
+- receipts/reveal state appears
+- existing picks remain unchanged
+- participant still cannot edit
+- settlement/finalization remains functional
+
+BACK NAVIGATION
+- ← Game Day routes to /gameday
+- signed-in flow works
+- signed-out/guest flow does not error
+
+PRIVACY / CLEANUP
+- private Madden room remains excluded from public discovery
+- archive the disposable room using the existing guild-scoped bot archive endpoint
+- confirm no active smoke-test fixture remains
+
+Do not:
+- rewrite Git history
+- modify code
+- add Discord participation/FOMO functionality yet
+- touch external Discord bot code
+
+Return:
+
+A. Republish status
+B. Before-deadline behavior
+C. After-deadline enforcement
+D. Manual-lock/reveal behavior
+E. Back-navigation result
+F. Cleanup result
+G. Whether production is ready for Discord participation/FOMO work
+
+End with:
+
+MADDEN DEADLINE PRODUCTION STATUS: PASS / FAIL
+MANUAL REVEAL FLOW: PASS / FAIL
+READY FOR DISCORD ACTIVITY BUILD: YES / NO
