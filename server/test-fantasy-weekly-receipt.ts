@@ -357,11 +357,12 @@ async function main(): Promise<void> {
     assert(
       (commissionerReceipt.data.competition_props ?? []).length === commissionerReceipt.data.total_competition_props &&
         (commissionerReceipt.data.competition_props ?? []).every((prop: any) =>
+          typeof prop.template_prop_id === "string" &&
           Array.isArray(prop.correct_answer_ids) &&
           Array.isArray(prop.correct_answer_labels) &&
           prop.correct_answer_ids.length === prop.correct_answer_labels.length,
         ),
-      "Receipt includes every question with normalized correct-answer arrays",
+      "Receipt includes stable template IDs and normalized correct-answer arrays",
     );
     assert(
       Boolean(multiCorrectPropId) &&

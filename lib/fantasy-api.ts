@@ -157,6 +157,8 @@ export interface FantasySeasonDetail {
 // for the requesting viewer.
 export interface CompetitionReceiptProp {
   prop_id: string;
+  /** Stable library identifier preserved when the prop was published. */
+  template_prop_id?: string | null;
   question: string;
   display_order: number;
   point_value: number;

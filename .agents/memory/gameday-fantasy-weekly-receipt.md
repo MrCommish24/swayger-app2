@@ -8,3 +8,9 @@ The additive Weekly receipt alias migration is already applied to the live Swayg
 **Why:** Weekly receipt identity is season plus week, while Draft Day identity is season-only. Reusing the Draft Day alias storage would collapse weeks or change existing Draft Day link semantics.
 
 **How to apply:** Keep Weekly receipts finalized-only, viewer-independent, readable to authorized season members after archive, and protected at the canonical route. Short aliases only redirect and must never bypass canonical authorization.
+
+Weekly receipt share facts must come only from resolved answers on settled Weekly props, identified by stable template identifiers. Never derive the fact from Swayger standings, scores, or correct counts, and never fall back to those sources when a supported league-result prop is unavailable.
+
+**Why:** Swayger competition points and fantasy-week outcomes describe different results; mixing them produces misleading share copy.
+
+**How to apply:** Prefer largest-margin winner, then highest-scoring fantasy team, lowest-scoring fantasy team, and smallest-margin winner. Preserve every resolved answer for ties, omit the fact if none qualify, and label Swayger winner totals as SP.

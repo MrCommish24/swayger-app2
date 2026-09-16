@@ -6329,7 +6329,7 @@ export function registerFantasyRoutes(app: Express) {
 
       const { data: props } = await supabase
         .from("gameday_props")
-        .select("id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
+        .select("id, template_prop_id, question, scoring_scope, point_value, display_order, status, correct_answer, correct_answer_ids, answer_options")
         .eq("card_id", (card as any).id)
         .eq("scoring_scope", "competition")
         .order("display_order", { ascending: true });
@@ -6388,6 +6388,7 @@ export function registerFantasyRoutes(app: Express) {
           const correctIds = _correctAnswers(prop);
           return {
             prop_id: prop.id,
+            template_prop_id: prop.template_prop_id ?? null,
             question: prop.question,
             display_order: prop.display_order,
             point_value: prop.point_value,
