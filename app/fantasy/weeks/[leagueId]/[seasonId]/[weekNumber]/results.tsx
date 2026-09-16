@@ -28,6 +28,7 @@ import {
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 import { Analytics } from "@/lib/posthog";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 
 const C = Colors.dark;
 
@@ -108,7 +109,7 @@ export default function WeeklyResultsScreen() {
   if (!data?.finalized) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.emoji}>⏳</Text>
+        <View style={styles.statusMark}><Text style={styles.statusMarkText}>...</Text></View>
         <Text style={styles.pendingTitle}>Results Pending</Text>
         <Text style={styles.pendingBody}>
           Week {wn} results will be revealed once the commissioner finalizes the competition.
@@ -194,6 +195,7 @@ export default function WeeklyResultsScreen() {
                     </Text>
                   </View>
                   <View style={styles.pickContent}>
+                    <WeeklyMomentLabel templatePropId={pick.template_prop_id} compact />
                     <Text style={styles.pickQ} numberOfLines={2}>{pick.question}</Text>
                     {!noPick && (
                       <Text style={[styles.pickAnswer, isCorrect && styles.pickAnswerCorrect, isWrong && styles.pickAnswerWrong]}>
@@ -247,7 +249,7 @@ export default function WeeklyResultsScreen() {
         }
         activeOpacity={0.8}
       >
-        <Text style={styles.leaguePicksLinkText}>🗳  View League Picks →</Text>
+        <Text style={styles.leaguePicksLinkText}>View League Picks →</Text>
       </TouchableOpacity>
 
       {/* Shared finalized receipt — does not alter the personal picks section. */}
@@ -258,7 +260,7 @@ export default function WeeklyResultsScreen() {
         }
         activeOpacity={0.8}
       >
-        <Text style={styles.receiptLinkText}>🧾  Shareable Weekly Receipt →</Text>
+        <Text style={styles.receiptLinkText}>Shareable Weekly Receipt →</Text>
       </TouchableOpacity>
 
       {/* Season Standings link */}
@@ -267,7 +269,7 @@ export default function WeeklyResultsScreen() {
         onPress={() => router.push(`/fantasy/standings/${leagueId}/${seasonId}` as any)}
         activeOpacity={0.8}
       >
-        <Text style={styles.standingsLinkText}>📊  View Season Standings →</Text>
+        <Text style={styles.standingsLinkText}>View Season Standings →</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -281,7 +283,8 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", padding: 32, gap: 12,
   },
   backBtn: { marginBottom: 16 },
-  emoji:        { fontSize: 48, marginBottom: 8 },
+  statusMark: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.tint, alignItems: "center", justifyContent: "center" },
+  statusMarkText: { color: "#fff", fontSize: 16, fontWeight: "800" },
   pendingTitle: { fontSize: 20, fontWeight: "700", color: C.text },
   pendingBody:  { fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 20 },
 

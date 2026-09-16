@@ -491,6 +491,7 @@ export interface DraftDayAnswerOption {
 /** A published prop returned in the play state. */
 export interface DraftDayProp {
   id: string;
+  template_prop_id?: string | null;
   question: string;
   answer_options: DraftDayAnswerOption[];
   scoring_scope: "competition" | "season";
@@ -831,6 +832,9 @@ export async function updateLeagueName(
 export interface WeeklyTemplate {
   id: string;
   question: string;
+  display_title: string | null;
+  short_definition: string | null;
+  settlement_definition: string;
   scoring_scope: "competition";
   point_value: number;
   answer_target_type: "season_member" | "fantasy_team" | "yes_no" | "static" | null;
@@ -1184,6 +1188,7 @@ export async function submitWeeklyPick(
 /** A competition prop returned by GET /weeks/:weekNumber/settlement */
 export interface WeeklySettlementProp {
   id: string;
+  template_prop_id?: string | null;
   question: string;
   display_order: number;
   point_value: number;
@@ -1242,6 +1247,7 @@ export async function settleWeeklyProp(
 
 export interface WeeklyResultsPickEntry {
   prop_id: string;
+  template_prop_id?: string | null;
   question: string;
   display_order: number;
   point_value: number;
@@ -1353,6 +1359,7 @@ export interface LeaguePicksAnswer {
 /** Distribution for a single competition prop */
 export interface LeaguePicksProp {
   prop_id:            string;
+  template_prop_id?:  string | null;
   question:           string;
   answer_target_type: string;
   display_order:      number;

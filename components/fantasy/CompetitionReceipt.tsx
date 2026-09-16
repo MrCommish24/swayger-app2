@@ -19,6 +19,7 @@ import {
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 
 const C = Colors.dark;
 
@@ -125,7 +126,8 @@ export function CompetitionReceipt({
               <Text style={styles.questionNumberText}>{index + 1}</Text>
             </View>
             <View style={styles.questionInfo}>
-              <Text style={styles.questionText}>{prop.question}</Text>
+               <WeeklyMomentLabel templatePropId={prop.template_prop_id} compact />
+               <Text style={styles.questionText}>{prop.question}</Text>
               <View style={styles.answerWrap}>
                 {prop.correct_answer_labels.map((label, answerIndex) => (
                   <View key={`${prop.prop_id}-${answerIndex}`} style={styles.answerPill}>
@@ -150,7 +152,7 @@ export function CompetitionReceipt({
         onPress={onViewLeaguePicks}
         activeOpacity={0.82}
       >
-        <Text style={styles.leaguePicksButtonText}>🗳  See Who Picked What →</Text>
+        <Text style={styles.leaguePicksButtonText}>See Who Picked What →</Text>
         <Text style={styles.leaguePicksButtonSub}>Open the detailed League Picks view</Text>
       </TouchableOpacity>
 

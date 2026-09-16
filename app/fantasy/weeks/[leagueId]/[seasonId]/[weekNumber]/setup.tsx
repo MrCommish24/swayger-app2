@@ -35,6 +35,7 @@ import {
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 
 const C = Colors.dark;
 
@@ -359,6 +360,7 @@ export default function WeeklySetupScreen() {
           <View key={t.id} style={[styles.reviewRow, i > 0 && styles.rowBorder]}>
             <Text style={styles.reviewNum}>{i + 1}.</Text>
             <View style={styles.reviewText}>
+              <WeeklyMomentLabel templatePropId={t.id} compact />
               <Text style={styles.reviewQ}>{t.question}</Text>
               <Text style={styles.rowMeta}>{t.point_value} pt{t.point_value !== 1 ? "s" : ""}</Text>
             </View>
@@ -471,9 +473,8 @@ function TemplateRow({ template: t, isSelected, isDisabled, isFirst, onToggle }:
       disabled={isDisabled}
     >
       <View style={styles.rowLeft}>
-        <Text style={[styles.rowQ, isSelected && styles.rowQSelected]}>
-          {t.question}
-        </Text>
+        <WeeklyMomentLabel templatePropId={t.id} />
+        <Text style={[styles.rowQ, isSelected && styles.rowQSelected]}>{t.question}</Text>
         <Text style={styles.rowMeta}>
           {t.point_value} pt{t.point_value !== 1 ? "s" : ""}
           {t.answer_target_type === "yes_no" ? " · Yes/No" : ""}

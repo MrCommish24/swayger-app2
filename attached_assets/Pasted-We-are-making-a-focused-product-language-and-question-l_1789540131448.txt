@@ -1,0 +1,863 @@
+We are making a focused product-language and question-library upgrade to Swayger Fantasy Weekly:
+
+# SWAYGER MOMENTS — NAMED WEEKLY QUESTION STANDARD + LIBRARY EXPANSION
+
+This is NOT a new major phase.
+
+We want every Weekly Fantasy question to feel like a memorable Swayger moment rather than a generic stat question.
+
+The product standard is:
+
+DISPLAY TITLE
+Short, memorable, personality-driven Swayger Moment name.
+
+DISPLAY PROMPT
+Clear plain-English question explaining exactly what users are predicting.
+
+SETTLEMENT DEFINITION
+Objective internal definition that makes commissioner settlement unambiguous.
+
+SHARE-READY FRAMING
+The question should be phrased in a way that can later support a “Share My Pick / Call Your Shot” experience without requiring the library to be redesigned.
+
+Example:
+
+BAD BEAT OF THE WEEK
+
+Who will be the highest-scoring team that still loses?
+
+Settlement definition:
+Highest fantasy score among losing teams.
+
+Future share framing:
+“I’ve got {answer} for Bad Beat of the Week.”
+
+The personality comes from the title.
+The clarity comes from the prompt.
+The settlement remains objective.
+The Moment should also be worth talking about.
+
+Internal design principles:
+
+FUN TO PREDICT.
+OBVIOUS TO SETTLE.
+WORTH TALKING ABOUT.
+
+==================================================
+1. FIRST — INSPECT CURRENT QUESTION ARCHITECTURE
+==================================================
+
+Before editing:
+
+Inspect:
+
+- Weekly Fantasy question library
+- `gameday_prop_library`
+- Weekly template seed/config
+- `template_prop_id`
+- published Weekly prop snapshots
+- Weekly setup question-selection UI
+- Weekly play UI
+- Weekly settlement UI
+- Weekly Results
+- Weekly Receipt
+- existing database fields for:
+  - title
+  - question/prompt
+  - description
+  - metadata
+  - settlement notes
+
+Determine whether named display titles can be added using existing fields.
+
+Do NOT immediately add schema.
+
+If a new field is required for the core named-Moment presentation:
+prepare the smallest additive migration and STOP.
+
+Return:
+
+SQL APPLICATION REQUIRED
+
+before dependent implementation.
+
+Do NOT add schema solely for future share-copy metadata if that can be derived later from `template_prop_id`.
+
+==================================================
+2. SWAYGER MOMENT DISPLAY STANDARD
+==================================================
+
+Every Weekly question should render conceptually as:
+
+[SWAYGER MOMENT TITLE]
+
+[Plain-English prediction question]
+
+[Answer selector]
+
+Example:
+
+BAD BEAT OF THE WEEK
+
+Who will be the highest-scoring team that still loses?
+
+[Team A]
+[Team B]
+[Team C]
+...
+
+Titles should be visually distinct.
+
+Do NOT replace clarity with cleverness.
+
+==================================================
+2A. SHARE-READY SWAYGER MOMENT MODEL
+==================================================
+
+We are NOT building member pick-sharing in this task.
+
+However, the Swayger Moment library should be structured so a future:
+
+Share My Pick
+Call Your Shot
+
+feature can reuse the same Moment identity cleanly.
+
+Each Weekly template should ideally support conceptually:
+
+1. stable `template_prop_id`
+2. `display_title`
+3. participant-facing prompt
+4. `settlement_definition`
+5. `answer_target_type`
+6. optional share-friendly phrasing potential
+
+Examples:
+
+BAD BEAT OF THE WEEK
+
+Prompt:
+Who will be the highest-scoring team that still loses?
+
+Future share phrase:
+“I’ve got {answer} for Bad Beat of the Week.”
+
+BASEMENT WATCH
+
+Prompt:
+Who will finish with the fewest fantasy points this week?
+
+Future share phrase:
+“I’ve got {answer} on Basement Watch this week.”
+
+WHO GETS AWAY WITH ONE?
+
+Prompt:
+Who will be the lowest-scoring team that still wins?
+
+Future share phrase:
+“I’ve got {answer} getting away with one this week.”
+
+Do NOT build:
+
+- Share My Pick UI
+- share buttons
+- share cards
+- call-your-shot routes
+- pre-lock public-pick behavior
+
+Only keep the Moment model compatible with that future feature.
+
+If a new DB field would be required only to store future share copy:
+do NOT add schema just for that.
+
+Prefer deriving future share copy from `template_prop_id` via a helper.
+
+==================================================
+3. UPDATE EXISTING 7 WEEKLY TEMPLATES
+==================================================
+
+Keep existing stable template IDs and existing settlement semantics.
+
+Update presentation using these proposed Swayger Moment names:
+
+--------------------------------------------------
+A. HIGHEST-SCORING FANTASY TEAM
+--------------------------------------------------
+
+Existing template:
+`fantasy_weekly_nfl_highest_scoring_team`
+
+Display title:
+SCOREBOARD KING
+
+Prompt:
+Who will post the highest fantasy score this week?
+
+Settlement:
+Fantasy team with the highest final weekly fantasy score.
+
+Future share framing:
+“I’ve got {answer} as Scoreboard King this week.”
+
+--------------------------------------------------
+B. LOWEST-SCORING FANTASY TEAM
+--------------------------------------------------
+
+Existing template:
+`fantasy_weekly_nfl_lowest_scoring_team`
+
+Display title:
+BASEMENT WATCH
+
+Prompt:
+Who will finish with the fewest fantasy points this week?
+
+Settlement:
+Fantasy team with the lowest final weekly fantasy score.
+
+Future share framing:
+“I’ve got {answer} on Basement Watch this week.”
+
+--------------------------------------------------
+C. LARGEST-MARGIN WINNER
+--------------------------------------------------
+
+Existing template:
+`fantasy_weekly_nfl_largest_margin_winner`
+
+Display title:
+BIGGEST BLOWOUT
+
+Prompt:
+Who will deliver the biggest win of the week?
+
+Settlement:
+Winning fantasy team with the largest margin of victory.
+
+Future share framing:
+“I’ve got {answer} delivering the Biggest Blowout.”
+
+--------------------------------------------------
+D. SMALLEST-MARGIN WINNER
+--------------------------------------------------
+
+Existing template:
+`fantasy_weekly_nfl_smallest_margin_winner`
+
+Display title:
+ESCAPE ARTIST
+
+Prompt:
+Who will win by the smallest margin this week?
+
+Settlement:
+Winning fantasy team with the smallest margin of victory.
+
+Future share framing:
+“I’ve got {answer} as this week’s Escape Artist.”
+
+--------------------------------------------------
+E. TEAM WITH HIGHEST-SCORING INDIVIDUAL PLAYER
+--------------------------------------------------
+
+Use the existing stable template ID.
+
+Display title:
+STAR POWER
+
+Prompt:
+Which team will roster the highest-scoring individual player this week?
+
+Settlement:
+Fantasy team containing the highest-scoring individual fantasy player for the completed week.
+
+Future share framing:
+“I’ve got {answer} bringing the Star Power this week.”
+
+Do NOT change the existing settlement mechanics.
+
+--------------------------------------------------
+F. ANY TEAM SCORES 150+
+--------------------------------------------------
+
+Use existing stable template ID.
+
+Display title:
+THE 150 CLUB
+
+Prompt:
+Will anyone score 150+ fantasy points this week?
+
+Answers:
+Yes / No
+
+Settlement:
+Yes if at least one fantasy team finishes with 150.0+ points.
+
+Future share framing examples:
+“Yes — somebody’s joining the 150 Club this week.”
+or
+“No — nobody’s cracking 150 this week.”
+
+Do not build the share phrasing now; document compatibility only.
+
+--------------------------------------------------
+G. MATCHUP DECIDED BY FEWER THAN 5
+--------------------------------------------------
+
+Use existing stable template ID.
+
+Display title:
+PHOTO FINISH
+
+Prompt:
+Will any matchup be decided by fewer than 5 fantasy points?
+
+Answers:
+Yes / No
+
+Settlement:
+Yes if at least one completed matchup has an absolute final margin below 5.0 fantasy points.
+
+Future share framing:
+“I’m calling a Photo Finish this week.”
+
+==================================================
+4. ADD NEW SWAYGER MOMENTS
+==================================================
+
+Add these to the Weekly question library.
+
+Do NOT replace the existing seven.
+
+--------------------------------------------------
+A. BAD BEAT OF THE WEEK
+--------------------------------------------------
+
+Stable template ID:
+
+`fantasy_weekly_nfl_bad_beat`
+
+Display title:
+
+BAD BEAT OF THE WEEK
+
+Prompt:
+
+Who will be the highest-scoring team that still loses?
+
+Answer target:
+fantasy_team
+
+Settlement definition:
+
+Among all losing fantasy teams, select the team with the highest final fantasy score.
+
+If multiple losing teams tie for that score:
+all tied teams may be correct using existing multi-correct settlement.
+
+Future share framing:
+“I’ve got {answer} for Bad Beat of the Week.”
+
+--------------------------------------------------
+B. WHO GETS AWAY WITH ONE?
+--------------------------------------------------
+
+Stable template ID:
+
+`fantasy_weekly_nfl_got_away_with_one`
+
+Display title:
+
+WHO GETS AWAY WITH ONE?
+
+Prompt:
+
+Who will be the lowest-scoring team that still wins?
+
+Answer target:
+fantasy_team
+
+Settlement definition:
+
+Among all winning fantasy teams, select the team with the lowest final fantasy score.
+
+If multiple winners tie:
+support multi-correct settlement.
+
+Future share framing:
+“I’ve got {answer} getting away with one this week.”
+
+--------------------------------------------------
+C. FRAUD WATCH
+--------------------------------------------------
+
+Stable template ID:
+
+`fantasy_weekly_nfl_win_under_100`
+
+Display title:
+
+FRAUD WATCH
+
+Prompt:
+
+Will somebody win with fewer than 100 fantasy points?
+
+Answer target:
+yes_no
+
+Settlement:
+
+Yes if at least one winning fantasy team scores less than 100.0 points.
+
+Future share framing:
+“I’m calling Fraud Watch this week — somebody wins under 100.”
+
+--------------------------------------------------
+D. HEARTBREAKER
+--------------------------------------------------
+
+Stable template ID:
+
+`fantasy_weekly_nfl_130_plus_loss`
+
+Display title:
+
+HEARTBREAKER
+
+Prompt:
+
+Will somebody score 130+ fantasy points and still lose?
+
+Answer target:
+yes_no
+
+Settlement:
+
+Yes if at least one losing fantasy team finishes with 130.0+ points.
+
+Future share framing:
+“I’m calling a Heartbreaker this week — 130+ and still taking the L.”
+
+--------------------------------------------------
+E. STATEMENT WIN
+--------------------------------------------------
+
+Stable template ID:
+
+`fantasy_weekly_nfl_30_plus_blowout`
+
+Display title:
+
+STATEMENT WIN
+
+Prompt:
+
+Will somebody win by 30+ fantasy points?
+
+Answer target:
+yes_no
+
+Settlement:
+
+Yes if at least one matchup has a winning margin of 30.0+ fantasy points.
+
+Future share framing:
+“I’m calling a Statement Win this week — 30+ point blowout.”
+
+==================================================
+5. DO NOT ADD SHOOTOUT YET
+==================================================
+
+Do NOT add a matchup-answer question like:
+
+“Which matchup will be the highest-scoring matchup?”
+
+unless the existing architecture already has a clean matchup answer target.
+
+Do not create a new answer-target model for this task.
+
+==================================================
+6. WEEK 2 IS ALREADY PUBLISHED
+==================================================
+
+Important real-world condition:
+
+The pilot league’s Week 2 question card has already been published.
+
+Audit:
+
+- whether anyone has saved a Week 2 pick
+- whether current published props snapshot their question text
+- whether adding a display title can be done without mutating the underlying published question semantics
+
+Product rule:
+
+If Week 2 has existing picks:
+
+DO NOT change:
+- `template_prop_id`
+- question meaning
+- answer options
+- point value
+- settlement rules
+
+If the new display title can safely be derived from the existing `template_prop_id` and rendered above the already-published prompt:
+it is acceptable to add the title presentation to Week 2.
+
+Example:
+
+BIGGEST BLOWOUT
+
+Who will win by the largest margin?
+
+This does not change the actual prediction.
+
+If title presentation cannot be added without rewriting published competition data:
+leave Week 2 unchanged.
+
+Use the new standard beginning Week 3.
+
+Return the exact Week 2 decision.
+
+==================================================
+7. PUBLISHED QUESTION IMMUTABILITY
+==================================================
+
+Preserve the existing rule:
+
+question semantics freeze once participants begin making picks.
+
+This task must not create a backdoor around that rule.
+
+A visual title derived from an unchanged template is not a semantic question edit.
+
+Be conservative.
+
+==================================================
+8. LIBRARY / COMMISSIONER UI
+==================================================
+
+Update Weekly question selection so commissioners see:
+
+BAD BEAT OF THE WEEK
+Highest-scoring team that loses
+
+WHO GETS AWAY WITH ONE?
+Lowest-scoring team that wins
+
+BIGGEST BLOWOUT
+Largest-margin winner
+
+BASEMENT WATCH
+Fewest fantasy points
+
+etc.
+
+Prefer:
+
+TITLE
+short definition
+
+rather than displaying a wall of long question text.
+
+When selected, the actual participant-facing prompt should still be clear.
+
+==================================================
+9. PARTICIPANT PLAY UI
+==================================================
+
+Each question card should show:
+
+Moment title
+Prompt
+Answer selector
+
+Example:
+
+--------------------------------
+
+BAD BEAT OF THE WEEK
+
+Who will be the highest-scoring team that still loses?
+
+[Choose Team]
+
+--------------------------------
+
+Use the existing visual hierarchy and design system.
+
+Titles should feel branded but should not overwhelm the answer interaction.
+
+==================================================
+10. SETTLEMENT UI
+==================================================
+
+Commissioner settlement should also show the Moment title.
+
+Example:
+
+BAD BEAT OF THE WEEK
+
+Highest-scoring losing team
+
+[Team options]
+
+This makes settlement easier because the commissioner understands both:
+
+- branded question
+- objective meaning
+
+Do not require commissioner memory of the marketing title.
+
+==================================================
+11. RESULTS / RECEIPTS
+==================================================
+
+Where practical, Results and Weekly Receipt should display the Moment title.
+
+Example:
+
+BAD BEAT OF THE WEEK
+✓ Mr Roarke
+
+rather than only:
+
+Who will be the highest-scoring team that still loses?
+
+For the full receipt, title + prompt is acceptable if space permits.
+
+Do not make the compact social share card longer.
+
+==================================================
+12. SHARE FACT INTEGRATION
+==================================================
+
+Do NOT change the existing Weekly receipt share-fact priority in this task unless required for compatibility.
+
+Current fact logic remains:
+
+1. Biggest Blowout
+2. Scoreboard King
+3. Basement Watch
+4. Escape Artist
+
+Future enhancement may incorporate:
+
+- Bad Beat
+- Who Gets Away With One?
+
+but do not expand share-copy logic automatically in this task.
+
+==================================================
+13. POINT VALUES
+==================================================
+
+Do not change current scoring values merely because questions have new titles.
+
+For new questions:
+
+use the existing standard Weekly point value unless there is an established template convention.
+
+Do not create odds/difficulty weighting.
+
+==================================================
+14. QUESTION BANK SIZE
+==================================================
+
+After this task, Weekly question bank should contain:
+
+Existing 7
++
+5 new Swayger Moments
+
+Total:
+12 templates
+
+Do not make all 12 default-selected.
+
+Current default question-set behavior should remain unchanged unless necessary.
+
+==================================================
+15. FUTURE STANDARD
+==================================================
+
+Document the Weekly Fantasy template standard:
+
+Every new Weekly Swayger Moment should have:
+
+1. stable `template_prop_id`
+2. `display_title`
+3. clear participant-facing prompt
+4. objective settlement definition
+5. supported answer-target type
+6. deterministic settlement
+7. multi-correct handling where applicable
+8. share-friendly phrasing potential
+
+Design principles:
+
+FUN TO PREDICT.
+OBVIOUS TO SETTLE.
+WORTH TALKING ABOUT.
+
+==================================================
+16. DO NOT BUILD CATEGORIES YET
+==================================================
+
+Future categories may include:
+
+GLORY
+PAIN
+FRAUD WATCH
+CHAOS
+
+Do NOT build category-selection UI in this task.
+
+Named Swayger Moments first.
+
+==================================================
+17. ANALYTICS
+==================================================
+
+Do not create new analytics events.
+
+Existing pick analytics are sufficient.
+
+If existing analytics safely carry `template_prop_id`, preserve it.
+
+Do not send:
+
+- question text
+- answer text
+- team names
+- Moment titles
+
+unless already part of an approved analytics convention.
+
+==================================================
+18. TESTS
+==================================================
+
+Add focused coverage for:
+
+- all existing 7 templates have Moment titles
+- all new 5 templates exist
+- stable template IDs
+- correct answer target types
+- Bad Beat settlement definition
+- Got Away With One definition
+- Yes/No templates
+- multi-correct compatibility
+- commissioner library display
+- participant title + prompt rendering
+- settlement title rendering
+- existing Week 2 immutability
+- no answer-option mutation
+- no scoring regression
+- Weekly receipt compatibility
+- existing share-fact logic unchanged
+- no Share My Pick feature accidentally introduced
+
+==================================================
+19. REGRESSION
+==================================================
+
+Run:
+
+- Weekly setup
+- Weekly publish
+- Weekly play
+- Weekly settlement
+- League Picks
+- Weekly Results
+- Weekly Receipt
+- Phase 6G multi-correct
+- Fantasy analytics
+- Week sequence/repeatability
+
+Then:
+
+- server build
+- web/iOS/Android static bundle as appropriate
+- targeted lint
+
+Return exact totals.
+
+==================================================
+20. MANUAL QA
+==================================================
+
+Return exact QA steps:
+
+1. Open Week question library.
+2. Verify existing seven now have Swayger Moment titles.
+3. Verify five new questions appear.
+4. Select Bad Beat.
+5. Select Who Gets Away With One.
+6. Publish a test week.
+7. Open as a participant.
+8. Verify title + clear prompt.
+9. Make picks.
+10. Lock.
+11. Open settlement.
+12. Verify branded title + objective meaning.
+13. Settle a Bad Beat.
+14. Settle Who Gets Away With One.
+15. Test multi-correct tie.
+16. Finalize.
+17. Verify Results.
+18. Verify receipt.
+19. Verify Week 2 pilot card was not semantically mutated if picks already existed.
+20. Verify no Share My Pick UI exists yet.
+
+==================================================
+21. RETURN
+==================================================
+
+Return:
+
+# SWAYGER MOMENTS WEEKLY QUESTION LIBRARY REPORT
+
+1. Existing question architecture
+2. Schema decision
+3. Named-Moment presentation model
+4. Share-ready model decision
+5. Existing seven renamed
+6. Five new templates
+7. Week 2 handling decision
+8. Published-question immutability
+9. Commissioner library UX
+10. Participant play UX
+11. Settlement UX
+12. Results/receipt behavior
+13. Multi-correct behavior
+14. Files changed
+15. Tests added
+16. Regression totals
+17. Known limitations
+18. Exact manual QA
+19. Final 12-question library
+20. Future Call Your Shot compatibility
+
+Then STOP.
+
+Do not begin:
+- category work
+- Share My Pick
+- Call Your Shot
+- another feature
+
+Final status:
+
+SWAYGER MOMENTS QUESTION LIBRARY READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED

@@ -242,7 +242,7 @@ export default function WeeklyReceiptScreen() {
   if (!receipt?.finalized) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <Text style={styles.emoji}>⏳</Text>
+        <View style={styles.statusMark}><Text style={styles.statusMarkText}>...</Text></View>
         <Text style={styles.pendingTitle}>Receipt Not Ready Yet</Text>
         <Text style={styles.pendingBody}>Week {wn} results will appear after the commissioner finalizes them.</Text>
         <TouchableOpacity onPress={() => router.back()}><Text style={styles.linkText}>← Back to Week {wn}</Text></TouchableOpacity>
@@ -306,7 +306,8 @@ const styles = StyleSheet.create({
   errorText: { color: C.danger, fontSize: 14, textAlign: "center", lineHeight: 20 },
   button: { backgroundColor: C.tint, borderRadius: 11, paddingVertical: 13, paddingHorizontal: 28, minWidth: 130, alignItems: "center" },
   buttonText: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  emoji: { fontSize: 46 },
+  statusMark: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.tint, alignItems: "center", justifyContent: "center" },
+  statusMarkText: { color: "#fff", fontSize: 16, fontWeight: "800" },
   pendingTitle: { color: C.text, fontSize: 21, fontWeight: "800", textAlign: "center" },
   pendingBody: { color: C.textSecondary, fontSize: 14, textAlign: "center", lineHeight: 21 },
   nextWeekCard: { backgroundColor: "#111A33", borderRadius: 16, borderWidth: 1, borderColor: "#293B78", padding: 17, marginTop: 4 },

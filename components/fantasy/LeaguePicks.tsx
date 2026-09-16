@@ -29,6 +29,7 @@ import type {
   LeaguePicksProp,
   LeaguePicksAnswer,
 } from "@/lib/fantasy-api";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 
 const C = Colors.dark;
 
@@ -159,6 +160,7 @@ function PropCard({
         <Text style={styles.propNum}>Q{propIndex + 1}</Text>
         <Text style={styles.propPts}>{prop.point_value} pt{prop.point_value !== 1 ? "s" : ""}</Text>
       </View>
+      <WeeklyMomentLabel templatePropId={prop.template_prop_id} />
       <Text style={styles.propQuestion}>{prop.question}</Text>
 
       {/* Pick tally */}

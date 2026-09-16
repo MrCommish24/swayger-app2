@@ -35,6 +35,7 @@ import {
 import { PENDING_AUTH_REDIRECT_KEY } from "@/app/_layout";
 import Colors from "@/constants/colors";
 import { AnswerSelector } from "@/components/fantasy/AnswerSelector";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 import { Analytics } from "@/lib/posthog";
 
 const C = Colors.dark;
@@ -369,6 +370,7 @@ export default function WeeklyPlayScreen() {
               <Text style={styles.propNum}>Q{i + 1}</Text>
               <Text style={styles.propPts}>{prop.point_value} pt{prop.point_value !== 1 ? "s" : ""}</Text>
             </View>
+            <WeeklyMomentLabel templatePropId={prop.template_prop_id} />
             <Text style={styles.propQ}>{prop.question}</Text>
 
             {isStale && (

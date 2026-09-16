@@ -29,6 +29,7 @@ import {
   DraftDaySettlementLeaderboardEntry,
 } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
+import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 import { Analytics, FantasyAnalyticsContext } from "@/lib/posthog";
 
 const C = Colors.dark;
@@ -218,6 +219,7 @@ export default function WeeklySettleScreen() {
               <Text style={styles.propPts}>{prop.point_value} pt{prop.point_value !== 1 ? "s" : ""}</Text>
               {isSettled && <View style={styles.settledDot} />}
             </View>
+            <WeeklyMomentLabel templatePropId={prop.template_prop_id} settlement />
             <Text style={styles.propQ}>{prop.question}</Text>
 
             {isSaving && <Text style={styles.savingText}>Saving…</Text>}

@@ -40,6 +40,7 @@ import {
   parseSettlementCorrectAnswers,
   sameCorrectAnswerSet,
 } from "./correct-answers";
+import { getWeeklyMoment } from "../lib/fantasy-weekly-moments";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -4872,7 +4873,16 @@ export function registerFantasyRoutes(app: Express) {
         default_reward_description:    (season as any).default_reward_description ?? null,
         default_reward_amount_display: (season as any).default_reward_amount_display ?? null,
         // Weekly props are all competition-scope
-        templates: (templates ?? []).map((t: any) => ({ ...t, scoring_scope: "competition" })),
+        templates: (templates ?? []).map((t: any) => {
+          const moment = getWeeklyMoment(t.id);
+          return {
+            ...t,
+            scoring_scope: "competition",
+            display_title: moment?.title ?? null,
+            short_definition: moment?.shortDefinition ?? null,
+            settlement_definition: moment?.settlementNote ?? t.settlement_window ?? "",
+          };
+        }),
       });
     }
   );

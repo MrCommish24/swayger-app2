@@ -40,3 +40,4 @@
 - [Madden Weekly Pick Card](gameday-madden-weekly-pick-card.md) — private aggregate pregame card; two-choice matchup props; additive Supabase migration required.
 - [Madden Discord participation outbox](gameday-madden-participation-outbox.md) — atomic completion events, service-role storage, guild-scoped at-least-once delivery, migration-first rollout.
 - [Fantasy Weekly Receipt](gameday-fantasy-weekly-receipt.md) — live weekly alias schema is applied; receipts are finalized, member-authorized, viewer-independent, and archive-readable.
+- [Fantasy Weekly Swayger Moments](gameday-fantasy-swayger-moments.md) — titles derive from stable template IDs; source-library copy may evolve, but published weekly props remain immutable.
