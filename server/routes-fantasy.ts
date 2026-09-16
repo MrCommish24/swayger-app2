@@ -6360,7 +6360,7 @@ export function registerFantasyRoutes(app: Express) {
       // no picks or member-specific state is linked into a receipt.
       const { data: nextWeekRoom } = await supabase
         .from("gameday_rooms")
-        .select("id, status, week_number")
+        .select("id, status, week_number, reward_amount_display")
         .eq("league_season_id", seasonId)
         .eq("competition_type", "weekly")
         .eq("experience_type", "fantasy")
@@ -6411,9 +6411,12 @@ export function registerFantasyRoutes(app: Express) {
           week_number: wn + 1,
           published: nextWeekPublished,
           room_status: nextWeekPublished ? (nextWeekRoom as any).status : null,
+          reward_amount_display: nextWeekPublished ? (nextWeekRoom as any).reward_amount_display ?? null : null,
         },
         next_week_number: wn + 1,
         next_week_published: nextWeekPublished,
+        next_week_reward_amount_display:
+          nextWeekPublished ? (nextWeekRoom as any).reward_amount_display ?? null : null,
       });
     },
   );

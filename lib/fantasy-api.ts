@@ -200,6 +200,7 @@ export interface WeeklyReceiptData extends CompetitionReceiptData {
   };
   next_week_published?: boolean;
   next_week_number?: number | null;
+  next_week_reward_amount_display?: string | null;
 }
 
 // GET /api/fantasy/leagues/:leagueId/seasons/:seasonId/join-info

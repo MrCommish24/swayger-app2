@@ -6,6 +6,8 @@ import type {
 
 export const COMPACT_RECEIPT_MAX_ROWS = 5;
 export const COMPACT_RECEIPT_MAX_TIE_ROWS = 8;
+export const WEEKLY_COMPACT_RECEIPT_MAX_ROWS = 4;
+export const WEEKLY_COMPACT_RECEIPT_MAX_TIE_ROWS = 5;
 
 function formatNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "the winner";
@@ -66,8 +68,8 @@ export function getWeeklyReceiptSafeFact(data: WeeklyReceiptData): string {
   const largestMargin = resultFor(WEEKLY_FACT_TEMPLATES.largestMargin);
   if (largestMargin.length > 0) {
     return largestMargin.length === 1
-      ? `💥 Biggest blowout of the week: ${largestMargin[0]}.`
-      : `💥 Biggest wins of the week: ${formatShareNames(largestMargin)}.`;
+      ? `💥 Biggest blowout: ${largestMargin[0]}.`
+      : `💥 Biggest wins: ${formatShareNames(largestMargin)}.`;
   }
 
   const highestScore = resultFor(WEEKLY_FACT_TEMPLATES.highestScore);
@@ -104,13 +106,15 @@ export function buildWeeklyReceiptShareText(
   const fact = getWeeklyReceiptSafeFact(data);
   const nextWeek = data.next_week_number ?? week + 1;
   const result = winners.length > 1
-    ? `${winnerLabel} tie for the win with ${points} SP.`
-    : `${winnerLabel} wins Week ${week} with ${points} SP.`;
+    ? `${winnerLabel} tie at ${points} SP.`
+    : `${winnerLabel} wins at ${points} SP.`;
   const cta = data.next_week_published
-    ? `Week ${nextWeek} is live. Make your picks.`
-    : `Week ${nextWeek} is next. Don’t miss it.`;
+    ? data.next_week_reward_amount_display
+      ? `Week ${nextWeek} is live — ${data.next_week_reward_amount_display} up for grabs.`
+      : `Week ${nextWeek} is live — make your picks.`
+    : `Week ${nextWeek} is next — don’t miss it.`;
   return [
-    `🏆 ${leagueName} — Week ${week} is in the books.`,
+    `🏆 ${leagueName} — Week ${week}`,
     result,
     fact,
     cta,

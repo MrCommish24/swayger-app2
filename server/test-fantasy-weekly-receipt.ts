@@ -66,6 +66,26 @@ async function redirect(path: string): Promise<{ status: number; location: strin
   return { status: response.status, location: response.headers.get("location") };
 }
 
+async function publicGet(
+  path: string,
+  userAgent = "facebookexternalhit/1.1",
+): Promise<{ status: number; contentType: string; body: string }> {
+  const response = await fetch(`${BASE}${path}`, {
+    redirect: "manual",
+    headers: { "User-Agent": userAgent },
+  });
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type") ?? "",
+    body: await response.text(),
+  };
+}
+
+function previewShortCode(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz234567";
+  return Array.from({ length: 16 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+}
+
 async function createUser(prefix: string): Promise<{
   id: string;
   email: string;
@@ -327,6 +347,17 @@ async function main(): Promise<void> {
 
     const preFinal = await api("GET", `${week2Base}/receipt`, commToken);
     assert(preFinal.status === 200 && preFinal.data.finalized === false, "Pre-finalized receipt is gated");
+    const preFinalCode = previewShortCode();
+    const { error: preFinalAliasError } = await service
+      .from("fantasy_weekly_receipt_aliases")
+      .insert({ league_season_id: seasonId, week_number: 2, short_code: preFinalCode });
+    if (preFinalAliasError) throw new Error(`pre-final alias fixture failed: ${preFinalAliasError.message}`);
+    const preFinalPreview = await publicGet(`/r/${preFinalCode}`);
+    assert(
+      preFinalPreview.status === 404 &&
+        !preFinalPreview.body.includes("Weekly Receipt"),
+      "Unfinalized Weekly alias exposes no receipt metadata",
+    );
 
     let multiCorrectPropId: string | null = null;
     await lockSettleFinalize(ctx, 2, (prop) => {
@@ -411,10 +442,43 @@ async function main(): Promise<void> {
 
     const canonical = await redirect(`/r/${alias.data.short_code}`);
     assert(canonical.status === 302 && canonical.location === `/fantasy/weeks/${leagueId}/${seasonId}/2/receipt`, "Weekly short alias redirects canonically");
+    const previewPage = await publicGet(`/r/${alias.data.short_code}`);
+    assert(
+      previewPage.status === 200 &&
+        previewPage.contentType.includes("text/html") &&
+        previewPage.body.includes("Weekly Receipt") &&
+        previewPage.body.includes("twitter:card"),
+      "Finalized Weekly alias exposes receipt-specific crawler metadata",
+    );
+    assert(
+      !/(guest_token|member_id|claim_id|email|phone|selected_answer|correct_answer|league picks)/i.test(previewPage.body),
+      "Crawler metadata contains no tokens, identities, picks, or protected receipt payload",
+    );
+    const previewImage = await publicGet(`/r/${alias.data.short_code}/preview.svg`);
+    assert(
+      previewImage.status === 200 &&
+        previewImage.contentType.includes("image/svg+xml") &&
+        previewImage.body.includes('width="1080" height="1350"') &&
+        previewImage.body.includes("SWAYGER FANTASY"),
+      "Weekly alias serves a bounded branded receipt preview image",
+    );
+    assert(
+      !/question|selected_answer|participant_id|guest_token|member_id|claim_id|email|phone/i.test(previewImage.body),
+      "Preview image contains no questions, picks, tokens, or identifiers",
+    );
     const malformed = await redirect("/r/not-a-valid-receipt-code");
     const unknown = await redirect("/r/bbbbbbbbbbbbbbbb");
+    const malformedPreview = await publicGet("/r/not-a-valid-receipt-code");
+    const unknownPreview = await publicGet("/r/bbbbbbbbbbbbbbbb");
     assert(malformed.status === 404, "Malformed short aliases remain 404");
     assert(unknown.status === 404, "Unknown well-formed aliases remain 404");
+    assert(
+      malformedPreview.status === 404 &&
+        unknownPreview.status === 404 &&
+        !malformedPreview.body.includes("og:title") &&
+        !unknownPreview.body.includes("og:title"),
+      "Malformed and unknown aliases leak no preview metadata",
+    );
 
     const archive = await api("POST", `/api/fantasy/leagues/${leagueId}/archive`, commToken);
     assert(archive.status === 200 && archive.data.archived === true, "Commissioner can archive the finalized fixture");
