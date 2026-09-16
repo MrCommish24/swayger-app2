@@ -1,0 +1,96 @@
+The prior release-status report is now stale.
+
+Since that report, I have pushed all outstanding commits. There is nothing else waiting to sync.
+
+Please refresh/fetch the current repository state and verify the actual remote before making any assumptions from the previous report.
+
+Confirm:
+
+1. Current local HEAD.
+2. Current origin/main.
+3. HEAD == origin/main.
+4. Ahead = 0.
+5. Behind = 0.
+6. Commit 395c56e709107df01b94e9330af108b86742b3ee is present in origin/main history.
+7. The clean Madden deadline/back-navigation implementation is present on origin/main.
+8. The unwanted brief attachment and QA screenshot are not part of that clean Madden release commit.
+9. The Weekly Receipt work that has now been pushed remains intact and has not been lost by the earlier history cleanup.
+10. Tracked working tree is clean.
+
+Do not perform another history rewrite.
+Do not force-push.
+Do not reset or discard commits.
+
+If the repository is synchronized, proceed to republish the current production app.
+
+After republish, run a controlled production smoke test for the Madden deadline/back-navigation changes.
+
+PRODUCTION SMOKE TEST
+
+Use one disposable Madden Weekly Pick Card with a deadline a few minutes in the future.
+
+Before deadline verify:
+- participant can submit picks
+- participant can edit picks
+- can_edit_picks=true
+- deadline_passed=false
+- UI copy says:
+  “Picks confirmed. You can update until the deadline.”
+
+After deadline verify:
+- existing picks remain readable
+- answer controls become read-only
+- Update My Picks is unavailable
+- backend rejects an attempted edit with HTTP 409
+- response says:
+  “Picks are closed for this card.”
+- can_edit_picks=false
+- deadline_passed=true
+- receipts are NOT automatically revealed
+
+Then manually lock the card and verify:
+- commissioner lock succeeds after deadline
+- receipts/reveal state appears
+- existing picks remain unchanged
+- participant still cannot edit
+- settlement/finalization remains functional
+
+BACK NAVIGATION
+
+Verify:
+- ← Game Day routes to /gameday
+- signed-in participant navigation works
+- signed-out/guest navigation does not error
+
+PRIVACY / CLEANUP
+
+Verify:
+- private Madden room remains excluded from public discovery
+- archive the disposable room using the existing bot-safe guild-scoped archive endpoint
+- no active smoke-test fixture remains afterward
+
+Do not:
+- modify code
+- add Discord participation/FOMO features yet
+- modify the external Discord bot
+- add auto-locking
+- add team dropdowns
+- change matchup logic
+
+Return:
+
+A. Current HEAD/origin status
+B. Commit/history verification
+C. Republish status
+D. Before-deadline production behavior
+E. After-deadline production enforcement
+F. Manual-lock/reveal behavior
+G. Back-navigation behavior
+H. Cleanup verification
+I. Whether production is now ready for the Discord participation/FOMO build
+
+End with:
+
+MADDEN DEADLINE PRODUCTION STATUS: PASS / FAIL
+MANUAL REVEAL FLOW: PASS / FAIL
+READY FOR DISCORD ACTIVITY BUILD: YES / NO
