@@ -1,0 +1,101 @@
+The Madden deadline enforcement and Game Day Back-button work has passed validation.
+
+Please complete release hygiene.
+
+IMPORTANT:
+Do not include the uploaded requirements file or QA screenshot workspace assets in the commit.
+
+1. Confirm the intended tracked implementation changes are limited to:
+
+- app/gameday/[roomId]/index.tsx
+- lib/gameday-api.ts
+- server/routes-gameday.ts
+- server/test-gameday-madden-weekly-e2e.ts
+- server/test-gameday-madden-weekly.ts
+- server_dist/index.js
+- .agents/memory/gameday-madden-weekly-pick-card.md
+
+2. Confirm no secret-looking files are included.
+
+3. Commit the intended changes with:
+
+Enforce Game Day pick deadlines and fix room back navigation
+
+4. Push to origin/main.
+
+5. Confirm:
+- HEAD == origin/main
+- ahead = 0
+- behind = 0
+- tracked working tree clean
+- uploaded requirements/screenshot assets remain uncommitted
+
+6. Republish the production app.
+
+7. After republish, run a controlled production smoke test using a disposable Madden room.
+
+SMOKE TEST
+
+Create one Madden Weekly Pick Card with a deadline a few minutes in the future.
+
+Verify before deadline:
+- participant can make picks
+- participant can edit picks
+- UI says:
+  “Picks confirmed. You can update until the deadline.”
+- can_edit_picks=true
+- deadline_passed=false
+
+Then verify after the deadline:
+- existing picks still display
+- answer controls are read-only
+- Update My Picks is unavailable
+- backend rejects an attempted edit with HTTP 409
+- response:
+  “Picks are closed for this card.”
+- deadline_passed=true
+- can_edit_picks=false
+- card has NOT automatically revealed receipts
+
+Then manually lock the card as commissioner and verify:
+- lock succeeds after deadline
+- receipt/reveal state appears
+- existing picks remain unchanged
+- participant cannot edit
+
+Also verify:
+- ← Game Day routes to /gameday
+- signed-out/guest navigation does not error
+- private room remains excluded from public discovery
+
+Finally archive the disposable Discord test room using the existing guild-scoped bot archive flow.
+
+Confirm no active test fixture remains.
+
+Do not:
+- add auto-locking
+- add Discord activity events yet
+- modify the external Discord bot
+- change matchup behavior
+- add team dropdowns
+- add payments/Stripe
+- add EA/Neon integration
+
+Return:
+
+A. Commit hash
+B. Push confirmation
+C. Republish status
+D. Before-deadline behavior
+E. After-deadline enforcement
+F. Manual-lock/reveal behavior
+G. Back-navigation verification
+H. Cleanup verification
+I. Final git status
+J. Whether production is ready for the Discord participation/FOMO build
+
+End with:
+
+MADDEN DEADLINE PRODUCTION STATUS: PASS / FAIL
+MANUAL REVEAL FLOW: PASS / FAIL
+READY FOR DISCORD ACTIVITY BUILD: YES / NO
