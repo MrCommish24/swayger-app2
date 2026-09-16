@@ -1836,6 +1836,118 @@ export function registerGamedayRoutes(app: Express) {
     },
   );
 
+  // ── Bot: Madden participation activity delivery ───────────────────────────
+  // These routes expose durable outbox records only. The backend never calls
+  // Discord and never includes participant selections in the response.
+  app.get(
+    "/api/gameday/bot/madden-participation-events",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const guildId = getRequestedDiscordGuildId(req);
+      if (!guildId) {
+        res.status(400).json({ ok: false, error: "X-Discord-Guild-ID is required for Madden participation events" });
+        return;
+      }
+
+      const rawLimit = req.query.limit;
+      if (Array.isArray(rawLimit) || (rawLimit !== undefined && typeof rawLimit !== "string")) {
+        res.status(400).json({ ok: false, error: "limit must be provided once" });
+        return;
+      }
+      const limit = rawLimit === undefined ? 50 : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        res.status(400).json({ ok: false, error: "limit must be an integer from 1 to 100" });
+        return;
+      }
+
+      const { data, error } = await getServiceSupabase()
+        .from("gameday_madden_participation_events")
+        .select(
+          "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, created_at, delivered_at",
+        )
+        .eq("discord_guild_id", guildId)
+        .is("delivered_at", null)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+
+      if (error) {
+        console.error("[gameday] Madden participation event fetch failed:", error.message);
+        res.status(503).json({
+          ok: false,
+          error: "Madden participation events are not enabled; apply the participation migration first",
+          code: "MADDEN_PARTICIPATION_SCHEMA_UNAVAILABLE",
+        });
+        return;
+      }
+      res.json({ ok: true, events: data ?? [] });
+    },
+  );
+
+  app.post(
+    "/api/gameday/bot/madden-participation-events/:eventId/ack",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ ok: false, error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const guildId = getRequestedDiscordGuildId(req);
+      if (!guildId) {
+        res.status(400).json({ ok: false, error: "X-Discord-Guild-ID is required for Madden participation events" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const { data: existing, error: existingError } = await supabase
+        .from("gameday_madden_participation_events")
+        .select("id, discord_guild_id, delivered_at")
+        .eq("id", req.params.eventId)
+        .maybeSingle();
+      if (existingError) {
+        res.status(503).json({
+          ok: false,
+          error: "Madden participation events are not enabled; apply the participation migration first",
+          code: "MADDEN_PARTICIPATION_SCHEMA_UNAVAILABLE",
+        });
+        return;
+      }
+      if (!existing) {
+        res.status(404).json({ ok: false, error: "Madden participation event not found" });
+        return;
+      }
+      if (normalizeDiscordGuildId(existing.discord_guild_id) !== guildId) {
+        res.status(403).json({ ok: false, error: "Discord guild is not authorized for this event" });
+        return;
+      }
+      if (existing.delivered_at) {
+        res.json({ ok: true, already: true, delivered_at: existing.delivered_at });
+        return;
+      }
+
+      const deliveredAt = new Date().toISOString();
+      const { data: acknowledged, error } = await supabase
+        .from("gameday_madden_participation_events")
+        .update({ delivered_at: deliveredAt })
+        .eq("id", req.params.eventId)
+        .eq("discord_guild_id", guildId)
+        .is("delivered_at", null)
+        .select("id, delivered_at")
+        .maybeSingle();
+      if (error) {
+        console.error("[gameday] Madden participation event acknowledgement failed:", error.message);
+        res.status(500).json({ ok: false, error: "Could not acknowledge Madden participation event" });
+        return;
+      }
+      if (!acknowledged) {
+        res.json({ ok: true, already: true, delivered_at: deliveredAt });
+        return;
+      }
+      res.json({ ok: true, event: acknowledged });
+    },
+  );
+
   // ── Bot: NFL Weekly Slate delivery ───────────────────────────────────────
   // Delivery state only: these routes never publish slates, create rooms, or
   // call Discord.
@@ -3843,7 +3955,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: prop } = await supabase
         .from("gameday_props")
-        .select("*, gameday_pick_cards(status, room_id, scheduled_lock_at, gameday_rooms(archived_at))")
+        .select("*, gameday_pick_cards(id, status, room_id, scheduled_lock_at, gameday_rooms(archived_at, status, source, sport, template_type, discord_guild_id, discord_channel_id))")
         .eq("id", propId)
         .single();
 
@@ -3884,6 +3996,7 @@ export function registerGamedayRoutes(app: Express) {
         const { data } = await supabase
           .from("gameday_participants")
           .select("*")
+          .eq("room_id", roomId)
           .eq("guest_session_id", guestSessionId)
           .maybeSingle();
         participant = data;
@@ -3902,32 +4015,82 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      const { data: pick, error } = await supabase
-        .from("gameday_picks")
-        .upsert(
-          {
-            prop_id: propId,
-            participant_id: participant.id,
-            selected_answer,
-            is_correct: null,
-          },
-          { onConflict: "prop_id,participant_id" }
-        )
-        .select()
-        .single();
+      const cardRoom = (prop.gameday_pick_cards as any)?.gameday_rooms;
+      const isDiscordMaddenWeekly =
+        cardRoom?.source === "discord" &&
+        cardRoom?.sport === "madden" &&
+        cardRoom?.template_type === "weekly_pick_card" &&
+        !!cardRoom?.discord_guild_id &&
+        !!cardRoom?.discord_channel_id;
+
+      let pick: any = null;
+      let error: any = null;
+      let activityEvent: any = null;
+      if (isDiscordMaddenWeekly) {
+        // The eligible Discord Madden path intentionally uses one transactional
+        // SECURITY DEFINER RPC. A failed RPC rolls back the pick as well as the
+        // event; this is safer than permanently saving a completion that the
+        // bot can never deliver.
+        const rpc = await supabase.rpc("submit_madden_pick_with_activity", {
+          p_prop_id: propId,
+          p_participant_id: participant.id,
+          p_selected_answer: selected_answer,
+        });
+        error = rpc.error;
+        const result = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+        if (result) {
+          pick = {
+            id: result.pick_id,
+            prop_id: result.prop_id,
+            participant_id: result.participant_id,
+            selected_answer: result.selected_answer,
+            is_correct: result.is_correct,
+            submitted_at: result.submitted_at,
+          };
+          activityEvent = result.event_id
+            ? {
+                id: result.event_id,
+                inserted: result.event_inserted,
+                completed_participant_count: result.completed_participant_count,
+              }
+            : null;
+        }
+      } else {
+        const direct = await supabase
+          .from("gameday_picks")
+          .upsert(
+            {
+              prop_id: propId,
+              participant_id: participant.id,
+              selected_answer,
+              is_correct: null,
+            },
+            { onConflict: "prop_id,participant_id" }
+          )
+          .select()
+          .single();
+        pick = direct.data;
+        error = direct.error;
+      }
 
       if (error) {
         console.error("[gameday] pick error:", error);
         res.status(500).json({
-          error: `Could not save pick: ${error.message ?? "unknown database error"}`,
+          error: isDiscordMaddenWeekly
+            ? `Could not save Madden pick and participation event: ${error.message ?? "unknown database error"}`
+            : `Could not save pick: ${error.message ?? "unknown database error"}`,
         });
         return;
       }
 
+      if (!pick) {
+        res.status(500).json({ error: "Could not save Madden pick and participation event" });
+        return;
+      }
       await logEvent(supabase, roomId, participant.id, userId, "pick_submitted", {
         prop_id: propId,
       });
-      res.json({ ok: true, pick });
+      res.json({ ok: true, pick, activity_event: activityEvent });
     }
   );
 

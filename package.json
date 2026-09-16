@@ -26,6 +26,7 @@
     "test:gameday:nfl-weekly-slate-delivery": "npx tsx server/test-gameday-nfl-weekly-slate-bot-delivery.ts",
     "test:gameday:madden-weekly": "npx tsx server/test-gameday-madden-weekly.ts",
     "test:gameday:madden-weekly:e2e": "npx tsx server/test-gameday-madden-weekly-e2e.ts",
+    "test:gameday:madden-participation": "npx tsx server/test-gameday-madden-participation.ts",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "test:fantasy:4c": "TEST_API_URL=http://localhost:5000 TEST_API_BASE=http://localhost:5000 npx tsx server/test-fantasy-phase4c-run.ts",

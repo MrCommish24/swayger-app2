@@ -68,6 +68,102 @@ For a missing guild header, the API returns `400`. For a room belonging to a
 different guild, a normal web room, or a malformed/missing bot credential, it
 returns `403` or `401` without performing the operation.
 
+## Madden participation activity outbox
+
+Discord-created Madden `weekly_pick_card` rooms emit one durable
+`madden_picks_completed` event per participant when all playable props have
+valid saved picks. Events never contain selected teams, bonus answers, or
+receipts.
+
+Fetch pending events oldest-first:
+
+```http
+GET /api/gameday/bot/madden-participation-events?limit=50
+x-api-key: <GAMEDAY_BOT_API_KEY>
+X-Discord-Guild-ID: <guild ID>
+```
+
+The response is `{ "ok": true, "events": [...] }`. `limit` defaults to 50 and
+is bounded from 1 through 100. Fetching does not acknowledge or reserve an
+event. This is intentionally at-least-once: multiple fetchers or retries can
+receive the same pending event until it is acknowledged. The bot must dedupe
+posts by the stable event `id`.
+
+Each event has this shape (and never has participant selections):
+
+```json
+{
+  "id": "event UUID",
+  "event_type": "madden_picks_completed",
+  "room_id": "room UUID",
+  "card_id": "card UUID",
+  "participant_id": "participant UUID",
+  "room_code": "GDS-ABC123",
+  "room_name": "Week 4 Madden",
+  "week_label": "Franchise Week 4",
+  "discord_guild_id": "guild ID",
+  "discord_channel_id": "channel ID",
+  "participant_display_name": "Darius",
+  "completed_participant_count": 4,
+  "created_at": "2026-09-15T12:00:00.000Z",
+  "delivered_at": null
+}
+```
+
+Successful fetch returns HTTP `200`. Invalid credentials return `401`, missing
+guild scope returns `400`, invalid limits return `400`, and a database schema
+that has not been migrated returns `503` with code
+`MADDEN_PARTICIPATION_SCHEMA_UNAVAILABLE`.
+
+After the bot successfully posts the activity message, acknowledge one event:
+
+```http
+POST /api/gameday/bot/madden-participation-events/<eventId>/ack
+x-api-key: <GAMEDAY_BOT_API_KEY>
+X-Discord-Guild-ID: <guild ID>
+```
+
+Acknowledged events receive `delivered_at` and no longer appear in pending
+fetches. A first successful acknowledgement returns HTTP `200` with:
+
+```json
+{
+  "ok": true,
+  "event": {
+    "id": "event UUID",
+    "delivered_at": "2026-09-15T12:01:00.000Z"
+  }
+}
+```
+
+Acknowledging the same event again is idempotent and returns HTTP `200` with:
+
+```json
+{
+  "ok": true,
+  "already": true,
+  "delivered_at": "2026-09-15T12:01:00.000Z"
+}
+```
+
+A cross-guild acknowledgement returns `403`; missing scope returns `400`;
+invalid bot credentials return `401`; an unknown event returns `404`.
+
+The event includes `room_id`, `card_id`, `room_code`, `room_name`,
+`week_label`, `discord_guild_id`, `discord_channel_id`,
+`participant_display_name`, `completed_participant_count`, and timestamps.
+The bot can render a message such as “Darius is in. 4 players have made their
+picks.” without access to any participant selections.
+
+### Deployment order
+
+Apply `supabase/gameday-madden-participation-events.sql` first and verify both
+the table and `submit_madden_pick_with_activity` RPC exist. Only then deploy
+the backend route build. The eligible Discord Madden pick route intentionally
+uses the RPC transaction so a missing or failed RPC fails and rolls back the
+pick; this is the safer exception to the normal best-effort outbox rule because
+it prevents a permanently saved completion without its activity event.
+
 ## Public participant access is separate
 
 Shareable links and ordinary participant calls remain public by design:
