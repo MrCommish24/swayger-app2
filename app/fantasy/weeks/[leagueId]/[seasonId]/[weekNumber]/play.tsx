@@ -287,7 +287,14 @@ export default function WeeklyPlayScreen() {
         experience_type: "weekly", competition_type: "weekly",
         viewer_role: "member", is_guest: !session },
       { ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
-        surface },
+        surface,
+        week_state: state?.room_status === "finalized"
+          ? "finalized"
+          : state?.card_status === "settled"
+            ? "settled"
+            : state?.card_status === "locked"
+              ? "locked"
+              : "open" },
     );
   };
 
@@ -327,6 +334,13 @@ export default function WeeklyPlayScreen() {
       ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
       share_method: method,
       surface: shareSurface,
+      week_state: state?.room_status === "finalized"
+        ? "finalized"
+        : state?.card_status === "settled"
+          ? "settled"
+          : state?.card_status === "locked"
+            ? "locked"
+            : "open",
     };
     if (method === "copy") {
       Analytics.fantasyPickLinkCopied(context, extra);
@@ -599,7 +613,7 @@ export default function WeeklyPlayScreen() {
                 undefined
               }
             />
-            {!!myPick && status !== "saving" && status !== "error" && !isLocked && (
+            {!!myPick && status !== "saving" && status !== "error" && (
               <TouchableOpacity
                 style={styles.questionShare}
                 onPress={() => openPickShare(prop.id)}

@@ -1,0 +1,614 @@
+We need a focused post-lock sharing fix for Swayger Fantasy Weekly.
+
+# SWAYGER RUN V1B.1 — KEEP PICKS SHAREABLE AFTER LOCK
+
+Context:
+
+Swayger Run V1B is implemented and working well.
+
+Manual QA confirmed the current locked-week behavior:
+
+- participant picks become read-only
+- My Lock becomes read-only
+- League Picks becomes visible
+- commissioner can resolve the week
+
+However, current behavior also removes:
+
+- Share Pick
+- Share My Lock
+
+We want to change that.
+
+Product rule:
+
+LOCKED = IMMUTABLE, NOT UNSHAREABLE.
+
+A locked prediction is actually more valuable socially because the participant can no longer change it.
+
+Desired lifecycle:
+
+BEFORE LOCK
+- picks editable
+- Share Pick available
+- My Lock selectable/changeable
+- Share My Lock available
+
+AFTER LOCK
+- picks read-only
+- My Lock read-only
+- Share Pick remains available
+- Share My Lock remains available
+- League Picks follows existing reveal behavior
+- no prediction or My Lock mutation allowed
+
+AFTER SETTLEMENT / FINALIZATION
+- picks remain read-only
+- My Lock remains read-only
+- sharing remains available unless an existing lifecycle/security rule makes this unsafe
+- do NOT add result-specific receipt logic in this task
+
+This is a focused lifecycle/share-access change only.
+
+==================================================
+1. FIRST — AUDIT CURRENT SHARE GATING
+==================================================
+
+Inspect:
+
+- focused Weekly play screen
+- legacy/all-card Weekly play
+- per-pick Share Pick gating
+- My Lock card gating
+- Share My Lock gating
+- Call Your Shot/share composer
+- room status checks
+- lock-state checks
+- settled/finalized-state checks
+- existing share helper
+- existing deep-link behavior
+- existing source attribution
+- analytics
+- privacy protections
+
+Identify exactly which condition currently hides or disables sharing after lock.
+
+Do not change:
+- answer editing rules
+- My Lock mutation rules
+- League Picks visibility
+- scoring
+- settlement
+- results
+- receipt logic
+
+==================================================
+2. LIFECYCLE RULE
+==================================================
+
+Implement this rule explicitly:
+
+EDITABILITY and SHAREABILITY are separate concerns.
+
+EDITABILITY:
+
+OPEN:
+- picks editable
+- My Lock editable
+
+LOCKED:
+- picks read-only
+- My Lock read-only
+
+SETTLED / FINALIZED:
+- picks read-only
+- My Lock read-only
+
+SHAREABILITY:
+
+OPEN:
+- confirmed picks shareable
+- My Lock shareable
+
+LOCKED:
+- confirmed picks shareable
+- My Lock shareable
+
+SETTLED / FINALIZED:
+- confirmed picks shareable
+- My Lock shareable unless an existing security or route constraint makes this unsafe
+
+Do not infer shareability from editability.
+
+==================================================
+3. PER-PICK SHARE AFTER LOCK
+==================================================
+
+On a locked Weekly Swayger:
+
+Each confirmed pick should still expose:
+
+Share Pick
+
+Example:
+
+SCOREBOARD KING
+
+Your prediction is locked.
+
+Team 1 🔒
+
+[Share Pick]
+
+[Previous Pick] [Done] [Next Pick]
+
+Rules:
+
+- no answer selector mutation
+- no edit action
+- no save endpoint invocation
+- no optimistic state
+- share package uses the already-confirmed saved pick
+- current single-pick privacy rules remain
+
+Do not expose:
+- other picks
+- League Picks distribution in the share payload
+- private IDs
+- tokens
+- contact info
+
+==================================================
+4. SHARE MY LOCK AFTER LOCK
+==================================================
+
+If a participant has a persisted My Lock:
+
+The completion summary should still show:
+
+🔒 MY LOCK
+
+<Moment title>
+<confirmed answer>
+
+[Share My Lock]
+
+After lock:
+
+Do NOT show:
+- Change My Lock
+- Choose My Lock
+- My Lock mutation actions
+
+But keep:
+- Share My Lock
+
+This makes the state:
+
+frozen but still shareable.
+
+==================================================
+5. NO NEW MY LOCK AFTER LOCK
+==================================================
+
+If the participant did not choose My Lock before lock:
+
+Do NOT allow them to create one after lock.
+
+Reason:
+
+My Lock is meant to represent confidence declared before predictions freeze.
+
+Post-lock behavior:
+
+- no Choose My Lock
+- no Call Your Shot selection
+- no lock mutation
+
+They may still share any existing confirmed individual pick using Share Pick.
+
+==================================================
+6. CALL YOUR SHOT SEMANTICS
+==================================================
+
+Preserve current product semantics:
+
+Call Your Shot = choose My Lock before lock.
+
+After lock:
+
+If My Lock exists:
+- show My Lock read-only
+- allow Share My Lock
+
+If no My Lock exists:
+- do not invite the user to Call Your Shot retroactively
+- do not create a new My Lock
+
+Do not reopen the Call Your Shot picker after lock.
+
+==================================================
+7. LOCKED FOCUSED-CARD UX
+==================================================
+
+The focused card should remain clearly read-only.
+
+Keep language such as:
+
+Your prediction is locked.
+
+Keep the lock icon / selected answer state.
+
+Add the subtle secondary action:
+
+Share Pick
+
+Do not let sharing visually imply editing.
+
+==================================================
+8. LEAGUE PICKS
+==================================================
+
+Do not change League Picks logic.
+
+After lock:
+
+- existing League Picks reveal behavior remains
+- Share Pick coexists with League Picks
+- sharing a pick must not expose aggregate League Picks data unless the recipient separately has authorized access through the normal app flow
+
+Do not include:
+- percentages
+- who picked what
+- league distribution
+
+inside shared pick copy.
+
+==================================================
+9. SHARE LINK / DEEP LINK
+==================================================
+
+Keep the existing shared-pick link destination and attribution for now.
+
+Do NOT build V1C short-link packaging yet.
+
+Current deep link behavior should remain:
+
+shared pick
+→ Weekly Swayger route
+→ normal auth/guest/locked-week experience
+
+Preserve:
+`source=pick_share`
+
+Do not change URL architecture in this task.
+
+==================================================
+10. SHARE COPY
+==================================================
+
+Do not rewrite all share copy in V1B.1.
+
+Use existing Moment-specific share helpers.
+
+If sharing My Lock:
+keep existing MY LOCK label behavior.
+
+If sharing a regular pick:
+keep standard non-lock share copy.
+
+The only goal of this task is availability after lock.
+
+==================================================
+11. ANALYTICS
+==================================================
+
+Reuse existing events:
+
+- fantasy_pick_share_opened
+- fantasy_pick_shared
+- fantasy_pick_link_copied
+
+If current safe analytics architecture supports it, add or preserve a lifecycle property such as:
+
+`week_state`
+or existing equivalent:
+
+- open
+- locked
+- settled
+- finalized
+
+Do not create a new event solely for post-lock sharing.
+
+We should be able to compare:
+
+- pre-lock sharing
+- post-lock sharing
+
+without exposing answer/team data.
+
+Do not send:
+- answer labels
+- team names
+- participant names
+- share copy
+
+==================================================
+12. SECURITY / AUTHORIZATION
+==================================================
+
+Sharing after lock must NOT weaken protected Weekly access.
+
+The share payload can contain only the voluntarily shared pick content already approved by the existing share architecture.
+
+The recipient still goes through the normal Weekly route.
+
+Do not:
+- create public access to all picks
+- bypass auth/guest membership
+- expose League Picks publicly
+- expose My Lock records publicly through a new endpoint
+
+==================================================
+13. UNLOCK BEHAVIOR
+==================================================
+
+Commissioner may currently unlock a Week.
+
+Preserve existing behavior.
+
+If Week transitions:
+
+locked → open
+
+Then:
+- picks become editable again according to existing rules
+- My Lock becomes editable/changeable again if current lifecycle permits
+- Share Pick remains available
+- Share My Lock remains available
+
+Do not create special share-state transitions.
+
+==================================================
+14. SETTLED / FINALIZED BEHAVIOR
+==================================================
+
+Assess current participant route behavior after settlement/finalization.
+
+Preferred rule:
+
+historical confirmed picks remain shareable.
+
+However:
+
+Do not alter existing Results / Receipt routing materially just to force pick sharing.
+
+If the Weekly play screen is no longer the normal surface after finalization:
+
+document where Share Pick / Share My Lock would logically remain accessible.
+
+For this patch:
+
+- support sharing wherever the existing participant pick summary remains available
+- do not build a new historical share page
+- do not build result-specific personal receipts
+
+Return the exact finalization decision.
+
+==================================================
+15. FEATURE FLAG / ROLLBACK
+==================================================
+
+Preserve existing Swayger Run feature flag.
+
+If Swayger Run is disabled:
+
+legacy Weekly experience must still behave normally.
+
+If legacy flow currently supports pre-lock sharing only, assess whether the same post-lock shareability rule should be applied consistently there too.
+
+Preferred product consistency:
+
+confirmed picks should be shareable after lock in both:
+- Swayger Run focused UX
+- legacy all-card UX
+
+If this is easy and safe, implement consistently.
+
+If not, explain the difference.
+
+No schema change should be required.
+
+If schema unexpectedly appears necessary:
+STOP with:
+
+SQL APPLICATION REQUIRED
+
+==================================================
+16. TESTS
+==================================================
+
+Add focused coverage for:
+
+OPEN WEEK
+- confirmed pick shareable
+- My Lock shareable
+- editing still allowed
+
+LOCKED WEEK
+- pick read-only
+- My Lock read-only
+- Share Pick visible
+- Share My Lock visible when lock exists
+- Change My Lock hidden
+- Choose My Lock hidden
+- no new My Lock after lock
+- no pick save/mutation
+- League Picks unchanged
+
+NO MY LOCK CASE
+- locked participant without My Lock can Share Pick
+- cannot create My Lock after lock
+
+UNLOCK
+- existing editing returns
+- share remains available
+
+SHARE PRIVACY
+- only selected pick disclosed
+- no other picks
+- no League Picks data
+- no private IDs/tokens
+
+ANALYTICS
+- post-lock share events still fire correctly
+- safe lifecycle property if added
+
+FINALIZED/SETTLED
+- documented supported behavior
+- no mutation allowed
+- no results/receipt regression
+
+ROLLBACK
+- feature flag off remains safe
+- no schema cleanup
+- no data mutation
+
+==================================================
+17. REGRESSION
+==================================================
+
+Run:
+
+- Swayger Run V1A
+- V1B My Lock
+- Weekly lifecycle
+- lock/unlock
+- autosave/edit
+- Call Your Shot
+- Share Pick
+- Share My Lock
+- League Picks
+- settlement
+- Results
+- Weekly Receipt
+- receipt sharing
+- guest/auth
+- analytics
+- week sequencing
+- multi-correct
+
+Then:
+
+- server production build
+- web export
+- iOS export
+- Android export
+- targeted lint
+- changed-file TypeScript diagnostics
+
+Return exact totals.
+
+==================================================
+18. MANUAL QA
+==================================================
+
+Return exact steps:
+
+A. BEFORE LOCK
+
+1. Complete picks.
+2. Select My Lock.
+3. Verify Share Pick.
+4. Verify Share My Lock.
+
+B. LOCK
+
+1. Commissioner locks Week.
+2. Reload participant experience.
+3. Confirm all picks read-only.
+4. Confirm My Lock read-only.
+5. Confirm Share Pick remains available.
+6. Confirm Share My Lock remains available.
+7. Confirm Change My Lock is gone.
+8. Confirm no editing.
+
+C. SHARE AFTER LOCK
+
+1. Share normal pick.
+2. Confirm correct pick content.
+3. Confirm no other picks leak.
+4. Share My Lock.
+5. Confirm MY LOCK framing.
+6. Back out of share sheet.
+7. Confirm user remains in locked state.
+
+D. NO MY LOCK
+
+1. Lock a participant who never selected My Lock.
+2. Confirm no Choose My Lock.
+3. Confirm regular Share Pick remains available.
+
+E. LEAGUE PICKS
+
+1. Open League Picks.
+2. Confirm existing reveal behavior.
+3. Confirm no impact from sharing change.
+
+F. UNLOCK
+
+1. Commissioner unlocks Week.
+2. Confirm normal edit behavior returns.
+
+G. FINALIZE
+
+1. Settle/finalize Week.
+2. Verify Results/Receipt unchanged.
+3. Verify documented historical share behavior.
+
+==================================================
+19. RETURN
+==================================================
+
+Return:
+
+# SWAYGER RUN V1B.1 — POST-LOCK SHARING REPORT
+
+1. Existing share-gating issue
+2. Lifecycle rule implemented
+3. Per-pick post-lock sharing
+4. My Lock post-lock sharing
+5. No-retroactive-lock behavior
+6. Locked focused-card UX
+7. League Picks compatibility
+8. Share-link behavior
+9. Analytics
+10. Security/privacy
+11. Unlock behavior
+12. Settled/finalized behavior
+13. Legacy UX consistency
+14. Files changed
+15. Tests added
+16. Regression totals
+17. Known limitations
+18. Exact manual QA
+19. V1C readiness
+
+Then STOP.
+
+Do not build:
+- short pick-share URLs
+- OG metadata
+- pick-specific preview cards
+- post-settlement personal receipts
+- new scoring
+- another feature
+
+Final status:
+
+SWAYGER RUN V1B.1 READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

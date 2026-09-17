@@ -214,7 +214,7 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
                  <Text style={styles.lockAnswer}>{lockAnswer.label}</Text>
                  <Text style={styles.lockBody}>This is the one you’re standing on.</Text>
                   {!locked && <Pressable ref={lockTriggerRef} onPress={() => setLockSheetOpen(true)} accessibilityRole="button" accessibilityLabel="Change My Lock" style={styles.lockChange}><Text style={styles.lockChangeText}>Change My Lock</Text></Pressable>}
-                  {!locked && <Pressable onPress={() => onShare(lockProp.id, "completion_state")} accessibilityRole="button" accessibilityLabel="Share My Lock" style={styles.lockShare}><Text style={styles.lockShareText}>Share My Lock</Text></Pressable>}
+                   <Pressable onPress={() => onShare(lockProp.id, "completion_state")} accessibilityRole="button" accessibilityLabel="Share My Lock" style={styles.lockShare}><Text style={styles.lockShareText}>Share My Lock</Text></Pressable>
                </View>
              );
            })()}

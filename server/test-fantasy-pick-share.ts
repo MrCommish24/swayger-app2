@@ -84,8 +84,15 @@ check("no public pick-share API was introduced", !server.includes("/pick-share")
 
 const play = fs.readFileSync(path.resolve("app/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/play.tsx"), "utf8");
 const sheet = fs.readFileSync(path.resolve("components/fantasy/CallYourShotSheet.tsx"), "utf8");
+const focused = fs.readFileSync(path.resolve("components/fantasy/WeeklyFocusedRun.tsx"), "utf8");
+const focusMoment = fs.readFileSync(path.resolve("components/fantasy/WeeklyFocusMoment.tsx"), "utf8");
 check("unanswered questions do not show Share Pick", play.includes("!!myPick && status !== \"saving\""));
-check("Share Pick is hidden after lock", play.includes("&& !isLocked &&"));
+check("legacy confirmed picks remain shareable after lock", /!!myPick && status !== "saving" && status !== "error" && \(/.test(play));
+check("focused confirmed picks remain shareable after lock", /!!confirmedAnswerLabel && status !== "saving" && status !== "error" && onShare/.test(focusMoment));
+check("focused My Lock remains shareable after lock", focused.includes('<Pressable onPress={() => onShare(lockProp.id, "completion_state")}') && !focused.includes('!locked && <Pressable onPress={() => onShare(lockProp.id, "completion_state")}'));
+check("focused My Lock selection and changes remain open-only", focused.includes('!locked && <Pressable ref={lockTriggerRef}') && focused.includes("Change My Lock") && focused.includes("Choose My Lock"));
+check("pick selectors remain read-only after lock", focusMoment.includes("isLocked={locked}") && play.includes("isLocked={isLocked}"));
+check("pick mutation remains server-confirmed and separate from sharing", play.includes('if (!state || state.card_status !== "open") return false;'));
 check("completion CTA requires every pick to be saved", play.includes("state.props.every((prop) =>") && play.includes('pickStatus[prop.id] !== "saving"'));
 check("completion state offers Call Your Shot without replacing league navigation", play.includes("CALL YOUR SHOT") && play.includes("Back to League"));
 check("share copy reads the latest server-confirmed answer after an edit", play.includes("const answerId = confirmedPicksRef.current[prop.id]"));
@@ -97,6 +104,8 @@ check("native share analytics require a confirmed shared action", sheet.includes
 check("copy fallback copies the complete one-pick package", sheet.includes("Clipboard.setStringAsync(selected.shareText)"));
 check("failed platform share falls back without duplicating the URL", sheet.includes('error?.name !== "AbortError"') && !sheet.includes("url: selected.shareUrl"));
 check("pick sharing does not import or modify receipt-share helpers", !play.includes("fantasy-receipt-share") && !sheet.includes("fantasy-receipt-share"));
+check("post-lock shares reuse existing events with safe lifecycle context", play.includes("week_state: state?.room_status") && play.includes('? "finalized"') && play.includes('? "settled"') && play.includes('? "locked"'));
+check("League Picks reveal gating remains locked and pre-finalization only", focused.includes("locked && !finalized") && play.includes("isLocked && !isFinalized"));
 
 const join = fs.readFileSync(path.resolve("app/fantasy/join/[leagueId]/[seasonId].tsx"), "utf8");
 check("credential-less shared links preserve Week and attribution through join", join.includes('&source=pick_share') && join.includes("play${pickShareSuffix}"));

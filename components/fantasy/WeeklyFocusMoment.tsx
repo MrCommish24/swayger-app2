@@ -55,7 +55,7 @@ export function WeeklyFocusMoment({ prop, index, total, selectedId, status, lock
           Pick saved. {confirmedAnswerLabel} is on the record.
         </Text>
       )}
-      {!!confirmedAnswerLabel && status !== "saving" && status !== "error" && !locked && onShare && (
+      {!!confirmedAnswerLabel && status !== "saving" && status !== "error" && onShare && (
         <Pressable onPress={onShare} accessibilityRole="button" accessibilityLabel="Share Pick" style={styles.share}>
           <Text style={styles.shareText}>Share Pick</Text>
         </Pressable>
