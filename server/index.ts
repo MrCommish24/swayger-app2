@@ -13,6 +13,7 @@ import {
 } from "./supabase-service";
 import { registerGamedayShortLink } from "./gameday-short-link";
 import { registerFantasyReceiptShortLink } from "./fantasy-receipt-short-link";
+import { registerFantasyPickShareShortLink } from "./fantasy-pick-share-short-link";
 
 const app = express();
 const log = console.log;
@@ -313,6 +314,7 @@ function configureExpoAndLanding(app: express.Application) {
   // resolvable here because privacy controls discovery, not invite access.
   registerGamedayShortLink(app);
   registerFantasyReceiptShortLink(app);
+  registerFantasyPickShareShortLink(app);
 
   registerUnsubscribeRoutes(app);
 

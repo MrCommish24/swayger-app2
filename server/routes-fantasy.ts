@@ -42,6 +42,11 @@ import {
 } from "./correct-answers";
 import { getWeeklyMoment } from "../lib/fantasy-weekly-moments";
 import { addSwaygerRunFlag, isSwaygerRunEnabled } from "./swayger-run";
+import {
+  getOrCreateFantasyPickShareAlias,
+  isFantasyPickSharePackagingEnabled,
+  type FantasyPickShareKind,
+} from "./fantasy-pick-share-short-link";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -5762,8 +5767,139 @@ export function registerFantasyRoutes(app: Express) {
         total_props:         publishedProps.length,
         league_name:         leagueName,
         viewer_display_name: viewer.display_name ?? null,
+        pick_share_packaging_enabled: isFantasyPickSharePackagingEnabled(),
       }, leagueId));
     }
+  );
+
+  // ── POST .../weeks/:weekNumber/pick-share/alias
+  // Creates or reuses an immutable alias for the caller's current confirmed
+  // answer and explicit share-time framing. The client never supplies answer
+  // identity or display copy.
+  app.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/pick-share/alias",
+    async (req: Request, res: Response) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      if (!isFantasyPickSharePackagingEnabled()) {
+        res.json({ packaging_enabled: false });
+        return;
+      }
+
+      const propId = typeof req.body?.prop_id === "string" ? req.body.prop_id.trim() : "";
+      const shareKind = req.body?.share_kind as FantasyPickShareKind | undefined;
+      if (!propId) {
+        res.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (shareKind !== "pick" && shareKind !== "my_lock") {
+        res.status(400).json({ error: "share_kind must be pick or my_lock" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId && !identity.guestToken) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res.status(rc.status).json(rc.body);
+        return;
+      }
+      const roomId = (rc.room as any).id as string;
+      const participant = await ensureFantasyParticipant(supabase, roomId, viewer);
+      const participantId = participant.participant_id;
+
+      const { data: prop, error: propError } = await supabase
+        .from("gameday_props")
+        .select("id, template_prop_id, answer_options")
+        .eq("id", propId)
+        .eq("card_id", (rc.card as any).id)
+        .maybeSingle();
+      if (propError) {
+        console.error("[fantasy-pick-share] prop lookup failed:", propError.message);
+        res.status(500).json({ error: "Unable to prepare pick link" });
+        return;
+      }
+      if (!prop) {
+        res.status(404).json({ error: "Weekly pick not found" });
+        return;
+      }
+
+      const { data: pick, error: pickError } = await supabase
+        .from("gameday_picks")
+        .select("selected_answer")
+        .eq("participant_id", participantId)
+        .eq("prop_id", propId)
+        .maybeSingle();
+      if (pickError) {
+        console.error("[fantasy-pick-share] pick lookup failed:", pickError.message);
+        res.status(500).json({ error: "Unable to prepare pick link" });
+        return;
+      }
+      const selectedAnswer = (pick as any)?.selected_answer as string | undefined;
+      const answerOptions = Array.isArray((prop as any).answer_options) ? (prop as any).answer_options : [];
+      const selectedOption = answerOptions.find((option: any) => option?.id === selectedAnswer);
+      if (!selectedAnswer || !selectedOption?.label) {
+        res.status(409).json({ error: "A current confirmed answer is required for sharing" });
+        return;
+      }
+
+      if (shareKind === "my_lock") {
+        if (!isSwaygerRunEnabled(String(leagueId))) {
+          res.status(409).json({ error: "My Lock sharing is not available for this league" });
+          return;
+        }
+        const { data: lock, error: lockError } = await supabase
+          .from("fantasy_weekly_my_locks")
+          .select("prop_id")
+          .eq("room_id", roomId)
+          .eq("participant_id", participantId)
+          .maybeSingle();
+        if (lockError) {
+          console.error("[fantasy-pick-share] My Lock lookup failed:", lockError.message);
+          res.status(500).json({ error: "Unable to prepare pick link" });
+          return;
+        }
+        if ((lock as any)?.prop_id !== propId) {
+          res.status(409).json({ error: "This pick is no longer your current My Lock" });
+          return;
+        }
+      }
+
+      try {
+        const shortCode = await getOrCreateFantasyPickShareAlias(supabase, {
+          leagueSeasonId: seasonId,
+          roomId,
+          participantId,
+          propId,
+          selectedAnswer,
+          shareKind,
+          weekNumber: wn,
+        });
+        res.json({
+          packaging_enabled: true,
+          short_code: shortCode,
+          selected_answer: selectedAnswer,
+          answer_label: String(selectedOption.label),
+          template_prop_id: (prop as any).template_prop_id ?? null,
+        });
+      } catch (error) {
+        console.error("[fantasy-pick-share] alias creation failed:", error);
+        res.status(500).json({ error: "Unable to prepare pick link" });
+      }
+    },
   );
 
   // ── PUT /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/my-lock

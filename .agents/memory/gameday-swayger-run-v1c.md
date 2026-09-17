@@ -14,3 +14,9 @@ Store only stable relational IDs, the confirmed answer identifier, share kind, w
 **Why:** Public crawler metadata is an intentional one-pick disclosure, not permission to expose the protected Weekly payload or mutable participant history.
 
 **How to apply:** Resolve crawler metadata only from the alias and its referenced published prop/context. Normal humans redirect to the protected Weekly route with `source=pick_share`; aliases never authorize access. Hard-deleted dependencies should invalidate the alias safely.
+
+Web clients must prepare the alias while the share composer is open, before the share-button gesture. Do not put an alias network request before `navigator.share()` in the click handler.
+
+**Why:** Awaiting network I/O consumes the browser's transient user-activation window and can make Web Share fail with `NotAllowedError`.
+
+**How to apply:** Keep share/copy disabled until preparation settles. Build the visible share text from the authoritative answer ID and label returned by alias creation, and reject a response that no longer matches the client's confirmed pick.

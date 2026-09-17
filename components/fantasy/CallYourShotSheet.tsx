@@ -21,6 +21,7 @@ export type CallYourShotPick = {
   answerLabel: string;
   shareText: string;
   shareUrl: string;
+  isMyLock: boolean;
 };
 
 type Props = {
@@ -29,6 +30,7 @@ type Props = {
   initialPropId?: string | null;
   mode?: "legacy_call_your_shot" | "share_pick" | "share_my_lock";
   onClose: () => void;
+  onPrepareShare?: (pick: CallYourShotPick) => Promise<CallYourShotPick>;
   onShared?: (pick: CallYourShotPick, method: PickShareMethod) => void;
 };
 
@@ -42,10 +44,13 @@ export function CallYourShotSheet({
   initialPropId,
   mode = "legacy_call_your_shot",
   onClose,
+  onPrepareShare,
   onShared,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(initialPropId ?? picks[0]?.propId ?? null);
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [preparedPick, setPreparedPick] = useState<CallYourShotPick | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
 
@@ -54,6 +59,7 @@ export function CallYourShotSheet({
       setSelectedId(initialPropId ?? picks[0]?.propId ?? null);
       setCopied(false);
       setCopyFailed(false);
+      setPreparedPick(null);
     }
   }, [visible, initialPropId, picks]);
 
@@ -61,30 +67,59 @@ export function CallYourShotSheet({
     () => picks.find((pick) => pick.propId === selectedId) ?? null,
     [picks, selectedId],
   );
-  const eyebrow = mode === "share_my_lock" ? "SHARE MY LOCK" : mode === "share_pick" ? "SHARE PICK" : "CALL YOUR SHOT";
-  const title = mode === "share_my_lock" ? "Share the pick you’re standing on." : mode === "share_pick" ? "Share this pick." : "Put one pick on the record.";
+  const sharingMyLock = mode === "share_my_lock" || Boolean(selected?.isMyLock);
+  const eyebrow = sharingMyLock ? "SHARE MY LOCK" : mode === "share_pick" ? "SHARE PICK" : "CALL YOUR SHOT";
+  const title = sharingMyLock ? "Share the pick you’re standing on." : mode === "share_pick" ? "Share this pick." : "Put one pick on the record.";
   const subcopy =
     mode === "legacy_call_your_shot"
       ? "Choose one prediction to share with your league."
-      : "Shares this confirmed pick, league and Week context, your display name when available, and the Weekly link.";
+      : "Shares this confirmed call with a compact link back to the protected Week.";
+
+  React.useEffect(() => {
+    let active = true;
+    if (!visible || !selected) {
+      setPreparedPick(null);
+      setPreparing(false);
+      return () => { active = false; };
+    }
+    if (!onPrepareShare) {
+      setPreparedPick(selected);
+      setPreparing(false);
+      return () => { active = false; };
+    }
+    setPreparing(true);
+    setPreparedPick(null);
+    onPrepareShare(selected)
+      .then((prepared) => {
+        if (active) setPreparedPick(prepared);
+      })
+      .catch(() => {
+        if (active) setPreparedPick(selected);
+      })
+      .finally(() => {
+        if (active) setPreparing(false);
+      });
+    return () => { active = false; };
+  }, [visible, selected, onPrepareShare]);
 
   const handleShare = async () => {
-    if (!selected || busy) return;
+    const prepared = preparedPick ?? (!onPrepareShare ? selected : null);
+    if (!prepared || busy || preparing) return;
     setBusy(true);
     try {
       if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: selected.momentTitle, text: selected.shareText });
-        onShared?.(selected, "web_share");
+        await navigator.share({ title: prepared.momentTitle, text: prepared.shareText });
+        onShared?.(prepared, "web_share");
       } else {
-        const result = await Share.share({ message: selected.shareText });
-        if (result.action === Share.sharedAction) onShared?.(selected, "native");
+        const result = await Share.share({ message: prepared.shareText });
+        if (result.action === Share.sharedAction) onShared?.(prepared, "native");
       }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
         try {
-          await Clipboard.setStringAsync(selected.shareText);
+          await Clipboard.setStringAsync(prepared.shareText);
           setCopied(true);
-          onShared?.(selected, "copy");
+          onShared?.(prepared, "copy");
         } catch {
           setCopyFailed(true);
         }
@@ -95,13 +130,14 @@ export function CallYourShotSheet({
   };
 
   const handleCopy = async () => {
-    if (!selected || busy) return;
+    const prepared = preparedPick ?? (!onPrepareShare ? selected : null);
+    if (!prepared || busy || preparing) return;
     setBusy(true);
     try {
-      await Clipboard.setStringAsync(selected.shareText);
+      await Clipboard.setStringAsync(prepared.shareText);
       setCopied(true);
       setCopyFailed(false);
-      onShared?.(selected, "copy");
+      onShared?.(prepared, "copy");
     } catch {
       setCopyFailed(true);
     } finally {
@@ -152,13 +188,19 @@ export function CallYourShotSheet({
           <View style={styles.actions}>
             <Pressable
               onPress={handleShare}
-              disabled={!selected || busy}
-              style={[styles.shareButton, (!selected || busy) && styles.disabled]}
+              disabled={!selected || busy || preparing || !preparedPick}
+              style={[styles.shareButton, (!selected || busy || preparing || !preparedPick) && styles.disabled]}
             >
-              {busy ? <ActivityIndicator color="#071013" /> : <Text style={styles.shareButtonText}>Share Pick</Text>}
+              {busy || preparing ? <ActivityIndicator color="#071013" /> : <Text style={styles.shareButtonText}>{sharingMyLock ? "Share My Lock" : "Share Pick"}</Text>}
             </Pressable>
-            <Pressable onPress={handleCopy} disabled={!selected || busy} style={styles.copyButton}>
-              <Text style={styles.copyText}>{copyFailed ? "Copy unavailable" : copied ? "Copied" : "Copy text + link"}</Text>
+            <Pressable onPress={handleCopy} disabled={!selected || busy || preparing || !preparedPick} style={styles.copyButton}>
+              <Text style={styles.copyText}>
+                {copyFailed
+                  ? `${sharingMyLock ? "My Lock" : "Pick"} copy unavailable`
+                  : copied
+                    ? `${sharingMyLock ? "My Lock" : "Pick"} copied`
+                    : `Copy ${sharingMyLock ? "My Lock" : "Pick"} text + link`}
+              </Text>
             </Pressable>
           </View>
         </View>

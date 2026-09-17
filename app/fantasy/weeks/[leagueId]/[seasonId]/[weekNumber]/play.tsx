@@ -30,6 +30,8 @@ import {
   submitWeeklyPick,
   setWeeklyMyLock,
   buildWeekUrl,
+  buildWeeklyPickShareShortUrl,
+  createWeeklyPickShareAlias,
   WeeklyPlayState,
   DraftDayProp,
 } from "@/lib/fantasy-api";
@@ -263,7 +265,44 @@ export default function WeeklyPlayScreen() {
       answerLabel,
       shareText: sharePackage.text,
       shareUrl: sharePackage.url,
+      isMyLock: Boolean(state?.swayger_run_enabled && myLock?.prop_id === prop.id),
     };
+  };
+
+  const preparePickShare = async (pick: CallYourShotPick): Promise<CallYourShotPick> => {
+    if (state?.pick_share_packaging_enabled === false) return pick;
+    const prop = state?.props.find((item) => item.id === pick.propId);
+    if (!prop) return pick;
+    try {
+      const alias = await createWeeklyPickShareAlias(
+        leagueId,
+        seasonId,
+        wn,
+        pick.propId,
+        pick.isMyLock ? "my_lock" : "pick",
+        auth,
+      );
+      if (!alias.packaging_enabled || !alias.short_code) return pick;
+      if (
+        !alias.answer_label
+        || !alias.selected_answer
+        || alias.selected_answer !== confirmedPicksRef.current[pick.propId]
+      ) return pick;
+      const shortUrl = buildWeeklyPickShareShortUrl(alias.short_code);
+      const sharePackage = buildFantasyPickSharePackage({
+        templatePropId: alias.template_prop_id ?? prop.template_prop_id ?? "",
+        selectedAnswerLabel: alias.answer_label,
+        participantDisplayName: state?.viewer_display_name,
+        leagueName: state?.league_name,
+        weekNumber: wn,
+        participationUrl: shortUrl,
+        isMyLock: pick.isMyLock,
+      });
+      return { ...pick, shareText: sharePackage.text, shareUrl: shortUrl };
+    } catch {
+      // Rollback/failure behavior: preserve the existing canonical Week share.
+      return pick;
+    }
   };
 
   const shareablePicks = state
@@ -288,6 +327,8 @@ export default function WeeklyPlayScreen() {
         viewer_role: "member", is_guest: !session },
       { ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
         surface,
+        link_type: "pick_share",
+        is_my_lock: Boolean(state?.swayger_run_enabled && myLock?.prop_id === propId),
         week_state: state?.room_status === "finalized"
           ? "finalized"
           : state?.card_status === "settled"
@@ -334,6 +375,8 @@ export default function WeeklyPlayScreen() {
       ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
       share_method: method,
       surface: shareSurface,
+      link_type: "pick_share",
+      is_my_lock: pick.isMyLock,
       week_state: state?.room_status === "finalized"
         ? "finalized"
         : state?.card_status === "settled"
@@ -477,6 +520,7 @@ export default function WeeklyPlayScreen() {
                   : "share_pick"
             }
             onClose={() => { setShareSheetOpen(false); setSharePropId(null); setShareSurface("question_card"); }}
+            onPrepareShare={preparePickShare}
             onShared={handlePickShared}
           />
         }
@@ -631,6 +675,7 @@ export default function WeeklyPlayScreen() {
         initialPropId={sharePropId}
         mode={!sharePropId ? "legacy_call_your_shot" : "share_pick"}
         onClose={() => { setShareSheetOpen(false); setSharePropId(null); setShareSurface("question_card"); }}
+        onPrepareShare={preparePickShare}
         onShared={handlePickShared}
       />
     </ScrollView>

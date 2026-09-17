@@ -1072,6 +1072,8 @@ export interface WeeklyPlayState {
   swayger_run_enabled: boolean;
   /** League-safe display name only. Never sourced from email or auth-provider metadata. */
   viewer_display_name?: string | null;
+  /** Independent V1C packaging gate. Existing aliases remain resolvable when false. */
+  pick_share_packaging_enabled?: boolean;
 }
 
 /** Build the canonical Fantasy league invite URL.
@@ -1141,6 +1143,42 @@ export function buildWeeklyReceiptShortUrl(shortCode: string): string {
     typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
   const base = domain.startsWith("http") ? domain : `https://${domain}`;
   return `${base}${path}`;
+}
+
+/** Build the opaque V1C URL for one intentionally shared Weekly pick. */
+export function buildWeeklyPickShareShortUrl(shortCode: string): string {
+  const path = `/p/${shortCode}`;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  const domain =
+    typeof process !== "undefined" ? (process.env.EXPO_PUBLIC_DOMAIN ?? "") : "";
+  const base = domain.startsWith("http") ? domain : `https://${domain}`;
+  return `${base}${path}`;
+}
+
+export async function createWeeklyPickShareAlias(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  propId: string,
+  shareKind: "pick" | "my_lock",
+  auth: Parameters<typeof fantasyFetch>[2],
+): Promise<{
+  packaging_enabled: boolean;
+  short_code?: string;
+  selected_answer?: string;
+  answer_label?: string;
+  template_prop_id?: string | null;
+}> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/pick-share/alias`,
+    {
+      method: "POST",
+      body: JSON.stringify({ prop_id: propId, share_kind: shareKind }),
+    },
+    auth,
+  );
 }
 
 /** Build a direct shareable URL to the weekly pick screen */

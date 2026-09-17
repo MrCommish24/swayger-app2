@@ -12968,7 +12968,7 @@ ${html.slice(0, 800)}`);
 }
 
 // server/routes-fantasy.ts
-import { createHash as createHash2, randomBytes } from "crypto";
+import { createHash as createHash2, randomBytes as randomBytes2 } from "crypto";
 
 // lib/fantasy-weekly-moments.ts
 var WEEKLY_MOMENTS = {
@@ -13076,6 +13076,389 @@ function addSwaygerRunFlag(response, leagueId, value = process.env[SWAYGER_RUN_L
   return { ...response, swayger_run_enabled: isSwaygerRunEnabled(leagueId, value) };
 }
 
+// server/fantasy-pick-share-short-link.ts
+import { randomBytes } from "crypto";
+
+// lib/fantasy-pick-share.ts
+function safeLabel(value, maxLength) {
+  return (value ?? "").replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+function buildFantasyPickSentence(templatePropId, answer, participantName) {
+  const safeParticipantName = safeLabel(participantName, 60);
+  if (!safeParticipantName) {
+    const moment = getWeeklyMoment(templatePropId);
+    return `My pick: ${answer} for ${moment?.title ?? "this Swayger Moment"}.`;
+  }
+  const subject = safeParticipantName;
+  const isYes = answer.toLowerCase() === "yes";
+  switch (templatePropId) {
+    case "fantasy_weekly_nfl_highest_scoring_team":
+      return `${subject} has ${answer} putting up the highest fantasy score this week.`;
+    case "fantasy_weekly_nfl_lowest_scoring_team":
+      return `${subject} has ${answer} finishing with the fewest fantasy points this week.`;
+    case "fantasy_weekly_nfl_largest_margin_winner":
+      return `${subject} has ${answer} delivering the Biggest Blowout this week.`;
+    case "fantasy_weekly_nfl_smallest_margin_winner":
+      return `${subject} has ${answer} surviving the closest win this week.`;
+    case "fantasy_weekly_nfl_highest_player_team":
+      return `${subject} has ${answer} rostering the week\u2019s highest-scoring player.`;
+    case "fantasy_weekly_nfl_score_150_plus":
+      return isYes ? `${subject} says somebody is joining the 150 Club this week.` : `${subject} says nobody is cracking 150 this week.`;
+    case "fantasy_weekly_nfl_matchup_under_5":
+      return isYes ? `${subject} is calling a Photo Finish this week.` : `${subject} says no matchup finishes within 5 points this week.`;
+    case "fantasy_weekly_nfl_bad_beat":
+      return `${subject} has ${answer} scoring big and still taking the L.`;
+    case "fantasy_weekly_nfl_got_away_with_one":
+      return `${subject} has ${answer} getting away with one this week.`;
+    case "fantasy_weekly_nfl_win_under_100":
+      return isYes ? `${subject} is calling Fraud Watch: somebody wins with fewer than 100.` : `${subject} says nobody is getting away with a sub-100 win this week.`;
+    case "fantasy_weekly_nfl_130_plus_loss":
+      return isYes ? `${subject} is calling a Heartbreaker: somebody scores 130+ and still loses.` : `${subject} says nobody drops 130+ in a loss this week.`;
+    case "fantasy_weekly_nfl_30_plus_blowout":
+      return isYes ? `${subject} is calling a Statement Win: somebody wins by 30+.` : `${subject} says nobody wins by 30+ this week.`;
+    default:
+      return `${subject} picked ${answer}.`;
+  }
+}
+
+// server/fantasy-weekly-preview.ts
+var WEEKLY_FACT_TEMPLATES = [
+  ["fantasy_weekly_nfl_largest_margin_winner", "Biggest blowout"],
+  ["fantasy_weekly_nfl_highest_scoring_team", "Highest fantasy score"],
+  ["fantasy_weekly_nfl_lowest_scoring_team", "Fewest fantasy points"],
+  ["fantasy_weekly_nfl_smallest_margin_winner", "Closest win"]
+];
+function isReceiptPreviewCrawler(userAgent) {
+  return /applebot|bingbot|discordbot|facebookexternalhit|facebot|googlebot|groupme|iMessageLinkPreview|linkedinbot|pinterest|skypeuripreview|slackbot|telegrambot|twitterbot|whatsapp/i.test(userAgent);
+}
+function escapeHtml(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+function compactName(value, max = 34) {
+  return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
+}
+async function loadWeeklyReceiptPreview(supabase, seasonId, leagueId, weekNumber) {
+  const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year, fantasy_leagues!inner(id, league_name)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
+  if (!season) return null;
+  const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("experience_type", "fantasy").eq("week_number", weekNumber).maybeSingle();
+  if (!room || room.status !== "finalized") return null;
+  const { data: card } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
+  if (!card) return null;
+  const { data: props } = await supabase.from("gameday_props").select("id, template_prop_id, point_value, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition");
+  const settledProps = (props ?? []).filter((prop) => prop.status === "settled");
+  if (settledProps.length === 0) return null;
+  const { data: participants } = await supabase.from("gameday_participants").select("id, display_name").eq("room_id", room.id);
+  const participantList = participants ?? [];
+  const propIds = settledProps.map((prop) => prop.id);
+  const participantIds = participantList.map((participant) => participant.id);
+  let picks = [];
+  if (propIds.length && participantIds.length) {
+    const { data } = await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("prop_id", propIds).in("participant_id", participantIds);
+    picks = data ?? [];
+  }
+  const pointValues = new Map(settledProps.map((prop) => [prop.id, Number(prop.point_value) || 0]));
+  const scores = participantList.map((participant, index) => {
+    const correct = picks.filter((pick) => pick.participant_id === participant.id && pick.is_correct === true);
+    return {
+      displayName: String(participant.display_name || "League member"),
+      points: correct.reduce((sum, pick) => sum + (pointValues.get(pick.prop_id) ?? 0), 0),
+      correctCount: correct.length,
+      index
+    };
+  });
+  scores.sort((a, b) => b.points - a.points || b.correctCount - a.correctCount || a.index - b.index);
+  const ranked = scores.map((score) => {
+    const rank = scores.filter((entry) => entry.points > score.points).length + 1;
+    const tied = scores.filter((entry) => entry.points === score.points).length > 1;
+    return { ...score, rank, rankLabel: tied ? `T-${rank}` : String(rank) };
+  });
+  const topPoints = ranked[0]?.points ?? 0;
+  const winners = ranked.filter((entry) => entry.points === topPoints).map((entry) => ({ displayName: entry.displayName, points: entry.points }));
+  if (winners.length === 0) return null;
+  let fact = null;
+  for (const [templateId, label] of WEEKLY_FACT_TEMPLATES) {
+    const prop = settledProps.find((entry) => entry.template_prop_id === templateId);
+    if (!prop) continue;
+    const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+    const labels = (Array.isArray(prop.correct_answer_ids) && prop.correct_answer_ids.length ? prop.correct_answer_ids : prop.correct_answer ? [prop.correct_answer] : []).map((id) => options.find((option) => option?.id === id)?.label ?? id).filter(Boolean);
+    if (labels.length) {
+      fact = `${label}: ${labels.join(" + ")}`;
+      break;
+    }
+  }
+  const cutoff = ranked[3]?.points;
+  const topStandings = ranked.filter((entry, index) => index < 4 || cutoff !== void 0 && entry.points === cutoff).slice(0, 5).map((entry) => ({
+    displayName: entry.displayName,
+    points: entry.points,
+    rankLabel: entry.rankLabel
+  }));
+  return {
+    leagueName: String(season.fantasy_leagues?.league_name || "Fantasy League"),
+    weekNumber,
+    seasonYear: season.season_year ?? null,
+    winners,
+    topStandings,
+    fact
+  };
+}
+function renderWeeklyReceiptPreviewHtml(preview, shortUrl, canonicalUrl, imageUrl) {
+  const winnerNames = preview.winners.map((winner) => winner.displayName).join(" + ");
+  const winningPoints = preview.winners[0]?.points ?? 0;
+  const title = `${preview.leagueName} \u2014 Week ${preview.weekNumber} Receipt`;
+  const result = preview.winners.length > 1 ? `${winnerNames} tied at ${winningPoints} SP.` : `${winnerNames} won with ${winningPoints} SP.`;
+  const description = `${result}${preview.fact ? ` ${preview.fact}.` : ""}`;
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<title>${escapeHtml(title)}</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swayger">
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${escapeHtml(description)}">
+<meta property="og:url" content="${escapeHtml(shortUrl)}">
+<meta property="og:image" content="${escapeHtml(imageUrl)}">
+<meta property="og:image:width" content="1080">
+<meta property="og:image:height" content="1350">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(title)}">
+<meta name="twitter:description" content="${escapeHtml(description)}">
+<meta name="twitter:image" content="${escapeHtml(imageUrl)}">
+<meta http-equiv="refresh" content="0;url=${escapeHtml(canonicalUrl)}">
+</head><body><p><a href="${escapeHtml(canonicalUrl)}">Open the protected Weekly receipt</a></p></body></html>`;
+}
+function renderWeeklyReceiptPreviewSvg(preview) {
+  const winners = preview.winners.map((winner) => compactName(winner.displayName)).join(" + ");
+  const points = preview.winners[0]?.points ?? 0;
+  const rows = preview.topStandings.map((entry, index) => {
+    const y = 820 + index * 82;
+    return `<text x="110" y="${y}" class="rank">${escapeHtml(entry.rankLabel)}</text>
+<text x="210" y="${y}" class="name">${escapeHtml(compactName(entry.displayName, 28))}</text>
+<text x="930" y="${y}" text-anchor="end" class="score">${entry.points} SP</text>`;
+  }).join("\n");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+<rect width="1080" height="1350" fill="#0C1220"/>
+<rect x="36" y="36" width="1008" height="1278" rx="54" fill="#111C30" stroke="#B45309" stroke-width="5"/>
+<style>
+.brand{font:800 30px Arial,sans-serif;letter-spacing:5px;fill:#7A8FA8}.eyebrow{font:800 32px Arial,sans-serif;letter-spacing:4px;fill:#F5A623}
+.league{font:800 62px Arial,sans-serif;fill:#fff}.sub{font:700 34px Arial,sans-serif;fill:#A9B7C8}
+.winnerLabel{font:800 28px Arial,sans-serif;letter-spacing:4px;fill:#F5A623}.winner{font:800 55px Arial,sans-serif;fill:#fff}
+.winnerScore{font:800 43px Arial,sans-serif;fill:#F5A623}.section{font:800 26px Arial,sans-serif;letter-spacing:4px;fill:#7A8FA8}
+.rank{font:800 30px Arial,sans-serif;fill:#F5A623}.name{font:700 34px Arial,sans-serif;fill:#fff}.score{font:800 32px Arial,sans-serif;fill:#A9B7C8}
+.footer{font:700 27px Arial,sans-serif;letter-spacing:3px;fill:#61758F}
+</style>
+<text x="90" y="125" class="brand">SWAYGER FANTASY</text>
+<text x="90" y="205" class="eyebrow">WEEKLY RECEIPT</text>
+<text x="90" y="290" class="league">${escapeHtml(compactName(preview.leagueName, 29))}</text>
+<text x="90" y="350" class="sub">Week ${preview.weekNumber}${preview.seasonYear ? ` \xB7 ${preview.seasonYear}` : ""}  \xB7  FINALIZED</text>
+<rect x="76" y="410" width="928" height="280" rx="38" fill="#1A1200" stroke="#B45309" stroke-width="3"/>
+<text x="540" y="490" text-anchor="middle" class="winnerLabel">${preview.winners.length > 1 ? "CO-WINNERS" : "WINNER"}</text>
+<text x="540" y="585" text-anchor="middle" class="winner">${escapeHtml(compactName(winners, 34))}</text>
+<text x="540" y="650" text-anchor="middle" class="winnerScore">${points} SP</text>
+<text x="90" y="755" class="section">TOP STANDINGS</text>
+${rows}
+<text x="540" y="1260" text-anchor="middle" class="footer">SWAYGER \xB7 FINAL LEAGUE RESULT</text>
+</svg>`;
+}
+
+// server/fantasy-pick-share-short-link.ts
+var SHORT_CODE_PATTERN = /^[a-z2-7]{16}$/;
+var SHORT_CODE_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
+function isFantasyPickSharePackagingEnabled() {
+  return process.env.FANTASY_PICK_SHARE_PACKAGING_ENABLED !== "false";
+}
+function generateFantasyPickShareCode() {
+  const bytes = randomBytes(16);
+  let code = "";
+  for (const byte of bytes) code += SHORT_CODE_ALPHABET[byte & 31];
+  return code;
+}
+async function getOrCreateFantasyPickShareAlias(supabase, snapshot) {
+  const naturalKey = {
+    room_id: snapshot.roomId,
+    participant_id: snapshot.participantId,
+    prop_id: snapshot.propId,
+    selected_answer: snapshot.selectedAnswer,
+    share_kind: snapshot.shareKind
+  };
+  const { data: existing, error: existingError } = await supabase.from("fantasy_weekly_pick_share_aliases").select("short_code").match(naturalKey).maybeSingle();
+  if (existingError) throw new Error(existingError.message);
+  if (existing?.short_code) return existing.short_code;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = generateFantasyPickShareCode();
+    const { data: inserted, error: insertError } = await supabase.from("fantasy_weekly_pick_share_aliases").insert({
+      short_code: shortCode,
+      league_season_id: snapshot.leagueSeasonId,
+      ...naturalKey,
+      week_number: snapshot.weekNumber
+    }).select("short_code").maybeSingle();
+    if (!insertError && inserted?.short_code) return inserted.short_code;
+    if (insertError?.code !== "23505") {
+      throw new Error(insertError?.message ?? "Failed to create pick-share alias");
+    }
+    const { data: race, error: raceError } = await supabase.from("fantasy_weekly_pick_share_aliases").select("short_code").match(naturalKey).maybeSingle();
+    if (raceError) throw new Error(raceError.message);
+    if (race?.short_code) return race.short_code;
+  }
+  throw new Error("Failed to generate a unique pick-share alias");
+}
+function escapeHtml2(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+function compact(value, max) {
+  return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
+}
+async function loadFantasyPickShareSnapshot(supabase, shortCode) {
+  const { data: alias, error: aliasError } = await supabase.from("fantasy_weekly_pick_share_aliases").select("short_code, league_season_id, room_id, participant_id, prop_id, selected_answer, share_kind, week_number").eq("short_code", shortCode).maybeSingle();
+  if (aliasError) throw new Error(aliasError.message);
+  if (!alias) return null;
+  const [seasonResult, roomResult, participantResult, propResult] = await Promise.all([
+    supabase.from("fantasy_league_seasons").select("id, league_id, fantasy_leagues!inner(league_name)").eq("id", alias.league_season_id).maybeSingle(),
+    supabase.from("gameday_rooms").select("id, league_season_id, week_number, competition_type, experience_type").eq("id", alias.room_id).maybeSingle(),
+    supabase.from("gameday_participants").select("id, room_id, display_name").eq("id", alias.participant_id).maybeSingle(),
+    supabase.from("gameday_props").select("id, card_id, template_prop_id, answer_options").eq("id", alias.prop_id).maybeSingle()
+  ]);
+  if (seasonResult.error || roomResult.error || participantResult.error || propResult.error) {
+    throw new Error(
+      seasonResult.error?.message ?? roomResult.error?.message ?? participantResult.error?.message ?? propResult.error?.message ?? "Unable to resolve pick share"
+    );
+  }
+  const season = seasonResult.data;
+  const room = roomResult.data;
+  const participant = participantResult.data;
+  const prop = propResult.data;
+  if (!season || !room || !participant || !prop) return null;
+  if (room.league_season_id !== alias.league_season_id || room.week_number !== alias.week_number || room.competition_type !== "weekly" || room.experience_type !== "fantasy" || participant.room_id !== alias.room_id) return null;
+  const { data: card, error: cardError } = await supabase.from("gameday_pick_cards").select("id, room_id").eq("id", prop.card_id).maybeSingle();
+  if (cardError) throw new Error(cardError.message);
+  if (!card || card.room_id !== alias.room_id) return null;
+  const moment = getWeeklyMoment(prop.template_prop_id);
+  const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+  const answer = options.find((option) => option?.id === alias.selected_answer);
+  if (!moment || !answer?.label) return null;
+  const shareKind = alias.share_kind;
+  if (shareKind !== "pick" && shareKind !== "my_lock") return null;
+  return {
+    shortCode,
+    leagueName: String(season.fantasy_leagues?.league_name || "Fantasy League"),
+    weekNumber: alias.week_number,
+    participantDisplayName: participant.display_name ? String(participant.display_name) : null,
+    templatePropId: prop.template_prop_id,
+    momentTitle: moment.title,
+    answerLabel: String(answer.label),
+    shareKind,
+    canonicalPath: `/fantasy/weeks/${season.league_id}/${season.id}/${alias.week_number}/play?source=pick_share`
+  };
+}
+function renderFantasyPickShareHtml(snapshot, shortUrl, canonicalUrl, imageUrl) {
+  const isMyLock = snapshot.shareKind === "my_lock";
+  const title = isMyLock ? `\u{1F512} MY LOCK \u2014 ${snapshot.momentTitle} \u2014 ${snapshot.leagueName}, Week ${snapshot.weekNumber}` : `${snapshot.momentTitle} \u2014 ${snapshot.leagueName}, Week ${snapshot.weekNumber}`;
+  const description = buildFantasyPickSentence(
+    snapshot.templatePropId,
+    snapshot.answerLabel,
+    snapshot.participantDisplayName
+  );
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<title>${escapeHtml2(title)}</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swayger Fantasy">
+<meta property="og:title" content="${escapeHtml2(title)}">
+<meta property="og:description" content="${escapeHtml2(description)}">
+<meta property="og:url" content="${escapeHtml2(shortUrl)}">
+<meta property="og:image" content="${escapeHtml2(imageUrl)}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml2(title)}">
+<meta name="twitter:description" content="${escapeHtml2(description)}">
+<meta name="twitter:image" content="${escapeHtml2(imageUrl)}">
+</head><body><p><a href="${escapeHtml2(canonicalUrl)}">Open the protected Weekly picks</a></p></body></html>`;
+}
+function renderFantasyPickShareSvg(snapshot) {
+  const isMyLock = snapshot.shareKind === "my_lock";
+  const action = isMyLock ? "IS STANDING ON:" : "PICKED:";
+  const participant = snapshot.participantDisplayName ? compact(snapshot.participantDisplayName, 32) : "A SWAYGER PLAYER";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<rect width="1200" height="630" fill="#0C1220"/>
+<rect x="32" y="32" width="1136" height="566" rx="42" fill="#111C30" stroke="#F5A623" stroke-width="4"/>
+<style>
+.brand{font:800 24px Arial,sans-serif;letter-spacing:5px;fill:#7A8FA8}.kind{font:800 28px Arial,sans-serif;letter-spacing:3px;fill:#F5A623}
+.moment{font:800 58px Arial,sans-serif;fill:#fff}.person{font:700 30px Arial,sans-serif;fill:#A9B7C8}.answer{font:800 60px Arial,sans-serif;fill:#F5A623}
+.context{font:700 25px Arial,sans-serif;fill:#7A8FA8}
+</style>
+<text x="82" y="105" class="brand">SWAYGER FANTASY</text>
+<text x="82" y="165" class="kind">${isMyLock ? "\u{1F512} MY LOCK" : "THE CALL"}</text>
+<text x="82" y="245" class="moment">${escapeHtml2(compact(snapshot.momentTitle, 31))}</text>
+<text x="82" y="330" class="person">${escapeHtml2(participant)} ${action}</text>
+<text x="82" y="415" class="answer">${escapeHtml2(compact(snapshot.answerLabel.toUpperCase(), 31))}</text>
+<text x="82" y="540" class="context">${escapeHtml2(compact(snapshot.leagueName, 48))} \xB7 WEEK ${snapshot.weekNumber}</text>
+</svg>`;
+}
+function publicOrigin(req) {
+  const configured = String(process.env.EXPO_PUBLIC_APP_URL ?? "").trim().replace(/\/+$/, "");
+  if (/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(configured)) return configured;
+  if (process.env.NODE_ENV === "production") return "https://www.swayger.app";
+  const protocol = String(req.headers["x-forwarded-proto"] ?? req.protocol ?? "https").split(",")[0];
+  return `${protocol}://${req.get("host")}`;
+}
+function registerFantasyPickShareShortLink(app2, loadSnapshot = (shortCode) => loadFantasyPickShareSnapshot(getServiceSupabase(), shortCode)) {
+  app2.get("/p/:shortCode/preview.svg", async (req, res2) => {
+    const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
+    if (!SHORT_CODE_PATTERN.test(shortCode)) {
+      res2.status(404).send("Pick share not found");
+      return;
+    }
+    try {
+      const snapshot = await loadSnapshot(shortCode);
+      if (!snapshot) {
+        res2.status(404).send("Pick share not found");
+        return;
+      }
+      res2.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
+      res2.setHeader("Cache-Control", "public, max-age=300");
+      res2.send(renderFantasyPickShareSvg(snapshot));
+    } catch (error) {
+      console.error("[fantasy-pick-share] preview image failed:", error);
+      res2.status(500).send("Unable to render pick preview");
+    }
+  });
+  app2.get("/p/:shortCode", async (req, res2) => {
+    const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
+    if (!SHORT_CODE_PATTERN.test(shortCode)) {
+      res2.status(404).send("Pick share not found");
+      return;
+    }
+    try {
+      const snapshot = await loadSnapshot(shortCode);
+      if (!snapshot) {
+        res2.status(404).send("Pick share not found");
+        return;
+      }
+      if (isReceiptPreviewCrawler(String(req.headers["user-agent"] ?? ""))) {
+        const origin = publicOrigin(req);
+        const shortUrl = `${origin}/p/${shortCode}`;
+        res2.setHeader("Content-Type", "text/html; charset=utf-8");
+        res2.setHeader("Cache-Control", "public, max-age=300");
+        res2.send(renderFantasyPickShareHtml(
+          snapshot,
+          shortUrl,
+          `${origin}${snapshot.canonicalPath}`,
+          `${shortUrl}/preview.svg`
+        ));
+        return;
+      }
+      res2.setHeader("Cache-Control", "no-store");
+      res2.redirect(302, snapshot.canonicalPath);
+    } catch (error) {
+      console.error("[fantasy-pick-share] resolve failed:", error);
+      res2.status(500).send("Unable to resolve pick share");
+    }
+  });
+}
+
 // server/routes-fantasy.ts
 function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, teamName) {
   const raw = [
@@ -13092,7 +13475,7 @@ function _correctAnswers(prop) {
 }
 var _RECEIPT_ALIAS_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 function _generateReceiptAliasCode() {
-  const bytes = randomBytes(16);
+  const bytes = randomBytes2(16);
   let code = "";
   for (const byte of bytes) {
     code += _RECEIPT_ALIAS_ALPHABET[byte & 31];
@@ -16382,8 +16765,113 @@ function registerFantasyRoutes(app2) {
         my_lock: myLock,
         total_props: publishedProps.length,
         league_name: leagueName,
-        viewer_display_name: viewer.display_name ?? null
+        viewer_display_name: viewer.display_name ?? null,
+        pick_share_packaging_enabled: isFantasyPickSharePackagingEnabled()
       }, leagueId));
+    }
+  );
+  app2.post(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/pick-share/alias",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      if (!isFantasyPickSharePackagingEnabled()) {
+        res2.json({ packaging_enabled: false });
+        return;
+      }
+      const propId = typeof req.body?.prop_id === "string" ? req.body.prop_id.trim() : "";
+      const shareKind = req.body?.share_kind;
+      if (!propId) {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      if (shareKind !== "pick" && shareKind !== "my_lock") {
+        res2.status(400).json({ error: "share_kind must be pick or my_lock" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn, true);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const roomId = rc.room.id;
+      const participant = await ensureFantasyParticipant(supabase, roomId, viewer);
+      const participantId = participant.participant_id;
+      const { data: prop, error: propError } = await supabase.from("gameday_props").select("id, template_prop_id, answer_options").eq("id", propId).eq("card_id", rc.card.id).maybeSingle();
+      if (propError) {
+        console.error("[fantasy-pick-share] prop lookup failed:", propError.message);
+        res2.status(500).json({ error: "Unable to prepare pick link" });
+        return;
+      }
+      if (!prop) {
+        res2.status(404).json({ error: "Weekly pick not found" });
+        return;
+      }
+      const { data: pick, error: pickError } = await supabase.from("gameday_picks").select("selected_answer").eq("participant_id", participantId).eq("prop_id", propId).maybeSingle();
+      if (pickError) {
+        console.error("[fantasy-pick-share] pick lookup failed:", pickError.message);
+        res2.status(500).json({ error: "Unable to prepare pick link" });
+        return;
+      }
+      const selectedAnswer = pick?.selected_answer;
+      const answerOptions = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+      const selectedOption = answerOptions.find((option) => option?.id === selectedAnswer);
+      if (!selectedAnswer || !selectedOption?.label) {
+        res2.status(409).json({ error: "A current confirmed answer is required for sharing" });
+        return;
+      }
+      if (shareKind === "my_lock") {
+        if (!isSwaygerRunEnabled(String(leagueId))) {
+          res2.status(409).json({ error: "My Lock sharing is not available for this league" });
+          return;
+        }
+        const { data: lock, error: lockError } = await supabase.from("fantasy_weekly_my_locks").select("prop_id").eq("room_id", roomId).eq("participant_id", participantId).maybeSingle();
+        if (lockError) {
+          console.error("[fantasy-pick-share] My Lock lookup failed:", lockError.message);
+          res2.status(500).json({ error: "Unable to prepare pick link" });
+          return;
+        }
+        if (lock?.prop_id !== propId) {
+          res2.status(409).json({ error: "This pick is no longer your current My Lock" });
+          return;
+        }
+      }
+      try {
+        const shortCode = await getOrCreateFantasyPickShareAlias(supabase, {
+          leagueSeasonId: seasonId,
+          roomId,
+          participantId,
+          propId,
+          selectedAnswer,
+          shareKind,
+          weekNumber: wn
+        });
+        res2.json({
+          packaging_enabled: true,
+          short_code: shortCode,
+          selected_answer: selectedAnswer,
+          answer_label: String(selectedOption.label),
+          template_prop_id: prop.template_prop_id ?? null
+        });
+      } catch (error) {
+        console.error("[fantasy-pick-share] alias creation failed:", error);
+        res2.status(500).json({ error: "Unable to prepare pick link" });
+      }
     }
   );
   app2.put(
@@ -17110,7 +17598,7 @@ function registerFantasyRoutes(app2) {
         const { data: teamMgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(team_name)").eq("season_member_id", seasonMember.id).eq("is_active", true).maybeSingle();
         teamName = teamMgr?.fantasy_teams?.team_name ?? null;
       }
-      const rawToken = randomBytes(32).toString("hex");
+      const rawToken = randomBytes2(32).toString("hex");
       const tokenHash = createHash2("sha256").update(rawToken).digest("hex");
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
@@ -19194,152 +19682,12 @@ function registerGamedayShortLink(app2) {
   });
 }
 
-// server/fantasy-weekly-preview.ts
-var WEEKLY_FACT_TEMPLATES = [
-  ["fantasy_weekly_nfl_largest_margin_winner", "Biggest blowout"],
-  ["fantasy_weekly_nfl_highest_scoring_team", "Highest fantasy score"],
-  ["fantasy_weekly_nfl_lowest_scoring_team", "Fewest fantasy points"],
-  ["fantasy_weekly_nfl_smallest_margin_winner", "Closest win"]
-];
-function isReceiptPreviewCrawler(userAgent) {
-  return /applebot|bingbot|discordbot|facebookexternalhit|facebot|googlebot|groupme|iMessageLinkPreview|linkedinbot|pinterest|skypeuripreview|slackbot|telegrambot|twitterbot|whatsapp/i.test(userAgent);
-}
-function escapeHtml(value) {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-function compactName(value, max = 34) {
-  return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
-}
-async function loadWeeklyReceiptPreview(supabase, seasonId, leagueId, weekNumber) {
-  const { data: season } = await supabase.from("fantasy_league_seasons").select("id, season_year, fantasy_leagues!inner(id, league_name)").eq("id", seasonId).eq("league_id", leagueId).maybeSingle();
-  if (!season) return null;
-  const { data: room } = await supabase.from("gameday_rooms").select("id, status").eq("league_season_id", seasonId).eq("competition_type", "weekly").eq("experience_type", "fantasy").eq("week_number", weekNumber).maybeSingle();
-  if (!room || room.status !== "finalized") return null;
-  const { data: card } = await supabase.from("gameday_pick_cards").select("id").eq("room_id", room.id).order("created_at", { ascending: true }).maybeSingle();
-  if (!card) return null;
-  const { data: props } = await supabase.from("gameday_props").select("id, template_prop_id, point_value, status, correct_answer, correct_answer_ids, answer_options").eq("card_id", card.id).eq("scoring_scope", "competition");
-  const settledProps = (props ?? []).filter((prop) => prop.status === "settled");
-  if (settledProps.length === 0) return null;
-  const { data: participants } = await supabase.from("gameday_participants").select("id, display_name").eq("room_id", room.id);
-  const participantList = participants ?? [];
-  const propIds = settledProps.map((prop) => prop.id);
-  const participantIds = participantList.map((participant) => participant.id);
-  let picks = [];
-  if (propIds.length && participantIds.length) {
-    const { data } = await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("prop_id", propIds).in("participant_id", participantIds);
-    picks = data ?? [];
-  }
-  const pointValues = new Map(settledProps.map((prop) => [prop.id, Number(prop.point_value) || 0]));
-  const scores = participantList.map((participant, index) => {
-    const correct = picks.filter((pick) => pick.participant_id === participant.id && pick.is_correct === true);
-    return {
-      displayName: String(participant.display_name || "League member"),
-      points: correct.reduce((sum, pick) => sum + (pointValues.get(pick.prop_id) ?? 0), 0),
-      correctCount: correct.length,
-      index
-    };
-  });
-  scores.sort((a, b) => b.points - a.points || b.correctCount - a.correctCount || a.index - b.index);
-  const ranked = scores.map((score) => {
-    const rank = scores.filter((entry) => entry.points > score.points).length + 1;
-    const tied = scores.filter((entry) => entry.points === score.points).length > 1;
-    return { ...score, rank, rankLabel: tied ? `T-${rank}` : String(rank) };
-  });
-  const topPoints = ranked[0]?.points ?? 0;
-  const winners = ranked.filter((entry) => entry.points === topPoints).map((entry) => ({ displayName: entry.displayName, points: entry.points }));
-  if (winners.length === 0) return null;
-  let fact = null;
-  for (const [templateId, label] of WEEKLY_FACT_TEMPLATES) {
-    const prop = settledProps.find((entry) => entry.template_prop_id === templateId);
-    if (!prop) continue;
-    const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
-    const labels = (Array.isArray(prop.correct_answer_ids) && prop.correct_answer_ids.length ? prop.correct_answer_ids : prop.correct_answer ? [prop.correct_answer] : []).map((id) => options.find((option) => option?.id === id)?.label ?? id).filter(Boolean);
-    if (labels.length) {
-      fact = `${label}: ${labels.join(" + ")}`;
-      break;
-    }
-  }
-  const cutoff = ranked[3]?.points;
-  const topStandings = ranked.filter((entry, index) => index < 4 || cutoff !== void 0 && entry.points === cutoff).slice(0, 5).map((entry) => ({
-    displayName: entry.displayName,
-    points: entry.points,
-    rankLabel: entry.rankLabel
-  }));
-  return {
-    leagueName: String(season.fantasy_leagues?.league_name || "Fantasy League"),
-    weekNumber,
-    seasonYear: season.season_year ?? null,
-    winners,
-    topStandings,
-    fact
-  };
-}
-function renderWeeklyReceiptPreviewHtml(preview, shortUrl, canonicalUrl, imageUrl) {
-  const winnerNames = preview.winners.map((winner) => winner.displayName).join(" + ");
-  const winningPoints = preview.winners[0]?.points ?? 0;
-  const title = `${preview.leagueName} \u2014 Week ${preview.weekNumber} Receipt`;
-  const result = preview.winners.length > 1 ? `${winnerNames} tied at ${winningPoints} SP.` : `${winnerNames} won with ${winningPoints} SP.`;
-  const description = `${result}${preview.fact ? ` ${preview.fact}.` : ""}`;
-  return `<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="robots" content="noindex, nofollow">
-<title>${escapeHtml(title)}</title>
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Swayger">
-<meta property="og:title" content="${escapeHtml(title)}">
-<meta property="og:description" content="${escapeHtml(description)}">
-<meta property="og:url" content="${escapeHtml(shortUrl)}">
-<meta property="og:image" content="${escapeHtml(imageUrl)}">
-<meta property="og:image:width" content="1080">
-<meta property="og:image:height" content="1350">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${escapeHtml(title)}">
-<meta name="twitter:description" content="${escapeHtml(description)}">
-<meta name="twitter:image" content="${escapeHtml(imageUrl)}">
-<meta http-equiv="refresh" content="0;url=${escapeHtml(canonicalUrl)}">
-</head><body><p><a href="${escapeHtml(canonicalUrl)}">Open the protected Weekly receipt</a></p></body></html>`;
-}
-function renderWeeklyReceiptPreviewSvg(preview) {
-  const winners = preview.winners.map((winner) => compactName(winner.displayName)).join(" + ");
-  const points = preview.winners[0]?.points ?? 0;
-  const rows = preview.topStandings.map((entry, index) => {
-    const y = 820 + index * 82;
-    return `<text x="110" y="${y}" class="rank">${escapeHtml(entry.rankLabel)}</text>
-<text x="210" y="${y}" class="name">${escapeHtml(compactName(entry.displayName, 28))}</text>
-<text x="930" y="${y}" text-anchor="end" class="score">${entry.points} SP</text>`;
-  }).join("\n");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
-<rect width="1080" height="1350" fill="#0C1220"/>
-<rect x="36" y="36" width="1008" height="1278" rx="54" fill="#111C30" stroke="#B45309" stroke-width="5"/>
-<style>
-.brand{font:800 30px Arial,sans-serif;letter-spacing:5px;fill:#7A8FA8}.eyebrow{font:800 32px Arial,sans-serif;letter-spacing:4px;fill:#F5A623}
-.league{font:800 62px Arial,sans-serif;fill:#fff}.sub{font:700 34px Arial,sans-serif;fill:#A9B7C8}
-.winnerLabel{font:800 28px Arial,sans-serif;letter-spacing:4px;fill:#F5A623}.winner{font:800 55px Arial,sans-serif;fill:#fff}
-.winnerScore{font:800 43px Arial,sans-serif;fill:#F5A623}.section{font:800 26px Arial,sans-serif;letter-spacing:4px;fill:#7A8FA8}
-.rank{font:800 30px Arial,sans-serif;fill:#F5A623}.name{font:700 34px Arial,sans-serif;fill:#fff}.score{font:800 32px Arial,sans-serif;fill:#A9B7C8}
-.footer{font:700 27px Arial,sans-serif;letter-spacing:3px;fill:#61758F}
-</style>
-<text x="90" y="125" class="brand">SWAYGER FANTASY</text>
-<text x="90" y="205" class="eyebrow">WEEKLY RECEIPT</text>
-<text x="90" y="290" class="league">${escapeHtml(compactName(preview.leagueName, 29))}</text>
-<text x="90" y="350" class="sub">Week ${preview.weekNumber}${preview.seasonYear ? ` \xB7 ${preview.seasonYear}` : ""}  \xB7  FINALIZED</text>
-<rect x="76" y="410" width="928" height="280" rx="38" fill="#1A1200" stroke="#B45309" stroke-width="3"/>
-<text x="540" y="490" text-anchor="middle" class="winnerLabel">${preview.winners.length > 1 ? "CO-WINNERS" : "WINNER"}</text>
-<text x="540" y="585" text-anchor="middle" class="winner">${escapeHtml(compactName(winners, 34))}</text>
-<text x="540" y="650" text-anchor="middle" class="winnerScore">${points} SP</text>
-<text x="90" y="755" class="section">TOP STANDINGS</text>
-${rows}
-<text x="540" y="1260" text-anchor="middle" class="footer">SWAYGER \xB7 FINAL LEAGUE RESULT</text>
-</svg>`;
-}
-
 // server/fantasy-receipt-short-link.ts
-var SHORT_CODE_PATTERN = /^[a-z2-7]{16}$/;
+var SHORT_CODE_PATTERN2 = /^[a-z2-7]{16}$/;
 function registerFantasyReceiptShortLink(app2) {
   app2.get("/r/:shortCode/preview.svg", async (req, res2) => {
     const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
-    if (!SHORT_CODE_PATTERN.test(shortCode)) {
+    if (!SHORT_CODE_PATTERN2.test(shortCode)) {
       res2.status(404).send("Receipt not found");
       return;
     }
@@ -19375,7 +19723,7 @@ function registerFantasyReceiptShortLink(app2) {
   });
   app2.get("/r/:shortCode", async (req, res2) => {
     const shortCode = String(req.params.shortCode ?? "").trim().toLowerCase();
-    if (!SHORT_CODE_PATTERN.test(shortCode)) {
+    if (!SHORT_CODE_PATTERN2.test(shortCode)) {
       res2.status(404).send("Receipt not found");
       return;
     }
@@ -19708,6 +20056,7 @@ function configureExpoAndLanding(app2) {
   });
   registerGamedayShortLink(app2);
   registerFantasyReceiptShortLink(app2);
+  registerFantasyPickShareShortLink(app2);
   registerUnsubscribeRoutes(app2);
   log("Serving static Expo files with dynamic manifest routing");
   app2.use((req, res2, next) => {

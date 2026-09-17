@@ -21,10 +21,9 @@ config.resolver = {
 // the separate Express workflow on port 5000. Keep this proxy in Metro only:
 // production uses server/index.ts and native clients use their configured API
 // domain directly.
-const apiProxy = createProxyMiddleware({
+const backendProxy = createProxyMiddleware({
   target: "http://127.0.0.1:5000",
   changeOrigin: false,
-  pathFilter: "/api",
 });
 
 const expoEnhanceMiddleware = config.server.enhanceMiddleware;
@@ -36,11 +35,16 @@ config.server = {
       : metroMiddleware;
 
     return (req, res, next) => {
-      if (req.url === "/api" || req.url?.startsWith("/api/")) {
+      if (
+        req.url === "/api"
+        || req.url?.startsWith("/api/")
+        || req.url === "/p"
+        || req.url?.startsWith("/p/")
+      ) {
         // http-proxy-middleware forwards the incoming request headers
         // (including Authorization, guest-token, and content headers) and
         // relays the backend response status and headers unchanged.
-        return apiProxy(req, res, next);
+        return backendProxy(req, res, next);
       }
       return enhancedMetroMiddleware(req, res, next);
     };

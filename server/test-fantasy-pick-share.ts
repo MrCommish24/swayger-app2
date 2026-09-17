@@ -51,10 +51,10 @@ for (const id of yesNoIds) {
 }
 
 const onePick = build("fantasy_weekly_nfl_lowest_scoring_team", "All Eyez On Me");
-check("share package contains the Moment title", onePick.text.startsWith("BASEMENT WATCH"));
+check("share package contains the Moment title", onePick.text.startsWith("🏆 BASEMENT WATCH"));
 check("share package contains exactly the selected pick", onePick.text.includes("All Eyez On Me") && !onePick.text.includes("Mr Roarke"));
-check("share package includes readable week context", onePick.text.includes("Swayger Fantasy • Food Pyramid XX • Week 2"));
-check("share package includes the canonical participation URL", onePick.text.endsWith(url));
+check("share package removes redundant league/week context", !onePick.text.includes("Swayger Fantasy • Food Pyramid XX • Week 2"));
+check("share package ends with a compact readable participation URL", onePick.text.endsWith("swayger.app/fantasy/weeks/league-safe/season-safe/2/play?source=pick_share"));
 check("share package contains no private identity fields", !/(participant_id|member_id|user_id|claim_id|guest_token|recovery_token|access_token|email|phone)/i.test(onePick.text));
 check("identity-safe fallback does not invent a participant name", build("fantasy_weekly_nfl_lowest_scoring_team", "All Eyez On Me", null).sentence === "My pick: All Eyez On Me for BASEMENT WATCH.");
 check("unsafe control characters are removed from runtime labels", !build("fantasy_weekly_nfl_bad_beat", "Mr\nRoarke", "Da\u0000rius").text.includes("\u0000"));
@@ -80,7 +80,7 @@ const server = fs.readFileSync(path.resolve("server/routes-fantasy.ts"), "utf8")
 check("authorized play response includes stable template ID", server.includes("template_prop_id:   (p.template_prop_id"));
 check("authorized play response includes only league-safe viewer display name", server.includes("viewer_display_name: viewer.display_name ?? null"));
 check("Weekly private picks require verified bearer credentials", /weeks\/:weekNumber\/play"[\s\S]{0,800}getVerifiedCallerIdentity\(req, supabase\)/.test(server));
-check("no public pick-share API was introduced", !server.includes("/pick-share"));
+check("authorized immutable pick-share API is present", server.includes("/pick-share/alias"));
 
 const play = fs.readFileSync(path.resolve("app/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/play.tsx"), "utf8");
 const sheet = fs.readFileSync(path.resolve("components/fantasy/CallYourShotSheet.tsx"), "utf8");
@@ -101,7 +101,7 @@ check("composer receives only the narrowed current-pick list", play.includes("pi
 check("share flow never calls the League Picks API", !play.includes("getWeeklyLeaguePicks") && !sheet.includes("getWeeklyLeaguePicks"));
 check("Web Share API is used when available", sheet.includes("navigator.share({"));
 check("native share analytics require a confirmed shared action", sheet.includes("result.action === Share.sharedAction"));
-check("copy fallback copies the complete one-pick package", sheet.includes("Clipboard.setStringAsync(selected.shareText)"));
+check("copy fallback copies the prepared one-pick package", sheet.includes("Clipboard.setStringAsync(prepared.shareText)"));
 check("failed platform share falls back without duplicating the URL", sheet.includes('error?.name !== "AbortError"') && !sheet.includes("url: selected.shareUrl"));
 check("pick sharing does not import or modify receipt-share helpers", !play.includes("fantasy-receipt-share") && !sheet.includes("fantasy-receipt-share"));
 check("post-lock shares reuse existing events with safe lifecycle context", play.includes("week_state: state?.room_status") && play.includes('? "finalized"') && play.includes('? "settled"') && play.includes('? "locked"'));
@@ -111,6 +111,6 @@ const join = fs.readFileSync(path.resolve("app/fantasy/join/[leagueId]/[seasonId
 check("credential-less shared links preserve Week and attribution through join", join.includes('&source=pick_share') && join.includes("play${pickShareSuffix}"));
 
 const migrationFiles = fs.readdirSync(path.resolve("supabase")).filter((name) => name.includes("pick-share") || name.includes("call-your-shot"));
-check("Call Your Shot adds no database migration", migrationFiles.length === 0);
+check("V1C adds exactly one dedicated pick-share migration", migrationFiles.length === 1 && migrationFiles[0] === "gameday-fantasy-weekly-pick-share-alias.sql");
 
 console.log(`CALL YOUR SHOT V1: ${passed}/${passed} assertions passed`);

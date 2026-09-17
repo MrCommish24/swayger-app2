@@ -35,12 +35,17 @@ function safeLabel(value: string | null | undefined, maxLength: number): string 
     .slice(0, maxLength);
 }
 
-function namedSentence(
+export function buildFantasyPickSentence(
   templatePropId: string,
   answer: string,
-  participantName: string,
+  participantName?: string | null,
 ): string {
-  const subject = participantName || "This Swayger player";
+  const safeParticipantName = safeLabel(participantName, 60);
+  if (!safeParticipantName) {
+    const moment = getWeeklyMoment(templatePropId);
+    return `My pick: ${answer} for ${moment?.title ?? "this Swayger Moment"}.`;
+  }
+  const subject = safeParticipantName;
   const isYes = answer.toLowerCase() === "yes";
 
   switch (templatePropId) {
@@ -95,13 +100,16 @@ export function buildFantasyPickSharePackage(
   if (!url) throw new Error("A Weekly participation URL is required");
 
   const sentence = participantName
-    ? namedSentence(input.templatePropId, answer, participantName)
+    ? buildFantasyPickSentence(input.templatePropId, answer, participantName)
     : `My pick: ${answer} for ${moment.title}.`;
   const title = moment.title;
-  const leagueName = safeLabel(input.leagueName, 80);
-  const contextLine = `Swayger Fantasy${leagueName ? ` • ${leagueName}` : ""} • Week ${input.weekNumber}`;
-  const lockLabel = input.isMyLock ? "🔒 MY LOCK\n\n" : "";
-  const text = `${lockLabel}${title}\n\n${sentence}\n\n${contextLine}\nWho you got?\n${url}`;
+  const compactUrl = url
+    .replace(/^https?:\/\/(?:www\.)?/i, "")
+    .replace(/\/+$/, "");
+  const heading = input.isMyLock
+    ? `🔒 MY LOCK\n${title}`
+    : `🏆 ${title}`;
+  const text = `${heading}\n\n${sentence}\n\nWho you got?\n${compactUrl}`;
 
   return { title, sentence, text, url };
 }
