@@ -1,0 +1,903 @@
+We are implementing the next focused refinement to Swayger Fantasy Weekly.
+
+# SWAYGER RUN V1C — PICK SHARE PACKAGING
+
+Context:
+
+Swayger Run V1B.1 is complete.
+
+Current Weekly Fantasy sharing now supports:
+
+- Share Pick before lock
+- Share Pick after lock
+- persisted My Lock
+- Share My Lock before/after lock
+- one-pick-only disclosure
+- protected Weekly destination
+- source attribution
+- existing analytics
+- Swayger Moment-specific share copy
+
+Manual GroupMe QA surfaced a presentation problem:
+
+The actual shared take is strong, but the canonical Weekly URL is extremely long and visually noisy.
+
+Example current share:
+
+SCOREBOARD KING
+
+Mr Roarke has Big Guns putting up the highest fantasy score this week.
+
+Swayger Fantasy • Food Pyramid XX • Week 2
+Who you got?
+https://www.swayger.app/fantasy/weeks/<leagueId>/<seasonId>/2/play?source=pick_share
+
+GroupMe then also renders the generic Swayger marketing preview card.
+
+This creates too much vertical noise.
+
+V1C goal:
+
+MAKE A SHARED PICK FEEL LIKE A CLEAN SOCIAL OBJECT.
+
+Product principles:
+
+SHORT LINK.
+COMPACT COPY.
+PICK-SPECIFIC PREVIEW.
+SAME PROTECTED DESTINATION.
+NO EXPANSION OF PUBLIC PICK ACCESS.
+
+==================================================
+1. FIRST — AUDIT EXISTING SHARE ARCHITECTURE
+==================================================
+
+Inspect:
+
+- current pick-share helper
+- current My Lock share helper
+- existing Weekly participation route
+- source=pick_share attribution
+- existing receipt short-link architecture
+- Draft Day short-link architecture
+- Weekly receipt short-link architecture
+- current short-code allocator helpers
+- current /r/:shortCode resolver
+- current OG preview architecture
+- generic app metadata
+- server templates / OG rendering helpers
+- current share analytics
+- current privacy model
+- current finalized receipt public preview implementation
+
+Determine the smallest safe architecture for:
+
+- short pick-share URLs
+- pick-specific preview metadata
+- human redirect to protected Weekly route
+
+Do not implement yet until architecture is clear.
+
+==================================================
+2. SHARE URL GOAL
+==================================================
+
+Replace the long visible canonical Weekly URL in shared-pick output with a short Swayger URL.
+
+Preferred shape:
+
+https://www.swayger.app/p/<shortCode>
+
+or equivalent compact dedicated namespace.
+
+Preferred displayed form where reliable:
+
+swayger.app/p/<shortCode>
+
+The short URL should resolve to the same Weekly participation destination and preserve:
+
+source=pick_share
+
+Human flow:
+
+short link
+→ protected Weekly play/join route
+→ existing auth/guest/lock handling
+
+Do NOT redirect to:
+
+- homepage
+- generic marketing
+- receipt
+- public pick detail page
+
+The short link is a routing/preview layer only.
+
+==================================================
+3. SHORT-LINK DATA MODEL
+==================================================
+
+Audit whether an existing generic short-link table/helper can safely support this.
+
+Do NOT reuse receipt aliases in a way that mixes finalized receipt semantics with live pick-share semantics.
+
+If a dedicated additive table is required, use the smallest safe model.
+
+Conceptually:
+
+fantasy_pick_share_aliases
+
+Potential fields:
+
+- short_code
+- room_id
+- participant_id
+- prop_id
+- created_at
+- optional created share context only if truly necessary
+
+Important:
+
+Do NOT store:
+- answer label
+- team name
+- generated share text
+- email
+- phone
+- guest token
+- auth token
+
+The current answer should be resolved from the participant’s confirmed pick where safe.
+
+However, think carefully about whether a previously shared pick should remain tied to the answer that was intentionally disclosed at share time if the user later changes that pick before lock.
+
+This is a product decision.
+
+Assess and recommend one of:
+
+A. Snapshot the intentionally shared answer at share time.
+B. Resolve the participant’s current confirmed answer dynamically.
+
+Strong product preference:
+
+A shared message should not silently change meaning later.
+
+So if the alias needs to preserve the deliberately shared answer identity, store the minimum stable answer identifier necessary rather than raw display text.
+
+If schema is required:
+prepare the migration and STOP with:
+
+SQL APPLICATION REQUIRED
+
+before dependent implementation.
+
+==================================================
+4. STABILITY / ALIAS SEMANTICS
+==================================================
+
+We need deterministic, understandable behavior.
+
+Assess whether:
+
+- one alias should exist per participant + prop + shared answer
+- repeated shares of the same current pick should reuse one alias
+- changing the pick should generate a new alias
+- My Lock sharing and ordinary Share Pick should reuse the same alias when they refer to the same participant/prop/answer
+
+Preferred behavior:
+
+Same participant
++ same Weekly room
++ same prop
++ same confirmed answer
+
+→ stable reusable alias
+
+If the participant changes the pick:
+
+→ old alias continues representing the old voluntarily shared call
+→ new share gets a new alias
+
+This prevents previously sent links/previews from changing meaning.
+
+Do not create unbounded duplicate aliases for repeated sharing of the same exact call.
+
+==================================================
+5. SHORT CODE
+==================================================
+
+Use the project’s existing secure short-code convention if appropriate.
+
+Requirements:
+
+- globally unique
+- opaque
+- not sequential
+- not guessable from IDs
+- no private data encoded
+- compact enough for messaging
+- collision-safe
+
+Do not put league ID, participant ID, prop ID, answer ID, or week number in the URL.
+
+==================================================
+6. HUMAN REDIRECT BEHAVIOR
+==================================================
+
+A normal browser request to:
+
+/p/<shortCode>
+
+should redirect to the canonical protected Weekly route.
+
+Example:
+
+/p/abc123
+→ 302
+→ /fantasy/weeks/<league>/<season>/<week>/play?source=pick_share
+
+Preserve existing:
+
+- auth
+- guest claim
+- seat identity
+- locked state
+- League Picks gating
+- archived/finalized routing
+- source attribution
+
+The alias itself must not grant protected Weekly access.
+
+==================================================
+7. PICK-SPECIFIC PUBLIC PREVIEW METADATA
+==================================================
+
+Recognized preview crawlers should receive limited pick-specific OG/Twitter metadata.
+
+This is analogous in spirit to finalized Weekly receipt preview metadata, but the privacy boundary is different because this is a voluntarily shared individual pick.
+
+Approved public preview fields:
+
+- Swayger Moment title
+- intentionally shared answer label
+- league name
+- week number
+- safe participant display name if available
+- generic Swayger Fantasy branding
+- optional My Lock label when applicable
+
+Example:
+
+og:title:
+SCOREBOARD KING — Food Pyramid XX, Week 2
+
+og:description:
+Mr Roarke has Big Guns putting up the highest fantasy score this week.
+
+For My Lock:
+
+og:title:
+🔒 MY LOCK — BASEMENT WATCH
+
+og:description:
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+Do not expose:
+
+- other picks
+- League Picks percentages
+- other participants
+- participant/member/user IDs
+- email
+- phone
+- guest tokens
+- auth/session tokens
+- unresolved private data
+- admin controls
+- protected Weekly payload
+- My Lock record ID
+
+==================================================
+8. PUBLIC PREVIEW IMAGE
+==================================================
+
+Assess whether we should generate a lightweight pick-specific OG image.
+
+Preferred if implementation is straightforward.
+
+Concept:
+
+SWAYGER FANTASY
+
+SCOREBOARD KING
+
+Mr Roarke picked:
+BIG GUNS
+
+Food Pyramid XX • Week 2
+
+or:
+
+🔒 MY LOCK
+
+BASEMENT WATCH
+
+Darius is standing on:
+ALL EYEZ ON ME
+
+Food Pyramid XX • Week 2
+
+Use a compact social-preview canvas.
+
+Do NOT reuse the full receipt card.
+
+Do NOT include:
+- other picks
+- standings
+- League Picks
+- question list
+- private metadata
+
+If SVG OG images may not render consistently across clients, assess whether a PNG-generation path already exists.
+
+Do not add a heavy image-generation service solely for V1C.
+
+If text-specific OG metadata is enough for V1C, document that.
+
+==================================================
+9. SHARE COPY COMPRESSION
+==================================================
+
+Tighten current share text.
+
+Target structure:
+
+🏆 SCOREBOARD KING
+Mr Roarke has Big Guns putting up the highest score this week.
+
+Who you got?
+swayger.app/p/<code>
+
+For My Lock:
+
+🔒 MY LOCK
+BASEMENT WATCH
+
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+Who you got?
+swayger.app/p/<code>
+
+Avoid unnecessary line:
+
+Swayger Fantasy • Food Pyramid XX • Week 2
+
+if the link preview already communicates league/week context.
+
+However:
+
+If preview metadata cannot be relied on universally, preserve enough context in the text so the share still makes sense with no preview.
+
+Recommend final text structure based on real platform behavior.
+
+==================================================
+10. SHARE BUTTON LABEL CONSISTENCY
+==================================================
+
+Manual QA noted:
+
+The My Lock share sheet header says:
+
+SHARE MY LOCK
+
+but the primary action may still say:
+
+Share Pick
+
+Fix this.
+
+When sharing current My Lock:
+
+Primary action:
+Share My Lock
+
+When sharing ordinary pick:
+
+Primary action:
+Share Pick
+
+Copy fallback labels should also match context.
+
+==================================================
+11. PRE-LOCK EDIT BEHAVIOR
+==================================================
+
+Important edge case:
+
+A participant may share a pick and then change it before lock.
+
+V1C must define historical short-link behavior clearly.
+
+Preferred rule:
+
+A previously shared alias remains a receipt of what the participant intentionally shared at that moment.
+
+Changing a pick later does NOT mutate:
+- previously generated preview metadata
+- previously sent link meaning
+
+Future share after changing the pick:
+- generates/reuses alias for the new confirmed answer
+
+This is consistent with the Swayger ethos:
+the old take remains on the record.
+
+Do not attempt to edit previously sent messages.
+
+==================================================
+12. MY LOCK CHANGE BEHAVIOR
+==================================================
+
+If a participant:
+
+1. Shares My Lock
+2. Changes My Lock before lock
+3. Shares the new My Lock
+
+Then:
+
+- old alias remains associated with the old shared call
+- new My Lock share reflects the new selected Lock
+- old preview should not silently become “not My Lock” or change content
+
+If necessary, share context should snapshot whether the alias was created as:
+
+- normal pick share
+- My Lock share
+
+Use the minimum data required.
+
+==================================================
+13. POST-LOCK SHARING
+==================================================
+
+V1B.1 established:
+
+LOCKED = IMMUTABLE, NOT UNSHAREABLE.
+
+V1C short links and previews must work for:
+
+- open Week
+- locked Week
+- settled Week
+- finalized Week where existing pick summary is reachable
+
+Normal recipient routing should still respect current Week lifecycle.
+
+Do not create public results access.
+
+==================================================
+14. PREVIEW CRAWLER HANDLING
+==================================================
+
+Reuse existing crawler-detection architecture if possible.
+
+Crawler request:
+
+/p/<shortCode>
+
+→ minimal HTML with OG/Twitter metadata
+
+Normal human request:
+
+/p/<shortCode>
+
+→ redirect to protected Weekly route
+
+Crawler requests must NOT:
+
+- create a participant
+- claim a seat
+- expose Weekly protected JSON
+- fire participant Week-view events
+- fire fantasy_week_opened_from_pick_share
+- fire fantasy_pick_share events
+
+Preview fetches are not human engagement.
+
+==================================================
+15. ANALYTICS
+==================================================
+
+Preserve existing:
+
+- fantasy_pick_share_opened
+- fantasy_pick_shared
+- fantasy_pick_link_copied
+- fantasy_week_opened_from_pick_share
+
+Do not fire human engagement analytics for crawler previews.
+
+If useful, safely include:
+
+- link_type = pick_share
+- is_my_lock = true/false
+- week_state
+- template_prop_id
+
+Do not include:
+
+- answer label
+- team name
+- participant name
+- short code
+- share copy
+- recipient info
+
+If alias creation itself needs analytics:
+prefer using existing successful share events rather than adding a new event.
+
+==================================================
+16. PRIVACY / SECURITY
+==================================================
+
+Public preview metadata is allowed only because the participant intentionally shared that exact pick.
+
+The alias must not be usable to enumerate other picks.
+
+Requirements:
+
+- opaque short codes
+- no sequential IDs
+- no directory/index endpoint
+- no public search
+- no participant profile
+- no “more picks from this user”
+- no other Week data
+- no League Picks data
+- no protected API access
+
+Malformed, unknown, revoked/invalid aliases:
+return safe 404.
+
+If underlying Week is deleted:
+alias should fail safely.
+
+If participant or prop no longer exists:
+fail safely.
+
+==================================================
+17. DISPLAY NAME SAFETY
+==================================================
+
+Use only the existing league-safe display name.
+
+Do not source identity from:
+- auth metadata
+- email
+- phone
+- unrelated profile data
+
+If no safe display name exists:
+
+Use identity-free wording.
+
+Example:
+
+SCOREBOARD KING
+
+My pick: Big Guns for the highest fantasy score this week.
+
+==================================================
+18. GROUPME TARGET EXPERIENCE
+==================================================
+
+Manual QA target:
+
+Current bad experience:
+
+- long canonical URL wraps across several lines
+- generic Swayger marketing preview appears
+- too much vertical noise
+
+Desired GroupMe experience:
+
+🏆 SCOREBOARD KING
+Mr Roarke has Big Guns putting up the highest score this week.
+
+Who you got?
+swayger.app/p/abc123
+
+Then preview card:
+
+SCOREBOARD KING — Food Pyramid XX, Week 2
+
+Mr Roarke has Big Guns putting up the highest fantasy score this week.
+
+Optional compact Swayger pick image.
+
+Goal:
+
+The prediction should dominate.
+The URL should disappear into the background.
+The preview should reinforce the call rather than advertise generic Swayger.
+
+==================================================
+19. SMS / RCS TARGET EXPERIENCE
+==================================================
+
+Desired:
+
+- compact share text
+- short clickable URL
+- no multi-line UUID noise
+- preview-specific metadata where client supports it
+- graceful plain-text experience where it does not
+
+Do not depend on link previews for comprehension.
+
+==================================================
+20. NO NEW GAMEPLAY
+==================================================
+
+Do NOT modify:
+
+- Swayger Run
+- question UX
+- My Lock selection
+- progress meter
+- scoring
+- settlement
+- League Picks
+- Results
+- Weekly Receipt
+- Call Your Shot meaning
+- post-lock share availability
+
+V1C is packaging only.
+
+==================================================
+21. FEATURE FLAG / ROLLBACK
+==================================================
+
+Do not make V1C dependent on Swayger Run UI alone.
+
+The short-link share helper should work for both:
+
+- focused Swayger Run experience
+- legacy all-card Weekly experience
+
+If V1C must be feature-gated initially, reuse or introduce the smallest safe share-packaging flag.
+
+Rollback must be easy:
+
+If short-link packaging is disabled:
+fall back to the existing canonical Weekly link share behavior.
+
+Existing shares/aliases should continue resolving safely.
+
+Document rollback.
+
+==================================================
+22. TESTS
+==================================================
+
+Add focused coverage for:
+
+SHORT LINKS
+- opaque unique short code
+- stable alias reuse for same participant/prop/answer/context
+- new alias after answer change
+- old alias retains old shared meaning
+- My Lock context preserved
+- unknown code 404
+- deleted underlying entities fail safely
+
+HUMAN ROUTING
+- normal browser gets 302
+- canonical protected Week destination
+- source=pick_share preserved
+- auth/guest flow preserved
+- locked Week preserved
+
+CRAWLERS
+- known crawler receives metadata
+- normal browser not treated as crawler
+- crawler does not create participant
+- crawler does not fire Week-open analytics
+
+METADATA
+- Moment title
+- answer
+- league
+- week
+- safe display name
+- My Lock framing
+- no private IDs/tokens
+- no other picks
+- no League Picks
+
+SHARE COPY
+- compact format
+- short link last
+- normal pick wording
+- My Lock wording
+- identity-safe fallback
+- correct primary button label
+
+EDIT HISTORY
+- previously shared link does not mutate after pick edit
+- new share reflects new confirmed answer
+
+MY LOCK HISTORY
+- old My Lock share stays stable after lock change
+- new My Lock share reflects new Lock
+
+LIFECYCLE
+- open sharing
+- locked sharing
+- settled sharing
+- finalized behavior
+
+ANALYTICS
+- crawler excluded
+- human attribution preserved
+- safe properties only
+
+ROLLBACK
+- packaging off falls back to canonical URL
+- existing aliases still resolve
+- no gameplay impact
+
+==================================================
+23. REGRESSION
+==================================================
+
+Run:
+
+- Swayger Run V1A
+- V1B My Lock
+- V1B.1 post-lock sharing
+- Weekly lifecycle
+- Call Your Shot
+- Share Pick
+- Share My Lock
+- guest/auth
+- League Picks
+- settlement
+- Results
+- Weekly Receipt
+- receipt short links
+- receipt OG metadata
+- Fantasy analytics
+- week sequencing
+- multi-correct
+
+Then:
+
+- server production build
+- web export
+- iOS export
+- Android export
+- targeted lint
+- changed-file TypeScript diagnostics
+
+Return exact totals.
+
+==================================================
+24. MANUAL QA
+==================================================
+
+Return exact manual QA covering:
+
+A. GROUPME
+
+1. Share ordinary confirmed pick.
+2. Verify short URL.
+3. Verify compact text.
+4. Verify pick-specific title.
+5. Verify pick-specific description.
+6. Verify generic marketing preview no longer dominates.
+7. Tap link.
+8. Confirm correct Weekly route.
+
+B. MY LOCK
+
+1. Share My Lock.
+2. Verify MY LOCK framing.
+3. Verify short URL.
+4. Verify My Lock-specific preview.
+5. Cancel share and confirm no state change.
+
+C. EDIT AFTER SHARE
+
+1. Share Pick A.
+2. Change answer to Pick B.
+3. Re-open old short link.
+4. Confirm old preview still represents Pick A.
+5. Share again.
+6. Confirm new short link/alias represents Pick B.
+
+D. CHANGE MY LOCK
+
+1. Share current My Lock.
+2. Change My Lock.
+3. Confirm old preview stays stable.
+4. Share new My Lock.
+5. Confirm new preview reflects new Lock.
+
+E. LOCKED WEEK
+
+1. Lock Week.
+2. Share confirmed pick.
+3. Confirm short link works.
+4. Confirm recipient sees normal locked-week experience.
+
+F. CRAWLER
+
+Use preview-like user agent and confirm:
+- OG metadata
+- no protected payload
+- no analytics pollution
+- no participant creation
+
+G. SMS / RCS
+
+Verify compact text and clickability.
+
+==================================================
+25. RETURN
+==================================================
+
+Return:
+
+# SWAYGER RUN V1C — PICK SHARE PACKAGING REPORT
+
+1. Existing share architecture
+2. Short-link architecture
+3. Schema decision
+4. Alias stability semantics
+5. Human redirect behavior
+6. Public preview metadata
+7. Preview-image decision
+8. Compact share-copy changes
+9. My Lock share packaging
+10. Share-button label consistency
+11. Pick-edit history behavior
+12. My Lock-change history behavior
+13. Locked/finalized behavior
+14. Crawler handling
+15. Analytics
+16. Privacy/security
+17. Feature flag / rollback
+18. Files changed
+19. Tests added
+20. Regression totals
+21. Known limitations
+22. Exact manual QA
+23. Final GroupMe/SMS target behavior
+
+Then STOP.
+
+Do not build:
+- public pick pages
+- public profiles
+- pick feeds
+- comments
+- reactions
+- result-specific personal receipts
+- new gameplay
+- new scoring
+- another feature
+
+Final status:
+
+SWAYGER RUN V1C READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
