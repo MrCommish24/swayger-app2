@@ -1,0 +1,953 @@
+We are implementing the next focused polish phase of Swayger Fantasy Weekly.
+
+# SWAYGER RUN V1B — MY LOCK + SHARE FLOW + NAVIGATION POLISH
+
+Context:
+
+Swayger Run V1A is already built and manually QA’d.
+
+What is working well:
+- One-card focus mode
+- Named Swayger Moments
+- Dynamic progress
+- Server-confirmed acknowledgements
+- Resume behavior
+- Completion summary
+- Existing Call Your Shot / Share Pick architecture
+- Existing feature-flag rollback
+
+Manual QA surfaced a few UX improvements we now want to make.
+
+This task should refine the experience without changing:
+- scoring
+- settlement
+- published props
+- answer options
+- Weekly Results
+- Weekly Receipt
+- League Picks rules
+- participant identity architecture
+- existing share privacy
+
+Product vocabulary going forward:
+
+SWAYGER MOMENT
+= the branded prediction question
+
+PICK
+= the action the participant makes
+
+MY LOCK
+= the ONE prediction the participant is most confident in
+
+CALL YOUR SHOT
+= choosing My Lock
+
+SHARE PICK
+= optionally sharing any individual confirmed pick
+
+SHARE MY LOCK
+= optionally sharing the selected My Lock
+
+Core principle:
+
+CALL YOUR SHOT SHOULD NOT MEAN “OPEN THE SHARE SHEET.”
+
+Calling your shot should first create a meaningful state:
+“This is the pick I’m standing on.”
+
+Sharing comes after that and remains optional.
+
+==================================================
+1. FIRST — AUDIT CURRENT V1A + CALL YOUR SHOT IMPLEMENTATION
+==================================================
+
+Before editing, inspect:
+
+- Swayger Run feature flag
+- focused Weekly play route
+- progress component
+- focused Moment card
+- completion summary
+- Review/Edit flow
+- existing per-question Share Pick behavior from the legacy/all-card experience
+- current Call Your Shot sheet
+- current pick share helper
+- participant/pick data model
+- guest/auth identity flow
+- lock/finalization lifecycle
+- analytics
+- current database schema
+- current feature-flag rollback behavior
+
+Confirm:
+- where Share Pick existed in the legacy flow
+- whether focused mode accidentally removed that action
+- current Call Your Shot state model
+- exact persistence required for My Lock
+
+Do not modify scoring or settlement.
+
+==================================================
+2. PLAYER-FACING TERMINOLOGY
+==================================================
+
+Keep “Swayger Moment” as the branded question concept.
+
+But change navigation/action language from Moment to Pick where appropriate.
+
+Preferred player-facing language:
+
+- Pick 1 of 7
+- Next Pick
+- Previous Pick
+- Review Picks
+- Edit Pick
+- Share Pick
+
+Avoid:
+- Next Moment
+- Previous Moment
+
+Moment titles remain:
+
+SCOREBOARD KING
+BASEMENT WATCH
+BIGGEST BLOWOUT
+etc.
+
+Internal variable/component names do not need to be renamed if unnecessary.
+
+==================================================
+3. EDIT FLOW — ADD DONE / BACK TO SUMMARY
+==================================================
+
+Manual QA issue:
+
+After someone has completed all picks, if they edit one earlier pick, they currently have to continue navigating through later picks to get back to completion.
+
+Fix this.
+
+When a participant has already completed the Weekly Swayger and is editing a confirmed pick:
+
+show:
+
+- Done
+- Next Pick
+
+“Done” should return immediately to:
+
+YOUR SWAYGER IS IN
+
+completion summary.
+
+Behavior:
+
+- edited answer must save successfully first
+- show CALL UPDATED
+- Done returns to summary
+- no full completion celebration
+- no final completion haptic
+- no forced traversal through all remaining picks
+
+For incomplete participants:
+do not show Done-to-summary because completion summary should not exist yet.
+
+==================================================
+4. RESTORE PER-PICK SHARE IN FOCUSED MODE
+==================================================
+
+Each successfully confirmed pick should remain individually shareable.
+
+This capability existed in the original all-card flow and should persist in Swayger Run.
+
+After a pick is server-confirmed, focused card should expose a subtle:
+
+Share Pick
+
+Example:
+
+BASEMENT WATCH
+
+All Eyez On Me
+
+ON THE RECORD ✓
+
+[Share Pick]
+
+Previous Pick          Next Pick
+
+Rules:
+
+- only show for successfully confirmed current answer
+- do not show while save is pending
+- do not show on failed save
+- hide after Week lock if current privacy/lifecycle rules require it
+- reuse existing share helper and share copy
+- reuse existing privacy protections
+- reuse existing deep link / source attribution
+- do not create a new share architecture
+
+Sharing one pick must not expose:
+- other picks
+- League Picks data
+- tokens
+- IDs
+- contact information
+
+==================================================
+5. MY LOCK — PRODUCT MODEL
+==================================================
+
+Add persisted My Lock.
+
+Definition:
+
+My Lock = the ONE confirmed Weekly prediction that the participant is most confident in.
+
+My Lock has NO scoring effect.
+
+It must NOT:
+- add SP
+- multiply points
+- affect settlement
+- affect standings
+- affect correctness
+- affect Weekly Results scoring
+
+It is purely:
+- confidence
+- identity
+- expression
+- sharing
+
+==================================================
+6. MY LOCK DATA MODEL
+==================================================
+
+Use the smallest safe additive persistence model.
+
+Preferred conceptual table:
+
+`fantasy_weekly_my_locks`
+
+Fields conceptually:
+
+- id
+- room_id
+- participant_id
+- prop_id
+- created_at
+- updated_at
+
+Uniqueness:
+
+UNIQUE (room_id, participant_id)
+
+Do NOT store:
+- answer label
+- team name
+- share copy
+- auth user ID directly if canonical participant identity already exists
+
+Associate My Lock with:
+- canonical gameday participant
+- Weekly room
+- selected prop
+
+My Lock should resolve the current confirmed answer from the existing pick.
+
+This means if the participant edits the answer for that Moment:
+- My Lock remains attached to the Moment
+- displayed/shared answer updates only after successful save
+
+Server validation must confirm:
+- room is Fantasy Weekly
+- participant belongs to room
+- prop belongs to room
+- participant has a confirmed pick for prop
+- room is still in a lifecycle state where My Lock can be selected/changed
+
+Do not trust client-only validation.
+
+If schema is required:
+prepare the additive migration and STOP with:
+
+SQL APPLICATION REQUIRED
+
+before implementing dependent UI/API work.
+
+==================================================
+7. MY LOCK LIFECYCLE
+==================================================
+
+Before Week lock:
+
+Participant may:
+- select My Lock
+- change My Lock
+- skip My Lock
+- return later and choose one
+
+After Week lock:
+
+My Lock becomes read-only.
+
+After finalization/archive:
+
+My Lock remains preserved for historical display if the Weekly summary is viewable.
+
+Do not allow mutation after lock/finalization.
+
+==================================================
+8. CALL YOUR SHOT — REDEFINE THE FLOW
+==================================================
+
+Current problem:
+
+Call Your Shot currently leads directly into choosing a pick for sharing, which makes it feel like calling your shot = sharing.
+
+Change the meaning.
+
+New flow:
+
+YOUR SWAYGER IS IN
+
+[summary]
+
+CALL YOUR SHOT
+
+Which pick are you most confident in?
+
+[Choose My Lock]
+
+After choosing:
+
+🔒 MY LOCK
+
+BASEMENT WATCH
+All Eyez On Me
+
+This is the one you’re standing on.
+
+[Share My Lock]
+[Done]
+
+Important:
+
+Choosing My Lock completes Call Your Shot.
+
+Sharing is optional.
+
+If user chooses My Lock and then decides not to share:
+they are still done.
+
+Returning to completion summary should clearly show the selected My Lock.
+
+==================================================
+9. MY LOCK VISUAL TREATMENT
+==================================================
+
+Use a small lock or star indicator.
+
+Preferred label:
+
+🔒 MY LOCK
+
+On the completion summary:
+
+SCOREBOARD KING
+Too Good
+
+BASEMENT WATCH
+Too Good
+🔒 MY LOCK
+
+or:
+
+🔒 MY LOCK
+BASEMENT WATCH
+Too Good
+
+Keep it visually strong but compact.
+
+Do not make the summary much taller.
+
+==================================================
+10. CALL YOUR SHOT PICKER
+==================================================
+
+The Call Your Shot / My Lock picker should list confirmed picks only.
+
+Each option should show:
+
+Moment title
+current confirmed answer
+
+Example:
+
+BASEMENT WATCH
+All Eyez On Me
+
+BIGGEST BLOWOUT
+Too Good
+
+BAD BEAT OF THE WEEK
+Mr Roarke
+
+Participant selects one.
+
+On save success:
+- persist My Lock
+- show LOCKED IN
+- medium haptic where supported
+- return to My Lock confirmation state
+
+Do not auto-open share sheet.
+
+==================================================
+11. SHARE MY LOCK
+==================================================
+
+After My Lock exists:
+
+Offer:
+
+Share My Lock
+
+Reuse existing Call Your Shot share architecture.
+
+Share copy should add a My Lock label only when the shared pick is actually the current My Lock.
+
+Example:
+
+🔒 MY LOCK
+
+BASEMENT WATCH
+
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+Who you got?
+<Weekly link>
+
+If participant shares another confirmed pick using Share Pick:
+use normal non-lock share copy.
+
+Do not label every shared pick as My Lock.
+
+==================================================
+12. INDIVIDUAL SHARE PICK REMAINS INDEPENDENT
+==================================================
+
+A participant can:
+
+- share any confirmed pick
+- select My Lock
+- share My Lock
+- choose not to share anything
+
+These are independent.
+
+Do not require My Lock to use Share Pick.
+
+Do not require sharing to select My Lock.
+
+==================================================
+13. COMPLETION SUMMARY UX
+==================================================
+
+Update completion summary hierarchy.
+
+Recommended structure:
+
+YOUR SWAYGER IS IN
+
+7 calls on the record.
+Receipt pending.
+
+If no My Lock:
+
+CALL YOUR SHOT
+Which pick are you most confident in?
+
+[Choose My Lock]
+
+Then:
+
+[compact list of picks]
+
+[Call Your Shot / Choose My Lock]
+[Edit Picks]
+[Back to League]
+
+If My Lock exists:
+
+🔒 MY LOCK
+BASEMENT WATCH
+All Eyez On Me
+
+[Share My Lock]
+[Change My Lock]
+
+Then compact pick summary.
+
+Do not turn this into a results page.
+
+==================================================
+14. PROGRESS METER POLISH
+==================================================
+
+The current segmented bar works functionally but feels generic.
+
+Replace or refine it into a lightweight dynamic-dot / momentum treatment.
+
+Goal:
+
+more branded and premium
+without custom SVG/canvas complexity.
+
+Concept:
+
+Current position should feel like momentum building.
+
+Use a small number of size states, not a unique size for every question.
+
+Example concept:
+
+completed earlier:
+small filled dot
+
+recent completed:
+medium filled dot
+
+current:
+largest outlined/accent dot
+
+future:
+small muted dot
+
+Do NOT imply later picks are more valuable.
+
+This is visual momentum, not scoring importance.
+
+Requirements:
+
+- dynamic 3–12+
+- no wrapping where possible
+- accessible
+- current/completed/unanswered distinguishable beyond color
+- interactive if current meter navigation remains
+- maintain text:
+  X of Y calls made
+  Pick N of Y
+
+Do NOT build:
+- literal S shape
+- curved path
+- canvas
+- physics
+- animated orbit
+- decorative loops
+
+==================================================
+15. NAVIGATION COPY
+==================================================
+
+Update player-facing labels:
+
+Next Moment → Next Pick
+Previous Moment → Previous Pick
+Moment N of Y → Pick N of Y
+
+Keep:
+Swayger Moment title naming
+
+Example:
+
+Pick 3 of 7
+
+BASEMENT WATCH
+
+Who will finish with the fewest fantasy points?
+
+==================================================
+16. HAPTICS
+==================================================
+
+Keep V1A haptics.
+
+Add:
+
+My Lock selected/changed:
+`ImpactFeedbackStyle.Medium`
+
+Rules:
+- only after successful persistence
+- no optimistic haptic
+- no haptic on load
+- no haptic on failure
+- web no-op
+- visible feedback remains required
+
+Do not add screen shake.
+
+==================================================
+17. ANALYTICS
+==================================================
+
+Add only minimal My Lock analytics.
+
+New events:
+
+`fantasy_my_lock_selected`
+`fantasy_my_lock_changed`
+
+Optional only if explicit Skip button exists:
+`fantasy_my_lock_skipped`
+
+Safe properties:
+
+- league_id
+- season_id
+- week_number
+- template_prop_id
+- viewer_role
+- is_guest
+- source
+- experience_version
+- question_count
+
+Do NOT send:
+- answer label
+- team name
+- participant name
+- question text
+- share copy
+
+Existing Share Pick analytics remain unchanged.
+
+We should be able to answer:
+
+- What % of completed participants choose My Lock?
+- Which Swayger Moment IDs become My Lock most often?
+- How often do users change My Lock?
+- Does My Lock increase Call Your Shot sharing?
+- How often are individual non-lock picks shared?
+
+Update:
+`docs/swayger-fantasy-analytics.md`
+
+with exact PostHog dashboard guidance.
+
+==================================================
+18. FEATURE FLAG / ROLLBACK
+==================================================
+
+Preserve existing Swayger Run feature flag behavior.
+
+Important:
+
+V1A presentation rollback must remain easy.
+
+If My Lock schema exists and Swayger Run is later disabled:
+
+- legacy Weekly UX must still work
+- picks remain untouched
+- My Lock rows may remain dormant
+- no cleanup required
+- no scoring dependency
+- no settlement dependency
+- no receipt dependency
+
+Turning off Swayger Run should hide My Lock UI but not require deleting My Lock records.
+
+Document rollback behavior explicitly.
+
+==================================================
+19. LOCKED / FINALIZED STATES
+==================================================
+
+Before lock:
+- picks editable
+- Share Pick available
+- My Lock selectable/changeable
+- Share My Lock available
+
+After lock:
+- picks read-only
+- My Lock read-only
+- no My Lock changes
+- existing League Picks behavior remains
+- previously sent share links still work
+
+After finalized:
+- Results/Receipt behavior unchanged
+- My Lock may display in completion/history if appropriate
+- do not introduce post-settlement My Lock receipts in this task
+
+==================================================
+20. EXISTING WEEK / PILOT SAFETY
+==================================================
+
+Do not mutate:
+- published props
+- current picks
+- Week status
+- answer options
+- scoring
+- settlement
+- existing Call Your Shot share records
+- receipt aliases
+
+If enabling My Lock for an already-active Swayger Run league:
+existing participants should simply have no My Lock until they choose one.
+
+No backfill required.
+
+==================================================
+21. ACCESSIBILITY
+==================================================
+
+Ensure:
+
+- My Lock picker is keyboard/screen-reader accessible
+- selected Lock state is announced
+- Share Pick buttons have clear labels
+- Done button has clear purpose
+- meter dot states have accessible labels
+- progress text remains visible
+- lock icon is never the sole indication of My Lock
+- focus returns appropriately after dialogs/sheets
+
+==================================================
+22. TESTS
+==================================================
+
+Add focused coverage for:
+
+NAVIGATION
+- Next Pick label
+- Previous Pick label
+- Pick N of Y
+- Done visible only for completed/edit flow
+- Done returns to completion summary
+
+PER-PICK SHARE
+- Share Pick visible after confirmed answer
+- not visible while pending/failure
+- focused mode reuses existing share helper
+- one-pick privacy preserved
+
+MY LOCK
+- one lock per participant per Weekly room
+- only confirmed pick may be selected
+- prop belongs to same room
+- participant belongs to room
+- selection before lock
+- change before lock
+- read-only after lock
+- preserved after finalization/archive
+- guest/auth compatibility
+- answer edit preserves My Lock association
+- current confirmed answer shown after edit
+
+CALL YOUR SHOT
+- selecting My Lock does not automatically open share sheet
+- Share My Lock is optional
+- user can exit after choosing My Lock
+- returning summary shows My Lock
+- changing My Lock works
+- normal Share Pick still works independently
+
+SHARE
+- My Lock share gets lock label
+- non-lock share does not
+- no other picks leaked
+- no private IDs/tokens
+- deep link unchanged
+
+METER
+- dynamic 3/5/7/12
+- current/completed/unanswered states
+- accessibility labels
+- no scoring implication
+- no wrap regression
+
+ANALYTICS
+- My Lock selected/changed events
+- safe properties only
+
+ROLLBACK
+- feature flag off returns legacy UX
+- picks intact
+- My Lock rows dormant
+- settlement/results/receipts unaffected
+
+==================================================
+23. REGRESSION
+==================================================
+
+Run:
+
+- Swayger Run V1A
+- Weekly lifecycle
+- autosave/edit
+- guest/auth
+- Call Your Shot
+- Share Pick
+- Swayger Moments
+- League Picks
+- settlement
+- Results
+- Weekly Receipt
+- receipt sharing
+- analytics
+- week sequencing
+- multi-correct
+
+Then:
+
+- server production build
+- web export
+- iOS static export
+- Android static export
+- targeted lint
+- changed-file TypeScript diagnostics
+
+Return exact totals.
+
+==================================================
+24. MANUAL QA
+==================================================
+
+Return exact steps for:
+
+A. NAVIGATION
+
+1. Complete all picks.
+2. Edit Pick 2.
+3. Confirm CALL UPDATED.
+4. Confirm Done is available.
+5. Tap Done.
+6. Confirm immediate return to completion summary.
+
+B. PER-PICK SHARE
+
+1. Open confirmed focused pick.
+2. Tap Share Pick.
+3. Verify correct single-pick share copy.
+4. Confirm no other picks appear.
+
+C. CALL YOUR SHOT
+
+1. Complete Weekly Swayger.
+2. Tap Call Your Shot.
+3. Confirm prompt:
+   Which pick are you most confident in?
+4. Select one.
+5. Confirm LOCKED IN.
+6. Confirm no share sheet opens automatically.
+7. Confirm My Lock is saved.
+8. Exit.
+9. Reopen and confirm My Lock persists.
+
+D. SHARE MY LOCK
+
+1. Tap Share My Lock.
+2. Confirm MY LOCK label.
+3. Confirm correct Moment + answer.
+4. Back out of share sheet.
+5. Confirm My Lock remains selected and user still appears complete.
+
+E. CHANGE MY LOCK
+
+1. Change to another confirmed pick.
+2. Confirm persistence.
+3. Confirm summary updates.
+4. Confirm analytics event.
+
+F. PICK EDIT AFTER LOCK SELECTION
+
+1. Set My Lock.
+2. Edit the answer for that Moment.
+3. Confirm My Lock remains attached to the Moment.
+4. Confirm updated confirmed answer appears.
+
+G. METER
+
+Verify dynamic dot behavior for multiple question counts.
+
+H. LOCK
+
+Lock the Week.
+Confirm:
+- My Lock read-only
+- picks read-only
+- League Picks unchanged
+
+I. ROLLBACK
+
+Disable Swayger Run flag.
+Confirm:
+- legacy UI returns
+- picks intact
+- My Lock data remains harmless/dormant
+- no cleanup required
+
+==================================================
+25. RETURN
+==================================================
+
+Return:
+
+# SWAYGER RUN V1B IMPLEMENTATION REPORT
+
+1. Architecture summary
+2. Schema decision
+3. My Lock persistence model
+4. Navigation-copy changes
+5. Done/edit-flow change
+6. Per-pick Share Pick restoration
+7. Call Your Shot redefinition
+8. My Lock UX
+9. Share My Lock behavior
+10. Completion-summary updates
+11. Progress-meter polish
+12. Haptics
+13. Analytics
+14. Accessibility
+15. Feature-flag / rollback behavior
+16. Existing pilot safety
+17. Files changed
+18. Tests added
+19. Regression totals
+20. Known limitations
+21. Exact manual QA
+22. Future opportunities intentionally deferred
+
+Then STOP.
+
+Do not build:
+- My Lock scoring
+- confidence multipliers
+- XP
+- badges
+- streaks
+- avatars
+- sound
+- post-settlement My Lock awards
+- public profiles
+- social feed
+- another feature
+
+Final status:
+
+SWAYGER RUN V1B READY FOR MANUAL QA
+
+or
+
+SQL APPLICATION REQUIRED
+
+or
+
+CORRECTION REQUIRED
