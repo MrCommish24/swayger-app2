@@ -1,0 +1,85 @@
+The live Discord bot test proves the client is now correct.
+
+LIVE REQUEST PAYLOAD:
+
+{
+  "room_name": "Quick Matchup",
+  "sport": "madden",
+  "template_type": "weekly_pick_card",
+  "matchups": [
+    {
+      "team_a": "Bears",
+      "team_b": "Jags",
+      "line_text": null
+    }
+  ],
+  "format_config": {
+    "week_label": "Quick Matchup",
+    "reward_text": "+1 Dev Upgrade",
+    "deadline_display_text": "Tonight 8pm",
+    "minimum_matchups": 1,
+    "scoring_mode": "all_correct",
+    "bonus": {
+      "enabled": false,
+      "label": null,
+      "answer_options": []
+    }
+  }
+}
+
+LIVE PRODUCTION RESPONSE:
+
+HTTP 400
+{"error":"At least one valid Madden matchup with two different teams is required"}
+
+This proves:
+
+- Claude’s bot payload fix is live and correct.
+- minimum_matchups=1 is being sent.
+- the current production backend is still enforcing the old hardcoded 3-matchup rule.
+- production is not running the intended one-matchup backend revision.
+
+Do not modify code.
+
+Please diagnose deployment freshness.
+
+1. Confirm current repository HEAD/origin/main contains:
+   5b613a6d0027b91ce56e7363c52e65633004c128
+   or a later commit containing the same backend change.
+
+2. Confirm server/routes-gameday.ts in current HEAD contains:
+   matchups.length < 1 || matchups.length > 7
+
+3. Inspect the currently published deployment configuration and determine which build/revision is actually serving:
+   https://www.swayger.app
+
+4. Republish the current synchronized HEAD explicitly.
+
+5. Confirm the production build completed after this request.
+
+6. After republish, do NOT rely only on deployment metadata.
+
+Use a production verification path that can prove the active runtime contains the one-matchup change.
+
+If workspace bot credentials cannot authenticate, use one of these safe verification approaches:
+- inspect the deployed build artifact/server_dist output tied to the current deployment,
+- use the actual working production bot credential if available through the live bot path,
+- or have me rerun the Discord live test immediately after you confirm publish completion.
+
+Do not fabricate a production smoke using invalid credentials.
+
+Return:
+
+A. Current HEAD
+B. Current origin/main
+C. Confirmed source validation line
+D. Republish start/completion time
+E. Whether production build artifact includes the 1-matchup rule
+F. Whether a new production deployment definitely occurred
+G. Whether I should rerun the Discord Pick Card test now
+
+End with:
+
+PRODUCTION BACKEND FRESHNESS: PASS / FAIL
+ONE-MATCHUP CODE IN DEPLOYED BUILD: YES / NO
+READY FOR LIVE DISCORD RETEST: YES / NO
