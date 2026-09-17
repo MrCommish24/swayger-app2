@@ -149,6 +149,66 @@ async function main() {
     };
 
     const player = await createUser("player");
+    const singleMatchup = await createRoom({
+      pick_deadline: undefined,
+      matchups: [{ team_a: "Bears", team_b: "Jags", line_text: null }],
+      format_config: {
+        week_label: "One Matchup Contract",
+        reward_text: "+1 Dev Upgrade",
+        deadline_display_text: "Tomorrow 3pm",
+        minimum_matchups: 1,
+        scoring_mode: "all_correct",
+        bonus: { enabled: false, label: null, answer_options: [] },
+      },
+    });
+    expect("one-matchup room creates exactly one playable prop", singleMatchup.props.length === 1);
+    expect("one-matchup Discord card has no scheduled lock", singleMatchup.card.scheduled_lock_at == null);
+    const singleJoin = await request(baseUrl, `/api/gameday/rooms/${singleMatchup.roomId}/join`, {
+      method: "POST",
+      body: { display_name: "One Matchup Guest" },
+    });
+    const singleGuest = singleJoin.body.guest_session_id;
+    expect("participant joins one-matchup room", singleJoin.status === 200 && !!singleGuest);
+    const singlePick = await request(baseUrl, `/api/gameday/props/${singleMatchup.props[0].id}/pick`, {
+      method: "POST",
+      guest: singleGuest,
+      body: { selected_answer: singleMatchup.props[0].answer_options[0] },
+    });
+    expect("one saved pick completes the one-matchup participant", singlePick.status === 200);
+    expect("one completion creates exactly one event", (await eventRows(singleMatchup.roomId)).length === 1);
+    await request(baseUrl, `/api/gameday/props/${singleMatchup.props[0].id}/pick`, {
+      method: "POST",
+      guest: singleGuest,
+      body: { selected_answer: singleMatchup.props[0].answer_options[1] },
+    });
+    expect("editing the completed one-matchup pick creates no duplicate event", (await eventRows(singleMatchup.roomId)).length === 1);
+    const singleLock = await request(baseUrl, `/api/gameday/cards/${singleMatchup.card.id}/lock`, {
+      method: "PATCH",
+      bot: true,
+      guild,
+    });
+    expect("manual lock succeeds for one-matchup room", singleLock.status === 200 && singleLock.body.ok === true);
+    const singlePostLockPick = await request(baseUrl, `/api/gameday/props/${singleMatchup.props[0].id}/pick`, {
+      method: "POST",
+      guest: singleGuest,
+      body: { selected_answer: singleMatchup.props[0].answer_options[0] },
+    });
+    expect("post-lock one-matchup edit is rejected", singlePostLockPick.status >= 400);
+    const singleArchive = await request(baseUrl, `/api/gameday/rooms/${singleMatchup.roomId}/archive`, {
+      method: "PATCH",
+      bot: true,
+      guild,
+    });
+    expect("one-matchup room archives successfully", singleArchive.status === 200 && singleArchive.body.ok === true);
+    const singleEvent = (await eventRows(singleMatchup.roomId))[0];
+    if (singleEvent?.id) {
+      await request(baseUrl, `/api/gameday/bot/madden-participation-events/${singleEvent.id}/ack`, {
+        method: "POST",
+        bot: true,
+        guild,
+      });
+    }
+
     const room = await createRoom();
     const roomB = await createRoom();
     const joinedAuth = await request(baseUrl, `/api/gameday/rooms/${room.roomId}/join`, { method: "POST", token: player.token });

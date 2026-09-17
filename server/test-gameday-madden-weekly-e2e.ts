@@ -492,19 +492,91 @@ async function main() {
       JSON.stringify(invalidNbaTemplate.body),
     );
 
-    const tooFew = await request("/api/gameday/rooms", {
+    const zeroMatchups = await request("/api/gameday/rooms", {
       method: "POST",
       token: host.token,
       body: {
         ...basePayload,
-        matchups: matchupSet.slice(0, 2),
-        format_config: { ...formatConfig, minimum_matchups: 2 },
+        room_name: `Zero Matchups ${runId}`,
+        matchups: [],
+        format_config: { ...formatConfig, minimum_matchups: 1 },
       },
     });
     expect(
-      "fewer than 3 matchups are rejected by the room route",
-      tooFew.status === 400,
-      JSON.stringify(tooFew.body),
+      "zero matchups are rejected by the room route",
+      zeroMatchups.status === 400,
+      JSON.stringify(zeroMatchups.body),
+    );
+
+    const sameTeamMatchup = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: {
+        ...basePayload,
+        room_name: `Same Team ${runId}`,
+        matchups: [{ team_a: "Bears", team_b: "bears", line_text: null }],
+        format_config: { ...formatConfig, minimum_matchups: 1 },
+      },
+    });
+    expect(
+      "same-team matchups are rejected by the room route",
+      sameTeamMatchup.status === 400,
+      JSON.stringify(sameTeamMatchup.body),
+    );
+
+    const oneMatchup = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: {
+        ...basePayload,
+        room_name: `One Matchup ${runId}`,
+        matchups: matchupSet.slice(0, 1),
+        format_config: { ...formatConfig, minimum_matchups: 1 },
+      },
+    });
+    if (oneMatchup.body.room_id) roomIds.push(oneMatchup.body.room_id);
+    expect(
+      "one matchup is accepted by the room route",
+      oneMatchup.status === 200,
+      JSON.stringify(oneMatchup.body),
+    );
+
+    const twoMatchups = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: {
+        ...basePayload,
+        room_name: `Two Matchups ${runId}`,
+        matchups: matchupSet.slice(0, 2),
+        format_config: { ...formatConfig, minimum_matchups: 1 },
+      },
+    });
+    if (twoMatchups.body.room_id) roomIds.push(twoMatchups.body.room_id);
+    expect(
+      "two matchups are accepted by the room route",
+      twoMatchups.status === 200,
+      JSON.stringify(twoMatchups.body),
+    );
+
+    const sevenMatchups = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.token,
+      body: {
+        ...basePayload,
+        room_name: `Seven Matchups ${runId}`,
+        matchups: Array.from({ length: 7 }, (_, index) => ({
+          team_a: `Home ${index + 1}`,
+          team_b: `Away ${index + 1}`,
+          line_text: null,
+        })),
+        format_config: { ...formatConfig, minimum_matchups: 1 },
+      },
+    });
+    if (sevenMatchups.body.room_id) roomIds.push(sevenMatchups.body.room_id);
+    expect(
+      "seven matchups are accepted by the room route",
+      sevenMatchups.status === 200,
+      JSON.stringify(sevenMatchups.body),
     );
 
     const tooMany = await request("/api/gameday/rooms", {
@@ -565,7 +637,7 @@ async function main() {
       JSON.stringify(cards.map((value: any) => value.phase)),
     );
     expect(
-      "required 3–7 matchup range creates three matchup props plus one bonus prop",
+      "three supplied matchups create three matchup props plus one bonus prop",
       props.length === 4 && matchupProps.length === 3,
       JSON.stringify(props),
     );

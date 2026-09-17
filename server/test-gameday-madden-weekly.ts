@@ -86,10 +86,16 @@ check("same matchup teams are rejected", normalizeWeeklyPickCardMatchups([
 ]) === null);
 check("non-array matchups are rejected", normalizeWeeklyPickCardMatchups(null) === null);
 check("empty matchup list is rejected", normalizeWeeklyPickCardMatchups([]) === null);
-check("fewer than 3 matchups are rejected", normalizeWeeklyPickCardMatchups([
+check("one matchup is accepted", normalizeWeeklyPickCardMatchups([
+  { team_a: "Ravens", team_b: "Bengals", line_text: "" },
+])?.length === 1);
+check("two matchups are accepted", normalizeWeeklyPickCardMatchups([
   { team_a: "Ravens", team_b: "Bengals", line_text: "" },
   { team_a: "Chiefs", team_b: "Raiders", line_text: "" },
-]) === null);
+])?.length === 2);
+check("seven matchups are accepted", normalizeWeeklyPickCardMatchups(
+  Array.from({ length: 7 }, (_, i) => ({ team_a: `A${i}`, team_b: `B${i}`, line_text: "" })),
+)?.length === 7);
 check("more than 7 matchups are rejected", normalizeWeeklyPickCardMatchups(
   Array.from({ length: 8 }, (_, i) => ({ team_a: `A${i}`, team_b: `B${i}`, line_text: "" })),
 ) === null);

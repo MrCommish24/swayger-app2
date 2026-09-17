@@ -1,0 +1,162 @@
+We have now identified the likely source of the one-matchup Pick Card failure more precisely.
+
+LIVE FAILURE
+
+Discord bot sent:
+
+{
+  "room_name": "Week 4 Parlay",
+  "sport": "madden",
+  "template_type": "weekly_pick_card",
+  "matchups": [
+    {
+      "team_a": "Bears",
+      "team_b": "Jags",
+      "line_text": null
+    }
+  ],
+  "format_config": {
+    "week_label": "Week 4 Parlay",
+    "reward_text": "+1 Dev Upgrade",
+    "deadline_display_text": "Tomorrow 3pm",
+    "minimum_matchups": 3,
+    "scoring_mode": "all_correct",
+    "bonus": {
+      "enabled": false,
+      "label": null,
+      "answer_options": []
+    }
+  }
+}
+
+Production returned:
+
+HTTP 400
+{"error":"At least one valid Madden matchup with two different teams is required"}
+
+IMPORTANT NEW FINDING
+
+The Discord bot was relaxed from a 3–7 matchup rule to a 1–7 matchup rule, but its API client still sends:
+
+minimum_matchups: 3
+
+We need to determine whether the backend already supports a minimum of 1 and the bot contract is simply stale.
+
+DO NOT MODIFY BACKEND CODE YET.
+
+FIRST INSPECT THE CURRENT PRODUCTION/BACKEND IMPLEMENTATION.
+
+Please answer:
+
+1. What exactly does format_config.minimum_matchups mean in the backend?
+
+Is it:
+A. the minimum number of matchup props required for a valid card,
+B. the actual number of matchups on this specific card,
+C. used for participant completion logic,
+D. something else?
+
+Show the relevant validation logic.
+
+2. Does the backend currently enforce something equivalent to:
+
+matchups.length >= format_config.minimum_matchups
+
+3. Is there any separate hardcoded backend rule requiring at least 3 Madden matchups?
+
+4. If the identical one-matchup payload were sent with:
+
+"minimum_matchups": 1
+
+would production accept it?
+
+5. Confirm that participant completion logic does NOT depend on minimum_matchups and instead checks whether the participant has answered every playable prop on the card.
+
+6. Confirm that participation/FOMO event creation likewise uses actual playable props rather than minimum_matchups.
+
+PRODUCT RULE
+
+The intended product rule is now:
+
+Pick Cards support 1–7 matchups.
+
+Therefore, if minimum_matchups represents a validation FLOOR, the intended Discord contract should be:
+
+"minimum_matchups": 1
+
+It should NOT dynamically equal matchups.length unless the backend's actual semantics prove that field represents the card's matchup count rather than the minimum allowed count.
+
+TEST THE CONTRACT
+
+If inspection confirms no backend code change is necessary, run a disposable production API smoke test using:
+
+- source=discord/bot auth
+- sport=madden
+- template_type=weekly_pick_card
+- exactly 1 matchup
+- minimum_matchups=1
+- no pick_deadline
+- free-form deadline_display_text
+- bonus disabled
+
+Verify:
+
+1. Creation succeeds.
+2. Exactly one matchup prop exists.
+3. scheduled_lock_at is null.
+4. Participant can join.
+5. One saved pick makes participant complete.
+6. Exactly one madden_picks_completed event is created.
+7. Editing the completed pick creates no duplicate event.
+8. Manual lock still succeeds.
+9. Post-lock edit is rejected.
+10. Archive/cleanup succeeds.
+
+Also test backend validation boundaries:
+
+- 0 matchups rejected
+- 1 accepted
+- 2 accepted
+- 7 accepted
+- 8 rejected
+- same team on both sides rejected
+
+IF BACKEND CHANGE IS NOT REQUIRED
+
+Do not modify backend production code merely for this issue.
+
+Return the exact bot contract Claude should use, expected to be:
+
+minimum_matchups: 1
+
+IF BACKEND CHANGE IS REQUIRED
+
+Make only the smallest change necessary to support the explicit product rule of 1–7 and explain why it was necessary.
+
+Do not:
+- change participant completion semantics
+- change participation outbox logic
+- change manual-lock behavior
+- change deadline behavior
+- change sport/template enum names
+- touch NFL/NBA/Fantasy behavior
+
+Return:
+
+A. Exact semantics of minimum_matchups
+B. Relevant validation logic
+C. Whether a separate hardcoded minimum of 3 exists
+D. Whether backend code change is required
+E. Final allowed range
+F. Final expected minimum_matchups value
+G. Participant-completion behavior
+H. Participation-outbox behavior
+I. Production one-matchup smoke result
+J. Exact Claude bot payload change required
+
+End with:
+
+BACKEND ALREADY SUPPORTS 1-MATCHUP CONTRACT: YES / NO
+BACKEND CODE CHANGE REQUIRED: YES / NO
+FINAL MINIMUM_MATCHUPS VALUE: <value>
+READY FOR CLAUDE BOT FIX: YES / NO

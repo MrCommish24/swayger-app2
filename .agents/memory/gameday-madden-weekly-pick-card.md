@@ -22,3 +22,9 @@ Discord bot-created Madden Weekly cards may genuinely omit the deadline timestam
 **Why:** Discord commissioners may publish human-readable lock wording without a machine timestamp while retaining authoritative manual lock control.
 
 **How to apply:** Distinguish an absent deadline property from any supplied malformed value. Never parse display text or derive a schedule from it; null schedules remain editable until an authorized manual lock. Disabled bonus cards complete on matchup props only.
+
+Madden Weekly Pick Cards support 1–7 supplied matchups. `minimum_matchups` is a validation floor bounded by the actual matchup count; it is not the card's matchup count and does not control participant completion.
+
+**Why:** The Discord contract was relaxed to allow one-matchup cards, while the backend normalizer still enforced the earlier three-matchup minimum.
+
+**How to apply:** Discord should send `minimum_matchups: 1` for the general 1–7 contract. Completion and participation events must continue to count every playable prop actually stored on the card.

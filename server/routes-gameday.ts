@@ -1106,7 +1106,7 @@ export function normalizeWeeklyPickCardMatchups(value: unknown): WeeklyPickCardM
       return { team_a: teamA, team_b: teamB, line_text: lineText };
     })
     .filter((matchup): matchup is WeeklyPickCardMatchup => matchup !== null);
-  if (matchups.length !== value.length || matchups.length < 3 || matchups.length > 7) return null;
+  if (matchups.length !== value.length || matchups.length < 1 || matchups.length > 7) return null;
   return matchups;
 }
 
