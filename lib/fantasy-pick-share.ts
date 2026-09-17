@@ -10,6 +10,7 @@ export interface FantasyPickShareInput {
   leagueName?: string | null;
   weekNumber: number;
   participationUrl: string;
+  isMyLock?: boolean;
 }
 
 export interface FantasyPickSharePackage {
@@ -99,7 +100,8 @@ export function buildFantasyPickSharePackage(
   const title = moment.title;
   const leagueName = safeLabel(input.leagueName, 80);
   const contextLine = `Swayger Fantasy${leagueName ? ` • ${leagueName}` : ""} • Week ${input.weekNumber}`;
-  const text = `${title}\n\n${sentence}\n\n${contextLine}\nWho you got?\n${url}`;
+  const lockLabel = input.isMyLock ? "🔒 MY LOCK\n\n" : "";
+  const text = `${lockLabel}${title}\n\n${sentence}\n\n${contextLine}\nWho you got?\n${url}`;
 
   return { title, sentence, text, url };
 }

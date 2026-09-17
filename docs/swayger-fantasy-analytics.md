@@ -211,4 +211,14 @@ After creating the cards:
 6. Verify no captured event contains an answer, team, participant name, share
    text, recipient, token, email, phone number, or private URL.
 7. Save the live PostHog dashboard URL in the team's approved operational
-   documentation. Do not commit API keys or personal credentials.
+    documentation. Do not commit API keys or personal credentials.
+
+## My Lock measurement
+
+Add Trends series for `fantasy_my_lock_selected` and
+`fantasy_my_lock_changed`. Filter `experience_type = weekly`, break down by
+`template_prop_id`, and use `experience_version` to compare focused and legacy
+presentation cohorts. Use only `league_id`, `season_id`, `week_number`,
+`viewer_role`, `is_guest`, `source`, `template_prop_id`, `experience_version`,
+and `question_count`. Never add answer labels, team names, participant names,
+share text, IDs, tokens, or contact information.

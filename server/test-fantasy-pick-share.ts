@@ -90,7 +90,7 @@ check("completion CTA requires every pick to be saved", play.includes("state.pro
 check("completion state offers Call Your Shot without replacing league navigation", play.includes("CALL YOUR SHOT") && play.includes("Back to League"));
 check("share copy reads the latest server-confirmed answer after an edit", play.includes("const answerId = confirmedPicksRef.current[prop.id]"));
 check("overlapping pick saves are serialized per question", play.includes("pickSaveChainRef.current[propId]") && play.includes("pickSaveVersionRef.current[propId] !== version"));
-check("composer receives only the narrowed current-pick list", play.includes("picks={shareablePicks}") && sheet.includes("picks.find((pick) => pick.propId === selectedId)"));
+check("composer receives only the narrowed current-pick list", play.includes("picks={narrowedSharePicks}") && play.includes("pick.propId === sharePropId") && sheet.includes("picks.find((pick) => pick.propId === selectedId)"));
 check("share flow never calls the League Picks API", !play.includes("getWeeklyLeaguePicks") && !sheet.includes("getWeeklyLeaguePicks"));
 check("Web Share API is used when available", sheet.includes("navigator.share({"));
 check("native share analytics require a confirmed shared action", sheet.includes("result.action === Share.sharedAction"));

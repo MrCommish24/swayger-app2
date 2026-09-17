@@ -23,10 +23,12 @@ type Props = {
   ackLabel?: string;
   confirmedAnswerLabel?: string | null;
   showAcknowledgment?: boolean;
+  onShare?: () => void;
+  canFinishReview?: boolean;
   headingRef?: React.RefObject<React.ElementRef<typeof Text> | null>;
 };
 
-export function WeeklyFocusMoment({ prop, index, total, selectedId, status, locked, stale = false, onSelect, onPrevious, onNext, reviewing, onFinishReview, ackLabel = "ON THE RECORD", confirmedAnswerLabel, showAcknowledgment = false, headingRef }: Props) {
+export function WeeklyFocusMoment({ prop, index, total, selectedId, status, locked, stale = false, onSelect, onPrevious, onNext, reviewing, onFinishReview, canFinishReview = true, ackLabel = "ON THE RECORD", confirmedAnswerLabel, showAcknowledgment = false, onShare, headingRef }: Props) {
   const answered = Boolean(selectedId);
   return (
     <View style={styles.wrap} accessibilityLiveRegion="polite">
@@ -53,20 +55,32 @@ export function WeeklyFocusMoment({ prop, index, total, selectedId, status, lock
           Pick saved. {confirmedAnswerLabel} is on the record.
         </Text>
       )}
+      {!!confirmedAnswerLabel && status !== "saving" && status !== "error" && !locked && onShare && (
+        <Pressable onPress={onShare} accessibilityRole="button" accessibilityLabel="Share Pick" style={styles.share}>
+          <Text style={styles.shareText}>Share Pick</Text>
+        </Pressable>
+      )}
       <View style={styles.nav}>
-        <Pressable onPress={onPrevious} disabled={index === 0} accessibilityRole="button" accessibilityLabel="Previous moment" accessibilityState={{ disabled: index === 0 }} style={[styles.navButton, index === 0 && styles.disabled]}>
-          <Text style={styles.navText}>Previous</Text>
+        <Pressable onPress={onPrevious} disabled={index === 0} accessibilityRole="button" accessibilityLabel="Previous pick" accessibilityState={{ disabled: index === 0 }} style={[styles.navButton, index === 0 && styles.disabled]}>
+          <Text style={styles.navText}>Previous Pick</Text>
         </Pressable>
-        <Pressable
-          onPress={reviewing && index === total - 1 ? onFinishReview : onNext}
-          disabled={!reviewing && ((!locked && !answered) || index === total - 1)}
-          accessibilityRole="button"
-          accessibilityLabel={reviewing && index === total - 1 ? "Done reviewing" : index === total - 1 ? "Last moment" : "Next moment"}
-          accessibilityState={{ disabled: !reviewing && ((!locked && !answered) || index === total - 1) }}
-          style={[styles.nextButton, !reviewing && ((!locked && !answered) || index === total - 1) && styles.disabled]}
-        >
-          <Text style={styles.nextText}>{reviewing && index === total - 1 ? "Done reviewing" : index === total - 1 ? "Complete" : "Next moment"}</Text>
-        </Pressable>
+        <View style={styles.nextActions}>
+          {reviewing && (
+            <Pressable onPress={onFinishReview} disabled={!canFinishReview} accessibilityRole="button" accessibilityLabel="Done editing picks" accessibilityState={{ disabled: !canFinishReview }} style={[styles.doneButton, !canFinishReview && styles.disabled]}>
+              <Text style={styles.navText}>Done</Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={onNext}
+            disabled={index === total - 1 || (!reviewing && !locked && !answered)}
+            accessibilityRole="button"
+            accessibilityLabel="Next pick"
+            accessibilityState={{ disabled: index === total - 1 || (!reviewing && !locked && !answered) }}
+            style={[styles.nextButton, (index === total - 1 || (!reviewing && !locked && !answered)) && styles.disabled]}
+          >
+            <Text style={styles.nextText}>Next Pick</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -80,12 +94,16 @@ const styles = StyleSheet.create({
   question: { color: C.text, fontSize: 24, lineHeight: 31, fontWeight: "800", letterSpacing: -0.3, marginTop: 2 },
   instruction: { color: C.textMuted, fontSize: 13, lineHeight: 19 },
   nav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 },
+  nextActions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  doneButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   navButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 4 },
   navText: { color: C.textMuted, fontSize: 13, fontWeight: "700" },
   nextButton: { minHeight: 44, borderRadius: 10, backgroundColor: C.tint, justifyContent: "center", paddingHorizontal: 18 },
   nextText: { color: "#071013", fontSize: 13, fontWeight: "900" },
   disabled: { opacity: 0.35 },
   ack: { color: C.tint, fontSize: 12, fontWeight: "900", letterSpacing: 1.1 },
+  share: { alignSelf: "flex-start", minHeight: 36, justifyContent: "center", paddingHorizontal: 2 },
+  shareText: { color: C.tint, fontSize: 12, fontWeight: "900" },
   errorAck: { color: C.danger, fontSize: 12, fontWeight: "700" },
   stale: { color: "#F59E0B", fontSize: 12, fontWeight: "800" },
   srOnly: { position: "absolute", width: 1, height: 1, opacity: 0 },

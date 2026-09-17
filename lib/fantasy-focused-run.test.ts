@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { firstUnanswered, nextUnanswered, progressState, shouldAutoAdvance, weeklyPlayMode } from "./fantasy-focused-run";
+import { canFinishCompletedReview, firstUnanswered, nextUnanswered, progressDotState, progressState, shouldAutoAdvance, weeklyPlayMode } from "./fantasy-focused-run";
 
 assert.equal(weeklyPlayMode(false), "legacy");
 assert.equal(weeklyPlayMode(true), "focused");
@@ -20,4 +20,17 @@ assert.equal(shouldAutoAdvance({ newlyConfirmed: true, wasAnswered: false, activ
 assert.equal(shouldAutoAdvance({ newlyConfirmed: true, wasAnswered: false, activeId: "b", confirmedId: "b", reducedMotion: false, failed: true, manuallyNavigated: false, final: false }), false);
 assert.equal(shouldAutoAdvance({ newlyConfirmed: true, wasAnswered: false, activeId: "b", confirmedId: "b", reducedMotion: false, failed: false, manuallyNavigated: true, final: false }), false);
 assert.equal(shouldAutoAdvance({ newlyConfirmed: true, wasAnswered: false, activeId: "b", confirmedId: "b", reducedMotion: false, failed: false, manuallyNavigated: false, final: true }), false);
+assert.equal(canFinishCompletedReview("a", "a", "saved"), true);
+assert.equal(canFinishCompletedReview("a", "b", "saving"), false);
+assert.equal(canFinishCompletedReview("a", "a", "error"), false);
+for (const total of [3, 5, 7, 12]) {
+  const current = Math.min(2, total - 1);
+  const states = Array.from({ length: total }, (_, index) =>
+    progressDotState(index, current, index < current),
+  );
+  assert.equal(states.length, total);
+  assert.equal(states[current], "current");
+  assert.equal(states.at(-1), current === total - 1 ? "current" : "future");
+  if (current > 0) assert.equal(states[current - 1], "recent_completed");
+}
 console.log("focused run navigation/progress tests passed");

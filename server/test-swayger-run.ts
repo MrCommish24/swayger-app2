@@ -55,6 +55,7 @@ assert.match(focusedSource, /stalePropIds\.includes\(activeProp\.id\)/);
 assert.match(focusedSource, /locked && !finalized/);
 assert.match(focusedSource, /finalized && <Pressable onPress=\{onResults\}/);
 assert.match(selectorSource, /AccessibilityInfo\.setAccessibilityFocus\(node\)/);
-assert.doesNotMatch(focusedSource, /My Lock/i);
+assert.match(focusedSource, /MyLockSheet/);
+assert.match(focusedSource, /onSetMyLock/);
 
 console.log("SWAYGER RUN V1A contract tests passed");

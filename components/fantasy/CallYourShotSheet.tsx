@@ -27,6 +27,7 @@ type Props = {
   visible: boolean;
   picks: CallYourShotPick[];
   initialPropId?: string | null;
+  mode?: "legacy_call_your_shot" | "share_pick" | "share_my_lock";
   onClose: () => void;
   onShared?: (pick: CallYourShotPick, method: PickShareMethod) => void;
 };
@@ -39,6 +40,7 @@ export function CallYourShotSheet({
   visible,
   picks,
   initialPropId,
+  mode = "legacy_call_your_shot",
   onClose,
   onShared,
 }: Props) {
@@ -59,6 +61,12 @@ export function CallYourShotSheet({
     () => picks.find((pick) => pick.propId === selectedId) ?? null,
     [picks, selectedId],
   );
+  const eyebrow = mode === "share_my_lock" ? "SHARE MY LOCK" : mode === "share_pick" ? "SHARE PICK" : "CALL YOUR SHOT";
+  const title = mode === "share_my_lock" ? "Share the pick you’re standing on." : mode === "share_pick" ? "Share this pick." : "Put one pick on the record.";
+  const subcopy =
+    mode === "legacy_call_your_shot"
+      ? "Choose one prediction to share with your league."
+      : "Shares this confirmed pick, league and Week context, your display name when available, and the Weekly link.";
 
   const handleShare = async () => {
     if (!selected || busy) return;
@@ -109,14 +117,14 @@ export function CallYourShotSheet({
           <View style={styles.grabber} />
           <View style={styles.sheetHeader}>
             <View>
-              <Text style={styles.eyebrow}>CALL YOUR SHOT</Text>
-              <Text style={styles.title}>Put one pick on the record.</Text>
+              <Text style={styles.eyebrow}>{eyebrow}</Text>
+              <Text style={styles.title}>{title}</Text>
             </View>
             <Pressable accessibilityLabel="Close" onPress={onClose} hitSlop={12}>
               <Text style={styles.close}>×</Text>
             </Pressable>
           </View>
-          <Text style={styles.subcopy}>Choose one prediction to share with your league.</Text>
+          <Text style={styles.subcopy}>{subcopy}</Text>
 
           <View style={styles.list}>
             {picks.map((pick) => {

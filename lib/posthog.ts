@@ -214,6 +214,10 @@ export const Analytics = {
     capture("fantasy_pick_link_copied", fCtx(ctx, extra)),
   fantasyWeekOpenedFromPickShare: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
     capture("fantasy_week_opened_from_pick_share", fCtx(ctx, extra)),
+  fantasyMyLockSelected: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_my_lock_selected", fCtx(ctx, extra)),
+  fantasyMyLockChanged: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_my_lock_changed", fCtx(ctx, extra)),
 
   // ── Auth funnel ─────────────────────────────────────────────────────────────
   authScreenViewed: (platform: string) =>

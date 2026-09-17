@@ -28,6 +28,7 @@ import { useFantasyGuestToken } from "@/lib/use-fantasy-guest-token";
 import {
   getWeeklyPlay,
   submitWeeklyPick,
+  setWeeklyMyLock,
   buildWeekUrl,
   WeeklyPlayState,
   DraftDayProp,
@@ -66,10 +67,12 @@ export default function WeeklyPlayScreen() {
   // propId → currently selected answerId (optimistic)
   const [picks, setPicks]           = useState<Record<string, string>>({});
   const [confirmedPicks, setConfirmedPicks] = useState<Record<string, string>>({});
+  const [myLock, setMyLock] = useState<{ prop_id: string } | null>(null);
   // propId → "saving" | "saved" | "error"
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
   const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const [sharePropId, setSharePropId] = useState<string | null>(null);
+  const [shareSurface, setShareSurface] = useState<"question_card" | "completion_state">("question_card");
   const hasTrackedWeekView = useRef(false);
   const hasTrackedPickShareEntry = useRef(false);
   const hasTrackedPickStarted = useRef(false);
@@ -91,6 +94,7 @@ export default function WeeklyPlayScreen() {
       setState(data);
       setPicks(data.my_picks ?? {});
       setConfirmedPicks(data.my_picks ?? {});
+      setMyLock(data.my_lock ?? null);
       confirmedPicksRef.current = data.my_picks ?? {};
       const variant = data.swayger_run_enabled ? "swayger_run_v1" : "legacy";
       hasTrackedPickStarted.current = Object.keys(data.my_picks ?? {}).length > 0;
@@ -251,6 +255,7 @@ export default function WeeklyPlayScreen() {
       leagueName: state?.league_name,
       weekNumber: wn,
       participationUrl: shareUrl,
+      isMyLock: Boolean(state?.swayger_run_enabled && myLock?.prop_id === prop.id),
     });
     return {
       propId: prop.id,
@@ -264,19 +269,51 @@ export default function WeeklyPlayScreen() {
   const shareablePicks = state
     ? state.props.map(buildPickShare).filter((pick): pick is CallYourShotPick => Boolean(pick))
     : [];
+  const narrowedSharePicks = sharePropId
+    ? shareablePicks.filter((pick) => pick.propId === sharePropId)
+    : shareablePicks;
 
-  const openPickShare = (propId?: string) => {
+  const openPickShare = (
+    propId?: string,
+    surface: "question_card" | "completion_state" = propId ? "question_card" : "completion_state",
+  ) => {
     const prop = state?.props.find((item) => item.id === propId);
     if (propId && (!prop || pickStatus[propId] === "saving" || !buildPickShare(prop))) return;
     setSharePropId(propId ?? null);
+    setShareSurface(surface);
     setShareSheetOpen(true);
     Analytics.fantasyPickShareOpened(
       { league_id: leagueId, season_id: seasonId, week_number: wn,
         experience_type: "weekly", competition_type: "weekly",
         viewer_role: "member", is_guest: !session },
       { ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
-        surface: propId ? "question_card" : "completion_state" },
+        surface },
     );
+  };
+
+  const handleSetMyLock = async (propId: string): Promise<boolean> => {
+    if (!state || state.card_status !== "open") return false;
+    try {
+      const previous = myLock;
+      const result = await setWeeklyMyLock(leagueId, seasonId, wn, propId, auth);
+      setMyLock(result.my_lock);
+      const context = {
+        league_id: leagueId, season_id: seasonId, week_number: wn,
+        experience_type: "weekly" as const, competition_type: "weekly" as const,
+        viewer_role: "member" as const, is_guest: !session,
+        source: entrySourceRef.current,
+      };
+      const analyticsExtra = {
+        template_prop_id: state.props.find((prop) => prop.id === propId)?.template_prop_id ?? "",
+        experience_version: state.swayger_run_enabled ? "swayger_run_v1" : "legacy",
+        question_count: state.props.length,
+      };
+      if (previous) Analytics.fantasyMyLockChanged(context, analyticsExtra);
+      else Analytics.fantasyMyLockSelected(context, analyticsExtra);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const handlePickShared = (pick: CallYourShotPick, method: PickShareMethod) => {
@@ -289,7 +326,7 @@ export default function WeeklyPlayScreen() {
     const extra = {
       ...(prop?.template_prop_id ? { template_prop_id: prop.template_prop_id } : {}),
       share_method: method,
-      surface: (sharePropId ? "question_card" : "completion_state") as "question_card" | "completion_state",
+      surface: shareSurface,
     };
     if (method === "copy") {
       Analytics.fantasyPickLinkCopied(context, extra);
@@ -405,16 +442,27 @@ export default function WeeklyPlayScreen() {
         locked={isLocked}
         finalized={isFinalized}
         onPick={handlePick}
-        onShare={() => openPickShare()}
+        onShare={(propId, surface) => openPickShare(propId, surface)}
+        myLock={myLock}
+        onSetMyLock={handleSetMyLock}
         onBack={handleBackToLeague}
         onLeaguePicks={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks` as any)}
         onResults={() => router.replace(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/results` as any)}
         shareSheet={
           <CallYourShotSheet
             visible={shareSheetOpen}
-            picks={shareablePicks}
+            picks={narrowedSharePicks}
             initialPropId={sharePropId}
-            onClose={() => { setShareSheetOpen(false); setSharePropId(null); }}
+            mode={
+              !sharePropId
+                ? "legacy_call_your_shot"
+                : state.swayger_run_enabled &&
+                    shareSurface === "completion_state" &&
+                    myLock?.prop_id === sharePropId
+                  ? "share_my_lock"
+                  : "share_pick"
+            }
+            onClose={() => { setShareSheetOpen(false); setSharePropId(null); setShareSurface("question_card"); }}
             onShared={handlePickShared}
           />
         }
@@ -565,9 +613,10 @@ export default function WeeklyPlayScreen() {
       })}
       <CallYourShotSheet
         visible={shareSheetOpen}
-        picks={shareablePicks}
+        picks={narrowedSharePicks}
         initialPropId={sharePropId}
-        onClose={() => { setShareSheetOpen(false); setSharePropId(null); }}
+        mode={!sharePropId ? "legacy_call_your_shot" : "share_pick"}
+        onClose={() => { setShareSheetOpen(false); setSharePropId(null); setShareSurface("question_card"); }}
         onShared={handlePickShared}
       />
     </ScrollView>

@@ -6,8 +6,9 @@ import { DraftDayProp } from "@/lib/fantasy-api";
 import Colors from "@/constants/colors";
 import { WeeklyFocusMoment } from "@/components/fantasy/WeeklyFocusMoment";
 import { WeeklyFocusProgress } from "@/components/fantasy/WeeklyFocusProgress";
-import { firstUnanswered, nextUnanswered, progressState, shouldAutoAdvance } from "@/lib/fantasy-focused-run";
+import { canFinishCompletedReview, firstUnanswered, nextUnanswered, progressState, shouldAutoAdvance } from "@/lib/fantasy-focused-run";
 import { getWeeklyMoment } from "@/lib/fantasy-weekly-moments";
+import { MyLockPick, MyLockSheet } from "@/components/fantasy/MyLockSheet";
 
 const C = Colors.dark;
 
@@ -21,14 +22,16 @@ type Props = {
   locked: boolean;
   finalized: boolean;
   onPick: (propId: string, answerId: string) => Promise<boolean>;
-  onShare: () => void;
+  onShare: (propId: string, surface?: "question_card" | "completion_state") => void;
+  myLock: { prop_id: string } | null;
+  onSetMyLock: (propId: string) => Promise<boolean>;
   onBack: () => void;
   onLeaguePicks: () => void;
   onResults: () => void;
   shareSheet?: React.ReactNode;
 };
 
-export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, statuses, stalePropIds, locked, finalized, onPick, onShare, onBack, onLeaguePicks, onResults, shareSheet }: Props) {
+export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, statuses, stalePropIds, locked, finalized, onPick, onShare, myLock, onSetMyLock, onBack, onLeaguePicks, onResults, shareSheet }: Props) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [ackLabel, setAckLabel] = useState<"ON THE RECORD" | "CALL UPDATED">("ON THE RECORD");
@@ -37,11 +40,13 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
   const [hydrated, setHydrated] = useState(false);
   const didHydrate = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [lockSheetOpen, setLockSheetOpen] = useState(false);
   const currentIdRef = useRef<string | null>(null);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const momentHeadingRef = useRef<React.ElementRef<typeof Text>>(null);
   const completionHeadingRef = useRef<React.ElementRef<typeof Text>>(null);
+  const lockTriggerRef = useRef<any>(null);
   currentIdRef.current = currentId;
 
   const ids = useMemo(() => props.map((prop) => prop.id), [props]);
@@ -74,6 +79,19 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
     const safe = Math.max(0, Math.min(props.length - 1, index));
     setCurrentId(props[safe]?.id ?? null);
   }, [props]);
+
+  const closeLockSheet = useCallback(() => {
+    setLockSheetOpen(false);
+    setTimeout(() => {
+      const target = lockTriggerRef.current;
+      if (Platform.OS === "web") {
+        target?.focus?.();
+        return;
+      }
+      const node = target ? findNodeHandle(target) : null;
+      if (node) AccessibilityInfo.setAccessibilityFocus(node);
+    }, 0);
+  }, []);
 
   useEffect(() => () => {
     if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
@@ -169,6 +187,8 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
           onNext={() => moveTo(current + 1)}
           reviewing={editing}
           onFinishReview={() => setEditing(false)}
+           onShare={() => onShare(activeProp.id)}
+            canFinishReview={canFinishCompletedReview(confirmedPicks[activeProp.id], picks[activeProp.id], statuses[activeProp.id] as any)}
           ackLabel={ackLabel}
           showAcknowledgment={ackPropId === activeProp.id}
           headingRef={momentHeadingRef}
@@ -183,25 +203,57 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
           <Text style={styles.summarySub}>{props.length} calls on the record. Receipt pending.</Text>
           {updatedSummary && <Text style={styles.updated}>CALL UPDATED</Text>}
           <View style={styles.summaryRule} />
-          {props.map((prop, index) => {
+           {myLock && (() => {
+             const lockProp = props.find((prop) => prop.id === myLock.prop_id);
+             const lockAnswer = lockProp?.answer_options.find((answer) => answer.id === confirmedPicks[lockProp.id]);
+             if (!lockProp || !lockAnswer) return null;
+             return (
+               <View style={styles.lockSummary} accessibilityLiveRegion="polite">
+                 <Text style={styles.lockEyebrow}>🔒 MY LOCK</Text>
+                 <Text style={styles.lockTitle}>{getWeeklyMoment(lockProp.template_prop_id)?.title ?? "Swayger Moment"}</Text>
+                 <Text style={styles.lockAnswer}>{lockAnswer.label}</Text>
+                 <Text style={styles.lockBody}>This is the one you’re standing on.</Text>
+                  {!locked && <Pressable ref={lockTriggerRef} onPress={() => setLockSheetOpen(true)} accessibilityRole="button" accessibilityLabel="Change My Lock" style={styles.lockChange}><Text style={styles.lockChangeText}>Change My Lock</Text></Pressable>}
+                  {!locked && <Pressable onPress={() => onShare(lockProp.id, "completion_state")} accessibilityRole="button" accessibilityLabel="Share My Lock" style={styles.lockShare}><Text style={styles.lockShareText}>Share My Lock</Text></Pressable>}
+               </View>
+             );
+           })()}
+           {!myLock && !locked && (
+              <Pressable ref={lockTriggerRef} onPress={() => setLockSheetOpen(true)} accessibilityRole="button" accessibilityLabel="Choose My Lock" style={styles.callYourShot}>
+               <Text style={styles.callYourShotLabel}>CALL YOUR SHOT</Text>
+               <Text style={styles.callYourShotText}>Which pick are you most confident in?</Text>
+               <Text style={styles.callYourShotButton}>Choose My Lock</Text>
+             </Pressable>
+           )}
+           {props.map((prop, index) => {
             const answer = prop.answer_options.find((item) => item.id === confirmedPicks[prop.id]);
             const momentTitle = getWeeklyMoment(prop.template_prop_id)?.title ?? `Moment ${index + 1}`;
             return (
-              <Pressable key={prop.id} onPress={() => { moveTo(index); setEditing(true); }} accessibilityRole="button" accessibilityLabel={`${locked ? "Review" : "Edit"} Moment ${index + 1}${stalePropIds.includes(prop.id) ? ", needs review" : ""}`} style={[styles.reviewRow, stalePropIds.includes(prop.id) && styles.reviewRowStale]}>
+              <Pressable key={prop.id} onPress={() => { moveTo(index); setEditing(true); }} accessibilityRole="button" accessibilityLabel={`${locked ? "Review" : "Edit"} Pick ${index + 1}${stalePropIds.includes(prop.id) ? ", needs review" : ""}`} style={[styles.reviewRow, stalePropIds.includes(prop.id) && styles.reviewRowStale]}>
                 <Text style={styles.reviewIndex}>{String(index + 1).padStart(2, "0")}</Text>
                 <View style={styles.reviewCopy}><Text style={styles.reviewQuestion} numberOfLines={2}>{momentTitle}</Text><Text style={styles.reviewAnswer} numberOfLines={1}>{answer?.label ?? "No answer"}</Text></View>
                 <Text style={styles.edit}>{locked ? "View" : "Edit"}</Text>
               </Pressable>
             );
           })}
-          {!locked && <Pressable onPress={onShare} accessibilityRole="button" accessibilityLabel="Call your shot" style={styles.share}><Text style={styles.shareText}>Call Your Shot</Text></Pressable>}
-          {!locked && <Pressable onPress={() => setEditing(true)} accessibilityRole="button" style={styles.done}><Text style={styles.doneText}>Edit Picks</Text></Pressable>}
+           {!locked && <Pressable onPress={() => setEditing(true)} accessibilityRole="button" accessibilityLabel="Edit picks" style={styles.done}><Text style={styles.doneText}>Edit Picks</Text></Pressable>}
           <Pressable onPress={onBack} accessibilityRole="button" style={styles.done}><Text style={styles.doneText}>Back to league</Text></Pressable>
         </View>
       )}
       {finalized && <Pressable onPress={onResults} accessibilityRole="button" style={styles.secondary}><Text style={styles.secondaryText}>View Results</Text></Pressable>}
       {locked && !finalized && <Pressable onPress={onLeaguePicks} accessibilityRole="button" style={styles.secondary}><Text style={styles.secondaryText}>See League Picks</Text></Pressable>}
       {shareSheet}
+      <MyLockSheet
+        visible={lockSheetOpen}
+        picks={props.flatMap((prop, index) => {
+          const answer = prop.answer_options.find((item) => item.id === confirmedPicks[prop.id]);
+          return answer ? [{ propId: prop.id, momentTitle: getWeeklyMoment(prop.template_prop_id)?.title ?? `Pick ${index + 1}`, answerLabel: answer.label }] : [];
+        }) as MyLockPick[]}
+        currentPropId={myLock?.prop_id}
+        onClose={closeLockSheet}
+        onSave={onSetMyLock}
+        onShare={(propId) => { setLockSheetOpen(false); onShare(propId, "completion_state"); }}
+      />
     </ScrollView>
   );
 }
@@ -235,6 +287,19 @@ const styles = StyleSheet.create({
   secondaryText: { color: C.tint, fontSize: 14, fontWeight: "900" },
   done: { minHeight: 42, justifyContent: "center", alignItems: "center" },
   doneText: { color: C.textMuted, fontSize: 13, fontWeight: "700" },
+  lockSummary: { backgroundColor: "#10232A", borderRadius: 14, borderWidth: 1, borderColor: C.tint, padding: 14, gap: 5 },
+  lockEyebrow: { color: C.tint, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
+  lockTitle: { color: C.textMuted, fontSize: 12, fontWeight: "800", marginTop: 2 },
+  lockAnswer: { color: C.text, fontSize: 17, fontWeight: "900" },
+  lockBody: { color: C.textMuted, fontSize: 12, lineHeight: 17 },
+  lockShare: { minHeight: 42, borderRadius: 9, backgroundColor: C.tint, justifyContent: "center", alignItems: "center", marginTop: 5 },
+  lockShareText: { color: "#071013", fontSize: 13, fontWeight: "900" },
+  lockChange: { minHeight: 36, justifyContent: "center", alignItems: "center" },
+  lockChangeText: { color: C.tint, fontSize: 12, fontWeight: "800" },
+  callYourShot: { backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, gap: 5 },
+  callYourShotLabel: { color: C.tint, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
+  callYourShotText: { color: C.text, fontSize: 15, fontWeight: "800" },
+  callYourShotButton: { color: C.tint, fontSize: 13, fontWeight: "900", marginTop: 4 },
   staleBanner: { backgroundColor: "#1F1500", borderRadius: 10, borderWidth: 1, borderColor: "#F59E0B", padding: 12, gap: 4 },
   staleTitle: { color: "#F59E0B", fontSize: 14, fontWeight: "800" },
   staleBody: { color: C.textMuted, fontSize: 13, lineHeight: 18 },

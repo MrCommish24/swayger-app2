@@ -16352,6 +16352,18 @@ function registerFantasyRoutes(app2) {
         myPicks[propId] = pick.selected_answer;
         if (rosterTargetPropIds.has(propId) && pickRev < cardRosterRevision) stalePropIds.push(propId);
       }
+      let myLock = null;
+      if (isSwaygerRunEnabled(String(leagueId))) {
+        const { data: lockRow, error: lockError } = await supabase.from("fantasy_weekly_my_locks").select("prop_id").eq("room_id", roomId).eq("participant_id", participantId).maybeSingle();
+        if (lockError) {
+          console.error("[fantasy/weekly] My Lock read failed:", lockError.message);
+          res2.status(500).json({ error: "Failed to load My Lock" });
+          return;
+        }
+        if (lockRow && propIds.includes(lockRow.prop_id) && rawPicks.some((pick) => pick.prop_id === lockRow.prop_id)) {
+          myLock = { prop_id: lockRow.prop_id };
+        }
+      }
       const { data: seasonRow } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
       const leagueName = seasonRow?.fantasy_leagues?.league_name ?? null;
       res2.json(addSwaygerRunFlag({
@@ -16367,10 +16379,90 @@ function registerFantasyRoutes(app2) {
         props: publishedProps,
         my_picks: myPicks,
         my_pick_count: Object.keys(myPicks).length,
+        my_lock: myLock,
         total_props: publishedProps.length,
         league_name: leagueName,
         viewer_display_name: viewer.display_name ?? null
       }, leagueId));
+    }
+  );
+  app2.put(
+    "/api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/my-lock",
+    async (req, res2) => {
+      const { leagueId, seasonId, weekNumber } = req.params;
+      const wn = parseInt(weekNumber, 10);
+      if (!Number.isInteger(wn) || wn < 1) {
+        res2.status(400).json({ error: "weekNumber must be a positive integer" });
+        return;
+      }
+      const supabase = getServiceSupabase();
+      const identity = await getVerifiedCallerIdentity(req, supabase);
+      if (!identity.userId && !identity.guestToken) {
+        res2.status(401).json({ error: "Invalid token" });
+        return;
+      }
+      if (!isSwaygerRunEnabled(String(leagueId))) {
+        res2.status(404).json({ error: "My Lock is not enabled for this league." });
+        return;
+      }
+      const propId = req.body?.prop_id;
+      if (!propId || typeof propId !== "string") {
+        res2.status(400).json({ error: "prop_id is required" });
+        return;
+      }
+      const viewer = await resolveViewer(supabase, identity, seasonId, leagueId);
+      if (!viewer) {
+        res2.status(403).json({ error: "You are not a member of this league for this season." });
+        return;
+      }
+      const rc = await _getWeeklyRoomAndCard(supabase, seasonId, wn);
+      if (!rc.ok) {
+        res2.status(rc.status).json(rc.body);
+        return;
+      }
+      const { room, card } = rc;
+      const roomId = room.id;
+      const cardId = card.id;
+      const cardStatus = card.status;
+      const roomStatus = room.status;
+      if (cardStatus !== "open" || roomStatus === "finalized") {
+        res2.status(409).json({
+          error: "My Lock cannot be changed after the Week is locked or finalized.",
+          card_status: cardStatus,
+          room_status: roomStatus
+        });
+        return;
+      }
+      const { participant_id: participantId } = await ensureFantasyParticipant(
+        supabase,
+        roomId,
+        viewer
+      );
+      const { data: prop } = await supabase.from("gameday_props").select("id").eq("id", propId).eq("card_id", cardId).maybeSingle();
+      if (!prop) {
+        res2.status(400).json({ error: `Prop not found on this Week ${wn} card.` });
+        return;
+      }
+      const { data: pick } = await supabase.from("gameday_picks").select("id").eq("prop_id", propId).eq("participant_id", participantId).maybeSingle();
+      if (!pick) {
+        res2.status(400).json({ error: "My Lock requires a confirmed pick for this Moment." });
+        return;
+      }
+      const { data: lock, error: lockError } = await supabase.from("fantasy_weekly_my_locks").upsert(
+        {
+          room_id: roomId,
+          participant_id: participantId,
+          prop_id: propId,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        { onConflict: "room_id,participant_id" }
+      ).select("prop_id").single();
+      if (lockError) {
+        console.error("[fantasy/weekly] My Lock upsert failed:", lockError.message);
+        res2.status(500).json({ error: "Failed to save My Lock. Please try again." });
+        return;
+      }
+      res2.json({ my_lock: { prop_id: lock.prop_id } });
     }
   );
   app2.get(

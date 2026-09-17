@@ -1064,6 +1064,8 @@ export interface WeeklyPlayState {
   props: DraftDayProp[];
   my_picks: Record<string, string>;
   my_pick_count: number;
+  /** The one confirmed Moment selected as the participant's confidence lock. */
+  my_lock: { prop_id: string } | null;
   total_props: number;
   league_name?: string | null;
   /** Presentation-only SWAYGER RUN V1A gate, enabled for allowlisted leagues. */
@@ -1186,6 +1188,32 @@ export async function submitWeeklyPick(
     `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/picks`,
     { method: "POST", body: JSON.stringify({ prop_id: propId, selected_answer: selectedAnswer }) },
     auth
+  );
+}
+
+// PUT /api/fantasy/leagues/:leagueId/seasons/:seasonId/weeks/:weekNumber/my-lock
+export interface WeeklyMyLock {
+  prop_id: string;
+}
+
+export interface SetWeeklyMyLockResponse {
+  my_lock: WeeklyMyLock;
+}
+
+export async function setWeeklyMyLock(
+  leagueId: string,
+  seasonId: string,
+  weekNumber: number,
+  propId: string,
+  auth: Parameters<typeof fantasyFetch>[2],
+): Promise<SetWeeklyMyLockResponse> {
+  return fantasyFetch(
+    `/api/fantasy/leagues/${leagueId}/seasons/${seasonId}/weeks/${weekNumber}/my-lock`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ prop_id: propId }),
+    },
+    auth,
   );
 }
 
