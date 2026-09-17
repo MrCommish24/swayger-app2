@@ -92,6 +92,10 @@ export function AnswerSelector({
   const closeModal = () => {
     setModalVisible(false);
     setTimeout(() => {
+      if (Platform.OS === "web") {
+        (triggerRef.current as any)?.focus?.();
+        return;
+      }
       const node = triggerRef.current ? findNodeHandle(triggerRef.current) : null;
       if (node) AccessibilityInfo.setAccessibilityFocus(node);
     }, 0);

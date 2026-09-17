@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { DraftDayProp } from "@/lib/fantasy-api";
 import { WeeklyMomentLabel } from "@/components/fantasy/WeeklyMomentLabel";
 import { AnswerSelector } from "@/components/fantasy/AnswerSelector";
@@ -35,7 +35,7 @@ export function WeeklyFocusMoment({ prop, index, total, selectedId, status, lock
         <Text style={styles.points}>{prop.point_value} point{prop.point_value === 1 ? "" : "s"}</Text>
       </View>
       <WeeklyMomentLabel templatePropId={prop.template_prop_id} />
-      <Text ref={headingRef} style={styles.question} accessibilityRole="header">{prop.question}</Text>
+      <Text ref={headingRef} {...(Platform.OS === "web" ? ({ tabIndex: -1 } as any) : {})} style={styles.question} accessibilityRole="header">{prop.question}</Text>
       {stale && <Text style={styles.stale} accessibilityLiveRegion="polite">Roster updated — resubmit this Moment.</Text>}
       <Text style={styles.instruction}>{locked ? "Your prediction is locked." : "Choose your take."}</Text>
       <AnswerSelector

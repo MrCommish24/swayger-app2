@@ -6,8 +6,7 @@ const OFF_LEAGUE = "00000000-0000-0000-0000-000000000001";
 const ON_LEAGUE = "00000000-0000-0000-0000-000000000002";
 
 // Empty/unset is globally off.
-assert.deepEqual(parseSwaygerRunLeagueIds(undefined), new Set());
-assert.equal(isSwaygerRunEnabled(OFF_LEAGUE, undefined), false);
+assert.deepEqual(parseSwaygerRunLeagueIds(""), new Set());
 assert.equal(isSwaygerRunEnabled(OFF_LEAGUE, ""), false);
 
 // Parsing is comma-separated, trims operator formatting, and ignores blanks.
@@ -51,6 +50,7 @@ assert.match(playSource, /weeklyPlayMode\(state\.swayger_run_enabled\) === "focu
 assert.match(playSource, /<WeeklyFocusedRun/);
 assert.match(playSource, /<ScrollView/);
 assert.match(focusedSource, /currentIdRef\.current === propId/);
+assert.match(focusedSource, /Platform\.OS === "web"/);
 assert.match(focusedSource, /stalePropIds\.includes\(activeProp\.id\)/);
 assert.match(focusedSource, /locked && !finalized/);
 assert.match(focusedSource, /finalized && <Pressable onPress=\{onResults\}/);

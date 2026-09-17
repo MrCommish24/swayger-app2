@@ -127,6 +127,10 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
 
   useEffect(() => {
     const target = allAnswered && !editing ? completionHeadingRef.current : momentHeadingRef.current;
+    if (Platform.OS === "web") {
+      (target as any)?.focus?.();
+      return;
+    }
     const node = target ? findNodeHandle(target) : null;
     if (node) AccessibilityInfo.setAccessibilityFocus(node);
   }, [allAnswered, current, editing]);
@@ -175,7 +179,7 @@ export function WeeklyFocusedRun({ weekNumber, props, picks, confirmedPicks, sta
       ) : (
         <View style={styles.summary}>
           <Text style={styles.summaryEyebrow}>CARD COMPLETE</Text>
-          <Text ref={completionHeadingRef} accessibilityRole="header" style={styles.summaryTitle}>YOUR SWAYGER IS IN</Text>
+          <Text ref={completionHeadingRef} {...(Platform.OS === "web" ? ({ tabIndex: -1 } as any) : {})} accessibilityRole="header" style={styles.summaryTitle}>YOUR SWAYGER IS IN</Text>
           <Text style={styles.summarySub}>{props.length} calls on the record. Receipt pending.</Text>
           {updatedSummary && <Text style={styles.updated}>CALL UPDATED</Text>}
           <View style={styles.summaryRule} />
