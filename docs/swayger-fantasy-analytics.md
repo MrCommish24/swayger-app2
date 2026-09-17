@@ -13,6 +13,27 @@ these cards must be created in the live PostHog project.
   information, tokens, or URLs as analytics properties.
 - Use `template_prop_id` for Moment breakdowns. Resolve display names from the
   application registry when interpreting results.
+- Weekly pick events include the safe UI properties `experience_version` and
+  `run_variant` (`legacy` or `swayger_run_v1`). These describe presentation
+  only; never add answer labels, participant identifiers, or share content.
+
+### Swayger Run V1A comparison
+
+Create a PostHog funnel named `Weekly Completion — Swayger Run vs Legacy`:
+
+1. `fantasy_week_viewed`
+2. `fantasy_week_pick_started`
+3. `fantasy_week_pick_completed`
+
+Use a 7-day conversion window, filter `experience_type = weekly`, and break
+down by `experience_version`. Create a second trends insight for
+`fantasy_week_pick_submitted`, broken down by `experience_version` and
+`moment_index`, to identify the last server-confirmed Moment before departure.
+Use `completed_count` and `question_count` only as numeric breakdowns. Compare
+Call Your Shot conversion by adding `experience_version` as a breakdown to the
+existing completion → share-opened → shared/copied funnel. Do not infer durable
+guest return behavior across devices; anonymous guest identity remains
+device/session scoped.
 
 PostHog identifies signed-in users with their Supabase user ID. Guest activity
 uses PostHog's anonymous identity and `is_guest = true`; it is device/session

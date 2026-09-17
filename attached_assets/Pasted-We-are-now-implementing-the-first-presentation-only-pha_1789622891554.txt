@@ -1,0 +1,963 @@
+We are now implementing the first presentation-only phase of the Swayger Run.
+
+# SWAYGER RUN V1A — PREMIUM WEEKLY PLAY UX
+
+This is an implementation task.
+
+We previously completed the Swayger Run UX assessment.
+
+Important architectural conclusion:
+
+V1A can be implemented as a presentation-layer enhancement over the existing Weekly Fantasy play architecture.
+
+V1A must NOT change:
+
+- prediction semantics
+- published Weekly props
+- answer options
+- scoring
+- settlement
+- League Picks logic
+- Weekly Results
+- Weekly Receipt
+- Call Your Shot privacy
+- participant identity
+- database schema
+
+NO SCHEMA CHANGE is expected for V1A.
+
+My Lock is NOT part of this build.
+
+==================================================
+1. PRODUCT GOAL
+==================================================
+
+We want Weekly Fantasy play to feel less like filling out a form and more like completing a short branded game session.
+
+Product concept:
+
+THE SWAYGER RUN
+
+One Moment at a time.
+Every call gets acknowledged.
+Progress builds visibly.
+Completion gets a payoff.
+
+UX north star:
+
+LESS LIKE FILLING OUT PICKS.
+MORE LIKE PUTTING YOUR TAKES ON THE RECORD.
+
+The new experience should feel:
+
+- premium
+- focused
+- responsive
+- lightweight
+- distinctly Swayger
+- low-friction
+
+Do not overbuild.
+
+==================================================
+2. V1A SCOPE
+==================================================
+
+Implement only:
+
+1. Pilot feature gating
+2. One-card focus mode
+3. First-unanswered resume behavior
+4. Dynamic Swayger meter
+5. Server-confirmed acknowledgment microinteraction
+6. Lightweight haptics
+7. Stronger completion payoff
+8. Compact review/edit summary
+9. Accessibility improvements
+10. Minimal analytics extensions
+11. Easy rollback path
+
+Do NOT implement:
+
+- My Lock
+- My Lock persistence
+- My Lock UI
+- Call Your Shot default-to-lock behavior
+- scoring changes
+- XP
+- coins
+- streaks
+- avatars
+- sound
+- elaborate animations
+- custom dials
+- swipe gestures
+- curved SVG meter
+- social feed
+- achievement systems
+- new database tables
+
+==================================================
+3. FEATURE FLAG / ROLLBACK REQUIREMENT
+==================================================
+
+This is critical.
+
+Implement V1A behind a server-readable feature flag or league allowlist.
+
+The flag must control PRESENTATION ONLY.
+
+When Swayger Run is OFF:
+
+- render the existing current Weekly all-cards experience
+- preserve all saved picks
+- preserve autosave
+- preserve editing
+- preserve guest/auth identity
+- preserve Call Your Shot
+- preserve League Picks
+- preserve settlement
+- preserve results
+- preserve receipts
+- preserve analytics compatibility
+
+When Swayger Run is ON:
+
+- render the new focused Swayger Run experience
+
+Turning the flag OFF must require:
+
+NO migration rollback
+NO data migration
+NO cleanup job
+NO pick conversion
+NO participant conversion
+
+Rollback goal:
+
+One configuration change should return a pilot league to the current Weekly play UX.
+
+Document exactly:
+
+- where the flag lives
+- how it is enabled for a league
+- how it is disabled
+- whether app redeploy is required
+- what remains persisted when disabled
+
+For initial rollout:
+
+Enable for internal/test league first.
+
+Then make Food Pyramid XX eligible after manual internal QA.
+
+Do not globally enable by default.
+
+==================================================
+4. PRESERVE EXISTING SAVE ARCHITECTURE
+==================================================
+
+Do NOT rewrite the pick-saving system.
+
+Preserve:
+
+- optimistic answer selection
+- serialized per-prop saves
+- server-confirmed baseline
+- rollback on failed save
+- current autosave endpoint
+- answer-universe validation
+- guest/auth participant architecture
+
+The new UX must sit on top of this existing machinery.
+
+All progress and completion behavior must be based on SERVER-CONFIRMED state.
+
+Never treat an optimistic answer as completed for:
+
+- progress meter
+- auto-advance
+- completion
+- haptics
+- acknowledgement
+
+==================================================
+5. ONE-CARD FOCUS MODE
+==================================================
+
+When Swayger Run is enabled:
+
+Show one Swayger Moment as the primary focused card at a time.
+
+Concept:
+
+WEEK 3 SWAYGER
+
+YOUR SWAYGER
+● ● ◉ ○ ○
+
+2 of 5 calls made
+Moment 3 of 5
+
+BASEMENT WATCH
+
+Who will finish with the fewest fantasy points this week?
+
+[Answer selector]
+
+Navigation:
+
+- Previous / Back
+- Next where appropriate
+- interactive meter segments
+- Review Picks after completion
+
+Do NOT add swipe gestures.
+
+Use stable prop IDs for active Moment state.
+
+Do not rely only on array indexes for delayed-save behavior.
+
+==================================================
+6. INITIAL / RESUME BEHAVIOR
+==================================================
+
+Resolve the initial focused Moment only AFTER server-confirmed picks have hydrated.
+
+New participant:
+open the first Moment.
+
+Returning incomplete participant:
+open the first unanswered confirmed Moment.
+
+Examples:
+
+2 of 5 completed:
+open first unanswered.
+
+4 of 7 completed:
+open first unanswered, regardless of numeric position.
+
+If Moment 2 previously failed to save:
+resume at Moment 2.
+
+Returning completed participant:
+open directly into the completion summary.
+
+Do not:
+
+- briefly show Moment 1 before hydration
+- persist a separate resume index
+- force completed participants through all Moments again
+
+The server-confirmed pick state is the source of truth.
+
+==================================================
+7. SWAYGER METER
+==================================================
+
+Implement the recommended segmented horizontal progress track.
+
+Concept:
+
+YOUR SWAYGER
+
+● ● ◉ ○ ○
+
+2 of 5 calls made
+
+States:
+
+- completed
+- current
+- unanswered
+- saving
+- error
+
+Requirements:
+
+- fully dynamic from published question count
+- support at least 3–12 Moments
+- do not hardcode five
+- compact on mobile
+- responsive on web
+- segments contract rather than wrap for larger counts
+- each segment may navigate to its Moment
+- meter cannot be the only progress indicator
+
+Always show accessible text:
+
+X of Y calls made
+Moment N of Y
+
+Do not build:
+
+- custom S-shaped path
+- curved SVG
+- canvas
+- physics
+- decorative animation loop
+
+==================================================
+8. ANSWER SELECTION + SAVING STATE
+==================================================
+
+Preserve existing AnswerSelector behavior.
+
+After a user selects an answer:
+
+1. Optimistic selected state may appear as today.
+2. Show a clear saving state.
+3. Do NOT advance yet.
+4. Wait for successful server confirmation.
+5. On confirmation:
+   - convert to confirmed visual state
+   - update Swayger meter
+   - show acknowledgment
+   - fire haptic where supported
+6. On failure:
+   - restore previous confirmed answer
+   - show existing/error feedback
+   - do not advance
+   - do not fire success haptic
+
+Concept:
+
+Saving your call…
+
+then:
+
+SELECTED
+
+All Eyez On Me
+
+ON THE RECORD ✓
+
+==================================================
+9. ACKNOWLEDGMENT MICROINTERACTION
+==================================================
+
+Use a small deterministic acknowledgement system.
+
+Do not randomize copy on rerender.
+
+Recommended copy:
+
+New confirmed answer:
+ON THE RECORD
+
+Edit of existing confirmed answer:
+CALL UPDATED
+
+Final required confirmed answer:
+YOUR SWAYGER IS IN
+
+Do not use RECEIPT PENDING on every answer.
+
+Use RECEIPT PENDING only in completion state.
+
+Visual treatment should be subtle:
+
+- stronger selected state
+- checkmark fade-in
+- small border/background emphasis
+- optional scale from approximately 0.99 → 1.0
+- progress segment fills
+- no confetti
+- no card flips
+- no looping glow
+
+Respect reduced-motion preference.
+
+==================================================
+10. AUTO-ADVANCE
+==================================================
+
+After a NEW previously unanswered pick is successfully confirmed:
+
+show acknowledgement for approximately 500–700ms
+
+then advance to the next unanswered Moment.
+
+Do not auto-advance:
+
+- while saving
+- after error
+- when editing a previously confirmed answer
+- after final required answer
+- if participant manually navigated away before save completed
+- when reduced-motion handling indicates immediate/static transition is preferable
+
+Use stable prop identity so a delayed response cannot advance the wrong Moment.
+
+==================================================
+11. EDITING
+==================================================
+
+Before lock:
+
+Users must remain able to review and edit completed Moments.
+
+Navigation:
+
+- Previous
+- Next
+- meter segment
+- Review Picks
+- Edit Picks from completion summary
+
+Changing an already-confirmed answer:
+
+- preserve overall completion
+- preserve filled progress segment
+- show `CALL UPDATED` after successful confirmation
+- do not replay the main completion payoff
+- do not replay the final-completion haptic
+- do not auto-advance solely because of an edit
+
+After lock:
+
+- play experience becomes read-only per existing rules
+- meter/navigation may still support review
+- no edits
+- League Picks behavior unchanged
+
+==================================================
+12. HAPTICS
+==================================================
+
+`expo-haptics` is already installed.
+
+Use it carefully.
+
+Successful normal pick save:
+
+`Haptics.impactAsync(ImpactFeedbackStyle.Light)`
+
+Final required pick:
+
+`Haptics.notificationAsync(NotificationFeedbackType.Success)`
+
+Rules:
+
+- only after successful server confirmation
+- never on optimistic selection
+- never on restored saved picks at load
+- never on failed save
+- gracefully no-op on web
+- catch failures
+- haptics can never break the save flow
+- visible feedback must always exist independently
+
+Do not add sound.
+
+==================================================
+13. COMPLETION PAYOFF
+==================================================
+
+Replace or enhance the current functional completion card for Swayger Run-enabled leagues.
+
+Concept:
+
+YOUR SWAYGER IS IN
+
+5 calls.
+Receipt pending.
+
+[compact summary]
+
+SCOREBOARD KING
+Team Jasand Shootaw
+
+BASEMENT WATCH
+All Eyez On Me
+
+BIGGEST BLOWOUT
+Dispimpin
+
+...
+
+[Call Your Shot]
+[Edit Picks]
+[Back to League]
+
+Do NOT add My Lock yet.
+
+Requirements:
+
+- only show after all required picks are server-confirmed
+- strong success haptic once on genuine first completion
+- returning completed participant opens here directly
+- do not replay the full completion animation on every mount
+- editing one pick and returning should show a small `CALL UPDATED` state, not a new completion celebration
+- Call Your Shot remains fully functional
+- Back to League remains available
+- summary stays compact
+
+Do not make this resemble Weekly Results.
+
+This is a completion state, not a results page.
+
+==================================================
+14. REVIEW PICKS
+==================================================
+
+Provide a compact review experience that lets a completed participant scan all Swayger Moments and their current confirmed answers.
+
+Use:
+
+Moment title
+selected answer
+
+Keep prompts available where needed but avoid excessive vertical duplication.
+
+From review:
+
+user can tap/edit a Moment before lock.
+
+After editing:
+returning to review should reflect confirmed answer only.
+
+==================================================
+15. QUESTION-TYPE SUPPORT
+==================================================
+
+The Swayger Run must work with:
+
+- fantasy-team Moment questions
+- large team lists
+- Yes/No Moments
+- long team names
+- long Moment titles
+- long prompts
+- current 12-Moment library
+- variable selected question counts
+- multi-correct settlement Moments
+
+Do not change participant answer behavior.
+
+For large answer sets:
+
+retain the existing large-roster modal / AnswerSelector behavior.
+
+Do not replace it with a new selector.
+
+==================================================
+16. ACCESSIBILITY
+==================================================
+
+Implement accessibility as part of V1A.
+
+Progress:
+
+Expose text:
+
+3 of 5 calls made
+Moment 4 of 5
+
+Interactive meter segment labels should communicate:
+
+Moment number
+status
+Moment title
+
+Example:
+
+“Moment 3, completed, Scoreboard King”
+
+Save success announcement:
+
+“Pick saved. Team Jasand Shootaw is on the record.”
+
+Save failure announcement:
+
+“Pick not saved. Your previous answer was restored.”
+
+Focus:
+
+- on advance, move accessibility focus to new Moment heading
+- when answer modal closes, restore focus to trigger
+- completion state focuses completion heading
+- web supports Tab / Shift+Tab / Enter / Space
+- Previous/Next remain primary keyboard path even if meter segments are interactive
+
+Touch targets:
+
+minimum 44×44 where applicable.
+
+==================================================
+17. REDUCED MOTION
+==================================================
+
+Add/shared reduced-motion handling based on existing platform capabilities.
+
+Support:
+
+- React Native AccessibilityInfo reduced motion
+- change subscription where appropriate
+- web prefers-reduced-motion
+
+When reduced motion is enabled:
+
+- no scale effect
+- no slide effect
+- no unnecessary delayed animation
+- retain checkmark
+- retain text acknowledgement
+- retain progress updates
+- do not make auto-advance confusing or inaccessible
+
+==================================================
+18. CURRENT CALL YOUR SHOT
+==================================================
+
+Do NOT redesign Call Your Shot in this task.
+
+Preserve:
+
+- Share Pick
+- completion-state Call Your Shot access
+- one-pick disclosure
+- existing privacy
+- source attribution
+- analytics
+- share wording
+- deep-link behavior
+
+The new Swayger Run completion summary should link into the existing Call Your Shot flow.
+
+Do not add My Lock yet.
+
+==================================================
+19. ANALYTICS
+==================================================
+
+Do not create a large new event taxonomy.
+
+Reuse existing Weekly events.
+
+Where safe and useful, add:
+
+`experience_version: "swayger_run_v1"`
+
+and existing-event properties such as:
+
+- question_count
+- completed_count
+- moment_index
+- is_edit
+- is_guest
+- viewer_role
+- week_number
+- source
+
+Do not send:
+
+- answer label
+- team name
+- participant name
+- prompt text
+- Moment title if template_prop_id already covers identity
+- private pick data
+
+Do not add My Lock events yet.
+
+We should be able to compare:
+
+- Weekly completion before Swayger Run
+- Weekly completion with Swayger Run
+- drop-off by confirmed Moment
+- return completion after partial play
+- Call Your Shot conversion after completion
+
+Update:
+
+`docs/swayger-fantasy-analytics.md`
+
+with exact PostHog setup or dashboard guidance.
+
+==================================================
+20. PILOT ROLLOUT
+==================================================
+
+V1A should be controlled via feature flag / league allowlist.
+
+Recommended rollout:
+
+1. internal/test league
+2. manual QA
+3. Food Pyramid XX
+4. additional selected pilots
+5. broader rollout only after validation
+
+Do not globally enable automatically.
+
+Food Pyramid XX currently has active Weekly data.
+
+The flag must never rewrite published data.
+
+==================================================
+21. FOOD PYRAMID SAFETY
+==================================================
+
+Before enabling Food Pyramid XX:
+
+Verify read-only:
+
+- current Week
+- published props
+- saved picks
+- participant state
+- lock state
+
+Enabling Swayger Run must not modify any of these records.
+
+The UI should simply interpret the existing confirmed picks through the new presentation layer.
+
+If active Food Pyramid state cannot safely support V1A:
+
+leave the feature flag off for that league and report why.
+
+==================================================
+22. ROLLBACK TEST
+==================================================
+
+Add an explicit rollback verification.
+
+Test:
+
+A. Enable Swayger Run for a test league.
+B. Make partial picks.
+C. Leave.
+D. Return and resume.
+E. Complete picks.
+F. Use Call Your Shot.
+G. Disable Swayger Run.
+H. Reload same participant.
+I. Verify the original all-cards Weekly UX renders.
+J. Verify:
+   - all picks remain
+   - no answers changed
+   - participant remains correct
+   - completion remains correct
+   - Call Your Shot still works
+   - League Picks behavior unchanged
+   - settlement unchanged
+   - results/receipt unchanged
+
+Then re-enable Swayger Run and verify the same data renders correctly again.
+
+Rollback must require no data repair.
+
+==================================================
+23. COMPONENT STRUCTURE
+==================================================
+
+Prefer extracting focused components rather than placing all new logic into play.tsx.
+
+Likely components:
+
+- `components/fantasy/SwaygerMeter.tsx`
+- `components/fantasy/WeeklyMomentFocusCard.tsx`
+- `components/fantasy/SwaygerCompletionSummary.tsx`
+
+Reuse:
+
+- `WeeklyMomentLabel`
+- `AnswerSelector`
+- existing Call Your Shot sheet
+- existing Fantasy API/save helpers
+
+Keep `play.tsx` as orchestration rather than an oversized presentation component.
+
+==================================================
+24. TESTS
+==================================================
+
+Add focused Swayger Run V1A coverage for:
+
+- feature flag OFF renders legacy Weekly UX
+- feature flag ON renders one-card mode
+- first unanswered resume
+- new participant starts at first Moment
+- completed participant opens summary
+- dynamic question counts
+- 3, 5, 7, and 12 Moment meter behavior
+- stable prop navigation
+- confirmed state required for progress
+- saving state
+- failed save rollback
+- acknowledgment after confirmation only
+- auto-advance after new confirmed answer
+- no auto-advance on edit
+- no auto-advance on failure
+- no stale-response wrong-card advance
+- light haptic after successful normal save
+- success haptic after genuine final completion
+- no haptic on failure/load
+- edit behavior
+- completion not replayed after ordinary edit
+- review summary
+- locked read-only behavior
+- Yes/No question support
+- large-answer selector support
+- long labels/prompts
+- guest flow
+- authenticated flow
+- commissioner-as-participant flow
+- reduced motion
+- accessibility labels/focus
+- Call Your Shot regression
+- League Picks regression
+- analytics properties
+- pilot gating
+- rollback off/on with state preserved
+- no schema change
+- no My Lock code introduced
+
+==================================================
+25. REGRESSION
+==================================================
+
+Run:
+
+- Weekly lifecycle
+- autosave/update
+- auth
+- guest
+- Week sequencing
+- Swayger Moments
+- Call Your Shot
+- League Picks
+- Weekly settlement
+- Weekly Results
+- Weekly Receipt
+- receipt sharing
+- Fantasy analytics
+- Phase 6G multi-correct
+
+Then:
+
+- server production build
+- web export/bundle
+- iOS static export
+- Android static export
+- targeted lint
+- changed-file TypeScript diagnostics
+
+Return exact totals.
+
+==================================================
+26. MANUAL QA
+==================================================
+
+Return exact steps for:
+
+A. NEW PARTICIPANT
+
+1. Enable Swayger Run.
+2. Open a clean Weekly card.
+3. Verify first Moment only is focused.
+4. Verify meter shows 0 of N.
+5. Pick answer.
+6. Verify Saving.
+7. Verify confirmed acknowledgment.
+8. Verify light haptic.
+9. Verify progress increments.
+10. Verify next Moment advances.
+
+B. RETURN MID-RUN
+
+1. Complete 2 of 5.
+2. Leave.
+3. Return.
+4. Verify first unanswered opens.
+5. Verify prior completed segments remain filled.
+
+C. EDIT
+
+1. Navigate to prior completed Moment.
+2. Change answer.
+3. Verify `CALL UPDATED`.
+4. Verify no full completion celebration.
+5. Verify no auto-advance.
+
+D. COMPLETION
+
+1. Complete final Moment.
+2. Verify success haptic.
+3. Verify YOUR SWAYGER IS IN.
+4. Verify Receipt pending.
+5. Verify compact summary.
+6. Verify Call Your Shot.
+7. Verify Edit Picks.
+8. Verify Back to League.
+
+E. REDUCED MOTION
+
+Verify transitions remain understandable with animations removed.
+
+F. WEB / KEYBOARD / SCREEN READER
+
+Verify focus order and announcements.
+
+G. LOCK
+
+Verify locked Week becomes read-only without breaking navigation.
+
+H. ROLLBACK
+
+1. Disable feature flag.
+2. Reload same participant.
+3. Verify original Weekly UX.
+4. Verify all saved data is intact.
+5. Re-enable.
+6. Verify Swayger Run renders same data.
+
+I. FOOD PYRAMID
+
+After internal QA:
+enable only for Food Pyramid XX and verify active Week data is unchanged.
+
+==================================================
+27. RETURN
+==================================================
+
+Return:
+
+# SWAYGER RUN V1A IMPLEMENTATION REPORT
+
+1. Feature-flag architecture
+2. Rollback procedure
+3. One-card focus implementation
+4. Resume behavior
+5. Swayger meter
+6. Save acknowledgment
+7. Auto-advance
+8. Haptics
+9. Completion payoff
+10. Review/edit behavior
+11. Accessibility
+12. Reduced-motion behavior
+13. Call Your Shot integration
+14. Analytics changes
+15. Food Pyramid rollout decision
+16. Files changed
+17. Tests added
+18. Regression totals
+19. Rollback test result
+20. Known limitations
+21. Exact manual QA
+22. V1B readiness / My Lock remaining work
+
+Then STOP.
+
+Do not implement My Lock.
+
+Final status:
+
+SWAYGER RUN V1A READY FOR MANUAL QA
+
+or
+
+CORRECTION REQUIRED

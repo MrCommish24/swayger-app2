@@ -41,6 +41,7 @@ import {
   sameCorrectAnswerSet,
 } from "./correct-answers";
 import { getWeeklyMoment } from "../lib/fantasy-weekly-moments";
+import { addSwaygerRunFlag } from "./swayger-run";
 
 // ── Local helpers ─────────────────────────────────────────────────────────────
 
@@ -5719,7 +5720,7 @@ export function registerFantasyRoutes(app: Express) {
         .maybeSingle();
       const leagueName = (seasonRow as any)?.fantasy_leagues?.league_name ?? null;
 
-      res.json({
+      res.json(addSwaygerRunFlag({
         room_id:             roomId,
         card_id:             (card as any).id,
         room_code:           (room as any).room_code ?? null,
@@ -5734,8 +5735,8 @@ export function registerFantasyRoutes(app: Express) {
         my_pick_count:       Object.keys(myPicks).length,
         total_props:         publishedProps.length,
         league_name:         leagueName,
-         viewer_display_name: viewer.display_name ?? null,
-      });
+        viewer_display_name: viewer.display_name ?? null,
+      }, leagueId));
     }
   );
 

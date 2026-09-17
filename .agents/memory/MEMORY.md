@@ -42,3 +42,4 @@
 - [Fantasy Weekly Receipt](gameday-fantasy-weekly-receipt.md) — live weekly alias schema is applied; receipts are finalized, member-authorized, viewer-independent, and archive-readable.
 - [Fantasy Weekly Swayger Moments](gameday-fantasy-swayger-moments.md) — titles derive from stable template IDs; source-library copy may evolve, but published weekly props remain immutable.
 - [Fantasy Call Your Shot](gameday-fantasy-call-your-shot.md) — voluntary one-pick sharing stays client-side, uses confirmed answers, and links only to authorized Weekly play.
+- [Swayger Run V1A](gameday-swayger-run-v1a.md) — presentation-only Weekly focus UX is league-allowlisted; confirmed picks remain the sole progress/completion source.

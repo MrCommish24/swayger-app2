@@ -1066,6 +1066,8 @@ export interface WeeklyPlayState {
   my_pick_count: number;
   total_props: number;
   league_name?: string | null;
+  /** Presentation-only SWAYGER RUN V1A gate, enabled for allowlisted leagues. */
+  swayger_run_enabled: boolean;
   /** League-safe display name only. Never sourced from email or auth-provider metadata. */
   viewer_display_name?: string | null;
 }

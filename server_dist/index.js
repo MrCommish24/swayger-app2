@@ -13062,6 +13062,20 @@ function getWeeklyMoment(templatePropId) {
   return WEEKLY_MOMENTS[templatePropId] ?? null;
 }
 
+// server/swayger-run.ts
+var SWAYGER_RUN_LEAGUE_IDS_ENV = "SWAYGER_RUN_LEAGUE_IDS";
+function parseSwaygerRunLeagueIds(value = process.env[SWAYGER_RUN_LEAGUE_IDS_ENV]) {
+  return new Set(
+    (value ?? "").split(",").map((id) => id.trim()).filter(Boolean)
+  );
+}
+function isSwaygerRunEnabled(leagueId, value = process.env[SWAYGER_RUN_LEAGUE_IDS_ENV]) {
+  return parseSwaygerRunLeagueIds(value).has(leagueId.trim());
+}
+function addSwaygerRunFlag(response, leagueId, value = process.env[SWAYGER_RUN_LEAGUE_IDS_ENV]) {
+  return { ...response, swayger_run_enabled: isSwaygerRunEnabled(leagueId, value) };
+}
+
 // server/routes-fantasy.ts
 function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, teamName) {
   const raw = [
@@ -16340,7 +16354,7 @@ function registerFantasyRoutes(app2) {
       }
       const { data: seasonRow } = await supabase.from("fantasy_league_seasons").select("fantasy_leagues(league_name)").eq("id", seasonId).maybeSingle();
       const leagueName = seasonRow?.fantasy_leagues?.league_name ?? null;
-      res2.json({
+      res2.json(addSwaygerRunFlag({
         room_id: roomId,
         card_id: card.id,
         room_code: room.room_code ?? null,
@@ -16356,7 +16370,7 @@ function registerFantasyRoutes(app2) {
         total_props: publishedProps.length,
         league_name: leagueName,
         viewer_display_name: viewer.display_name ?? null
-      });
+      }, leagueId));
     }
   );
   app2.get(

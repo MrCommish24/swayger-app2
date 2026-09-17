@@ -26,8 +26,10 @@
  *   See Phase 6B report §15 Known Limitations.
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
+  AccessibilityInfo,
+  findNodeHandle,
   FlatList,
   Modal,
   Platform,
@@ -84,12 +86,20 @@ export function AnswerSelector({
   pickStatus,
 }: AnswerSelectorProps) {
   const [modalVisible, setModalVisible] = useState(false);
+  const triggerRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
 
   const isLargeRoster = options.length > LARGE_ROSTER_THRESHOLD;
+  const closeModal = () => {
+    setModalVisible(false);
+    setTimeout(() => {
+      const node = triggerRef.current ? findNodeHandle(triggerRef.current) : null;
+      if (node) AccessibilityInfo.setAccessibilityFocus(node);
+    }, 0);
+  };
 
   const handleTap = (id: string) => {
     onSelect(id);
-    if (isLargeRoster) setModalVisible(false);
+    if (isLargeRoster) closeModal();
   };
 
   // ── Inline path (≤4 options) ──────────────────────────────────────────────
@@ -144,6 +154,7 @@ export function AnswerSelector({
         isLocked={isLocked}
         pickStatus={pickStatus}
         onOpen={() => setModalVisible(true)}
+        triggerRef={triggerRef}
       />
 
       {/* Modal selector */}
@@ -152,14 +163,14 @@ export function AnswerSelector({
         animationType="slide"
         transparent
         statusBarTranslucent={Platform.OS === "android"}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={closeModal}
       >
         <SelectorModal
           options={options}
           selectedId={selectedId}
           question={question}
           onSelect={handleTap}
-          onClose={() => setModalVisible(false)}
+          onClose={closeModal}
         />
       </Modal>
     </>
@@ -173,11 +184,13 @@ function CompactPick({
   isLocked,
   pickStatus,
   onOpen,
+  triggerRef,
 }: {
   selectedOpt: DraftDayAnswerOption | null;
   isLocked: boolean;
   pickStatus?: "saving" | "saved" | "error";
   onOpen: () => void;
+  triggerRef: React.RefObject<React.ElementRef<typeof TouchableOpacity> | null>;
 }) {
   const buttonLabel = selectedOpt ? "Change Pick" : "Choose Team";
 
@@ -207,6 +220,7 @@ function CompactPick({
       {/* Open modal button — hidden when locked */}
       {!isLocked && (
         <TouchableOpacity
+          ref={triggerRef}
           style={[
             styles.chooseBtn,
             pickStatus === "saving" && styles.chooseBtnDisabled,

@@ -40,6 +40,8 @@ import { CallYourShotPick, CallYourShotSheet } from "@/components/fantasy/CallYo
 import { getWeeklyMoment } from "@/lib/fantasy-weekly-moments";
 import { addPickShareSource, buildFantasyPickSharePackage, PickShareMethod } from "@/lib/fantasy-pick-share";
 import { Analytics, detectEntrySource } from "@/lib/posthog";
+import { WeeklyFocusedRun } from "@/components/fantasy/WeeklyFocusedRun";
+import { weeklyPlayMode } from "@/lib/fantasy-focused-run";
 
 const C = Colors.dark;
 
@@ -63,6 +65,7 @@ export default function WeeklyPlayScreen() {
   const [errorIsNonMember, setErrorIsNonMember] = useState(false);
   // propId → currently selected answerId (optimistic)
   const [picks, setPicks]           = useState<Record<string, string>>({});
+  const [confirmedPicks, setConfirmedPicks] = useState<Record<string, string>>({});
   // propId → "saving" | "saved" | "error"
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
   const [shareSheetOpen, setShareSheetOpen] = useState(false);
@@ -87,7 +90,9 @@ export default function WeeklyPlayScreen() {
       const data = await getWeeklyPlay(leagueId, seasonId, wn, auth);
       setState(data);
       setPicks(data.my_picks ?? {});
+      setConfirmedPicks(data.my_picks ?? {});
       confirmedPicksRef.current = data.my_picks ?? {};
+      const variant = data.swayger_run_enabled ? "swayger_run_v1" : "legacy";
       hasTrackedPickStarted.current = Object.keys(data.my_picks ?? {}).length > 0;
       hasTrackedPickCompleted.current =
         data.props.length > 0 && data.props.every((prop) => Boolean(data.my_picks?.[prop.id]));
@@ -105,6 +110,8 @@ export default function WeeklyPlayScreen() {
         }, {
           question_count: data.props.length,
           pick_count: Object.keys(data.my_picks ?? {}).length,
+          run_variant: variant,
+          experience_version: variant,
         });
       }
        if (entrySourceRef.current === "pick_share" && !hasTrackedPickShareEntry.current) {
@@ -142,8 +149,10 @@ export default function WeeklyPlayScreen() {
     if (!authLoading && !guestTokenLoading) load();
   }, [authLoading, guestTokenLoading, load]);
 
-  const handlePick = async (propId: string, answerId: string) => {
-    if (!state || state.card_status !== "open") return;
+  const handlePick = async (propId: string, answerId: string): Promise<boolean> => {
+    if (!state || state.card_status !== "open") return false;
+    const wasEdit = Boolean(confirmedPicksRef.current[propId]);
+    const momentIndex = state.props.findIndex((prop) => prop.id === propId);
 
     // Optimistic update
     setPicks(prev => ({ ...prev, [propId]: answerId }));
@@ -160,7 +169,8 @@ export default function WeeklyPlayScreen() {
       await currentSave;
       const nextPicks = { ...confirmedPicksRef.current, [propId]: answerId };
       confirmedPicksRef.current = nextPicks;
-      if (pickSaveVersionRef.current[propId] !== version) return;
+      if (pickSaveVersionRef.current[propId] !== version) return false;
+      setConfirmedPicks(nextPicks);
       setPickStatus(prev => ({ ...prev, [propId]: "saved" }));
       const context = {
         league_id: leagueId,
@@ -171,18 +181,26 @@ export default function WeeklyPlayScreen() {
         viewer_role: "member" as const,
         is_guest: !session,
       };
+      const runVariant = state.swayger_run_enabled ? "swayger_run_v1" : "legacy";
       if (!hasTrackedPickStarted.current) {
         hasTrackedPickStarted.current = true;
         Analytics.fantasyWeekPickStarted(context, {
           question_count: state.props.length,
           pick_count: Object.keys(nextPicks).length,
+          run_variant: runVariant,
+          experience_version: runVariant,
         });
       }
       Analytics.fantasyWeekPickSubmitted(context, {
         question_count: state.props.length,
         pick_count: Object.keys(nextPicks).length,
+        completed_count: Object.keys(nextPicks).length,
+        moment_index: momentIndex,
+        is_edit: wasEdit,
+        run_variant: runVariant,
+        experience_version: runVariant,
       });
-      if (
+       if (
         !hasTrackedPickCompleted.current &&
         state.props.length > 0 &&
         state.props.every((prop) => Boolean(nextPicks[prop.id]))
@@ -191,10 +209,16 @@ export default function WeeklyPlayScreen() {
         Analytics.fantasyWeekPickCompleted(context, {
           question_count: state.props.length,
           pick_count: Object.keys(nextPicks).length,
+          completed_count: Object.keys(nextPicks).length,
+          moment_index: momentIndex,
+          is_edit: wasEdit,
+          run_variant: runVariant,
+          experience_version: runVariant,
         });
       }
+       return true;
     } catch {
-      if (pickSaveVersionRef.current[propId] !== version) return;
+       if (pickSaveVersionRef.current[propId] !== version) return false;
       // Revert to previous pick
       setPicks(prev => {
         const next = { ...prev };
@@ -207,6 +231,7 @@ export default function WeeklyPlayScreen() {
         return next;
       });
       setPickStatus(prev => ({ ...prev, [propId]: "error" }));
+       return false;
     }
   };
 
@@ -366,6 +391,36 @@ export default function WeeklyPlayScreen() {
   );
   const allPicksIn  = !isLocked && pickedCount === total && allPicksSaved;
   const staleSet    = new Set(state.stale_pick_prop_ids ?? []);
+  const isFocusedRun = weeklyPlayMode(state.swayger_run_enabled) === "focused";
+
+  if (isFocusedRun) {
+    return (
+      <WeeklyFocusedRun
+        weekNumber={wn}
+        props={state.props}
+        picks={picks}
+        confirmedPicks={confirmedPicks}
+        statuses={pickStatus}
+        stalePropIds={state.stale_pick_prop_ids ?? []}
+        locked={isLocked}
+        finalized={isFinalized}
+        onPick={handlePick}
+        onShare={() => openPickShare()}
+        onBack={handleBackToLeague}
+        onLeaguePicks={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks` as any)}
+        onResults={() => router.replace(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/results` as any)}
+        shareSheet={
+          <CallYourShotSheet
+            visible={shareSheetOpen}
+            picks={shareablePicks}
+            initialPropId={sharePropId}
+            onClose={() => { setShareSheetOpen(false); setSharePropId(null); }}
+            onShared={handlePickShared}
+          />
+        }
+      />
+    );
+  }
 
   return (
     <ScrollView
