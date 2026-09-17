@@ -1,0 +1,88 @@
+The prior release-blocked status is stale.
+
+I have already pushed commit:
+
+5b613a6d0027b91ce56e7363c52e65633004c128
+
+to GitHub manually.
+
+Do not attempt another history rewrite or force-push.
+
+Please refresh/fetch origin and verify the actual remote state.
+
+Confirm:
+
+1. origin/main contains commit:
+   5b613a6d0027b91ce56e7363c52e65633004c128
+
+2. Local HEAD == origin/main.
+
+3. Ahead = 0.
+
+4. Behind = 0.
+
+5. Tracked working tree is clean.
+
+6. The one-matchup backend change is present:
+   - Madden Discord Pick Cards allow 1–7 matchups
+   - hardcoded minimum changed from 3 to 1
+   - expected minimum_matchups value is 1
+
+If all of those pass, proceed immediately to republish production.
+
+After republish, run the authenticated production one-matchup smoke test.
+
+PRODUCTION SMOKE
+
+Create one disposable Discord-created Pick Card using:
+
+- sport = madden
+- template_type = weekly_pick_card
+- exactly 1 matchup
+- minimum_matchups = 1
+- no pick_deadline
+- deadline_display_text = "Tomorrow 3pm"
+- bonus disabled
+- valid Discord guild/channel/user metadata
+
+Verify:
+
+A. Creation succeeds.
+B. Exactly one matchup prop exists.
+C. scheduled_lock_at is null.
+D. Participant can join.
+E. One saved pick completes the participant.
+F. Exactly one madden_picks_completed event is created.
+G. Editing the completed pick creates no duplicate event.
+H. Manual lock succeeds.
+I. Post-lock edit is rejected.
+J. Archive/cleanup succeeds.
+K. Active disposable rooms remaining = 0.
+
+Also confirm production boundary behavior:
+
+- 0 matchups rejected
+- 1 accepted
+- 2 accepted
+- 7 accepted
+- 8 rejected
+- same-team matchup rejected
+
+Do not modify the Discord bot yet.
+
+Return:
+
+A. Remote verification
+B. Republish status
+C. One-matchup production creation result
+D. Participation result
+E. Manual-lock result
+F. Boundary validation
+G. Cleanup result
+H. Whether Claude can now change minimum_matchups from 3 to 1
+
+End with:
+
+ONE-MATCHUP BACKEND PRODUCTION STATUS: PASS / FAIL
+PRODUCTION ONE-MATCHUP CREATE: PASS / FAIL
+READY FOR CLAUDE PAYLOAD FIX: YES / NO
