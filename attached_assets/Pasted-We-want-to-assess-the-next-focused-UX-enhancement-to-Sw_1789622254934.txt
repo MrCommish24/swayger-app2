@@ -1,0 +1,704 @@
+We want to assess the next focused UX enhancement to Swayger Fantasy Weekly.
+
+# SWAYGER RUN — PREMIUM WEEKLY PLAY UX + MY LOCK
+## ARCHITECTURE / IMPLEMENTATION ASSESSMENT ONLY
+
+Do NOT implement the feature yet.
+
+We are happy with the current Swayger Fantasy Weekly product and the newly launched:
+
+- named Swayger Moments
+- Call Your Shot / Share My Pick
+- Weekly autosave
+- guest/auth identity
+- League Picks
+- settlement
+- Weekly Results
+- Weekly Receipt
+
+We want to explore a low-cost UX upgrade that makes making Weekly picks feel less like filling out a form and more like completing a short Swayger game session.
+
+The product concept is:
+
+THE SWAYGER RUN
+
+One Moment at a time.
+Every call gets acknowledged.
+Progress builds visibly.
+Completion gets a payoff.
+The participant chooses one prediction as MY LOCK.
+MY LOCK naturally feeds into Call Your Shot.
+
+This is primarily a UX/presentation enhancement.
+
+It must NOT become:
+
+- a new scoring system
+- an XP economy
+- a streak system
+- a coin/reward system
+- an avatar system
+- a social feed
+- a complicated animation project
+- a custom gesture/dial control
+- a rewrite of Weekly Fantasy architecture
+
+Product north star:
+
+LESS LIKE FILLING OUT PICKS.
+MORE LIKE PUTTING YOUR TAKES ON THE RECORD.
+
+==================================================
+1. AUDIT THE CURRENT WEEKLY PLAY EXPERIENCE
+==================================================
+
+Inspect:
+
+- Weekly participant play route
+- Swayger Moment rendering
+- question-card component architecture
+- autosave behavior
+- optimistic vs server-confirmed answer state
+- editing an existing answer
+- completion detection
+- Call Your Shot integration
+- guest/auth flows
+- routing/resume behavior
+- mobile and web layouts
+- accessibility behavior
+- existing animation utilities
+- Expo / React Native haptic support
+- current progress or completion UI
+- current data model for picks and participants
+
+Document the current flow from:
+
+Week open
+→ first question
+→ pick save
+→ additional questions
+→ all picks completed
+→ Call Your Shot
+→ Back to League
+
+Do not modify code yet.
+
+==================================================
+2. PROPOSE THE SWAYGER RUN UX
+==================================================
+
+Assess the feasibility of presenting Weekly questions primarily one Moment at a time.
+
+Concept:
+
+WEEK 3 SWAYGER
+
+0 of 5 calls made
+
+[Swayger progress meter]
+
+SCOREBOARD KING
+
+Who will post the highest fantasy score this week?
+
+[answer options]
+
+After successful save:
+
+SELECTED ANSWER
+
+Team Jasand Shootaw
+
+ON THE RECORD ✓
+
+Then progress becomes:
+
+1 of 5 calls made
+
+and the next Moment becomes the focus.
+
+Evaluate whether this can be layered onto the existing question/pick architecture without changing prediction semantics.
+
+==================================================
+3. ONE-CARD FOCUS MODE
+==================================================
+
+Assess a focused one-card-at-a-time experience.
+
+Requirements:
+
+- one Moment receives primary visual focus
+- user still retains ability to go backward
+- previously saved picks remain editable before lock
+- no answer is lost when navigating between Moments
+- user may leave and return
+- existing picks should restore correctly
+- question count must be fully dynamic
+
+It must work equally well for:
+
+- 3 questions
+- 5 questions
+- 7 questions
+- 12 questions
+- any future supported count
+
+Do NOT design around exactly five questions.
+
+Assess:
+
+- next/back behavior
+- whether auto-advance after successful save is desirable and safe
+- whether a brief acknowledgement state should appear before advancing
+- whether swipe navigation is necessary
+
+Strong preference:
+
+Do NOT add swipe gestures in V1 unless already trivial.
+
+Buttons/taps are sufficient.
+
+==================================================
+4. SWAYGER METER
+==================================================
+
+We want a lightweight branded progress device.
+
+Concept:
+
+YOUR SWAYGER
+
+● ● ● ○ ○
+
+or a subtle branded arc/path using one segment per question.
+
+Do NOT literally draw the letter S in a way that depends on a fixed number of questions.
+
+Requirements:
+
+- dynamic based on question count
+- completed Moments visually distinct
+- current Moment visually distinct
+- unanswered Moments remain muted
+- works on small mobile screens
+- accessible
+- lightweight
+- no canvas/physics requirement
+
+Assess the best implementation using existing React Native / web primitives.
+
+Return 2–3 visual implementation options and recommend one.
+
+==================================================
+5. PICK ACKNOWLEDGEMENT MICROINTERACTION
+==================================================
+
+After the server confirms a saved answer, we want a brief premium-feeling acknowledgment.
+
+Possible controlled phrases:
+
+- ON THE RECORD
+- CALL MADE
+- YOU'RE STANDING ON IT
+- RECEIPT PENDING 👀
+
+Do not create an elaborate randomized content engine.
+
+Assess a small deterministic or lightly rotating phrase bank.
+
+Important:
+
+The acknowledgment must happen only after the current answer is successfully saved.
+
+Do not celebrate an optimistic answer that later fails to persist.
+
+Assess a lightweight visual treatment such as:
+
+- answer becomes more prominent
+- card contracts slightly
+- checkmark appears
+- small scale/fade transition
+- progress meter advances
+
+Avoid heavy animation.
+
+Respect reduced-motion preferences.
+
+==================================================
+6. HAPTICS
+==================================================
+
+Assess low-cost haptic feedback.
+
+Desired moments:
+
+A. successful answer save
+- light haptic
+
+B. final Weekly pick completed
+- slightly stronger success haptic
+
+C. MY LOCK selected
+- potentially light/medium haptic
+
+Requirements:
+
+- native only where supported
+- graceful no-op on web
+- no sound
+- no dependency that materially complicates builds
+- respect platform/accessibility expectations
+
+Determine whether the existing Expo stack already supports appropriate haptics or whether a small dependency/change is required.
+
+Return exact recommendation.
+
+==================================================
+7. COMPLETION PAYOFF
+==================================================
+
+When all required picks have been successfully saved, we want a stronger completion moment.
+
+Concept:
+
+YOUR SWAYGER IS IN.
+
+5 calls.
+Receipt pending.
+
+Then show a compact summary of the participant's calls.
+
+Do not turn this into a long results page.
+
+The emotional goal:
+
+“I completed something.”
+
+rather than:
+
+“My form saved.”
+
+Assess how this can replace or enhance the current completion state without breaking:
+
+- Back to League
+- Call Your Shot
+- editing picks before lock
+
+==================================================
+8. MY LOCK — CONFIDENCE MECHANIC
+==================================================
+
+We want to assess a simple confidence mechanic.
+
+Product name:
+
+MY LOCK
+
+Completion prompt:
+
+PICK YOUR LOCK
+
+Which call are you most confident in?
+
+The participant chooses ONE of their saved Weekly predictions.
+
+Example:
+
+MY LOCK 🔒
+
+BASEMENT WATCH
+All Eyez On Me
+
+Critical V1 rule:
+
+MY LOCK HAS NO SCORING EFFECT.
+
+It does NOT:
+
+- multiply points
+- add bonus SP
+- change settlement
+- affect leaderboard scoring
+- change odds
+- change correctness
+
+It is:
+
+- confidence
+- identity
+- expression
+- sharing
+
+Assess how best to represent and persist one selected lock per participant per Weekly competition.
+
+FIRST inspect whether the existing schema can support this safely.
+
+Possible conceptual models may include:
+
+- participant-level reference to selected prop
+- metadata
+- another existing relationship
+
+Do NOT choose or implement a schema yet.
+
+If persistence requires a schema change, document:
+
+- smallest additive model
+- uniqueness rule
+- delete/update behavior
+- guest/auth compatibility
+- archive behavior
+
+Do not write migration yet.
+
+==================================================
+9. SHOULD MY LOCK BE REQUIRED?
+==================================================
+
+Recommend whether selecting My Lock should be:
+
+A. required to complete Weekly Swayger
+B. optional
+C. strongly encouraged but skippable
+
+Product concern:
+
+We do not want one extra decision to reduce Weekly completion.
+
+Our current instinct:
+
+MY LOCK should probably be encouraged but not required.
+
+Assess and recommend.
+
+==================================================
+10. MY LOCK + CALL YOUR SHOT
+==================================================
+
+We recently built:
+
+CALL YOUR SHOT / SHARE MY PICK.
+
+Assess how MY LOCK should integrate.
+
+Desired journey:
+
+Complete picks
+→ Pick Your Lock
+→ My Lock selected
+→ Call Your Shot naturally defaults to My Lock
+→ participant can still choose another pick if desired
+
+Potential share:
+
+🔒 MY LOCK
+
+BASEMENT WATCH
+
+Darius has All Eyez On Me finishing with the fewest fantasy points this week.
+
+Who you got?
+<Week link>
+
+Do NOT implement share changes yet.
+
+Assess:
+
+- whether My Lock can become the default selected Call Your Shot pick
+- whether user should still be allowed to share another Moment
+- whether My Lock should add a small label to existing share copy
+- analytics implications
+
+Do not expose other private picks.
+
+==================================================
+11. RESUME / RETURN EXPERIENCE
+==================================================
+
+This is important.
+
+Assess what happens when a user:
+
+- completes 2 of 5 and leaves
+- completes 4 of 7 and leaves
+- returns later
+- already completed every pick
+- already selected My Lock
+- changes a previous answer
+- changes the answer that was My Lock
+
+Recommended conceptual behavior:
+
+Incomplete user:
+resume at first unanswered Moment.
+
+Completed user:
+open into completion summary / current Swayger state.
+
+If the answer attached to My Lock changes:
+My Lock remains attached to that Moment, unless there is a technical/product reason it should reset.
+
+Assess and recommend.
+
+==================================================
+12. QUESTION-TYPE EDGE CASES
+==================================================
+
+Assess the focused-card UX against:
+
+- fantasy_team questions with many answer options
+- Yes/No questions
+- multi-correct settlement questions
+- long team names
+- long Moment titles
+- long question prompts
+- variable number of teams
+- guest participant
+- authenticated participant
+- commissioner playing as participant
+- locked Week
+- settled Week
+- archived Week
+
+No scoring or settlement behavior should change.
+
+==================================================
+13. EDITING EXPERIENCE
+==================================================
+
+Before lock, participants can edit picks.
+
+Assess how editing should work in the Swayger Run.
+
+Potential pattern:
+
+Completed meter remains filled for answered Moments.
+
+User taps a completed segment / Back / Review Picks.
+
+They revisit the Moment.
+
+Changing answer:
+
+- saves normally
+- receives a smaller acknowledgement
+- does not replay the entire “completion celebration”
+- preserves completion status
+
+If they edit after selecting My Lock:
+My Lock should remain associated with the Moment.
+
+Recommend the cleanest behavior.
+
+==================================================
+14. ACCESSIBILITY + MOTION
+==================================================
+
+Audit requirements for:
+
+- reduced motion
+- screen readers
+- focus order
+- keyboard/web navigation
+- contrast
+- haptic absence
+- dynamic question count
+- progress semantics
+
+The Swayger meter must not be the only indication of completion.
+
+Text such as:
+
+3 of 5 calls made
+
+must remain available.
+
+==================================================
+15. ANALYTICS ASSESSMENT
+==================================================
+
+Do NOT automatically create a large analytics surface.
+
+Assess what incremental events/properties would actually help us determine whether the new experience improves behavior.
+
+Questions we need to answer:
+
+- Do more users finish all Weekly picks?
+- Where do people abandon the Swayger Run?
+- Do users return after leaving midway?
+- Do users select My Lock?
+- Does My Lock increase Call Your Shot sharing?
+
+Review existing events first.
+
+Prefer extending existing safe analytics where possible.
+
+Potential new events to assess:
+
+- fantasy_swayger_run_started
+- fantasy_swayger_run_completed
+- fantasy_my_lock_selected
+- fantasy_my_lock_changed
+
+Potential useful properties:
+
+- question_count
+- completed_count
+- week_number
+- template_prop_id for My Lock
+- is_guest
+- viewer_role
+
+Do NOT send:
+
+- answer labels
+- team names
+- participant names
+- private pick data
+
+Recommend the minimum necessary instrumentation.
+
+==================================================
+16. PILOT-SAFE IMPLEMENTATION STRATEGY
+==================================================
+
+We are still in pilot validation.
+
+Recommend whether this UX should be:
+
+A. applied directly to all Weekly Fantasy play
+B. hidden behind a feature flag
+C. enabled only for pilot leagues first
+D. introduced as an optional focus mode
+
+Consider:
+
+- current Food Pyramid pilot
+- active Week state
+- saved picks
+- ability to rollback
+- comparing behavior before/after
+- engineering complexity
+
+We want meaningful UX improvement without destabilizing active leagues.
+
+==================================================
+17. EXPLICIT OUT-OF-SCOPE ITEMS
+==================================================
+
+Do NOT propose building:
+
+- XP
+- coins
+- virtual currency
+- streak economies
+- treasure chests
+- avatars
+- mascot animations
+- unlockable cosmetics
+- achievement systems
+- sound effects
+- elaborate game boards
+- custom physics
+- spinning dials
+- swipe-heavy gesture systems
+- public profiles
+- social feeds
+- scoring multipliers for My Lock
+- post-settlement My Lock badges
+- another prediction architecture
+
+These are intentionally outside this experiment.
+
+==================================================
+18. ESTIMATE IMPLEMENTATION COST
+==================================================
+
+Return a practical complexity estimate for each proposed component:
+
+- one-card focus mode
+- Swayger meter
+- acknowledgement microinteraction
+- haptics
+- completion payoff
+- My Lock UI
+- My Lock persistence
+- Call Your Shot integration
+- analytics
+- accessibility/regression work
+
+Use:
+
+LOW
+MEDIUM
+HIGH
+
+Also identify:
+
+- likely files/components affected
+- schema impact
+- major regression risks
+- which pieces can ship independently
+
+==================================================
+19. RECOMMEND V1
+==================================================
+
+After the audit, recommend the smallest coherent V1 that creates noticeable “wow” without scope creep.
+
+Our current hypothesis is:
+
+1. one-card focus mode
+2. dynamic Swayger meter
+3. server-confirmed acknowledgment microinteraction
+4. lightweight haptics
+5. stronger completion payoff
+6. optional My Lock
+7. My Lock feeds naturally into Call Your Shot
+
+Stress-test this.
+
+If any part is materially more complex than its value justifies at pilot stage, say so and recommend deferring it.
+
+==================================================
+20. RETURN
+==================================================
+
+Return:
+
+# SWAYGER RUN UX ASSESSMENT
+
+1. Current Weekly play architecture
+2. Proposed user journey
+3. One-card feasibility
+4. Swayger meter recommendation
+5. Acknowledgement interaction
+6. Haptics recommendation
+7. Completion-state recommendation
+8. My Lock data-model assessment
+9. Required vs optional My Lock recommendation
+10. My Lock + Call Your Shot integration
+11. Resume/return behavior
+12. Editing behavior
+13. Edge cases
+14. Accessibility considerations
+15. Analytics recommendation
+16. Pilot rollout recommendation
+17. Component-by-component complexity
+18. Schema decision
+19. Regression risks
+20. Recommended V1
+21. Recommended implementation sequence
+22. Exact files/components likely affected
+
+Then STOP.
+
+DO NOT IMPLEMENT CODE YET.
+
+Final status:
+
+SWAYGER RUN ASSESSMENT READY
+
+or
+
+ARCHITECTURAL CONCERN IDENTIFIED
