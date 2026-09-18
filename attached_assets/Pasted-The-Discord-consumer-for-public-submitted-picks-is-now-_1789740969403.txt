@@ -1,0 +1,71 @@
+The Discord consumer for public submitted picks is now complete and pushed.
+
+Bot commit:
+
+5e7675ee11ec37f32b66f9bb8fcc4b3927dfb3c7
+
+It supports:
+
+- legacy madden_picks_completed
+- pick_card_picks_submitted
+- pick_card_picks_updated
+- delivery_sequence ordering
+- stable event-id dedupe
+- ACK only after successful Discord delivery
+- public submitted-pick rendering
+- public updated-pick rendering
+
+The bot is NOT yet restarted.
+
+We now need to safely release the backend side.
+
+FIRST: VERIFY BACKEND GIT STATUS
+
+The public-pick backend implementation was previously reported as uncommitted workspace changes.
+
+Please confirm whether those changes are now committed and pushed.
+
+If not:
+
+1. Review the current diff.
+2. Confirm it contains only the intended public-pick event implementation.
+3. Commit it with a clear message.
+4. Push to origin/main.
+5. Verify HEAD == origin/main, ahead 0, behind 0, tracked tree clean.
+
+Do not enable the feature flag yet.
+
+BACKEND RELEASE PHASE 1 — CODE LIVE, FEATURE OFF
+
+Republish the backend with:
+
+MADDEN_PUBLIC_PICK_EVENTS_ENABLED=false
+
+or unset, whichever preserves the existing disabled behavior.
+
+Verify:
+
+- backend deployment succeeds
+- pending/ACK API understands the new event schema
+- legacy madden_picks_completed delivery still works
+- no new pick_card_picks_submitted or pick_card_picks_updated events are emitted while the flag is off
+- no migration/backfill issue
+- outbox table remains service-role-only and guild isolated
+
+Do not modify the Discord bot.
+
+After deployment, stop and return:
+
+A. Backend commit hash
+B. Push confirmation
+C. Republish status
+D. Feature-flag value
+E. Confirmation new event code is deployed but disabled
+F. Confirmation legacy event behavior remains active
+G. Whether it is safe for me to restart the updated Discord bot before enabling the flag
+
+End with:
+
+PUBLIC PICK BACKEND CODE DEPLOYED: YES / NO
+PUBLIC PICK EVENTS ENABLED: YES / NO
+SAFE TO RESTART UPDATED BOT: YES / NO
