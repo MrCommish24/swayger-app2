@@ -1,0 +1,412 @@
+We are building the next Pick Card social loop:
+
+PUBLIC SUBMITTED PICKS BACK INTO DISCORD
+
+PRODUCT GOAL
+
+Today, when people make picks directly in a Madden/Discord community, everyone immediately sees what they picked.
+
+That visibility is what creates:
+
+- reactions
+- emojis
+- GIFs
+- trash talk
+- “you really think I’m losing?”
+- social pressure/accountability
+
+Our current Discord participation event only says:
+
+🔥 Darius is in.
+2 players have made their picks.
+
+That is not enough.
+
+The next V1 behavior is:
+
+When a participant completes their Pick Card, the backend should create a Discord outbox event containing the participant’s ACTUAL submitted picks so the Discord bot can publicly post them.
+
+Example future Discord post:
+
+🔥 Darius locked in
+
+Ravens over Bengals
+Bears over Lions
+Giants over Cowboys
+
+Lock it in and stand on it.
+
+IMPORTANT PRODUCT CHANGE
+
+For Pick Cards, picks are now intended to be publicly visible in the originating Discord channel immediately after a participant completes the card.
+
+This is intentional.
+
+Do NOT wait for commissioner lock to reveal these Pick Card selections.
+
+The commissioner lock still:
+- stops future edits
+- makes the card final
+- preserves receipts/accountability
+
+But public Discord pick visibility happens on submission.
+
+CURRENT INTERNAL FORMAT
+
+Continue using the current internal backend model:
+
+source = discord
+sport = madden
+template_type = weekly_pick_card
+
+Do not rename backend enums in this task.
+
+EVENT ARCHITECTURE
+
+Do NOT make the Discord bot fetch participant picks separately.
+
+The backend outbox should provide the exact public-display pick data needed by the bot.
+
+We need two social moments:
+
+1. INITIAL COMPLETION
+
+When participant transitions:
+
+incomplete -> complete
+
+create one event representing their submitted picks.
+
+Suggested event type:
+
+pick_card_picks_submitted
+
+2. MATERIAL EDIT AFTER COMPLETION
+
+If a participant who is already complete changes one or more saved selections before commissioner lock:
+
+create a new event representing the UPDATED complete pick set.
+
+Suggested event type:
+
+pick_card_picks_updated
+
+Do NOT create an update event when:
+- they resubmit identical selections
+- no selected answer actually changed
+- they refresh
+- they simply reread the room
+- card is locked
+- deadline/write rules otherwise prohibit the edit
+
+WHY UPDATES MATTER
+
+Once picks are publicly posted into Discord, a participant must not be able to silently change them on Swayger while Discord continues showing the old choices.
+
+For V1, do NOT edit the previous Discord message.
+
+Instead, create a new update event so the bot can post something like:
+
+✏️ Darius updated their picks
+
+Ravens over Bengals
+Lions over Bears
+Giants over Cowboys
+
+This preserves accountability and is much simpler than Discord message-ID tracking.
+
+OUTBOX DATA
+
+Each submitted/updated event should contain enough information for the external bot to render the picks without requesting any participant-selection endpoint.
+
+At minimum:
+
+- id
+- event_type
+- room_id
+- card_id
+- participant_id
+- room_code
+- room_name
+- week_label
+- discord_guild_id
+- discord_channel_id
+- participant_display_name
+- completed_participant_count
+- submission_version or equivalent monotonic participant-card version
+- picks
+- created_at
+- delivered_at
+
+PICKS SHAPE
+
+Use a safe structured display payload.
+
+For each matchup selection, include only public display information, such as:
+
+{
+  "prop_id": "...",
+  "matchup_label": "Ravens vs Bengals",
+  "selected_option": "Ravens",
+  "line_text": "-7",
+  "display_order": 1
+}
+
+Do NOT require the Discord bot to reconstruct team names from IDs.
+
+Do NOT expose:
+- internal answer IDs unless required internally
+- auth tokens
+- guest tokens
+- private participant metadata
+- settlement/correctness
+- scores
+- winner status
+
+For the current Pick Card flow there is no bonus prop, but design the serialization so playable props remain deterministic if bonus returns later.
+
+DISPLAY ORDER
+
+Picks must be returned in card/prop display order.
+
+Example:
+
+Ravens vs Bengals
+Bears vs Lions
+Giants vs Cowboys
+
+not arbitrary database order.
+
+PUBLIC DISPLAY SEMANTICS
+
+For each normal two-team matchup:
+
+matchup_label should represent:
+
+Team A vs Team B
+
+selected_option should be the participant’s selected team.
+
+line_text may be included as context but is optional in the future bot rendering.
+
+The backend should NOT generate conversational phrases like:
+
+Ravens over Bengals
+
+That belongs in the Discord bot presentation layer.
+
+EVENT VERSIONING / IDEMPOTENCY
+
+We need durable protection against duplicates while still allowing legitimate edits.
+
+The existing one-event-per-room+participant completion uniqueness is not sufficient for this new model.
+
+Design the smallest robust versioning strategy.
+
+Preferred concept:
+
+- participant/card has a submission version
+- initial complete submission = version 1
+- each material complete-pick change increments version
+- outbox uniqueness prevents duplicate event creation for the same:
+  room + participant + submission version
+
+Equivalent design is acceptable if cleaner in current schema.
+
+Requirements:
+
+- initial completion emits exactly once
+- identical resubmission emits nothing
+- one changed pick emits exactly one update event
+- two later material edits can each emit their own event
+- concurrent duplicate writes cannot generate duplicate social events
+
+Do not rely solely on process memory.
+
+PARTIAL EDIT BEHAVIOR
+
+A participant should normally remain complete because edits replace existing selections.
+
+If the existing write model can temporarily produce an incomplete state, do not emit a public update until the participant has a complete valid pick set again.
+
+COMPLETED PARTICIPANT COUNT
+
+Keep completed_participant_count behavior.
+
+The count represents unique participants who have completed the card, not number of submission/update events.
+
+Therefore:
+
+Darius first submission -> count 1
+Darius updates -> count still 1
+Mike submits -> count 2
+Mike updates -> count still 2
+
+BOT DELIVERY API
+
+Reuse the existing database-backed pending/ack outbox delivery system.
+
+Prefer extending:
+
+GET /api/gameday/bot/madden-participation-events
+
+and the existing ACK endpoint
+
+rather than creating redundant polling infrastructure, if clean.
+
+The pending endpoint should now be able to return the new submitted/updated event types.
+
+Guild isolation and bot authorization remain exactly as before.
+
+ACK remains:
+- only after successful Discord delivery
+- idempotent
+- failed/unacknowledged events remain retryable
+
+MIGRATION / EXISTING EVENTS
+
+Do not rewrite historical delivered events.
+
+Existing madden_picks_completed rows may remain historical.
+
+Do not fabricate submitted-pick events for old participants.
+
+Only new qualifying writes after deployment should create the new event types.
+
+If the existing outbox table needs additive columns or indexes:
+- create a safe additive migration
+- service-role only
+- RLS forced
+- no historical backfill
+
+CURRENT PARTICIPATION EVENT
+
+Determine whether the old:
+
+madden_picks_completed
+
+event should continue being emitted.
+
+My preference:
+
+Do NOT emit both “Darius is in” and “Darius locked in with Ravens/Bears/Giants” for the same completion.
+
+That would create duplicate/noisy Discord activity.
+
+For eligible Pick Cards after this feature ships, the new submitted-picks event should replace the old completion social event.
+
+The completed participant count should still be included in the new event.
+
+Keep legacy behavior only where required for compatibility.
+
+MANUAL LOCK
+
+Manual lock remains unchanged:
+
+- while open, participant may update picks
+- updates are publicly surfaced through update events
+- after lock, writes are rejected
+- no new submitted/updated event can occur after lock
+
+Because picks are now public before lock, the Discord lock copy will eventually need to stop saying “Receipts are revealed.”
+
+Do NOT modify the external Discord bot in this task.
+
+But report that copy implication in the final contract for Claude.
+
+SECURITY / PRIVACY
+
+This is an intentional product decision for Discord-created Pick Cards only.
+
+Do NOT make picks public for:
+- web-created Madden cards
+- NFL Game Day
+- NBA Game Day
+- Fantasy
+- other room formats
+
+Only:
+
+source = discord
+sport = madden
+template_type = weekly_pick_card
+
+with valid discord_guild_id and discord_channel_id.
+
+TESTING REQUIRED
+
+Test at minimum:
+
+1. Partial participant -> no event.
+2. Final required pick -> one pick_card_picks_submitted event.
+3. Event contains exact selected options.
+4. Event contains matchup labels.
+5. Picks ordered correctly.
+6. No correctness/settlement data exposed.
+7. Identical resubmission -> no event.
+8. One changed pick after completion -> one pick_card_picks_updated event.
+9. Update event contains the full CURRENT pick set, not only the changed prop.
+10. Second material edit -> another distinct update event.
+11. No duplicate for concurrent identical edit.
+12. Initial submission version and update versions are deterministic/monotonic.
+13. Darius submit count = 1.
+14. Darius update count remains 1.
+15. Mike submit count = 2.
+16. Mike update count remains 2.
+17. Locked card cannot emit update.
+18. Archived room cannot emit event.
+19. Finalized room cannot emit event.
+20. Web-created Madden emits none.
+21. Non-Madden Game Day emits none.
+22. Existing pending endpoint returns new submitted event.
+23. Existing pending endpoint returns new updated event.
+24. Correct guild can fetch.
+25. Other guild cannot fetch.
+26. ACK submitted event works.
+27. ACK updated event works.
+28. Unacked event remains pending.
+29. Acked event disappears from pending.
+30. Existing participation/outbox regressions remain green.
+31. One-matchup Pick Card works.
+32. Seven-matchup Pick Card works.
+33. Manual-lock behavior remains green.
+34. Discord isolation remains green.
+35. NFL/NBA/Fantasy regressions remain green.
+
+DO NOT:
+
+- modify external Discord bot repo
+- post anything to Discord
+- expose picks outside eligible Discord Pick Cards
+- add Discord identity linking
+- add automatic lock
+- add settlement automation
+- add winner events
+- add Discord message editing
+- change Pick Card creation UX
+
+RETURN
+
+A. Final event architecture
+B. Initial-submission behavior
+C. Update behavior
+D. Submission-version/idempotency design
+E. Exact picks payload
+F. Completed-participant-count behavior
+G. Old madden_picks_completed compatibility decision
+H. Pending/ACK API changes
+I. Security/guild isolation
+J. Migration/schema changes
+K. Files changed
+L. Tests/assertion counts
+M. Regression results
+N. Commit hash
+O. Push/republish requirements
+P. Exact API/event contract Claude needs
+Q. Lock-copy implication now that picks are publicly visible before lock
+
+End with:
+
+PUBLIC PICK OUTBOX STATUS: PASS / FAIL
+PICK UPDATES ACCOUNTABLE: YES / NO
+READY TO HAND TO CLAUDE: YES / NO
