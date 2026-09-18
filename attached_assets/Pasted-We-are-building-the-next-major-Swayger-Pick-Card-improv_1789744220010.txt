@@ -1,0 +1,540 @@
+We are building the next major Swayger Pick Card improvement:
+
+INCREMENTAL MATCHUP-BY-MATCHUP SETTLEMENT
+
+PRODUCT CONTEXT
+
+Swayger Discord Pick Cards are now working end to end:
+
+- commissioner creates a Pick Card in Discord
+- actual matchups display publicly
+- participants click into Swayger and make structured picks
+- submitted picks are posted publicly back into Discord
+- material edits are also posted publicly
+- commissioner manually locks the card
+- after lock, picks cannot change
+
+The next problem is settlement.
+
+In the existing native Madden Discord workflow, a commissioner may eventually mark a participant with a simple ❌ if one of their picks lost.
+
+That is easy, but weak:
+
+- participants cannot see which pick was wrong
+- commissioner must manually inspect everybody’s picks
+- results are not structured
+- partial progress is not visible
+- late games cannot update dynamically
+
+Swayger can do materially better.
+
+CORE PRODUCT PRINCIPLE
+
+The commissioner should resolve each matchup ONCE.
+
+Swayger should automatically apply that result across every participant.
+
+If a Pick Card has 7 matchups and 16 participants, the commissioner should resolve 7 game outcomes — not manually audit 112 individual picks.
+
+SETTLEMENT MODEL
+
+Keep these three concepts distinct:
+
+1. LOCK
+   - no more participant edits
+
+2. SETTLE
+   - commissioner records the result of ONE matchup
+   - can happen one matchup at a time as games finish
+
+3. FINALIZE
+   - only after all required matchups are settled
+   - calculates/finalizes final standings
+
+Desired lifecycle:
+
+OPEN
+↓
+LOCKED
+↓
+Matchup 1 settled
+Matchup 2 unsettled
+Matchup 3 settled
+...
+↓
+ALL MATCHUPS SETTLED
+↓
+FINALIZE
+↓
+FINAL STANDINGS
+
+DO NOT require all matchups to be settled at once.
+
+EXISTING ARCHITECTURE
+
+We already have Game Day prop settlement concepts and an endpoint historically shaped like:
+
+PATCH /api/gameday/props/:propId/settle
+
+and room finalization.
+
+Before changing architecture, inspect the existing settlement implementation and reuse it where correct.
+
+Do NOT build an unnecessary parallel settlement system if current prop-level settlement already supports the required semantics.
+
+This task is specifically about making the existing system support this Pick Card workflow cleanly.
+
+SCOPE
+
+This V1 applies to:
+
+source = discord
+sport = madden
+template_type = weekly_pick_card
+
+But avoid unnecessarily hardcoding behavior if the existing Game Day settlement model can support it generically.
+
+COMMISSIONER CAPABILITY NEEDED
+
+The backend must expose enough structured data for a future Discord command:
+
+/swayger gameday resolve
+
+to:
+
+1. identify the active Pick Card
+2. list unresolved matchups
+3. choose one matchup
+4. choose the winning option
+5. settle that matchup
+6. return updated progress
+7. repeat later for another matchup
+
+Do NOT build the external Discord bot command in this task.
+
+BACKEND SETTLEMENT REQUIREMENTS
+
+For each matchup/prop:
+
+status should clearly distinguish:
+
+- open/unsettled
+- settled
+
+and expose:
+
+- prop_id
+- question / matchup label
+- answer options
+- current settlement status
+- correct_answer, if settled
+- display order
+
+Example:
+
+{
+  "prop_id": "uuid",
+  "matchup_label": "Bears vs Jags",
+  "options": ["Bears", "Jags"],
+  "status": "open",
+  "correct_answer": null,
+  "display_order": 0
+}
+
+After settlement:
+
+{
+  "prop_id": "uuid",
+  "matchup_label": "Bears vs Jags",
+  "options": ["Bears", "Jags"],
+  "status": "settled",
+  "correct_answer": "Bears",
+  "display_order": 0
+}
+
+VALIDATION
+
+A settlement must:
+
+- be commissioner/host authorized
+- only accept one of the prop’s valid answer options
+- reject malformed/unknown answer values
+- reject cross-room prop access
+- preserve guild/room security
+- be idempotent when setting the same correct answer again
+
+CORRECTIONS
+
+Commissioners make mistakes.
+
+We need a safe V1 correction path.
+
+If an already-settled matchup is changed from:
+
+Bears
+
+to:
+
+Jags
+
+the system should:
+
+- permit the correction only for an authorized host/admin
+- recalculate affected participant correctness
+- preserve an audit trail / settlement event
+- return that the result was corrected
+- NOT require database surgery
+
+Do not build a complicated approval workflow.
+
+Simple authorized correction + auditability is enough.
+
+PARTICIPANT PICK RESULT STATE
+
+Each participant pick should now be able to render one of:
+
+PENDING / UNSETTLED
+CORRECT
+INCORRECT
+
+Example participant card:
+
+✅ Bears
+✅ Ravens
+⏳ Giants
+❌ Raiders
+
+Use existing gameday_picks.is_correct if appropriate.
+
+Semantics:
+
+- prop not settled → is_correct should remain null
+- prop settled + selected correct option → true
+- prop settled + selected wrong option → false
+
+Do not prematurely mark unsettled picks false.
+
+PARTICIPANT WEB EXPERIENCE
+
+Update the Pick Card participant/receipt view after lock so that each matchup clearly shows status.
+
+Desired visual concept:
+
+Who wins: Bears vs Jags?
+✅ Bears (you)
+
+Who wins: Ravens vs Bengals?
+❌ Ravens (you)
+
+Who wins: Giants vs Cowboys?
+⏳ Giants (you)
+
+The exact styling may follow existing design conventions.
+
+Important:
+
+The participant should be able to tell WHICH pick is right/wrong/pending.
+
+Do not only show a whole-card win/loss indicator.
+
+LOCKED STATE COPY
+
+The current web copy still includes stale reveal language such as:
+
+"Picks are locked. Receipts are revealed."
+
+That is no longer correct because Discord picks are publicly visible before lock.
+
+Update the locked-state copy to something like:
+
+Picks are locked.
+No more changes. Results will update as matchups are settled.
+
+Keep "Final Receipts" as the later completed state if appropriate.
+
+SETTLEMENT PROGRESS
+
+Expose card-level settlement progress.
+
+Example:
+
+{
+  "total_matchups": 7,
+  "settled_matchups": 3,
+  "remaining_matchups": 4,
+  "all_settled": false
+}
+
+This is important for the future Discord commissioner flow.
+
+FINALIZATION RULE
+
+A Pick Card should not finalize until all required playable matchups are settled.
+
+If finalization is attempted early:
+
+return a clear response such as:
+
+{
+  "error": "Cannot finalize while matchups remain unsettled",
+  "remaining_matchups": 2
+}
+
+Do not silently finalize incomplete cards.
+
+When all matchups are settled:
+
+- finalization remains explicit
+- calculate existing leaderboard/final standings
+- preserve current scoring_mode = all_correct behavior unless existing architecture already defines something else
+
+For all_correct:
+
+- participant is perfect only if every required pick is correct
+- any false pick means they did not hit the full card
+- pending state exists until all required props are settled
+
+Do not invent new scoring modes.
+
+COMMISSIONER SETTLEMENT QUEUE API
+
+We need a clean contract for Claude.
+
+Prefer extending existing room detail/admin APIs if clean.
+
+Otherwise expose a small bot-authenticated endpoint such as:
+
+GET /api/gameday/bot/rooms/:roomId/settlement
+
+or equivalent existing architecture.
+
+It should return:
+
+- room_id
+- room_code
+- room_name
+- card_id
+- card status
+- total_matchups
+- settled_matchups
+- remaining_matchups
+- all_settled
+- matchups ordered by display_order
+
+For each matchup:
+
+- prop_id
+- matchup_label
+- options
+- status
+- correct_answer
+- display_order
+
+Do NOT return unnecessary participant PII.
+
+SETTLE API
+
+Prefer existing:
+
+PATCH /api/gameday/props/:propId/settle
+
+if it already satisfies the contract.
+
+If bot auth currently cannot call it, add the smallest appropriate bot-authenticated path or authorization support.
+
+The future Discord bot needs to be able to send:
+
+{
+  "correct_answer": "Bears"
+}
+
+and receive:
+
+{
+  "ok": true,
+  "prop_id": "...",
+  "correct_answer": "Bears",
+  "corrected": false,
+  "settled_matchups": 3,
+  "remaining_matchups": 4,
+  "all_settled": false,
+  "participants_updated": 16
+}
+
+If a previous answer existed and changed:
+
+{
+  "corrected": true
+}
+
+Exact shape may differ if existing architecture suggests something cleaner.
+
+AUDIT
+
+Each settlement should be auditable.
+
+Record enough to know:
+
+- room
+- prop
+- previous answer
+- new answer
+- settlement/correction
+- actor/source if currently available
+- timestamp
+
+Reuse gameday_events if appropriate.
+
+Possible event types:
+
+prop_settled
+prop_settlement_corrected
+
+or existing equivalents.
+
+Do NOT overbuild a new audit subsystem.
+
+NO AUTOMATIC GAME DATA
+
+Do not:
+
+- integrate EA
+- integrate ESPN
+- scrape scores
+- auto-settle based on APIs
+- infer winners
+
+This is manual commissioner settlement V1.
+
+NO DISCORD SOCIAL RESULT POSTS YET
+
+Do not create new Discord result events yet.
+
+For V1 we first need:
+
+- settlement correctness
+- participant receipt updates
+- commissioner convenience
+
+Later we can decide whether Discord should post things like:
+
+"✅ Bears settled — 6 players still perfect."
+
+Do not build that now.
+
+TESTING REQUIRED
+
+Test at minimum:
+
+1. Locked Pick Card exposes all unresolved matchups.
+2. Matchups ordered correctly.
+3. Commissioner settles one matchup.
+4. Only that matchup becomes settled.
+5. Other matchups remain pending.
+6. Correct participant picks become true.
+7. Incorrect participant picks become false.
+8. Unsettled participant picks remain null.
+9. Settlement updates all participants for that prop.
+10. Same answer re-submitted is idempotent.
+11. Different answer on settled prop is treated as correction.
+12. Correction recalculates participant correctness.
+13. Correction is audited.
+14. Invalid answer rejected.
+15. Unknown prop rejected.
+16. Cross-room unauthorized access rejected.
+17. Unauthorized user/bot rejected.
+18. Open/unlocked-card settlement behavior follows existing policy — document whether allowed; preferred Pick Card behavior is settle after lock.
+19. Archived room rejected.
+20. Finalized room rejected from further settlement unless current architecture deliberately permits correction.
+21. Progress total/settled/remaining counts correct.
+22. all_settled false while anything remains.
+23. all_settled true after final matchup settled.
+24. Early finalize rejected.
+25. Finalize succeeds once all required matchups settled.
+26. One-matchup Pick Card works.
+27. Seven-matchup Pick Card works.
+28. all_correct scoring remains correct.
+29. Participant web page shows pending state.
+30. Participant web page shows correct state.
+31. Participant web page shows incorrect state.
+32. Mixed ✅ / ❌ / ⏳ display works.
+33. Locked copy no longer says receipts are revealed.
+34. Existing Pick Card creation remains green.
+35. Public-pick outbox remains green.
+36. Public-pick updates remain green.
+37. Lock remains green.
+38. Leaderboard remains green.
+39. NFL Game Day regression remains green.
+40. NBA Game Day regression remains green.
+41. Fantasy regression remains green.
+42. Discord room isolation remains green.
+
+IMPORTANT UX QUESTION
+
+Inspect how the current leaderboard behaves during partial settlement.
+
+Do not make a large redesign unless necessary.
+
+Report:
+
+- what leaderboard currently shows after 1 of 3 matchups settles
+- whether it is meaningful or misleading
+- whether we should suppress/rank differently before finalization
+
+Do not make speculative product changes without reporting first unless the existing behavior is clearly broken.
+
+DO NOT MODIFY
+
+- external Discord bot repo
+- Pick Card creation command
+- public-pick submitted/updated event system
+- participant identity model
+- Discord display-name handling
+- EA integrations
+- reward administration
+- automatic settlement
+- sponsor/reward systems
+
+BUILD / VERIFY
+
+Run the focused Madden/Pick Card tests plus relevant Game Day regressions.
+
+Run the production server build.
+
+If schema changes are needed:
+- additive migration only
+- no destructive changes
+- no unsafe backfill
+- preserve current data
+
+Do not publish until implementation and tests pass.
+
+RETURN
+
+A. Existing settlement architecture found
+B. What was reused vs added
+C. Final incremental-settlement model
+D. Settlement queue/API contract
+E. Settle/correction API contract
+F. Participant correctness semantics
+G. Participant receipt/web UX
+H. Locked-copy changes
+I. Settlement progress behavior
+J. Finalization rule
+K. Correction/audit behavior
+L. Partial-settlement leaderboard behavior
+M. Schema/migration changes
+N. Files changed
+O. Tests/assertion counts
+P. Regression results
+Q. Commit hash
+R. Push status
+S. Publish requirements
+T. Exact API contract Claude needs for /swayger gameday resolve
+
+End with:
+
+INCREMENTAL SETTLEMENT STATUS: PASS / FAIL
+PARTIAL RECEIPTS STATUS: PASS / FAIL
+CORRECTION PATH STATUS: PASS / FAIL
+READY TO HAND TO CLAUDE: YES / NO
