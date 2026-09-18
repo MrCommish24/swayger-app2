@@ -1,0 +1,88 @@
+We just completed a live Discord Pick Card settlement test.
+
+There is a regression/configuration issue with public submitted picks.
+
+EXPECTED
+
+Eligible Discord Madden weekly Pick Cards should emit:
+
+pick_card_picks_submitted
+
+and material edits should emit:
+
+pick_card_picks_updated
+
+The Discord bot then renders the actual selections publicly.
+
+ACTUAL LIVE RESULT
+
+Two new participants submitted complete picks to a newly created Discord Pick Card.
+
+Discord rendered the legacy messages:
+
+"🔥 Mr Roarke is in.
+1 player has made their picks."
+
+and:
+
+"🔥 Resolve Tester 1 is in.
+2 players have made their picks."
+
+This proves the bot received madden_picks_completed rather than pick_card_picks_submitted.
+
+The public-pick feature worked previously.
+
+Please diagnose production only. Do not change code until the cause is identified.
+
+VERIFY:
+
+1. Current production value of:
+   MADDEN_PUBLIC_PICK_EVENTS_ENABLED
+
+2. Whether the currently running production instances actually started with:
+   MADDEN_PUBLIC_PICK_EVENTS_ENABLED=true
+
+3. Inspect the new room:
+   GDS-4M9GN
+
+4. Inspect participation/outbox events for that room.
+
+Report:
+- event_type
+- participant
+- submission_version
+- created_at
+- whether picks payload exists
+
+5. Determine whether those submissions used:
+   - the new public-pick-enabled RPC invocation
+   or
+   - the legacy three-argument invocation
+
+6. Confirm whether the latest incremental-settlement publish accidentally changed or lost the production feature-flag environment.
+
+7. Confirm that the deployed code still contains the public-pick event path and that no settlement work reverted it.
+
+8. Do not modify historical rows.
+9. Do not fabricate events.
+10. Do not change the Discord bot.
+
+Return:
+
+A. Current feature-flag value
+B. Running-process feature-flag status
+C. Event rows for room GDS-4M9GN
+D. Event types emitted
+E. Whether picks payloads were created
+F. RPC path used
+G. Root cause
+H. Exact remediation required
+I. Whether code change is required
+J. Whether only an environment/redeploy fix is required
+
+End with:
+
+PUBLIC PICK EVENT REGRESSION ROOT CAUSE: <cause>
+CODE CHANGE REQUIRED: YES / NO
+REDEPLOY REQUIRED: YES / NO
+READY TO RESTORE PUBLIC PICK POSTS: YES / NO
