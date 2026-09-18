@@ -97,3 +97,6 @@ GAMEDAY_ADMIN_EMAILS = "darius@leagueswype.com,play@leagueswype.com"
 
 [userenv.development]
 SWAYGER_RUN_LEAGUE_IDS = "3b62f810-418b-4461-8022-5436afd1e989"
+
+[userenv.production]
+MADDEN_PUBLIC_PICK_EVENTS_ENABLED = "true"
