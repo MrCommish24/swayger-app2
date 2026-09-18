@@ -9729,8 +9729,8 @@ function registerGamedayRoutes(app2) {
         return;
       }
       const { data, error } = await getServiceSupabase().from("gameday_madden_participation_events").select(
-        "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, created_at, delivered_at"
-      ).eq("discord_guild_id", guildId).is("delivered_at", null).order("created_at", { ascending: true }).limit(limit);
+        "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, submission_version, delivery_sequence, picks, created_at, delivered_at"
+      ).eq("discord_guild_id", guildId).is("delivered_at", null).order("delivery_sequence", { ascending: true, nullsFirst: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
       if (error) {
         console.error("[gameday] Madden participation event fetch failed:", error.message);
         res2.status(503).json({
@@ -11329,11 +11329,16 @@ ${publicLink2}`;
       let error = null;
       let activityEvent = null;
       if (isDiscordMaddenWeekly) {
-        const rpc = await supabase.rpc("submit_madden_pick_with_activity", {
+        const publicPickEventsEnabled = process.env.MADDEN_PUBLIC_PICK_EVENTS_ENABLED === "true";
+        const rpcArgs = {
           p_prop_id: propId,
           p_participant_id: participant.id,
           p_selected_answer: selected_answer
-        });
+        };
+        if (publicPickEventsEnabled) {
+          rpcArgs.p_public_pick_events_enabled = true;
+        }
+        const rpc = await supabase.rpc("submit_madden_pick_with_activity", rpcArgs);
         error = rpc.error;
         const result = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
         if (result) {
@@ -11348,7 +11353,9 @@ ${publicLink2}`;
           activityEvent = result.event_id ? {
             id: result.event_id,
             inserted: result.event_inserted,
-            completed_participant_count: result.completed_participant_count
+            completed_participant_count: result.completed_participant_count,
+            event_type: result.event_type,
+            submission_version: result.submission_version
           } : null;
         }
       } else {

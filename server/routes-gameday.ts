@@ -1843,7 +1843,8 @@ export function registerGamedayRoutes(app: Express) {
 
   // ── Bot: Madden participation activity delivery ───────────────────────────
   // These routes expose durable outbox records only. The backend never calls
-  // Discord and never includes participant selections in the response.
+  // Discord. Eligible submitted/updated events include only their intentionally
+  // public display snapshot; historical completion events remain compatible.
   app.get(
     "/api/gameday/bot/madden-participation-events",
     async (req: Request, res: Response) => {
@@ -1871,11 +1872,13 @@ export function registerGamedayRoutes(app: Express) {
       const { data, error } = await getServiceSupabase()
         .from("gameday_madden_participation_events")
         .select(
-          "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, created_at, delivered_at",
+          "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, submission_version, delivery_sequence, picks, created_at, delivered_at",
         )
         .eq("discord_guild_id", guildId)
         .is("delivered_at", null)
+        .order("delivery_sequence", { ascending: true, nullsFirst: true })
         .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
         .limit(limit);
 
       if (error) {
@@ -4067,11 +4070,17 @@ export function registerGamedayRoutes(app: Express) {
         // SECURITY DEFINER RPC. A failed RPC rolls back the pick as well as the
         // event; this is safer than permanently saving a completion that the
         // bot can never deliver.
-        const rpc = await supabase.rpc("submit_madden_pick_with_activity", {
+        const publicPickEventsEnabled =
+          process.env.MADDEN_PUBLIC_PICK_EVENTS_ENABLED === "true";
+        const rpcArgs: Record<string, unknown> = {
           p_prop_id: propId,
           p_participant_id: participant.id,
           p_selected_answer: selected_answer,
-        });
+        };
+        if (publicPickEventsEnabled) {
+          rpcArgs.p_public_pick_events_enabled = true;
+        }
+        const rpc = await supabase.rpc("submit_madden_pick_with_activity", rpcArgs);
         error = rpc.error;
         const result = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
         if (result) {
@@ -4088,6 +4097,8 @@ export function registerGamedayRoutes(app: Express) {
                 id: result.event_id,
                 inserted: result.event_inserted,
                 completed_participant_count: result.completed_participant_count,
+                event_type: result.event_type,
+                submission_version: result.submission_version,
               }
             : null;
         }

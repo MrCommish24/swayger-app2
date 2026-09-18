@@ -44,11 +44,15 @@ async function main() {
   const userIds: string[] = [];
   const roomIds: string[] = [];
 
-  const migrationCheck = await service.from("gameday_madden_participation_events").select("id").limit(1);
+  const migrationCheck = await service
+    .from("gameday_madden_participation_events")
+    .select("id, submission_version, picks")
+    .limit(1);
   const rpcCheck = await service.rpc("submit_madden_pick_with_activity", {
     p_prop_id: "00000000-0000-0000-0000-000000000000",
     p_participant_id: "00000000-0000-0000-0000-000000000000",
     p_selected_answer: "migration-check",
+    p_public_pick_events_enabled: true,
   });
   const migrationProblems: string[] = [];
   if (migrationCheck.error) {
@@ -59,11 +63,12 @@ async function main() {
   }
   if (migrationProblems.length) {
     throw new Error(
-      `Madden participation migration is not fully applied. Apply supabase/gameday-madden-participation-events.sql first (${migrationProblems.join("; ")})`,
+      `Madden public-pick migration is not fully applied. Apply supabase/gameday-madden-public-pick-events.sql after the participation migration (${migrationProblems.join("; ")})`,
     );
   }
 
   const { registerGamedayRoutes } = await import("./routes-gameday");
+  process.env.MADDEN_PUBLIC_PICK_EVENTS_ENABLED = "true";
   process.env.GAMEDAY_HOST_EMAILS = `${runId}-host@example.test`;
   process.env.GAMEDAY_ADMIN_EMAILS = process.env.GAMEDAY_HOST_EMAILS;
   const app = express();
@@ -143,7 +148,13 @@ async function main() {
       }
     };
     const eventRows = async (roomId: string) => {
-      const result = await service.from("gameday_madden_participation_events").select("*").eq("room_id", roomId).order("created_at");
+      const result = await service
+        .from("gameday_madden_participation_events")
+        .select("*")
+        .eq("room_id", roomId)
+        .order("delivery_sequence", { ascending: true, nullsFirst: true })
+        .order("created_at")
+        .order("id");
       if (result.error) throw result.error;
       return result.data ?? [];
     };
@@ -175,13 +186,19 @@ async function main() {
       body: { selected_answer: singleMatchup.props[0].answer_options[0] },
     });
     expect("one saved pick completes the one-matchup participant", singlePick.status === 200);
-    expect("one completion creates exactly one event", (await eventRows(singleMatchup.roomId)).length === 1);
+    let singleEvents = await eventRows(singleMatchup.roomId);
+    expect("one saved pick emits one submitted event", singleEvents.length === 1 && singleEvents[0]?.event_type === "pick_card_picks_submitted");
+    expect("one-matchup submission starts at version 1", singleEvents[0]?.submission_version === 1);
+    expect("one-matchup event carries its exact public pick", singleEvents[0]?.picks?.length === 1 && singleEvents[0].picks[0]?.matchup_label === "Bears vs Jags");
     await request(baseUrl, `/api/gameday/props/${singleMatchup.props[0].id}/pick`, {
       method: "POST",
       guest: singleGuest,
       body: { selected_answer: singleMatchup.props[0].answer_options[1] },
     });
-    expect("editing the completed one-matchup pick creates no duplicate event", (await eventRows(singleMatchup.roomId)).length === 1);
+    singleEvents = await eventRows(singleMatchup.roomId);
+    expect("editing completed one-matchup pick emits one update", singleEvents.length === 2 && singleEvents[1]?.event_type === "pick_card_picks_updated");
+    expect("one-matchup update increments version", singleEvents[1]?.submission_version === 2);
+    expect("one-matchup update carries the current choice", singleEvents[1]?.picks?.[0]?.selected_option === singleMatchup.props[0].answer_options[1]);
     const singleLock = await request(baseUrl, `/api/gameday/cards/${singleMatchup.card.id}/lock`, {
       method: "PATCH",
       bot: true,
@@ -200,8 +217,7 @@ async function main() {
       guild,
     });
     expect("one-matchup room archives successfully", singleArchive.status === 200 && singleArchive.body.ok === true);
-    const singleEvent = (await eventRows(singleMatchup.roomId))[0];
-    if (singleEvent?.id) {
+    for (const singleEvent of await eventRows(singleMatchup.roomId)) {
       await request(baseUrl, `/api/gameday/bot/madden-participation-events/${singleEvent.id}/ack`, {
         method: "POST",
         bot: true,
@@ -234,10 +250,26 @@ async function main() {
     expect("partial authenticated participant creates no event", (await eventRows(room.roomId)).length === 0);
     await request(baseUrl, `/api/gameday/props/${room.props[3].id}/pick`, { method: "POST", token: player.token, body: { selected_answer: room.props[3].answer_options[0] } });
     let events = await eventRows(room.roomId);
-    expect("final required authenticated pick creates one event", events.length === 1);
+    expect("final required authenticated pick creates one submitted event", events.length === 1 && events[0]?.event_type === "pick_card_picks_submitted");
     expect("enabled bonus is required for completion", events[0]?.completed_participant_count === 1);
     expect("event stores participant display and delivery context", !!events[0]?.participant_display_name && events[0]?.discord_guild_id === guild && !!events[0]?.discord_channel_id);
-    expect("event does not persist selections", !("selected_answer" in (events[0] ?? {})) && !("metadata" in (events[0] ?? {})));
+    expect("initial submission version is one", events[0]?.submission_version === 1);
+    expect("event persists the full playable pick set", events[0]?.picks?.length === room.props.length);
+    expect(
+      "event picks preserve display order",
+      events[0]?.picks?.every((pick: any, index: number, all: any[]) =>
+        index === 0 || pick.display_order >= all[index - 1].display_order),
+    );
+    expect(
+      "event contains exact matchup labels and selected options",
+      events[0]?.picks?.[0]?.matchup_label === "Ravens vs Bengals"
+        && events[0]?.picks?.[0]?.selected_option === "Ravens"
+        && events[0]?.picks?.[0]?.line_text === "Ravens -3",
+    );
+    expect(
+      "public picks expose no correctness, settlement, score, or winner data",
+      !/(is_correct|correct_answer|settlement|score|winner)/i.test(JSON.stringify(events[0]?.picks)),
+    );
 
     await pickAll(room, { token: player.token });
     events = await eventRows(room.roomId);
@@ -246,27 +278,46 @@ async function main() {
     expect("refresh/readback does not duplicate", events.length === 1);
     expect("identical resubmission does not duplicate", events.length === 1);
     await request(baseUrl, `/api/gameday/props/${room.props[0].id}/pick`, { method: "POST", token: player.token, body: { selected_answer: room.props[0].answer_options[1] } });
-    expect("edit after completion does not duplicate", (await eventRows(room.roomId)).length === 1);
+    events = await eventRows(room.roomId);
+    expect("one changed pick emits exactly one updated event", events.length === 2 && events[1]?.event_type === "pick_card_picks_updated");
+    expect("first update increments submission version", events[1]?.submission_version === 2);
+    expect("update contains the full current pick set", events[1]?.picks?.length === room.props.length && events[1]?.picks?.[0]?.selected_option === room.props[0].answer_options[1]);
+    await Promise.all([
+      request(baseUrl, `/api/gameday/props/${room.props[0].id}/pick`, { method: "POST", token: player.token, body: { selected_answer: room.props[0].answer_options[0] } }),
+      request(baseUrl, `/api/gameday/props/${room.props[0].id}/pick`, { method: "POST", token: player.token, body: { selected_answer: room.props[0].answer_options[0] } }),
+    ]);
+    events = await eventRows(room.roomId);
+    expect("concurrent identical edit creates one new event", events.length === 3);
+    expect("second material edit creates deterministic version 3", events[2]?.event_type === "pick_card_picks_updated" && events[2]?.submission_version === 3);
+    const mixedLegacyRetry = await service.rpc("submit_madden_pick_with_activity", {
+      p_prop_id: room.props[0].id,
+      p_participant_id: joinedAuth.body.participant.id,
+      p_selected_answer: room.props[0].answer_options[0],
+    });
+    expect("legacy retry after public events remains idempotent", !mixedLegacyRetry.error && mixedLegacyRetry.data?.[0]?.event_inserted === false);
+    expect("legacy retry after public events emits no duplicate activity", (await eventRows(room.roomId)).length === 3);
 
     for (const prop of room.props.slice(0, 3)) {
       await request(baseUrl, `/api/gameday/props/${prop.id}/pick`, { method: "POST", guest, body: { selected_answer: prop.answer_options[0] } });
     }
-    expect("partial guest participant creates no event", (await eventRows(room.roomId)).length === 1);
+    expect("partial guest participant creates no event", (await eventRows(room.roomId)).length === 3);
     await request(baseUrl, `/api/gameday/props/${room.props[3].id}/pick`, { method: "POST", guest, body: { selected_answer: room.props[3].answer_options[0] } });
     events = await eventRows(room.roomId);
-    expect("guest completion creates one event", events.length === 2);
+    expect("guest completion creates one submitted event", events.length === 4 && events[3]?.event_type === "pick_card_picks_submitted");
     expect("second participant gets one event", events.filter((e: any) => e.participant_id !== events[0].participant_id).length === 1);
-    expect("completion count increments uniquely", events.map((e: any) => e.completed_participant_count).join(",") === "1,2");
+    expect("updates do not increment completed participant count", events.map((e: any) => e.completed_participant_count).join(",") === "1,1,1,2");
 
     const pending = await request(baseUrl, `/api/gameday/bot/madden-participation-events?limit=100`, { bot: true, guild });
-    expect("correct guild fetches pending oldest-first", pending.status === 200 && pending.body.events?.length === 2 && pending.body.events[0].created_at <= pending.body.events[1].created_at);
+    expect("correct guild fetches pending oldest-first", pending.status === 200 && pending.body.events?.length === 4 && pending.body.events[0].created_at <= pending.body.events[1].created_at);
+    expect("pending API returns submitted events with public picks", pending.body.events?.some((event: any) => event.event_type === "pick_card_picks_submitted" && event.submission_version === 1 && event.picks?.length));
+    expect("pending API returns updated events with public picks", pending.body.events?.some((event: any) => event.event_type === "pick_card_picks_updated" && event.submission_version === 2 && event.picks?.length));
     const otherPending = await request(baseUrl, `/api/gameday/bot/madden-participation-events`, { bot: true, guild: otherGuild });
     expect("other guild cannot see events", otherPending.status === 200 && otherPending.body.events.length === 0);
     expect("missing bot key is rejected", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { guild })).status === 401);
     expect("wrong nonempty bot key is rejected", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, apiKey: "wrong-participation-key", guild })).status === 401);
     expect("missing guild is rejected", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true })).status === 400);
     expect("invalid limit is rejected", (await request(baseUrl, "/api/gameday/bot/madden-participation-events?limit=101", { bot: true, guild })).status === 400);
-    expect("fetch never acknowledges", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 2);
+    expect("fetch never acknowledges", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 4);
     const eventId = pending.body.events[0].id;
     expect("cross-guild acknowledgement is rejected", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true, guild: otherGuild })).status === 403);
     expect("missing guild acknowledgement is rejected", (await request(baseUrl, `/api/gameday/bot/madden-participation-events/${eventId}/ack`, { method: "POST", bot: true })).status === 400);
@@ -280,8 +331,12 @@ async function main() {
         repeatedAck.body.already === true &&
         repeatedAck.body.delivered_at === firstAck.body.event.delivered_at,
     );
-    expect("acknowledged event disappears", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 1);
-    expect("unacknowledged event remains fetchable", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events[0].delivered_at === null);
+    expect("acknowledged submitted event disappears", (await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild })).body.events.length === 3);
+    const updateEvent = pending.body.events.find((event: any) => event.event_type === "pick_card_picks_updated");
+    const updateAck = await request(baseUrl, `/api/gameday/bot/madden-participation-events/${updateEvent.id}/ack`, { method: "POST", bot: true, guild });
+    expect("matching guild acknowledges updated event", updateAck.status === 200 && !!updateAck.body.event?.delivered_at);
+    const afterUpdateAck = await request(baseUrl, "/api/gameday/bot/madden-participation-events", { bot: true, guild });
+    expect("acknowledged update disappears while unacked events remain pending", afterUpdateAck.body.events.length === 2 && afterUpdateAck.body.events.every((event: any) => event.delivered_at === null));
 
     const disabled = await createRoom({
       pick_deadline: undefined,
@@ -307,12 +362,129 @@ async function main() {
     await request(baseUrl, `/api/gameday/props/${disabled.props[0].id}/pick`, {
       method: "POST", guest: disabledGuest, body: { selected_answer: disabled.props[0].answer_options[1] },
     });
-    expect("editing a completed no-deadline card creates no duplicate", (await eventRows(disabled.roomId)).length === 1);
+    expect("editing a completed no-deadline card emits one update", (await eventRows(disabled.roomId)).length === 2);
     const disabledSecondJoin = await request(baseUrl, `/api/gameday/rooms/${disabled.roomId}/join`, { method: "POST", body: { display_name: "Disabled Bonus Two" } });
     await pickAll(disabled, { guest: disabledSecondJoin.body.guest_session_id });
     const disabledEvents = await eventRows(disabled.roomId);
-    expect("second no-deadline participant creates exactly one additional event", disabledEvents.length === 2);
-    expect("no-deadline completion count increments for the second participant", disabledEvents.map((event: any) => event.completed_participant_count).join(",") === "1,2");
+    expect("second no-deadline participant creates exactly one additional event", disabledEvents.length === 3);
+    expect("no-deadline update keeps completion count stable", disabledEvents.map((event: any) => event.completed_participant_count).join(",") === "1,1,2");
+
+    const sevenMatchups = Array.from({ length: 7 }, (_, index) => ({
+      team_a: `Home ${index + 1}`,
+      team_b: `Away ${index + 1}`,
+      line_text: index % 2 === 0 ? `Home ${index + 1} -${index + 1}` : null,
+    }));
+    const seven = await createRoom({
+      matchups: sevenMatchups,
+      format_config: {
+        ...formatConfig(false),
+        minimum_matchups: 7,
+      },
+    });
+    expect("seven-matchup room creates seven playable props", seven.props.length === 7);
+    const sevenJoin = await request(baseUrl, `/api/gameday/rooms/${seven.roomId}/join`, {
+      method: "POST",
+      body: { display_name: "Seven Matchups" },
+    });
+    await pickAll(seven, { guest: sevenJoin.body.guest_session_id });
+    const sevenEvent = (await eventRows(seven.roomId))[0];
+    expect("seven-matchup completion emits one submitted event", sevenEvent?.event_type === "pick_card_picks_submitted");
+    expect("seven-matchup event carries all seven picks", sevenEvent?.picks?.length === 7);
+    expect(
+      "seven-matchup payload remains deterministically ordered",
+      sevenEvent?.picks?.map((pick: any) => pick.display_order).join(",") ===
+        seven.props.map((prop: any) => prop.display_order).join(","),
+    );
+
+    const legacy = await createRoom({
+      format_config: formatConfig(false),
+    });
+    const legacyJoin = await request(baseUrl, `/api/gameday/rooms/${legacy.roomId}/join`, {
+      method: "POST",
+      body: { display_name: "Legacy Caller" },
+    });
+    const legacyParticipantId = legacyJoin.body.participant?.id;
+    for (const prop of legacy.props.slice(0, -1)) {
+      await request(baseUrl, `/api/gameday/props/${prop.id}/pick`, {
+        method: "POST",
+        guest: legacyJoin.body.guest_session_id,
+        body: { selected_answer: prop.answer_options[0] },
+      });
+    }
+    const legacyFinalProp = legacy.props[legacy.props.length - 1];
+    const legacyRpc = await service.rpc("submit_madden_pick_with_activity", {
+      p_prop_id: legacyFinalProp.id,
+      p_participant_id: legacyParticipantId,
+      p_selected_answer: legacyFinalProp.answer_options[0],
+    });
+    expect("three-argument legacy RPC call remains available", !legacyRpc.error);
+    const legacyEvent = (await eventRows(legacy.roomId))[0];
+    expect("legacy caller emits historical completion event", legacyEvent?.event_type === "madden_picks_completed");
+    expect("legacy completion event contains no public picks or version", legacyEvent?.picks == null && legacyEvent?.submission_version == null);
+    await request(baseUrl, `/api/gameday/props/${legacy.props[0].id}/pick`, {
+      method: "POST",
+      guest: legacyJoin.body.guest_session_id,
+      body: { selected_answer: legacy.props[0].answer_options[1] },
+    });
+    const mixedLegacyFirst = await eventRows(legacy.roomId);
+    expect("public edit after legacy completion emits one accountable update", mixedLegacyFirst.length === 2 && mixedLegacyFirst[1]?.event_type === "pick_card_picks_updated");
+    expect("public edit after legacy completion keeps participant count at one", mixedLegacyFirst.map((event: any) => event.completed_participant_count).join(",") === "1,1");
+
+    const publicThenLegacy = await createRoom({
+      format_config: formatConfig(false),
+    });
+    const publicThenLegacyJoin = await request(baseUrl, `/api/gameday/rooms/${publicThenLegacy.roomId}/join`, {
+      method: "POST",
+      body: { display_name: "Public Then Legacy" },
+    });
+    await pickAll(publicThenLegacy, { guest: publicThenLegacyJoin.body.guest_session_id });
+    const legacyEditProp = publicThenLegacy.props[0];
+    const legacyMaterialEdit = await service.rpc("submit_madden_pick_with_activity", {
+      p_prop_id: legacyEditProp.id,
+      p_participant_id: publicThenLegacyJoin.body.participant.id,
+      p_selected_answer: legacyEditProp.answer_options[1],
+    });
+    expect("legacy caller can materially edit an already-public card", !legacyMaterialEdit.error);
+    const publicThenLegacyEvents = await eventRows(publicThenLegacy.roomId);
+    expect("legacy material edit continues the public event stream", publicThenLegacyEvents.map((event: any) => event.event_type).join(",") === "pick_card_picks_submitted,pick_card_picks_updated");
+    expect("legacy material edit increments the public version", publicThenLegacyEvents.map((event: any) => event.submission_version).join(",") === "1,2");
+    expect("legacy material edit snapshots the changed full pick set", publicThenLegacyEvents[1]?.picks?.length === publicThenLegacy.props.length && publicThenLegacyEvents[1]?.picks?.[0]?.selected_option === legacyEditProp.answer_options[1]);
+    expect("legacy material edit does not increment participant count", publicThenLegacyEvents.map((event: any) => event.completed_participant_count).join(",") === "1,1");
+
+    const competing = await createRoom({
+      format_config: {
+        ...formatConfig(true),
+        bonus: { enabled: true, label: "Bonus", answer_options: ["Home", "Away", "Tie"] },
+      },
+    });
+    const competingJoin = await request(baseUrl, `/api/gameday/rooms/${competing.roomId}/join`, {
+      method: "POST",
+      body: { display_name: "Competing Updates" },
+    });
+    await pickAll(competing, { guest: competingJoin.body.guest_session_id });
+    const competingProp = competing.props[competing.props.length - 1];
+    await Promise.all([
+      request(baseUrl, `/api/gameday/props/${competingProp.id}/pick`, {
+        method: "POST",
+        guest: competingJoin.body.guest_session_id,
+        body: { selected_answer: competingProp.answer_options[1] },
+      }),
+      request(baseUrl, `/api/gameday/props/${competingProp.id}/pick`, {
+        method: "POST",
+        guest: competingJoin.body.guest_session_id,
+        body: { selected_answer: competingProp.answer_options[2] },
+      }),
+    ]);
+    const competingEvents = await eventRows(competing.roomId);
+    expect("concurrent differing edits each emit an accountable version", competingEvents.map((event: any) => event.submission_version).join(",") === "1,2,3");
+    expect(
+      "causal delivery sequence follows submission versions",
+      competingEvents.every((event: any, index: number, all: any[]) =>
+        index === 0 || event.delivery_sequence > all[index - 1].delivery_sequence),
+    );
+    const competingPending = await request(baseUrl, "/api/gameday/bot/madden-participation-events?limit=100", { bot: true, guild });
+    const pendingCompeting = competingPending.body.events.filter((event: any) => event.room_id === competing.roomId);
+    expect("pending API delivers competing updates in causal version order", pendingCompeting.map((event: any) => event.submission_version).join(",") === "1,2,3");
 
     const web = await createRoom();
     await service.from("gameday_rooms").update({ source: "web", sport: "madden", template_type: "weekly_pick_card", host_user_id: player.id }).eq("id", web.roomId);
@@ -350,10 +522,10 @@ async function main() {
     expect("deadline prevents event-generating pick", deadlinePick.status === 409 && (await eventRows(deadline.roomId)).length === 0);
 
     const readback = await request(baseUrl, `/api/gameday/rooms/${room.roomId}`, { token: player.token });
-    expect("existing Madden pick readback remains unchanged", readback.status === 200 && readback.body.my_picks?.[room.props[0].id] === room.props[0].answer_options[1]);
-    expect("multiple pending fetches do not create database duplicates", (await eventRows(room.roomId)).length === 2);
-    expect("room and participant uniqueness is durable", new Set((await eventRows(room.roomId)).map((e: any) => `${e.room_id}:${e.participant_id}`)).size === 2);
-    expect("event type is the documented activity type", (await eventRows(room.roomId)).every((e: any) => e.event_type === "madden_picks_completed"));
+    expect("existing Madden pick readback remains unchanged", readback.status === 200 && readback.body.my_picks?.[room.props[0].id] === room.props[0].answer_options[0]);
+    expect("multiple pending fetches do not create database duplicates", (await eventRows(room.roomId)).length === 4);
+    expect("room, participant, and version uniqueness is durable", new Set((await eventRows(room.roomId)).map((e: any) => `${e.room_id}:${e.participant_id}:${e.submission_version}`)).size === 4);
+    expect("new writes use only submitted and updated event types", (await eventRows(room.roomId)).every((e: any) => ["pick_card_picks_submitted", "pick_card_picks_updated"].includes(e.event_type)));
     expect("delivery starts pending and ack persists", (await eventRows(room.roomId)).some((e: any) => e.delivered_at === null) && (await eventRows(room.roomId)).some((e: any) => e.delivered_at !== null));
 
     const concurrent = await createRoom();
