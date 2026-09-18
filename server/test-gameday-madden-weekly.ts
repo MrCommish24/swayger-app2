@@ -116,7 +116,10 @@ check("Madden weekly cards remain manual reveal instead of auto-locking", routes
 check("room payload exposes server-authoritative editability", routes.includes("can_edit_picks: card.status === \"open\" && !deadlinePassed"));
 check("participant UI displays free-form lock time without parsing it", participantUi.includes("Pick Deadline / Lock Time:") && participantUi.includes("room.format_config?.deadline_display_text"));
 check("manual-lock confirmation copy remains editable until commissioner lock", participantUi.includes("Picks confirmed. You can update until the commissioner locks the card."));
-check("closed Madden copy waits for commissioner reveal", participantUi.includes("Picks are closed. Waiting for the commissioner to reveal receipts."));
+check(
+  "closed Madden copy explains incremental settlement",
+  participantUi.includes("Picks are closed. Matchups settle as results become available."),
+);
 check("closed Madden cards hide the pick submission control", participantUi.includes("{canEdit ? <TouchableOpacity"));
 check("room Back control routes directly to the Game Day hub", participantUi.includes('router.replace("/gameday")'));
 

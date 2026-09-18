@@ -25,7 +25,7 @@ import {
   phaseLabel,
 } from "./gameday-normalize.js";
 import { settlePropCore } from "./gameday-settle-helper.js";
-import { parseSettlementCorrectAnswers } from "./correct-answers.js";
+import { parseSettlementCorrectAnswers, sameCorrectAnswerSet } from "./correct-answers.js";
 import { getServiceSupabase } from "./supabase-service.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
@@ -4141,6 +4141,90 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── GET /api/gameday/bot/rooms/:roomId/settlement ───────────────────────
+  // Discord bots and the recorded web host can use this read-only contract to
+  // drive a settlement UI without exposing answers to public participants.
+  app.get(
+    "/api/gameday/bot/rooms/:roomId/settlement",
+    async (req: Request, res: Response) => {
+      const { roomId } = req.params;
+      const supabase = getServiceSupabase();
+      const operator = await requireGamedayRoomOperator(req, res, supabase, roomId);
+      if (!operator) return;
+      const { data: room } = await supabase
+        .from("gameday_rooms")
+        .select("id, room_code, room_name, status, archived_at, source, sport, template_type, discord_guild_id")
+        .eq("id", roomId)
+        .maybeSingle();
+      if (!room) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if ((room as any).archived_at) {
+        res.status(410).json({ error: "Room is archived" });
+        return;
+      }
+      if ((room as any).status === "finalized") {
+        res.status(400).json({ error: "Room is finalized — results are read-only" });
+        return;
+      }
+      if (
+        (room as any).source !== "discord" ||
+        (room as any).sport !== "madden" ||
+        (room as any).template_type !== "weekly_pick_card"
+      ) {
+        res.status(404).json({ error: "Settlement contract is only available for Madden weekly cards" });
+        return;
+      }
+      const { data: cards } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, phase, status, display_order, gameday_props(id, question, answer_options, line_text, correct_answer, correct_answer_ids, status, display_order)")
+        .eq("room_id", roomId)
+        .order("display_order", { ascending: true });
+      const card = (cards ?? []).find((item: any) => item.phase === "pregame") ?? (cards ?? [])[0];
+      if (!card) {
+        res.status(404).json({ error: "No playable card found for settlement" });
+        return;
+      }
+      const matchups = [...((card as any)?.gameday_props ?? [])]
+        .filter((prop: any) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0)
+        .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+        .map((prop: any, index: number) => ({
+          prop_id: prop.id,
+          matchup_label: prop.question,
+          display_order: prop.display_order ?? index,
+          question: prop.question,
+          line_text: prop.line_text ?? null,
+          options: prop.answer_options ?? [],
+          answer_options: prop.answer_options ?? [],
+          status: prop.status === "settled" ? "settled" : "open",
+          correct_answer: prop.status === "settled" ? (prop.correct_answer ?? prop.correct_answer_ids?.[0] ?? null) : null,
+          correct_answer_ids: prop.status === "settled" ? (prop.correct_answer_ids ?? []) : [],
+        }));
+      const settled = matchups.filter((prop: any) => prop.status === "settled").length;
+      const total = matchups.length;
+      if (total === 0) {
+        res.status(409).json({ error: "No playable matchups found for settlement" });
+        return;
+      }
+      const progress = { settled, total, remaining: Math.max(0, total - settled), complete: total > 0 && settled === total };
+      res.json({
+        room_id: roomId,
+        room_code: (room as any).room_code ?? null,
+        room_name: (room as any).room_name ?? null,
+        card_id: (card as any)?.id ?? null,
+        card_status: (card as any)?.status ?? null,
+        matchups,
+        playable_matchups: matchups,
+        total_matchups: total,
+        settled_matchups: settled,
+        remaining_matchups: Math.max(0, total - settled),
+        all_settled: settled === total,
+        progress,
+      });
+    },
+  );
+
   // ── PATCH /api/gameday/props/:propId/settle ─────────────────────────────
   app.patch(
     "/api/gameday/props/:propId/settle",
@@ -4158,7 +4242,7 @@ export function registerGamedayRoutes(app: Express) {
       const { data: prop } = await supabase
         .from("gameday_props")
         .select(
-          "id, answer_options, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, room_code, source))"
+          "id, answer_options, correct_answer, correct_answer_ids, status, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, archived_at, room_code, source, sport, template_type))"
         )
         .eq("id", propId)
         .single();
@@ -4177,6 +4261,19 @@ export function registerGamedayRoutes(app: Express) {
         res.status(400).json({ error: "Room is finalized — results are read-only" });
         return;
       }
+      if (gdRoom?.archived_at) {
+        res.status(410).json({ error: "Room is archived — results are read-only" });
+        return;
+      }
+
+      const isMaddenWeekly =
+        gdRoom?.source === "discord" &&
+        gdRoom?.sport === "madden" &&
+        gdRoom?.template_type === "weekly_pick_card";
+      if (isMaddenWeekly && card?.status !== "locked" && card?.status !== "settled") {
+        res.status(409).json({ error: "Madden weekly cards must be locked before settlement" });
+        return;
+      }
 
       const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
       const validIds = new Set(options.map((option: any) => typeof option === "string" ? option : option?.id));
@@ -4186,19 +4283,64 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      // Shared helper: update prop, score picks, cascade card status if complete.
-      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
+      const priorAnswers = Array.isArray((prop as any).correct_answer_ids) &&
+        (prop as any).correct_answer_ids.length
+        ? (prop as any).correct_answer_ids
+        : ((prop as any).correct_answer ? [(prop as any).correct_answer] : []);
+      const corrected = priorAnswers.length > 0 &&
+        !sameCorrectAnswerSet(priorAnswers, correctAnswers);
+      const { data: propPicks } = await supabase
+        .from("gameday_picks")
+        .select("participant_id")
+        .eq("prop_id", propId);
+      const participantsUpdated = corrected || !priorAnswers.length
+        ? new Set(
+            (propPicks ?? []).map((pick: any) => pick.participant_id).filter(Boolean),
+          ).size
+        : 0;
+
+      // Same-answer retries are successful but must not rewrite scores or create
+      // another audit event. Corrections intentionally re-score all picks.
+      if (!priorAnswers.length || corrected) {
+        await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
+      }
 
       const roomId = card?.room_id;
-      await logEvent(supabase, roomId, null, operator.hostId, "prop_settled", {
+      if (!priorAnswers.length || corrected) {
+        await logEvent(supabase, roomId, null, operator.hostId,
+          corrected ? "prop_settlement_corrected" : "prop_settled", {
+            prop_id: propId,
+            card_id: card?.id,
+            phase: card?.phase,
+            prior_correct_answer: corrected ? priorAnswers[0] : null,
+            prior_correct_answer_ids: corrected ? priorAnswers : [],
+            correct_answer: correctAnswers[0],
+            correct_answer_ids: correctAnswers,
+            previous_answer: corrected ? priorAnswers[0] : null,
+            new_answer: corrected ? correctAnswers[0] : null,
+            operator: operator.kind,
+          });
+      }
+      const { data: progressProps } = await supabase
+        .from("gameday_props")
+        .select("id, status, answer_options")
+        .eq("card_id", card.id);
+      const playableProps = (progressProps ?? []).filter((item: any) =>
+        Array.isArray((item as any).answer_options) && (item as any).answer_options.length > 0,
+      );
+      const total = playableProps.length;
+      const settled = playableProps.filter((item: any) => item.status === "settled").length;
+      res.json({
+        ok: true,
         prop_id: propId,
-        card_id: card?.id,
-        phase: card?.phase,
         correct_answer: correctAnswers[0],
-        correct_answer_ids: correctAnswers,
-        operator: operator.kind,
+        corrected,
+        settled_matchups: settled,
+        remaining_matchups: Math.max(0, total - settled),
+        all_settled: total > 0 && settled === total,
+        progress: { settled, total, remaining: Math.max(0, total - settled), complete: settled === total },
+        participants_updated: participantsUpdated,
       });
-      res.json({ ok: true });
     }
   );
 
@@ -4211,7 +4353,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("host_user_id, status")
+        .select("host_user_id, status, archived_at, source, sport, template_type")
         .eq("id", roomId)
         .single();
 
@@ -4221,10 +4363,50 @@ export function registerGamedayRoutes(app: Express) {
       }
       const operator = await requireGamedayRoomOperator(req, res, supabase, roomId);
       if (!operator) return;
+      if (room.archived_at) {
+        res.status(410).json({ error: "Room is archived and cannot be finalized" });
+        return;
+      }
       if (room.status === "finalized") {
         console.log(`[gameday] finalize: room ${roomId} already finalized`);
         res.json({ ok: true, already: true });
         return;
+      }
+      if (
+        room.source === "discord" &&
+        room.sport === "madden" &&
+        room.template_type === "weekly_pick_card"
+      ) {
+        const { data: cards } = await supabase
+          .from("gameday_pick_cards")
+          .select("id, gameday_props(status, answer_options)")
+          .eq("room_id", roomId);
+        const playable = (cards ?? []).flatMap((card: any) =>
+          (card.gameday_props ?? []).filter(
+            (prop: any) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0,
+          ),
+        );
+        const unsettled = playable.filter((prop: any) => prop.status !== "settled").length;
+        if (playable.length === 0) {
+          res.status(409).json({
+            error: "Cannot finalize a room with no playable matchups",
+            remaining_matchups: 0,
+          });
+          return;
+        }
+        if (unsettled > 0) {
+          res.status(409).json({
+            error: "Cannot finalize while matchups remain unsettled",
+            remaining_matchups: unsettled,
+            progress: {
+              settled: playable.length - unsettled,
+              total: playable.length,
+              remaining: unsettled,
+              complete: false,
+            },
+          });
+          return;
+        }
       }
 
       console.log(`[gameday] finalize: attempting to write status=finalized for room ${roomId}, operator=${operator.kind}, stored host_user_id=${room.host_user_id}`);

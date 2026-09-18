@@ -817,9 +817,11 @@ export default function GameDayRoomScreen() {
         <Text style={styles.groupChatNote}>
           {room.template_type === "weekly_pick_card"
             ? weeklyCard?.status === "locked" || weeklyCard?.status === "settled"
-              ? "Picks are locked. Receipts are revealed."
+              ? weeklyCard.gameday_props.every((prop) => prop.status === "settled")
+                ? "All matchups are settled. Standings update below."
+                : "Picks are locked. Matchups settle as results become available."
               : weeklyCard?.deadline_passed
-                ? "Picks are closed. Waiting for the commissioner to reveal receipts."
+                ? "Picks are closed. Matchups settle as results become available."
               : weeklyCard?.scheduled_lock_at
                 ? "Picks can be edited until the deadline. Swayger tracks the picks, leaderboard, and receipts."
                 : "Picks can be edited until the commissioner locks the card. Swayger tracks the picks, leaderboard, and receipts."
@@ -961,11 +963,17 @@ export default function GameDayRoomScreen() {
             card={card}
             myPicks={my_picks}
             revealedPicks={revealed_picks}
+            isMaddenWeekly={room.template_type === "weekly_pick_card"}
           />
         ))}
 
       {/* Leaderboard */}
-      <LeaderboardSection leaderboard={leaderboard} myParticipantId={participant?.id} />
+      <LeaderboardSection
+        leaderboard={leaderboard}
+        myParticipantId={participant?.id}
+        isFinalized={isFinalized}
+        isMaddenWeekly={room.template_type === "weekly_pick_card"}
+      />
 
       {/* Next Game Day CTA — only on finalized rooms */}
       {isFinalized && (
@@ -1223,7 +1231,7 @@ function PickCard({
         <View style={styles.submittedInline}>
           <Text style={styles.submittedInlineText}>
             {isMaddenWeekly
-              ? "Picks are closed. Waiting for the commissioner to reveal receipts."
+              ? "Picks are closed. Matchups settle as results become available."
               : "Picks are closed for this card."}
           </Text>
         </View>
@@ -1331,11 +1339,21 @@ function RevealCard({
   card,
   myPicks,
   revealedPicks,
+  isMaddenWeekly,
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
   revealedPicks: Record<string, Record<string, string[]>>;
+  isMaddenWeekly: boolean;
 }) {
+  const settledProps = card.gameday_props.filter((prop) => prop.status === "settled").length;
+  const totalProps = card.gameday_props.length;
+  const allSettled = settledProps === totalProps;
+  const cardSubtitle = isMaddenWeekly
+    ? allSettled
+      ? "All matchup results are in"
+      : `${settledProps}/${totalProps} matchups settled`
+    : "Picks revealed";
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -1345,7 +1363,12 @@ function RevealCard({
           </Text>
         </View>
         <Text style={styles.cardTitle}>{card.title}</Text>
-        <Text style={styles.cardSubtitle}>Picks revealed</Text>
+        <Text style={styles.cardSubtitle}>{cardSubtitle}</Text>
+        {isMaddenWeekly ? (
+          <Text style={styles.settlementProgress}>
+            Settlement progress: {settledProps}/{totalProps}
+          </Text>
+        ) : null}
       </View>
 
       {card.gameday_props.map((prop) => {
@@ -1363,12 +1386,22 @@ function RevealCard({
                 <Text style={styles.correctLabel}>✓ </Text>
                 <Text style={styles.correctAnswer}>{correct}</Text>
               </View>
+            ) : isMaddenWeekly ? (
+              <Text style={styles.pendingSettlement}>Pending settlement · result not available yet</Text>
             ) : null}
             {prop.answer_options.map((ans) => {
               const pickers = distribute[ans] ?? [];
               const isMine = myPick === ans;
-              const isWinner = isSettled && ans === correct;
-              const isWrong = isSettled && isMine && ans !== correct;
+              const hasResult = isSettled && !!correct;
+              const isWinner = hasResult && ans === correct;
+              const isWrong = hasResult && isMine && ans !== correct;
+              const answerStatus = !isMaddenWeekly || !pickers.length
+                ? null
+                : !hasResult
+                  ? "PENDING"
+                  : ans === correct
+                    ? "CORRECT"
+                    : "INCORRECT";
 
               return (
                 <View
@@ -1389,6 +1422,20 @@ function RevealCard({
                       {ans}
                       {isMine ? " (you)" : ""}
                     </Text>
+                    {answerStatus ? (
+                      <Text
+                        style={[
+                          styles.pickStatus,
+                          answerStatus === "CORRECT"
+                            ? styles.pickStatusCorrect
+                            : answerStatus === "INCORRECT"
+                              ? styles.pickStatusIncorrect
+                              : styles.pickStatusPending,
+                        ]}
+                      >
+                        {answerStatus}
+                      </Text>
+                    ) : null}
                     {pickers.length > 0 ? (
                       <Text style={styles.revealPickers}>
                         {pickers.join(", ")}
@@ -1411,15 +1458,26 @@ function RevealCard({
 function LeaderboardSection({
   leaderboard,
   myParticipantId,
+  isFinalized,
+  isMaddenWeekly,
 }: {
   leaderboard: GDLeaderboardEntry[];
   myParticipantId?: string;
+  isFinalized: boolean;
+  isMaddenWeekly: boolean;
 }) {
   if (leaderboard.length === 0) return null;
 
   return (
     <View style={styles.lbSection}>
-      <Text style={styles.lbTitle}>Leaderboard</Text>
+      <Text style={styles.lbTitle}>
+        {isMaddenWeekly && !isFinalized ? "Live leaderboard" : "Leaderboard"}
+      </Text>
+      {isMaddenWeekly && !isFinalized ? (
+        <Text style={styles.lbNote}>
+          Partial standings · SP reflects settled matchups only. Pending results will update the leaderboard.
+        </Text>
+      ) : null}
       {leaderboard.map((entry) => {
         const isMe = entry.participant_id === myParticipantId;
         return (
@@ -1570,10 +1628,12 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 18, fontWeight: "700", color: C.text, marginBottom: 2 },
   cardSubtitle: { fontSize: 13, color: C.textMuted },
   cardProgress: { fontSize: 13, color: C.textSecondary },
+  settlementProgress: { fontSize: 12, color: C.textSecondary, marginTop: 5 },
 
   // Props
   propBlock: { marginBottom: 20 },
   propQuestion: { fontSize: 14, fontWeight: "600", color: C.text, marginBottom: 10, lineHeight: 20 },
+  windowText: { fontSize: 12, color: C.textSecondary, marginBottom: 8 },
   optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   optionBtn: {
     borderWidth: 1.5,
@@ -1641,6 +1701,7 @@ const styles = StyleSheet.create({
   correctAnswerRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   correctLabel: { color: C.success, fontSize: 14, fontWeight: "700" },
   correctAnswer: { color: C.success, fontSize: 14, fontWeight: "700" },
+  pendingSettlement: { fontSize: 12, color: C.textMuted, fontStyle: "italic", marginBottom: 8 },
   revealAnswer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1658,6 +1719,10 @@ const styles = StyleSheet.create({
   revealAnswerText: { fontSize: 13, color: C.text, fontWeight: "600" },
   revealAnswerTextWinner: { color: C.success },
   revealPickers: { fontSize: 11, color: C.textMuted, marginTop: 2 },
+  pickStatus: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5, marginTop: 3 },
+  pickStatusCorrect: { color: C.success },
+  pickStatusIncorrect: { color: C.danger },
+  pickStatusPending: { color: C.tint },
   revealCount: { fontSize: 14, fontWeight: "700", color: C.textSecondary, marginLeft: 8 },
 
   // Leaderboard
@@ -1668,6 +1733,13 @@ const styles = StyleSheet.create({
     color: C.text,
     marginBottom: 12,
     letterSpacing: 0.5,
+  },
+  lbNote: {
+    fontSize: 12,
+    color: C.textMuted,
+    lineHeight: 17,
+    marginTop: -5,
+    marginBottom: 10,
   },
   lbRow: {
     flexDirection: "row",

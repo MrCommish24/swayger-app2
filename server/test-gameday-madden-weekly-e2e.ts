@@ -597,26 +597,34 @@ async function main() {
       JSON.stringify(tooMany.body),
     );
 
+    const botOperator = {
+      apiKey: botApiKey,
+      discordGuildHeader: botGuildId,
+    };
     const created = await request("/api/gameday/rooms", {
       method: "POST",
-      token: host.token,
-      body: basePayload,
+      ...botOperator,
+      body: {
+        ...basePayload,
+        discord_guild_id: botGuildId,
+        discord_channel_id: `MADDEN_SETTLEMENT_CHANNEL_${runId}`,
+        discord_user_id: `MADDEN_SETTLEMENT_USER_${runId}`,
+      },
     });
     const roomId = created.body.room_id as string | undefined;
     if (roomId) roomIds.push(roomId);
     expect(
-      "authorized Game Day host creates a Madden Weekly Pick Card",
+      "authorized Discord bot creates the Madden Weekly Pick Card settlement fixture",
       created.status === 200 &&
         created.body.ok === true &&
+        created.body.room?.source === "discord" &&
         created.body.room?.sport === "madden" &&
         created.body.room?.template_type === "weekly_pick_card",
       JSON.stringify(created.body),
     );
     if (!roomId) throw new Error("Madden room creation did not return a room ID");
 
-    const hostData = await request(`/api/gameday/rooms/${roomId}/host-data`, {
-      token: host.token,
-    });
+    const hostData = await request(`/api/gameday/rooms/${roomId}`);
     const cards = hostData.body.cards ?? [];
     const card = cards[0];
     const props = card?.gameday_props ?? [];
@@ -706,7 +714,7 @@ async function main() {
 
     const opened = await request(`/api/gameday/cards/${card.id}/open`, {
       method: "PATCH",
-      token: host.token,
+      ...botOperator,
     });
     expect(
       "Madden card can be opened by the authorized host",
@@ -749,6 +757,78 @@ async function main() {
       "authenticated picks can be edited before lock",
       edited.status === 200 && edited.body.ok === true,
       JSON.stringify(edited.body),
+    );
+
+    const settlementQueue = await request(`/api/gameday/bot/rooms/${roomId}/settlement`, {
+      ...botOperator,
+    });
+    expect(
+      "authorized host receives ordered unresolved Madden settlement queue",
+      settlementQueue.status === 200 &&
+        settlementQueue.body.room_code &&
+        settlementQueue.body.room_name &&
+        settlementQueue.body.total_matchups === props.length &&
+        settlementQueue.body.settled_matchups === 0 &&
+        settlementQueue.body.remaining_matchups === props.length &&
+        settlementQueue.body.matchups?.every((matchup: any, index: number) =>
+          matchup.status === "open" &&
+          matchup.display_order === props[index].display_order &&
+          matchup.matchup_label === props[index].question),
+      JSON.stringify(settlementQueue.body),
+    );
+    const unauthenticatedQueue = await request(
+      `/api/gameday/bot/rooms/${roomId}/settlement`,
+    );
+    expect(
+      "settlement queue rejects an unauthenticated caller",
+      unauthenticatedQueue.status === 401,
+      JSON.stringify(unauthenticatedQueue.body),
+    );
+    const crossGuildQueue = await request(
+      `/api/gameday/bot/rooms/${roomId}/settlement`,
+      {
+        apiKey: botApiKey,
+        discordGuildHeader: `${botGuildId}_OTHER`,
+      },
+    );
+    expect(
+      "settlement queue preserves Discord guild isolation",
+      crossGuildQueue.status === 403,
+      JSON.stringify(crossGuildQueue.body),
+    );
+    const earlyFinalize = await request(`/api/gameday/rooms/${roomId}/finalize`, {
+      method: "PATCH",
+      ...botOperator,
+    });
+    expect(
+      "Madden finalization rejects unsettled matchups",
+      earlyFinalize.status === 409 &&
+        earlyFinalize.body.error === "Cannot finalize while matchups remain unsettled" &&
+        earlyFinalize.body.remaining_matchups === props.length,
+      JSON.stringify(earlyFinalize.body),
+    );
+    const earlySettlement = await request(`/api/gameday/props/${props[0].id}/settle`, {
+      method: "PATCH",
+      ...botOperator,
+      body: { correct_answer: props[0].answer_options[0] },
+    });
+    expect(
+      "Madden settlement rejects an unlocked card",
+      earlySettlement.status === 409,
+      JSON.stringify(earlySettlement.body),
+    );
+    const unknownSettlement = await request(
+      "/api/gameday/props/00000000-0000-0000-0000-000000000000/settle",
+      {
+        method: "PATCH",
+        ...botOperator,
+        body: { correct_answer: props[0].answer_options[0] },
+      },
+    );
+    expect(
+      "Madden settlement rejects an unknown prop",
+      unknownSettlement.status === 404,
+      JSON.stringify(unknownSettlement.body),
     );
 
     const savedAuth = await request(`/api/gameday/rooms/${roomId}`, {
@@ -834,7 +914,7 @@ async function main() {
 
     const locked = await request(`/api/gameday/cards/${card.id}/lock`, {
       method: "PATCH",
-      token: host.token,
+      ...botOperator,
     });
     expect(
       "commissioner can manually lock the Madden card after the deadline",
@@ -852,23 +932,142 @@ async function main() {
       pickAfterLock.status === 400,
       JSON.stringify(pickAfterLock.body),
     );
+    const invalidSettlement = await request(`/api/gameday/props/${props[0].id}/settle`, {
+      method: "PATCH",
+      ...botOperator,
+      body: { correct_answer: "Not a valid matchup option" },
+    });
+    expect(
+      "Madden settlement rejects an invalid answer",
+      invalidSettlement.status === 400,
+      JSON.stringify(invalidSettlement.body),
+    );
 
-    for (const prop of props) {
+    const firstSettlement = await request(`/api/gameday/props/${props[0].id}/settle`, {
+      method: "PATCH",
+      ...botOperator,
+      body: { correct_answer: props[0].answer_options[0] },
+    });
+    expect(
+      "commissioner settles one matchup and receives partial progress",
+      firstSettlement.status === 200 &&
+        firstSettlement.body.ok === true &&
+        firstSettlement.body.corrected === false &&
+        firstSettlement.body.settled_matchups === 1 &&
+        firstSettlement.body.remaining_matchups === props.length - 1 &&
+        firstSettlement.body.all_settled === false &&
+        firstSettlement.body.participants_updated === 2,
+      JSON.stringify(firstSettlement.body),
+    );
+    const afterFirstSettlement = await service
+      .from("gameday_picks")
+      .select("participant_id, prop_id, is_correct")
+      .in("participant_id", [
+        joinedGuest.body.participant.id,
+        joinedAuth.body.participant.id,
+      ])
+      .in("prop_id", props.map((prop: any) => prop.id));
+    const guestFirst = afterFirstSettlement.data?.find(
+      (pick: any) =>
+        pick.participant_id === joinedGuest.body.participant.id &&
+        pick.prop_id === props[0].id,
+    );
+    const authFirst = afterFirstSettlement.data?.find(
+      (pick: any) =>
+        pick.participant_id === joinedAuth.body.participant.id &&
+        pick.prop_id === props[0].id,
+    );
+    expect(
+      "only the settled matchup receives correctness while all others remain pending",
+      !afterFirstSettlement.error &&
+        guestFirst?.is_correct === true &&
+        authFirst?.is_correct === false &&
+        afterFirstSettlement.data?.every(
+          (pick: any) => pick.prop_id === props[0].id || pick.is_correct === null,
+        ),
+      JSON.stringify(afterFirstSettlement.data),
+    );
+    const queueAfterFirst = await request(
+      `/api/gameday/bot/rooms/${roomId}/settlement`,
+      { ...botOperator },
+    );
+    expect(
+      "settlement queue exposes one settled matchup and leaves the rest open",
+      queueAfterFirst.status === 200 &&
+        queueAfterFirst.body.settled_matchups === 1 &&
+        queueAfterFirst.body.remaining_matchups === props.length - 1 &&
+        queueAfterFirst.body.matchups?.[0]?.status === "settled" &&
+        queueAfterFirst.body.matchups?.slice(1).every((matchup: any) => matchup.status === "open"),
+      JSON.stringify(queueAfterFirst.body),
+    );
+    const correction = await request(`/api/gameday/props/${props[0].id}/settle`, {
+      method: "PATCH",
+      ...botOperator,
+      body: { correct_answer: props[0].answer_options[1] },
+    });
+    const afterCorrection = await service
+      .from("gameday_picks")
+      .select("participant_id, is_correct")
+      .eq("prop_id", props[0].id);
+    const correctionEvents = await service
+      .from("gameday_events")
+      .select("event_type, metadata")
+      .eq("room_id", roomId)
+      .in("event_type", ["prop_settled", "prop_settlement_corrected"])
+      .order("created_at", { ascending: true });
+    expect(
+      "authorized correction recalculates participant correctness and is audited",
+      correction.status === 200 &&
+        correction.body.corrected === true &&
+        correction.body.participants_updated === 2 &&
+        afterCorrection.data?.find(
+          (pick: any) => pick.participant_id === joinedGuest.body.participant.id,
+        )?.is_correct === false &&
+        afterCorrection.data?.find(
+          (pick: any) => pick.participant_id === joinedAuth.body.participant.id,
+        )?.is_correct === true &&
+        correctionEvents.data?.map((event: any) => event.event_type).join(",") ===
+          "prop_settled,prop_settlement_corrected",
+      JSON.stringify({
+        correction: correction.body,
+        picks: afterCorrection.data,
+        events: correctionEvents.data,
+      }),
+    );
+
+    for (const prop of props.slice(1)) {
       const correctAnswer =
-        prop.id === props[0].id
-          ? props[0].answer_options[0]
-          : prop.answer_options[0];
+        prop.answer_options[0];
       const settled = await request(`/api/gameday/props/${prop.id}/settle`, {
         method: "PATCH",
-        token: host.token,
+        ...botOperator,
         body: { correct_answer: correctAnswer },
       });
       expect(
         `manual settlement works for ${prop.question}`,
-        settled.status === 200 && settled.body.ok === true,
+        settled.status === 200 &&
+          settled.body.ok === true &&
+          settled.body.prop_id === prop.id &&
+          settled.body.corrected === false &&
+          settled.body.settled_matchups === props.indexOf(prop) + 1 &&
+          settled.body.remaining_matchups === props.length - props.indexOf(prop) - 1,
         JSON.stringify(settled.body),
       );
     }
+
+    const retry = await request(`/api/gameday/props/${props[0].id}/settle`, {
+      method: "PATCH",
+      ...botOperator,
+      body: { correct_answer: props[0].answer_options[1] },
+    });
+    expect(
+      "same-answer settlement retry is idempotent",
+      retry.status === 200 &&
+        retry.body.corrected === false &&
+        retry.body.participants_updated === 0 &&
+        retry.body.all_settled === true,
+      JSON.stringify(retry.body),
+    );
 
     const leaderboard = await request(`/api/gameday/rooms/${roomId}/leaderboard`);
     const leaderboardRows = leaderboard.body.leaderboard ?? [];
@@ -881,21 +1080,21 @@ async function main() {
       (row: any) => row.participant_id === authParticipantId,
     );
     expect(
-      "leaderboard awards four correct picks to the guest",
+      "leaderboard reflects the corrected guest pick",
       leaderboard.status === 200 &&
-        guestStanding?.correct_picks === 4 &&
-        guestStanding?.game_day_sp === 40,
+        guestStanding?.correct_picks === 3 &&
+        guestStanding?.game_day_sp === 30,
       JSON.stringify(leaderboard.body),
     );
     expect(
-      "leaderboard reflects the edited authenticated pick",
-      authStanding?.correct_picks === 3 && authStanding?.game_day_sp === 30,
+      "leaderboard reflects the corrected authenticated pick",
+      authStanding?.correct_picks === 4 && authStanding?.game_day_sp === 40,
       JSON.stringify(leaderboard.body),
     );
 
     const finalized = await request(`/api/gameday/rooms/${roomId}/finalize`, {
       method: "PATCH",
-      token: host.token,
+      ...botOperator,
     });
     expect(
       "Madden room finalization works",
@@ -909,6 +1108,19 @@ async function main() {
       "final standings are available after Madden finalization",
       finalStandings.status === 200 && finalStandings.body.finalized === true,
       JSON.stringify(finalStandings.body),
+    );
+    const postFinalizeSettlement = await request(
+      `/api/gameday/props/${props[0].id}/settle`,
+      {
+        method: "PATCH",
+        ...botOperator,
+        body: { correct_answer: props[0].answer_options[1] },
+      },
+    );
+    expect(
+      "finalized Madden room rejects further settlement",
+      postFinalizeSettlement.status === 400,
+      JSON.stringify(postFinalizeSettlement.body),
     );
   } finally {
     if (roomIds.length) {
