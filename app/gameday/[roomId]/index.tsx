@@ -752,7 +752,7 @@ export default function GameDayRoomScreen() {
   const myLbEntry = participant ? leaderboard.find((e) => e.participant_id === participant.id) : undefined;
   const myFinalRank = myLbEntry?.rank ?? null;
   const myFinalSp = myLbEntry?.game_day_sp ?? null;
-  const myIsWinner = myLbEntry ? myLbEntry.rank === 1 : null;
+  const myIsWinner = myLbEntry?.is_winner ?? null;
   const weeklyCard = room.template_type === "weekly_pick_card"
     ? cards.find((card) => card.phase === "pregame")
     : null;
@@ -798,6 +798,14 @@ export default function GameDayRoomScreen() {
             {room.format_config?.reward_text ? (
               <Text style={styles.groupChatNote}>
                 Reward: {room.format_config.reward_text} · Administered by the commissioner
+              </Text>
+            ) : null}
+            {isFinalized ? (
+              <Text style={styles.groupChatNote}>
+                Win condition:{" "}
+                {room.format_config?.scoring_mode === "most_correct"
+                  ? "Most Correct"
+                  : "Perfect Card"}
               </Text>
             ) : null}
             {weeklyCard?.scheduled_lock_at || room.format_config?.deadline_display_text ? (
@@ -973,6 +981,11 @@ export default function GameDayRoomScreen() {
         myParticipantId={participant?.id}
         isFinalized={isFinalized}
         isMaddenWeekly={room.template_type === "weekly_pick_card"}
+        scoringMode={
+          room.format_config?.scoring_mode === "most_correct"
+            ? "most_correct"
+            : "all_correct"
+        }
       />
 
       {/* Next Game Day CTA — only on finalized rooms */}
@@ -1007,6 +1020,13 @@ export default function GameDayRoomScreen() {
             gameDate={room.game_date ?? null}
             leaderboard={leaderboard}
             myParticipantId={participant?.id ?? null}
+            scoringMode={
+              room.template_type === "weekly_pick_card"
+                ? room.format_config?.scoring_mode === "most_correct"
+                  ? "most_correct"
+                  : "all_correct"
+                : undefined
+            }
             roomLink={
               room.room_code
                 ? `swayger.app/g/${room.room_code}`
@@ -1460,11 +1480,13 @@ function LeaderboardSection({
   myParticipantId,
   isFinalized,
   isMaddenWeekly,
+  scoringMode,
 }: {
   leaderboard: GDLeaderboardEntry[];
   myParticipantId?: string;
   isFinalized: boolean;
   isMaddenWeekly: boolean;
+  scoringMode: "all_correct" | "most_correct";
 }) {
   if (leaderboard.length === 0) return null;
 
@@ -1476,6 +1498,12 @@ function LeaderboardSection({
       {isMaddenWeekly && !isFinalized ? (
         <Text style={styles.lbNote}>
           Partial standings · SP reflects settled matchups only. Pending results will update the leaderboard.
+        </Text>
+      ) : null}
+      {isMaddenWeekly && isFinalized ? (
+        <Text style={styles.lbNote}>
+          Win condition: {scoringMode === "most_correct" ? "Most Correct" : "Perfect Card"}
+          {leaderboard.some((entry) => entry.is_winner) ? "" : " · No winner"}
         </Text>
       ) : null}
       {leaderboard.map((entry) => {
@@ -1490,6 +1518,7 @@ function LeaderboardSection({
               {entry.display_name}
               {isMe ? " (you)" : ""}
               {entry.is_guest ? " · guest" : ""}
+              {entry.is_winner ? " 🏆" : ""}
             </Text>
             <View style={styles.lbRight}>
               <Text style={styles.lbSP}>{entry.game_day_sp} SP</Text>

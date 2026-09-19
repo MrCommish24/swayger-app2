@@ -6,6 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import {
+  applyPickCardWinnerSemantics,
   normalizeWeeklyPickCardConfig,
   normalizeWeeklyPickCardMatchups,
 } from "./routes-gameday.js";
@@ -62,7 +63,12 @@ check("bonus options are trimmed and deduplicated", JSON.stringify(bonusConfig?.
 check("missing week label is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, week_label: "" }, 2) === null);
 check("zero minimum is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 0 }, 2) === null);
 check("minimum above matchup count is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 3 }, 2) === null);
-check("unsupported scoring mode is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, scoring_mode: "most_correct" }, 2) === null);
+check("most-correct scoring mode is accepted", normalizeWeeklyPickCardConfig({ ...baseConfig, scoring_mode: "most_correct" }, 2)?.scoring_mode === "most_correct");
+check("unsupported scoring mode is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, scoring_mode: "highest_score" }, 2) === null);
+check(
+  "missing scoring mode defaults to legacy all-correct",
+  normalizeWeeklyPickCardConfig({ ...baseConfig, scoring_mode: undefined }, 2)?.scoring_mode === "all_correct",
+);
 check("blank supplied deadline display text is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, deadline_display_text: " " }, 2) === null);
 check("bonus without a label is rejected", normalizeWeeklyPickCardConfig({
   ...baseConfig,
@@ -122,6 +128,66 @@ check(
 );
 check("closed Madden cards hide the pick submission control", participantUi.includes("{canEdit ? <TouchableOpacity"));
 check("room Back control routes directly to the Game Day hub", participantUi.includes('router.replace("/gameday")'));
+
+const allCorrectScores = [
+  { participant_id: "perfect", correct_picks: 3, total_picks: 3 },
+  { participant_id: "partial", correct_picks: 2, total_picks: 3 },
+  { participant_id: "wrong", correct_picks: 1, total_picks: 3 },
+];
+const allCorrectStandings = applyPickCardWinnerSemantics(allCorrectScores, "all_correct", true);
+check("all-correct 3/3 wins", allCorrectStandings.find((s) => s.participant_id === "perfect")?.is_winner === true);
+check("all-correct 2/3 does not win", allCorrectStandings.find((s) => s.participant_id === "partial")?.is_winner === false);
+check("all-correct lower participant does not win", allCorrectStandings.find((s) => s.participant_id === "wrong")?.is_winner === false);
+check(
+  "all-correct nobody perfect has no winner",
+  applyPickCardWinnerSemantics(
+    [
+      { participant_id: "a", correct_picks: 2, total_picks: 3 },
+      { participant_id: "b", correct_picks: 1, total_picks: 3 },
+    ],
+    "all_correct",
+    true,
+  ).every((s) => !s.is_winner),
+);
+check(
+  "all-correct multiple perfect participants tie",
+  applyPickCardWinnerSemantics(
+    [
+      { participant_id: "a", correct_picks: 3, total_picks: 3 },
+      { participant_id: "b", correct_picks: 3, total_picks: 3 },
+    ],
+    "all_correct",
+    true,
+  ).filter((s) => s.is_winner).length === 2,
+);
+
+const mostCorrectStandings = applyPickCardWinnerSemantics(
+  [
+    { participant_id: "darius", correct_picks: 2, total_picks: 3 },
+    { participant_id: "mike", correct_picks: 1, total_picks: 3 },
+    { participant_id: "chris", correct_picks: 1, total_picks: 3 },
+  ],
+  "most_correct",
+  true,
+);
+check("most-correct highest count wins", mostCorrectStandings.find((s) => s.participant_id === "darius")?.is_winner === true);
+check("most-correct lower participant does not win", mostCorrectStandings.find((s) => s.participant_id === "mike")?.is_winner === false);
+check(
+  "most-correct tied highest count produces tied winners",
+  applyPickCardWinnerSemantics(
+    [
+      { participant_id: "a", correct_picks: 2, total_picks: 3 },
+      { participant_id: "b", correct_picks: 2, total_picks: 3 },
+      { participant_id: "c", correct_picks: 1, total_picks: 3 },
+    ],
+    "most_correct",
+    true,
+  ).filter((s) => s.is_winner).length === 2,
+);
+check(
+  "winner is withheld until all required props settle",
+  applyPickCardWinnerSemantics(allCorrectScores, "most_correct", false).every((s) => !s.is_winner),
+);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

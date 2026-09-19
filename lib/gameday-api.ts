@@ -63,7 +63,7 @@ export interface GDRoom {
     reward_text?: string;
     deadline_display_text?: string | null;
     minimum_matchups?: number;
-    scoring_mode?: "all_correct";
+    scoring_mode?: "all_correct" | "most_correct";
     bonus?: {
       enabled?: boolean;
       label?: string;
@@ -131,7 +131,9 @@ export interface GDLeaderboardEntry {
   correct_picks: number;
   pending_picks: number;
   total_picks: number;
+  submitted_picks?: number;
   rank: number;
+  is_winner?: boolean;
 }
 
 export interface GDRoomResponse {

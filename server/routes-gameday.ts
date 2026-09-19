@@ -1014,13 +1014,81 @@ type WeeklyPickCardConfig = {
   reward_text: string;
   deadline_display_text: string | null;
   minimum_matchups: number;
-  scoring_mode: "all_correct";
+  scoring_mode: WeeklyPickCardScoringMode;
   bonus: {
     enabled: boolean;
     label: string | null;
     answer_options: string[];
   };
 };
+
+export type WeeklyPickCardScoringMode = "all_correct" | "most_correct";
+
+export function normalizeWeeklyPickCardScoringMode(
+  value: unknown,
+): WeeklyPickCardScoringMode | null {
+  if (value === undefined) return "all_correct";
+  if (value === "all_correct" || value === "most_correct") return value;
+  return null;
+}
+
+export type PickCardStandingScore = {
+  participant_id: string;
+  correct_picks: number;
+  total_picks: number;
+  [key: string]: unknown;
+};
+
+export type PickCardStanding = PickCardStandingScore & {
+  rank: number;
+  is_winner: boolean;
+};
+
+/**
+ * Applies the backend-authoritative Madden Pick Card winner semantics.
+ *
+ * `total_picks` must represent the required card prop count for finalized
+ * standings, not merely the number of props a participant happened to submit.
+ */
+export function applyPickCardWinnerSemantics(
+  scores: PickCardStandingScore[],
+  scoringMode: WeeklyPickCardScoringMode,
+  allRequiredPropsSettled: boolean,
+): PickCardStanding[] {
+  const ranked = [...scores].sort(
+    (a, b) =>
+      b.correct_picks - a.correct_picks ||
+      String(a.participant_id).localeCompare(String(b.participant_id)),
+  );
+
+  const winningIds = new Set<string>();
+  if (allRequiredPropsSettled && ranked.length > 0) {
+    if (scoringMode === "all_correct") {
+      for (const score of ranked) {
+        if (score.total_picks > 0 && score.correct_picks === score.total_picks) {
+          winningIds.add(score.participant_id);
+        }
+      }
+    } else {
+      const highestCorrect = ranked[0].correct_picks;
+      for (const score of ranked) {
+        if (score.correct_picks === highestCorrect) winningIds.add(score.participant_id);
+      }
+    }
+  }
+
+  let rank = 1;
+  return ranked.map((score, index) => {
+    if (index > 0 && score.correct_picks < ranked[index - 1].correct_picks) {
+      rank = index + 1;
+    }
+    return {
+      ...score,
+      rank,
+      is_winner: winningIds.has(score.participant_id),
+    };
+  });
+}
 
 function normalizeWeeklyPickCardText(
   value: unknown,
@@ -1049,7 +1117,7 @@ export function normalizeWeeklyPickCardConfig(
     : typeof minimumRaw === "string" && /^\d+$/.test(minimumRaw.trim())
       ? Number(minimumRaw)
       : NaN;
-  const scoringMode = raw.scoring_mode === "all_correct" ? "all_correct" : null;
+  const scoringMode = normalizeWeeklyPickCardScoringMode(raw.scoring_mode);
   const rawBonus =
     raw.bonus && typeof raw.bonus === "object" && !Array.isArray(raw.bonus)
       ? raw.bonus as Record<string, unknown>
@@ -3218,7 +3286,7 @@ export function registerGamedayRoutes(app: Express) {
        }
        if (!weeklyConfig) {
          res.status(400).json({
-           error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct, and valid bonus metadata",
+          error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct|most_correct, and valid bonus metadata",
          });
          return;
        }
@@ -4808,7 +4876,7 @@ export function registerGamedayRoutes(app: Express) {
       // Check archived status before doing any further work.
       const { data: roomMeta } = await supabase
         .from("gameday_rooms")
-        .select("archived_at")
+        .select("archived_at, status, sport, template_type, format_config")
         .eq("id", roomId)
         .single();
       if ((roomMeta as any)?.archived_at) {
@@ -4820,22 +4888,46 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
+      const isMaddenWeekly =
+        (roomMeta as any)?.sport === "madden" &&
+        (roomMeta as any)?.template_type === "weekly_pick_card";
+      const scoringMode =
+        normalizeWeeklyPickCardScoringMode(
+          (roomMeta as any)?.format_config?.scoring_mode,
+        ) ?? "all_correct";
+      const { data: standingCards } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, gameday_props(id, status, answer_options)")
+        .eq("room_id", roomId);
+      const playableProps = (standingCards ?? []).flatMap((card: any) =>
+        (card.gameday_props ?? []).filter(
+          (prop: any) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0,
+        ),
+      );
+      const totalRequiredProps = playableProps.length;
+      const allRequiredPropsSettled =
+        totalRequiredProps > 0 &&
+        playableProps.every((prop: any) => prop.status === "settled");
+
       const { data: participants } = await supabase
         .from("gameday_participants")
         .select("id, display_name, is_guest")
         .eq("room_id", roomId);
 
       if (!participants?.length) {
-        res.json({ leaderboard: [] });
+        res.json({ leaderboard: [], scoring_mode: scoringMode });
         return;
       }
 
       const participantIds = participants.map((p: any) => p.id);
 
-      const { data: allPicks } = await supabase
-        .from("gameday_picks")
-        .select("participant_id, is_correct")
-        .in("participant_id", participantIds);
+      const { data: allPicks } = playableProps.length > 0
+        ? await supabase
+            .from("gameday_picks")
+            .select("participant_id, prop_id, is_correct")
+            .in("participant_id", participantIds)
+            .in("prop_id", playableProps.map((prop: any) => prop.id))
+        : { data: [] };
 
       const scores = participants
         .map((p: any) => {
@@ -4855,7 +4947,11 @@ export function registerGamedayRoutes(app: Express) {
             game_day_sp: correct * 10,
             correct_picks: correct,
             pending_picks: pending,
-            total_picks: myPicks.length,
+            total_picks:
+              isMaddenWeekly && (roomMeta as any)?.status === "finalized"
+                ? totalRequiredProps
+                : myPicks.length,
+            submitted_picks: myPicks.length,
           };
         })
         .sort(
@@ -4864,14 +4960,25 @@ export function registerGamedayRoutes(app: Express) {
             b.correct_picks - a.correct_picks
         );
 
-      let rank = 1;
-      const leaderboard = scores.map((s: any, i: number) => {
-        if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp)
-          rank = i + 1;
-        return { ...s, rank };
-      });
+      const leaderboard = isMaddenWeekly
+        ? applyPickCardWinnerSemantics(
+            scores,
+            scoringMode,
+            allRequiredPropsSettled,
+          )
+        : scores.map((s: any, i: number) => {
+            let rank = 1;
+            if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) {
+              rank = i + 1;
+            }
+            return {
+              ...s,
+              rank,
+              is_winner: (roomMeta as any)?.status === "finalized" && i === 0,
+            };
+          });
 
-      res.json({ leaderboard });
+      res.json({ leaderboard, scoring_mode: scoringMode });
     }
   );
 
@@ -4896,7 +5003,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date")
+        .select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date, sport, template_type, format_config")
         .eq("id", roomId)
         .single();
 
@@ -4927,6 +5034,13 @@ export function registerGamedayRoutes(app: Express) {
       const publicLink = roomCode
         ? `${APP_URL}/g/${roomCode}`
         : `${APP_URL}/gameday/${roomId}`;
+      const isMaddenWeekly =
+        (room as any).sport === "madden" &&
+        (room as any).template_type === "weekly_pick_card";
+      const scoringMode =
+        normalizeWeeklyPickCardScoringMode(
+          (room as any).format_config?.scoring_mode,
+        ) ?? "all_correct";
 
       // Participants
       const { data: participants } = await supabase
@@ -4936,12 +5050,28 @@ export function registerGamedayRoutes(app: Express) {
 
       // Picks for scoring
       const participantIds = (participants ?? []).map((p: any) => p.id);
+      const { data: standingCards } = await supabase
+        .from("gameday_pick_cards")
+        .select("id, gameday_props(id, status, answer_options)")
+        .eq("room_id", roomId);
+      const playableProps = (standingCards ?? []).flatMap((card: any) =>
+        (card.gameday_props ?? []).filter(
+          (prop: any) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0,
+        ),
+      );
+      const totalRequiredProps = playableProps.length;
+      const allRequiredPropsSettled =
+        totalRequiredProps > 0 &&
+        playableProps.every((prop: any) => prop.status === "settled");
       let leaderboard: any[] = [];
       if (participantIds.length > 0) {
-        const { data: allPicks } = await supabase
-          .from("gameday_picks")
-          .select("participant_id, is_correct")
-          .in("participant_id", participantIds);
+        const { data: allPicks } = playableProps.length > 0
+          ? await supabase
+              .from("gameday_picks")
+              .select("participant_id, prop_id, is_correct")
+              .in("participant_id", participantIds)
+              .in("prop_id", playableProps.map((prop: any) => prop.id))
+          : { data: [] };
 
         const scores = (participants ?? [])
           .map((p: any) => {
@@ -4957,7 +5087,8 @@ export function registerGamedayRoutes(app: Express) {
               game_day_sp: correct * 10,
               correct_picks: correct,
               pending_picks: pending,
-              total_picks: myPicks.length,
+              total_picks: isMaddenWeekly ? totalRequiredProps : myPicks.length,
+              submitted_picks: myPicks.length,
             };
           })
           .sort(
@@ -4965,27 +5096,26 @@ export function registerGamedayRoutes(app: Express) {
               b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
           );
 
-        let rank = 1;
-        leaderboard = scores.map((s: any, i: number) => {
-          if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) rank = i + 1;
-          return { ...s, rank };
-        });
+        leaderboard = isMaddenWeekly
+          ? applyPickCardWinnerSemantics(
+              scores,
+              scoringMode,
+              allRequiredPropsSettled,
+            )
+          : scores.map((s: any, i: number) => {
+              let rank = 1;
+              if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) {
+                rank = i + 1;
+              }
+              return {
+                ...s,
+                rank,
+                is_winner: i === 0,
+              };
+            });
       }
 
-      // Total props
-      const { count: totalProps } = await supabase
-        .from("gameday_props")
-        .select("id", { count: "exact", head: true })
-        .in(
-          "card_id",
-          (
-            await supabase
-              .from("gameday_pick_cards")
-              .select("id")
-              .eq("room_id", roomId)
-          ).data?.map((c: any) => c.id) ?? []
-        );
-
+      const winnerRows = leaderboard.filter((entry: any) => entry.is_winner);
       res.json({
         finalized: true,
         room_id: roomId,
@@ -4999,10 +5129,18 @@ export function registerGamedayRoutes(app: Express) {
           game_date: (room as any).game_date,
           room_name: (room as any).room_name,
         },
-        winner: leaderboard[0] ?? null,
+        scoring_mode: scoringMode,
+        all_props_settled: allRequiredPropsSettled,
+        winner_determined: isMaddenWeekly
+          ? allRequiredPropsSettled
+          : true,
+        winner: winnerRows[0] ?? null,
+        winners: winnerRows,
+        winner_participant_ids: winnerRows.map((entry: any) => entry.participant_id),
+        tie: winnerRows.length > 1,
         leaderboard,
         total_participants: (participants ?? []).length,
-        total_props: totalProps ?? 0,
+        total_props: totalRequiredProps,
       });
     }
   );

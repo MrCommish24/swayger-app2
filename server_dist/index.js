@@ -9121,6 +9121,42 @@ function normalizeSundaySlateConfig(value) {
   }
   return config;
 }
+function normalizeWeeklyPickCardScoringMode(value) {
+  if (value === void 0) return "all_correct";
+  if (value === "all_correct" || value === "most_correct") return value;
+  return null;
+}
+function applyPickCardWinnerSemantics(scores, scoringMode, allRequiredPropsSettled) {
+  const ranked = [...scores].sort(
+    (a, b) => b.correct_picks - a.correct_picks || String(a.participant_id).localeCompare(String(b.participant_id))
+  );
+  const winningIds = /* @__PURE__ */ new Set();
+  if (allRequiredPropsSettled && ranked.length > 0) {
+    if (scoringMode === "all_correct") {
+      for (const score of ranked) {
+        if (score.total_picks > 0 && score.correct_picks === score.total_picks) {
+          winningIds.add(score.participant_id);
+        }
+      }
+    } else {
+      const highestCorrect = ranked[0].correct_picks;
+      for (const score of ranked) {
+        if (score.correct_picks === highestCorrect) winningIds.add(score.participant_id);
+      }
+    }
+  }
+  let rank = 1;
+  return ranked.map((score, index) => {
+    if (index > 0 && score.correct_picks < ranked[index - 1].correct_picks) {
+      rank = index + 1;
+    }
+    return {
+      ...score,
+      rank,
+      is_winner: winningIds.has(score.participant_id)
+    };
+  });
+}
 function normalizeWeeklyPickCardText(value, maxLength, required = false) {
   if (typeof value !== "string") return required ? null : null;
   const normalized = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
@@ -9136,7 +9172,7 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
   const hasDeadlineDisplayText = Object.prototype.hasOwnProperty.call(raw, "deadline_display_text");
   const minimumRaw = raw.minimum_matchups;
   const minimum = typeof minimumRaw === "number" ? minimumRaw : typeof minimumRaw === "string" && /^\d+$/.test(minimumRaw.trim()) ? Number(minimumRaw) : NaN;
-  const scoringMode = raw.scoring_mode === "all_correct" ? "all_correct" : null;
+  const scoringMode = normalizeWeeklyPickCardScoringMode(raw.scoring_mode);
   const rawBonus = raw.bonus && typeof raw.bonus === "object" && !Array.isArray(raw.bonus) ? raw.bonus : null;
   const bonusEnabled = rawBonus?.enabled === true;
   const bonusLabel = bonusEnabled ? normalizeWeeklyPickCardText(rawBonus?.label, 180, true) : null;
@@ -10770,7 +10806,7 @@ function registerGamedayRoutes(app2) {
       }
       if (!weeklyConfig) {
         res2.status(400).json({
-          error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct, and valid bonus metadata"
+          error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct|most_correct, and valid bonus metadata"
         });
         return;
       }
@@ -11859,7 +11895,7 @@ ${publicLink2}`;
         const discordAccess = await requireDiscordGuildRoom(req, res2, supabase, roomId);
         if (!discordAccess) return;
       }
-      const { data: roomMeta } = await supabase.from("gameday_rooms").select("archived_at").eq("id", roomId).single();
+      const { data: roomMeta } = await supabase.from("gameday_rooms").select("archived_at, status, sport, template_type, format_config").eq("id", roomId).single();
       if (roomMeta?.archived_at) {
         res2.status(410).json({
           ok: false,
@@ -11868,13 +11904,25 @@ ${publicLink2}`;
         });
         return;
       }
+      const isMaddenWeekly = roomMeta?.sport === "madden" && roomMeta?.template_type === "weekly_pick_card";
+      const scoringMode = normalizeWeeklyPickCardScoringMode(
+        roomMeta?.format_config?.scoring_mode
+      ) ?? "all_correct";
+      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, status, answer_options)").eq("room_id", roomId);
+      const playableProps = (standingCards ?? []).flatMap(
+        (card) => (card.gameday_props ?? []).filter(
+          (prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0
+        )
+      );
+      const totalRequiredProps = playableProps.length;
+      const allRequiredPropsSettled = totalRequiredProps > 0 && playableProps.every((prop) => prop.status === "settled");
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       if (!participants?.length) {
-        res2.json({ leaderboard: [] });
+        res2.json({ leaderboard: [], scoring_mode: scoringMode });
         return;
       }
       const participantIds = participants.map((p) => p.id);
-      const { data: allPicks } = await supabase.from("gameday_picks").select("participant_id, is_correct").in("participant_id", participantIds);
+      const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
       const scores = participants.map((p) => {
         const myPicks = (allPicks ?? []).filter(
           (pk) => pk.participant_id === p.id
@@ -11892,18 +11940,28 @@ ${publicLink2}`;
           game_day_sp: correct * 10,
           correct_picks: correct,
           pending_picks: pending,
-          total_picks: myPicks.length
+          total_picks: isMaddenWeekly && roomMeta?.status === "finalized" ? totalRequiredProps : myPicks.length,
+          submitted_picks: myPicks.length
         };
       }).sort(
         (a, b) => b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
       );
-      let rank = 1;
-      const leaderboard = scores.map((s, i) => {
-        if (i > 0 && s.game_day_sp < scores[i - 1].game_day_sp)
+      const leaderboard = isMaddenWeekly ? applyPickCardWinnerSemantics(
+        scores,
+        scoringMode,
+        allRequiredPropsSettled
+      ) : scores.map((s, i) => {
+        let rank = 1;
+        if (i > 0 && s.game_day_sp < scores[i - 1].game_day_sp) {
           rank = i + 1;
-        return { ...s, rank };
+        }
+        return {
+          ...s,
+          rank,
+          is_winner: roomMeta?.status === "finalized" && i === 0
+        };
       });
-      res2.json({ leaderboard });
+      res2.json({ leaderboard, scoring_mode: scoringMode });
     }
   );
   app2.get(
@@ -11919,7 +11977,7 @@ ${publicLink2}`;
         const discordAccess = await requireDiscordGuildRoom(req, res2, supabase, roomId);
         if (!discordAccess) return;
       }
-      const { data: room } = await supabase.from("gameday_rooms").select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date").eq("id", roomId).single();
+      const { data: room } = await supabase.from("gameday_rooms").select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date, sport, template_type, format_config").eq("id", roomId).single();
       if (!room) {
         res2.status(404).json({ error: "Room not found" });
         return;
@@ -11941,11 +11999,23 @@ ${publicLink2}`;
       }
       const roomCode = room.room_code ?? null;
       const publicLink = roomCode ? `${APP_URL2}/g/${roomCode}` : `${APP_URL2}/gameday/${roomId}`;
+      const isMaddenWeekly = room.sport === "madden" && room.template_type === "weekly_pick_card";
+      const scoringMode = normalizeWeeklyPickCardScoringMode(
+        room.format_config?.scoring_mode
+      ) ?? "all_correct";
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       const participantIds = (participants ?? []).map((p) => p.id);
+      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, status, answer_options)").eq("room_id", roomId);
+      const playableProps = (standingCards ?? []).flatMap(
+        (card) => (card.gameday_props ?? []).filter(
+          (prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0
+        )
+      );
+      const totalRequiredProps = playableProps.length;
+      const allRequiredPropsSettled = totalRequiredProps > 0 && playableProps.every((prop) => prop.status === "settled");
       let leaderboard = [];
       if (participantIds.length > 0) {
-        const { data: allPicks } = await supabase.from("gameday_picks").select("participant_id, is_correct").in("participant_id", participantIds);
+        const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
         const scores = (participants ?? []).map((p) => {
           const myPicks = (allPicks ?? []).filter(
             (pk) => pk.participant_id === p.id
@@ -11959,21 +12029,29 @@ ${publicLink2}`;
             game_day_sp: correct * 10,
             correct_picks: correct,
             pending_picks: pending,
-            total_picks: myPicks.length
+            total_picks: isMaddenWeekly ? totalRequiredProps : myPicks.length,
+            submitted_picks: myPicks.length
           };
         }).sort(
           (a, b) => b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
         );
-        let rank = 1;
-        leaderboard = scores.map((s, i) => {
-          if (i > 0 && s.game_day_sp < scores[i - 1].game_day_sp) rank = i + 1;
-          return { ...s, rank };
+        leaderboard = isMaddenWeekly ? applyPickCardWinnerSemantics(
+          scores,
+          scoringMode,
+          allRequiredPropsSettled
+        ) : scores.map((s, i) => {
+          let rank = 1;
+          if (i > 0 && s.game_day_sp < scores[i - 1].game_day_sp) {
+            rank = i + 1;
+          }
+          return {
+            ...s,
+            rank,
+            is_winner: i === 0
+          };
         });
       }
-      const { count: totalProps } = await supabase.from("gameday_props").select("id", { count: "exact", head: true }).in(
-        "card_id",
-        (await supabase.from("gameday_pick_cards").select("id").eq("room_id", roomId)).data?.map((c) => c.id) ?? []
-      );
+      const winnerRows = leaderboard.filter((entry) => entry.is_winner);
       res2.json({
         finalized: true,
         room_id: roomId,
@@ -11987,10 +12065,16 @@ ${publicLink2}`;
           game_date: room.game_date,
           room_name: room.room_name
         },
-        winner: leaderboard[0] ?? null,
+        scoring_mode: scoringMode,
+        all_props_settled: allRequiredPropsSettled,
+        winner_determined: isMaddenWeekly ? allRequiredPropsSettled : true,
+        winner: winnerRows[0] ?? null,
+        winners: winnerRows,
+        winner_participant_ids: winnerRows.map((entry) => entry.participant_id),
+        tie: winnerRows.length > 1,
         leaderboard,
         total_participants: (participants ?? []).length,
-        total_props: totalProps ?? 0
+        total_props: totalRequiredProps
       });
     }
   );

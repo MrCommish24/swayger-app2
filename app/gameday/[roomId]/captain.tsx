@@ -146,7 +146,7 @@ function getSuggestedMoments(
       lateGameCard.status === "settled");
   const lateGameLabel = lateGameCard?.phase === "final_push" ? "Final Push" : "4Q";
 
-  const leader = leaderboard[0];
+  const leader = leaderboard.find((entry) => entry.is_winner);
   const second = leaderboard[1];
 
   // 1. Picks Locked

@@ -20,6 +20,7 @@ export interface GameDayReceiptCardProps {
   gameDate?: string | null;
   leaderboard: GDLeaderboardEntry[];
   myParticipantId?: string | null;
+  scoringMode?: "all_correct" | "most_correct";
   roomLink?: string;
 }
 
@@ -29,11 +30,13 @@ export default function GameDayReceiptCard({
   gameDate,
   leaderboard,
   myParticipantId,
+  scoringMode,
   roomLink,
 }: GameDayReceiptCardProps) {
   const myEntry = myParticipantId
     ? leaderboard.find((e) => e.participant_id === myParticipantId) ?? null
     : null;
+  const winners = leaderboard.filter((entry) => entry.is_winner);
 
   const formattedDate = gameDate
     ? new Date(gameDate + "T12:00:00").toLocaleDateString("en-US", {
@@ -63,6 +66,14 @@ export default function GameDayReceiptCard({
         {formattedDate ? (
           <Text style={styles.date}>{formattedDate}</Text>
         ) : null}
+        {scoringMode ? (
+          <Text style={styles.winCondition}>
+            Win condition: {scoringMode === "most_correct" ? "Most Correct" : "Perfect Card"}
+          </Text>
+        ) : null}
+        {scoringMode === "all_correct" && winners.length === 0 ? (
+          <Text style={styles.noWinner}>No perfect card — no winner.</Text>
+        ) : null}
 
         {/* Leaderboard */}
         <View style={styles.lbSection}>
@@ -83,6 +94,7 @@ export default function GameDayReceiptCard({
                 >
                   {entry.display_name}
                   {isMe ? " ←" : ""}
+                  {entry.is_winner ? " 🏆" : ""}
                 </Text>
                 <View style={styles.lbRight}>
                   <Text style={[styles.lbSP, isMe && styles.lbSPMe]}>
@@ -182,6 +194,17 @@ const styles = StyleSheet.create({
     color: TEXT_MUTED,
     marginTop: 1,
     marginBottom: 4,
+  },
+  winCondition: {
+    fontSize: 11,
+    color: GOLD,
+    fontWeight: "700" as const,
+    marginTop: 3,
+  },
+  noWinner: {
+    fontSize: 11,
+    color: TEXT_DIM,
+    marginTop: 5,
   },
   lbSection: {
     marginTop: 12,
