@@ -37,7 +37,7 @@
 - [Game Day commercial workflow](gameday-commercial-workflow.md) — saved provider-neutral offers use explicit assignments and manual publish; participant reads stay normalized and fail open.
 - [Expo preview API proxy](expo-preview-api-proxy.md) — Metro preview must proxy /api to the local Express workflow; production and native API origins remain separate.
 - [Fantasy shared-link navigation](fantasy-shared-link-navigation.md) — direct weekly links need explicit replace destinations; browser-history back can be inert.
-- [Madden Weekly Pick Card](gameday-madden-weekly-pick-card.md) — private aggregate pregame card; two-choice matchup props; additive Supabase migration required.
+- [Madden Weekly Pick Card](gameday-madden-weekly-pick-card.md) — normalized main/bonus roles, exact totals, main-only winners, atomic settlement, and deferred import boundaries
 - [Madden Discord participation outbox](gameday-madden-participation-outbox.md) — versioned public pick snapshots, mixed-caller safety, causal guild-scoped delivery, explicit opt-in rollout.
 - [Fantasy Weekly Receipt](gameday-fantasy-weekly-receipt.md) — live weekly alias schema is applied; receipts are finalized, member-authorized, viewer-independent, and archive-readable.
 - [Fantasy Weekly Swayger Moments](gameday-fantasy-swayger-moments.md) — titles derive from stable template IDs; source-library copy may evolve, but published weekly props remain immutable.

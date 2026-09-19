@@ -1,15 +1,23 @@
 ---
 name: Madden Weekly Pick Card
-description: Approved V1 boundaries and migration dependency for the Madden weekly Game Day format.
+description: Approved Madden weekly contract, V2 bonus semantics, settlement guarantees, and deferred integration boundaries.
 ---
 
-Madden Weekly Pick Card is a private, host-created Game Day room using one aggregate pregame card. Matchups are two-choice string props, optional bonus questions are manually settled, reward text is display-only, and Madden must not fall through to generic room creation.
+Madden Weekly Pick Card is a private Game Day room using one aggregate pregame card. Main matchups and the optional Bonus Game are two-choice props; the Bonus Game may also have an optional exact integer total from 0–200. Reward text is display-only, and Madden must not fall through to generic room creation.
 
-**Why:** The pilot intentionally avoids sportsbook language, external Madden data, automatic Discord delivery, numeric tiebreakers, and subscription changes while reusing the existing pick, settlement, leaderboard, and finalization flows.
+**Why:** Manual creation and future imported slates must converge on one backend contract without coupling the card to Discord UI, parsers, or external sports-data systems.
 
-Companion App export ingestion, EA APIs, NeonSportz, and Madden data normalization are explicitly deferred. Future import fields may prefill this format later, but Phase 1 is only the manual weekly pick-card workflow.
+**How to apply:** Store explicit prop role and answer type. Typed numeric predictions/results are authoritative; canonical numeric text exists only for legacy compatibility. Count every enabled prop for completion/finalization, but compute standings, Game Day SP, winners, and ties from main matchups only. Return bonus outcomes separately.
 
-**How to apply:** Keep the format behind `sport=madden` and `template_type=weekly_pick_card`; apply the additive Supabase migration before creating rooms because legacy representative matchup columns must accept NULL and the format metadata/line-text columns must exist.
+Choice and numeric settlement must be atomic across result persistence, full pick rescoring, and parent-card cascade. Same-result retries must re-assert score state without duplicating audit events.
+
+**Why:** Multi-statement settlement can leave a prop marked settled with stale participant scores if a later write fails.
+
+**How to apply:** Keep settlement in a service-role-only database transaction and retain retry-repair regression coverage. Apply the V2 schema migration before the atomic-settlement migration.
+
+Discord UI, pasted-slate parsing, NeonSportz integration, external Discord bot changes, and automatic settlement remain explicitly deferred.
+
+**How to apply:** Keep the format behind `sport=madden` and `template_type=weekly_pick_card`; future creation surfaces should submit the normalized contract rather than inventing separate storage or scoring behavior.
 
 For Madden Weekly cards, the stored pick deadline is a server-enforced submission/edit cutoff, not an automatic card lock. Commissioner lock remains the manual receipt-reveal moment.
 

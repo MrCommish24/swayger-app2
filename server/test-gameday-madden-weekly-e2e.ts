@@ -1080,15 +1080,20 @@ async function main() {
       (row: any) => row.participant_id === authParticipantId,
     );
     expect(
-      "leaderboard reflects the corrected guest pick",
+      "leaderboard scores only corrected main picks for the guest",
       leaderboard.status === 200 &&
-        guestStanding?.correct_picks === 3 &&
-        guestStanding?.game_day_sp === 30,
+        guestStanding?.correct_picks === 2 &&
+        guestStanding?.total_picks === 3 &&
+        guestStanding?.bonus_game_correct === true &&
+        guestStanding?.game_day_sp === 20,
       JSON.stringify(leaderboard.body),
     );
     expect(
-      "leaderboard reflects the corrected authenticated pick",
-      authStanding?.correct_picks === 4 && authStanding?.game_day_sp === 40,
+      "leaderboard keeps authenticated bonus correctness separate from main score",
+      authStanding?.correct_picks === 3 &&
+        authStanding?.total_picks === 3 &&
+        authStanding?.bonus_game_correct === true &&
+        authStanding?.game_day_sp === 30,
       JSON.stringify(leaderboard.body),
     );
 

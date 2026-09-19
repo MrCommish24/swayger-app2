@@ -8485,34 +8485,55 @@ function parseSettlementCorrectAnswers(body) {
   }
   return { ok: true, answers: [body.correct_answer], usedLegacyField: true };
 }
-function correctAnswerWriteFields(answers) {
-  return {
-    // Keep the first answer visible to legacy scalar consumers.
-    correct_answer: answers[0] ?? null,
-    correct_answer_ids: answers
-  };
-}
 
 // server/gameday-settle-helper.ts
 async function settlePropCore(supabase, { propId, cardId, correctAnswers, correctAnswer }) {
   const answers = normalizeCorrectAnswers(correctAnswers, correctAnswer);
   if (answers.length === 0) throw new Error("At least one correct answer is required");
-  const { error: propError } = await supabase.from("gameday_props").update({
-    ...correctAnswerWriteFields(answers),
-    status: "settled",
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  }).eq("id", propId);
-  if (propError) throw propError;
-  const { error: resetError } = await supabase.from("gameday_picks").update({ is_correct: false }).eq("prop_id", propId);
-  if (resetError) throw resetError;
-  const { error: scoreError } = await supabase.from("gameday_picks").update({ is_correct: true }).eq("prop_id", propId).in("selected_answer", answers);
-  if (scoreError) throw scoreError;
-  const { data: remaining } = await supabase.from("gameday_props").select("id").eq("card_id", cardId).neq("status", "settled");
-  const cardAutoSettled = !remaining?.length;
-  if (cardAutoSettled) {
-    await supabase.from("gameday_pick_cards").update({ status: "settled", updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", cardId);
+  const { data, error } = await supabase.rpc(
+    "settle_gameday_prop_atomic",
+    {
+      p_prop_id: propId,
+      p_correct_answer_ids: answers,
+      p_correct_numeric_answer: null
+    }
+  );
+  if (error) throw error;
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result) throw new Error("Atomic prop settlement returned no result");
+  if (result.card_id !== cardId) {
+    throw new Error("Atomic prop settlement returned the wrong parent card");
   }
-  return { propId, cardId, cardAutoSettled };
+  return {
+    propId,
+    cardId,
+    cardAutoSettled: result.card_auto_settled === true
+  };
+}
+async function settleNumericPropCore(supabase, {
+  propId,
+  cardId,
+  correctNumericAnswer
+}) {
+  const { data, error } = await supabase.rpc(
+    "settle_gameday_prop_atomic",
+    {
+      p_prop_id: propId,
+      p_correct_answer_ids: null,
+      p_correct_numeric_answer: correctNumericAnswer
+    }
+  );
+  if (error) throw error;
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result) throw new Error("Atomic numeric settlement returned no result");
+  if (result.card_id !== cardId) {
+    throw new Error("Atomic numeric settlement returned the wrong parent card");
+  }
+  return {
+    propId,
+    cardId,
+    cardAutoSettled: result.card_auto_settled === true
+  };
 }
 
 // server/supabase-service.ts
@@ -9448,6 +9469,9 @@ function normalizeSundaySlateConfig(value) {
   }
   return config;
 }
+var WEEKLY_PICK_CARD_DEFAULT_TOTAL_PROMPT = "Total points in the Bonus Game?";
+var WEEKLY_PICK_CARD_NUMERIC_MIN = 0;
+var WEEKLY_PICK_CARD_NUMERIC_MAX = 200;
 function normalizeWeeklyPickCardScoringMode(value) {
   if (value === void 0) return "all_correct";
   if (value === "all_correct" || value === "most_correct") return value;
@@ -9484,11 +9508,109 @@ function applyPickCardWinnerSemantics(scores, scoringMode, allRequiredPropsSettl
     };
   });
 }
+function weeklyPickCardPropRole(prop) {
+  return prop.prop_role ?? "main_matchup";
+}
+function weeklyPickCardAnswerType(prop) {
+  return prop.answer_type ?? "choice";
+}
+function isRequiredWeeklyPickCardProp(prop) {
+  if (weeklyPickCardAnswerType(prop) === "integer") return true;
+  return Array.isArray(prop.answer_options) && prop.answer_options.length > 0;
+}
+function buildWeeklyPickCardParticipantScores(participants, picks, props) {
+  const mainProps = props.filter(
+    (prop) => weeklyPickCardPropRole(prop) === "main_matchup" && isRequiredWeeklyPickCardProp(prop)
+  );
+  const mainPropIds = new Set(mainProps.map((prop) => prop.id));
+  const bonusGameProp = props.find(
+    (prop) => weeklyPickCardPropRole(prop) === "bonus_game"
+  );
+  const bonusTotalProp = props.find(
+    (prop) => weeklyPickCardPropRole(prop) === "bonus_total"
+  );
+  const actualTotal = bonusTotalProp?.status === "settled" && Number.isInteger(bonusTotalProp.correct_numeric_answer) ? bonusTotalProp.correct_numeric_answer : null;
+  return participants.map((participant) => {
+    const participantPicks = picks.filter(
+      (pick) => pick.participant_id === participant.id
+    );
+    const mainPicks = participantPicks.filter(
+      (pick) => mainPropIds.has(pick.prop_id)
+    );
+    const correct = mainPicks.filter((pick) => pick.is_correct === true).length;
+    const pending = mainPicks.filter((pick) => pick.is_correct === null).length;
+    const bonusGamePick = bonusGameProp ? participantPicks.find((pick) => pick.prop_id === bonusGameProp.id) : null;
+    const bonusTotalPick = bonusTotalProp ? participantPicks.find((pick) => pick.prop_id === bonusTotalProp.id) : null;
+    const predictedTotal = Number.isInteger(bonusTotalPick?.numeric_answer) ? bonusTotalPick.numeric_answer : null;
+    return {
+      participant_id: participant.id,
+      display_name: participant.display_name ?? null,
+      is_guest: participant.is_guest ?? false,
+      game_day_sp: correct * 10,
+      correct_picks: correct,
+      pending_picks: pending,
+      total_picks: mainProps.length,
+      submitted_picks: mainPicks.length,
+      bonus_game_selected_option: bonusGamePick?.selected_answer ?? null,
+      bonus_game_correct: bonusGamePick?.is_correct ?? null,
+      predicted_total: predictedTotal,
+      actual_total: actualTotal,
+      exact_total_hit: bonusTotalPick?.is_correct ?? null
+    };
+  });
+}
+function serializeWeeklyPickCardBonus(props, scores) {
+  const bonusGameProp = props.find(
+    (prop) => weeklyPickCardPropRole(prop) === "bonus_game"
+  );
+  const bonusTotalProp = props.find(
+    (prop) => weeklyPickCardPropRole(prop) === "bonus_total"
+  );
+  return {
+    enabled: !!bonusGameProp,
+    game: bonusGameProp ? {
+      prop_id: bonusGameProp.id,
+      question: bonusGameProp.question ?? null,
+      answer_options: Array.isArray(bonusGameProp.answer_options) ? bonusGameProp.answer_options : [],
+      line_text: bonusGameProp.line_text ?? null,
+      status: bonusGameProp.status ?? "pending",
+      correct_answer: bonusGameProp.status === "settled" ? bonusGameProp.correct_answer ?? bonusGameProp.correct_answer_ids?.[0] ?? null : null
+    } : null,
+    total: bonusTotalProp ? {
+      prop_id: bonusTotalProp.id,
+      prompt: bonusTotalProp.question ?? WEEKLY_PICK_CARD_DEFAULT_TOTAL_PROMPT,
+      rule: "exact",
+      min: bonusTotalProp.numeric_min ?? WEEKLY_PICK_CARD_NUMERIC_MIN,
+      max: bonusTotalProp.numeric_max ?? WEEKLY_PICK_CARD_NUMERIC_MAX,
+      status: bonusTotalProp.status ?? "pending",
+      actual_total: bonusTotalProp.status === "settled" ? bonusTotalProp.correct_numeric_answer ?? null : null
+    } : null,
+    results: scores.map((score) => ({
+      participant_id: score.participant_id,
+      bonus_game_selected_option: score.bonus_game_selected_option ?? null,
+      bonus_game_correct: score.bonus_game_correct ?? null,
+      predicted_total: score.predicted_total ?? null,
+      actual_total: score.actual_total ?? null,
+      exact_total_hit: score.exact_total_hit ?? null
+    }))
+  };
+}
 function normalizeWeeklyPickCardText(value, maxLength, required = false) {
   if (typeof value !== "string") return required ? null : null;
   const normalized = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   if (!normalized || normalized.length > maxLength) return required ? null : null;
   return normalized;
+}
+function normalizeWeeklyPickCardMatchup(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value;
+  const teamA = normalizeWeeklyPickCardText(raw.team_a, 100, true);
+  const teamB = normalizeWeeklyPickCardText(raw.team_b, 100, true);
+  const lineText = normalizeWeeklyPickCardText(raw.line_text, 120);
+  if (!teamA || !teamB || teamA.toLowerCase() === teamB.toLowerCase()) {
+    return null;
+  }
+  return { team_a: teamA, team_b: teamB, line_text: lineText };
 }
 function normalizeWeeklyPickCardConfig(value, matchupCount) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -9502,11 +9624,20 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
   const scoringMode = normalizeWeeklyPickCardScoringMode(raw.scoring_mode);
   const rawBonus = raw.bonus && typeof raw.bonus === "object" && !Array.isArray(raw.bonus) ? raw.bonus : null;
   const bonusEnabled = rawBonus?.enabled === true;
-  const bonusLabel = bonusEnabled ? normalizeWeeklyPickCardText(rawBonus?.label, 180, true) : null;
-  const bonusOptions = bonusEnabled && Array.isArray(rawBonus?.answer_options) ? [...new Set(
+  const bonusGame = bonusEnabled ? normalizeWeeklyPickCardMatchup(rawBonus?.game) : null;
+  const bonusLabel = bonusEnabled && !bonusGame ? normalizeWeeklyPickCardText(rawBonus?.label, 180, true) : null;
+  const bonusOptions = bonusEnabled && !bonusGame && Array.isArray(rawBonus?.answer_options) ? [...new Set(
     rawBonus.answer_options.filter((option) => typeof option === "string").map((option) => option.replace(/[\u0000-\u001f\u007f]/g, "").trim()).filter((option) => option.length > 0 && option.length <= 100)
   )].slice(0, 8) : [];
-  if (!weekLabel || !Number.isInteger(minimum) || minimum < 1 || minimum > matchupCount || !scoringMode || hasDeadlineDisplayText && !deadlineDisplayText || bonusEnabled && (!bonusLabel || bonusOptions.length < 2)) {
+  const rawTotal = rawBonus?.total_prediction && typeof rawBonus.total_prediction === "object" && !Array.isArray(rawBonus.total_prediction) ? rawBonus.total_prediction : null;
+  const totalEnabled = bonusEnabled && rawTotal?.enabled === true;
+  const totalPrompt = totalEnabled ? normalizeWeeklyPickCardText(
+    rawTotal?.prompt ?? WEEKLY_PICK_CARD_DEFAULT_TOTAL_PROMPT,
+    180,
+    true
+  ) : WEEKLY_PICK_CARD_DEFAULT_TOTAL_PROMPT;
+  const totalRule = rawTotal?.rule ?? "exact";
+  if (!weekLabel || !Number.isInteger(minimum) || minimum < 1 || minimum > matchupCount || !scoringMode || hasDeadlineDisplayText && !deadlineDisplayText || bonusEnabled && !bonusGame && (!bonusLabel || bonusOptions.length < 2) || totalEnabled && (!bonusGame || !totalPrompt || totalRule !== "exact")) {
     return null;
   }
   return {
@@ -9517,6 +9648,14 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
     scoring_mode: scoringMode,
     bonus: {
       enabled: bonusEnabled,
+      game: bonusGame,
+      total_prediction: {
+        enabled: totalEnabled,
+        prompt: totalPrompt ?? WEEKLY_PICK_CARD_DEFAULT_TOTAL_PROMPT,
+        rule: "exact",
+        min: WEEKLY_PICK_CARD_NUMERIC_MIN,
+        max: WEEKLY_PICK_CARD_NUMERIC_MAX
+      },
       label: bonusLabel,
       answer_options: bonusOptions
     }
@@ -9524,15 +9663,7 @@ function normalizeWeeklyPickCardConfig(value, matchupCount) {
 }
 function normalizeWeeklyPickCardMatchups(value) {
   if (!Array.isArray(value)) return null;
-  const matchups = value.map((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-    const raw = entry;
-    const teamA = normalizeWeeklyPickCardText(raw.team_a, 100, true);
-    const teamB = normalizeWeeklyPickCardText(raw.team_b, 100, true);
-    const lineText = normalizeWeeklyPickCardText(raw.line_text, 120);
-    if (!teamA || !teamB || teamA.toLowerCase() === teamB.toLowerCase()) return null;
-    return { team_a: teamA, team_b: teamB, line_text: lineText };
-  }).filter((matchup) => matchup !== null);
+  const matchups = value.map((entry) => normalizeWeeklyPickCardMatchup(entry)).filter((matchup) => matchup !== null);
   if (matchups.length !== value.length || matchups.length < 1 || matchups.length > 7) return null;
   return matchups;
 }
@@ -11227,18 +11358,37 @@ function registerGamedayRoutes(app2) {
         question: `Who wins: ${matchup.team_a} vs ${matchup.team_b}?`,
         answer_options: [matchup.team_a, matchup.team_b],
         line_text: matchup.line_text,
+        prop_role: "main_matchup",
+        answer_type: "choice",
         display_order: index,
         status: "pending"
       }));
       if (weeklyConfig.bonus.enabled) {
+        const bonusGame = weeklyConfig.bonus.game;
         props.push({
           card_id: weeklyCard.id,
-          question: weeklyConfig.bonus.label ?? "Bonus question",
-          answer_options: weeklyConfig.bonus.answer_options,
-          line_text: null,
+          question: bonusGame ? `Bonus Game: Who wins: ${bonusGame.team_a} vs ${bonusGame.team_b}?` : weeklyConfig.bonus.label ?? "Bonus Game",
+          answer_options: bonusGame ? [bonusGame.team_a, bonusGame.team_b] : weeklyConfig.bonus.answer_options,
+          line_text: bonusGame?.line_text ?? null,
+          prop_role: "bonus_game",
+          answer_type: "choice",
           display_order: props.length,
           status: "pending"
         });
+        if (weeklyConfig.bonus.total_prediction.enabled) {
+          props.push({
+            card_id: weeklyCard.id,
+            question: weeklyConfig.bonus.total_prediction.prompt,
+            answer_options: [],
+            line_text: null,
+            prop_role: "bonus_total",
+            answer_type: "integer",
+            numeric_min: weeklyConfig.bonus.total_prediction.min,
+            numeric_max: weeklyConfig.bonus.total_prediction.max,
+            display_order: props.length,
+            status: "pending"
+          });
+        }
       }
       const { error: weeklyPropError } = await supabase2.from("gameday_props").insert(props);
       if (weeklyPropError) {
@@ -11251,7 +11401,8 @@ function registerGamedayRoutes(app2) {
         format: "weekly_pick_card",
         sport: "madden",
         matchup_count: matchups.length,
-        bonus_enabled: weeklyConfig.bonus.enabled
+        bonus_enabled: weeklyConfig.bonus.enabled,
+        bonus_total_enabled: weeklyConfig.bonus.total_prediction.enabled
       });
       const returnedCode2 = weeklyRoom.room_code ?? roomCode2 ?? null;
       const publicLink2 = returnedCode2 ? `${APP_URL2}/g/${returnedCode2}` : `${APP_URL2}/gameday/${weeklyRoom.id}`;
@@ -11444,7 +11595,7 @@ ${publicLink2}`;
         return;
       }
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
-        "id, room_id, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, correct_answer, correct_answer_ids, status, display_order)"
+        "id, room_id, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)"
       ).eq("room_id", roomId).order("display_order");
       const serverNow = Date.now();
       const cards = (rawCards ?? []).map((card) => {
@@ -11477,10 +11628,20 @@ ${publicLink2}`;
         (c) => (c.gameday_props ?? []).map((p) => p.id)
       );
       let myPicks = {};
+      let myPickDetails = {};
       if (participant && allPropIds.length > 0) {
-        const { data: picks } = await supabase.from("gameday_picks").select("prop_id, selected_answer").eq("participant_id", participant.id).in("prop_id", allPropIds);
+        const { data: picks } = await supabase.from("gameday_picks").select("prop_id, selected_answer, numeric_answer").eq("participant_id", participant.id).in("prop_id", allPropIds);
         myPicks = Object.fromEntries(
           (picks ?? []).map((p) => [p.prop_id, p.selected_answer])
+        );
+        myPickDetails = Object.fromEntries(
+          (picks ?? []).map((p) => [
+            p.prop_id,
+            {
+              selected_answer: p.selected_answer ?? null,
+              numeric_answer: Number.isInteger(p.numeric_answer) ? p.numeric_answer : null
+            }
+          ])
         );
       }
       const revealedPicks = {};
@@ -11506,7 +11667,8 @@ ${publicLink2}`;
         gameday_props: (card.gameday_props ?? []).map((prop) => ({
           ...prop,
           correct_answer: prop.status === "settled" ? prop.correct_answer : null,
-          correct_answer_ids: prop.status === "settled" ? prop.correct_answer_ids ?? (prop.correct_answer ? [prop.correct_answer] : []) : []
+          correct_answer_ids: prop.status === "settled" ? prop.correct_answer_ids ?? (prop.correct_answer ? [prop.correct_answer] : []) : [],
+          correct_numeric_answer: prop.status === "settled" ? prop.correct_numeric_answer ?? null : null
         }))
       }));
       const { count } = await supabase.from("gameday_participants").select("id", { count: "exact", head: true }).eq("room_id", roomId);
@@ -11515,6 +11677,7 @@ ${publicLink2}`;
         cards: sanitizedCards,
         participant,
         my_picks: myPicks,
+        my_pick_details: myPickDetails,
         revealed_picks: revealedPicks,
         participant_count: count ?? 0
       });
@@ -11659,11 +11822,10 @@ ${publicLink2}`;
     "/api/gameday/props/:propId/pick",
     async (req, res2) => {
       const { propId } = req.params;
-      const { selected_answer } = req.body;
-      if (!selected_answer) {
-        res2.status(400).json({ error: "selected_answer is required" });
-        return;
-      }
+      const {
+        selected_answer: requestedSelectedAnswer,
+        numeric_answer: requestedNumericAnswer
+      } = req.body;
       const supabase = getServiceSupabase();
       const { data: prop } = await supabase.from("gameday_props").select("*, gameday_pick_cards(id, status, room_id, scheduled_lock_at, gameday_rooms(archived_at, status, source, sport, template_type, discord_guild_id, discord_channel_id))").eq("id", propId).single();
       if (!prop) {
@@ -11680,10 +11842,31 @@ ${publicLink2}`;
         res2.status(400).json({ error: "This pick card is not open" });
         return;
       }
-      const options = prop.answer_options;
-      if (!options.includes(selected_answer)) {
-        res2.status(400).json({ error: "Invalid answer option" });
-        return;
+      const answerType = prop.answer_type ?? "choice";
+      let selectedAnswer;
+      let numericAnswer = null;
+      if (answerType === "integer") {
+        const min = Number.isInteger(prop.numeric_min) ? prop.numeric_min : WEEKLY_PICK_CARD_NUMERIC_MIN;
+        const max = Number.isInteger(prop.numeric_max) ? prop.numeric_max : WEEKLY_PICK_CARD_NUMERIC_MAX;
+        if (typeof requestedNumericAnswer !== "number" || !Number.isInteger(requestedNumericAnswer) || requestedNumericAnswer < min || requestedNumericAnswer > max) {
+          res2.status(400).json({
+            error: `numeric_answer must be an integer between ${min} and ${max}`
+          });
+          return;
+        }
+        numericAnswer = requestedNumericAnswer;
+        selectedAnswer = String(requestedNumericAnswer);
+      } else {
+        if (typeof requestedSelectedAnswer !== "string" || requestedSelectedAnswer.length === 0) {
+          res2.status(400).json({ error: "selected_answer is required" });
+          return;
+        }
+        selectedAnswer = requestedSelectedAnswer;
+        const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+        if (!options.includes(selectedAnswer)) {
+          res2.status(400).json({ error: "Invalid answer option" });
+          return;
+        }
       }
       const { userId, guestSessionId } = await getCallerIdentity(req);
       const roomId = prop.gameday_pick_cards?.room_id;
@@ -11714,7 +11897,8 @@ ${publicLink2}`;
         const rpcArgs = {
           p_prop_id: propId,
           p_participant_id: participant.id,
-          p_selected_answer: selected_answer
+          p_selected_answer: selectedAnswer,
+          p_numeric_answer: numericAnswer
         };
         if (publicPickEventsEnabled) {
           rpcArgs.p_public_pick_events_enabled = true;
@@ -11728,6 +11912,7 @@ ${publicLink2}`;
             prop_id: result.prop_id,
             participant_id: result.participant_id,
             selected_answer: result.selected_answer,
+            numeric_answer: numericAnswer,
             is_correct: result.is_correct,
             submitted_at: result.submitted_at
           };
@@ -11744,7 +11929,8 @@ ${publicLink2}`;
           {
             prop_id: propId,
             participant_id: participant.id,
-            selected_answer,
+            selected_answer: selectedAnswer,
+            numeric_answer: numericAnswer,
             is_correct: null
           },
           { onConflict: "prop_id,participant_id" }
@@ -11764,7 +11950,8 @@ ${publicLink2}`;
         return;
       }
       await logEvent(supabase, roomId, participant.id, userId, "pick_submitted", {
-        prop_id: propId
+        prop_id: propId,
+        answer_type: answerType
       });
       res2.json({ ok: true, pick, activity_event: activityEvent });
     }
@@ -11793,26 +11980,42 @@ ${publicLink2}`;
         res2.status(404).json({ error: "Settlement contract is only available for Madden weekly cards" });
         return;
       }
-      const { data: cards } = await supabase.from("gameday_pick_cards").select("id, phase, status, display_order, gameday_props(id, question, answer_options, line_text, correct_answer, correct_answer_ids, status, display_order)").eq("room_id", roomId).order("display_order", { ascending: true });
+      const { data: cards } = await supabase.from("gameday_pick_cards").select("id, phase, status, display_order, gameday_props(id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)").eq("room_id", roomId).order("display_order", { ascending: true });
       const card = (cards ?? []).find((item) => item.phase === "pregame") ?? (cards ?? [])[0];
       if (!card) {
         res2.status(404).json({ error: "No playable card found for settlement" });
         return;
       }
-      const matchups = [...card?.gameday_props ?? []].filter((prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)).map((prop, index) => ({
+      const settlementItems = [...card?.gameday_props ?? []].filter((prop) => isRequiredWeeklyPickCardProp(prop)).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)).map((prop, index) => ({
         prop_id: prop.id,
         matchup_label: prop.question,
         display_order: prop.display_order ?? index,
         question: prop.question,
         line_text: prop.line_text ?? null,
+        prop_role: prop.prop_role ?? "main_matchup",
+        answer_type: prop.answer_type ?? "choice",
         options: prop.answer_options ?? [],
         answer_options: prop.answer_options ?? [],
+        numeric_min: prop.numeric_min ?? null,
+        numeric_max: prop.numeric_max ?? null,
         status: prop.status === "settled" ? "settled" : "open",
         correct_answer: prop.status === "settled" ? prop.correct_answer ?? prop.correct_answer_ids?.[0] ?? null : null,
-        correct_answer_ids: prop.status === "settled" ? prop.correct_answer_ids ?? [] : []
+        correct_answer_ids: prop.status === "settled" ? prop.correct_answer_ids ?? [] : [],
+        actual_total: prop.status === "settled" && (prop.answer_type ?? "choice") === "integer" ? prop.correct_numeric_answer ?? null : null
       }));
-      const settled = matchups.filter((prop) => prop.status === "settled").length;
-      const total = matchups.length;
+      const matchups = settlementItems.filter(
+        (prop) => prop.answer_type === "choice"
+      );
+      const bonusGame = settlementItems.find(
+        (prop) => prop.prop_role === "bonus_game"
+      ) ?? null;
+      const bonusTotal = settlementItems.find(
+        (prop) => prop.prop_role === "bonus_total"
+      ) ?? null;
+      const settled = settlementItems.filter(
+        (prop) => prop.status === "settled"
+      ).length;
+      const total = settlementItems.length;
       if (total === 0) {
         res2.status(409).json({ error: "No playable matchups found for settlement" });
         return;
@@ -11826,6 +12029,12 @@ ${publicLink2}`;
         card_status: card?.status ?? null,
         matchups,
         playable_matchups: matchups,
+        settlement_items: settlementItems,
+        bonus: {
+          enabled: !!bonusGame,
+          game: bonusGame,
+          total: bonusTotal
+        },
         total_matchups: total,
         settled_matchups: settled,
         remaining_matchups: Math.max(0, total - settled),
@@ -11838,15 +12047,9 @@ ${publicLink2}`;
     "/api/gameday/props/:propId/settle",
     async (req, res2) => {
       const { propId } = req.params;
-      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
-      if (!parsedAnswers.ok) {
-        res2.status(400).json({ error: parsedAnswers.error });
-        return;
-      }
-      const correctAnswers = parsedAnswers.answers;
       const supabase = getServiceSupabase();
       const { data: prop } = await supabase.from("gameday_props").select(
-        "id, answer_options, correct_answer, correct_answer_ids, status, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, archived_at, room_code, source, sport, template_type))"
+        "id, answer_options, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, gameday_pick_cards(id, phase, status, room_id, gameday_rooms(host_user_id, status, archived_at, room_code, source, sport, template_type))"
       ).eq("id", propId).single();
       if (!prop) {
         res2.status(404).json({ error: "Prop not found" });
@@ -11869,6 +12072,80 @@ ${publicLink2}`;
         res2.status(409).json({ error: "Madden weekly cards must be locked before settlement" });
         return;
       }
+      const answerType = prop.answer_type ?? "choice";
+      if (answerType === "integer") {
+        const requestedActualTotal = req.body?.actual_total ?? req.body?.correct_numeric_answer;
+        const min = Number.isInteger(prop.numeric_min) ? prop.numeric_min : WEEKLY_PICK_CARD_NUMERIC_MIN;
+        const max = Number.isInteger(prop.numeric_max) ? prop.numeric_max : WEEKLY_PICK_CARD_NUMERIC_MAX;
+        if (typeof requestedActualTotal !== "number" || !Number.isInteger(requestedActualTotal) || requestedActualTotal < min || requestedActualTotal > max) {
+          res2.status(400).json({
+            error: `actual_total must be an integer between ${min} and ${max}`
+          });
+          return;
+        }
+        const priorNumeric = Number.isInteger(prop.correct_numeric_answer) ? prop.correct_numeric_answer : null;
+        const corrected2 = priorNumeric !== null && priorNumeric !== requestedActualTotal;
+        const { data: propPicks2 } = await supabase.from("gameday_picks").select("participant_id").eq("prop_id", propId);
+        const participantsUpdated2 = corrected2 || priorNumeric === null ? new Set(
+          (propPicks2 ?? []).map((pick) => pick.participant_id).filter(Boolean)
+        ).size : 0;
+        await settleNumericPropCore(supabase, {
+          propId,
+          cardId: card.id,
+          correctNumericAnswer: requestedActualTotal
+        });
+        if (priorNumeric === null || corrected2) {
+          await logEvent(
+            supabase,
+            card?.room_id,
+            null,
+            operator.hostId,
+            corrected2 ? "prop_settlement_corrected" : "prop_settled",
+            {
+              prop_id: propId,
+              card_id: card?.id,
+              phase: card?.phase,
+              prop_role: prop.prop_role ?? "bonus_total",
+              answer_type: "integer",
+              prior_actual_total: corrected2 ? priorNumeric : null,
+              actual_total: requestedActualTotal,
+              operator: operator.kind
+            }
+          );
+        }
+        const { data: progressProps2 } = await supabase.from("gameday_props").select("id, status, answer_options, answer_type").eq("card_id", card.id);
+        const requiredProps = (progressProps2 ?? []).filter(
+          (item) => isRequiredWeeklyPickCardProp(item)
+        );
+        const total2 = requiredProps.length;
+        const settled2 = requiredProps.filter(
+          (item) => item.status === "settled"
+        ).length;
+        res2.json({
+          ok: true,
+          prop_id: propId,
+          answer_type: "integer",
+          actual_total: requestedActualTotal,
+          corrected: corrected2,
+          settled_matchups: settled2,
+          remaining_matchups: Math.max(0, total2 - settled2),
+          all_settled: total2 > 0 && settled2 === total2,
+          progress: {
+            settled: settled2,
+            total: total2,
+            remaining: Math.max(0, total2 - settled2),
+            complete: total2 > 0 && settled2 === total2
+          },
+          participants_updated: participantsUpdated2
+        });
+        return;
+      }
+      const parsedAnswers = parseSettlementCorrectAnswers(req.body ?? {});
+      if (!parsedAnswers.ok) {
+        res2.status(400).json({ error: parsedAnswers.error });
+        return;
+      }
+      const correctAnswers = parsedAnswers.answers;
       const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
       const validIds = new Set(options.map((option) => typeof option === "string" ? option : option?.id));
       const invalidAnswer = correctAnswers.find((answerId) => !validIds.has(answerId));
@@ -11882,9 +12159,7 @@ ${publicLink2}`;
       const participantsUpdated = corrected || !priorAnswers.length ? new Set(
         (propPicks ?? []).map((pick) => pick.participant_id).filter(Boolean)
       ).size : 0;
-      if (!priorAnswers.length || corrected) {
-        await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
-      }
+      await settlePropCore(supabase, { propId, cardId: card.id, correctAnswers });
       const roomId = card?.room_id;
       if (!priorAnswers.length || corrected) {
         await logEvent(
@@ -11907,9 +12182,9 @@ ${publicLink2}`;
           }
         );
       }
-      const { data: progressProps } = await supabase.from("gameday_props").select("id, status, answer_options").eq("card_id", card.id);
+      const { data: progressProps } = await supabase.from("gameday_props").select("id, status, answer_options, answer_type").eq("card_id", card.id);
       const playableProps = (progressProps ?? []).filter(
-        (item) => Array.isArray(item.answer_options) && item.answer_options.length > 0
+        (item) => isRequiredWeeklyPickCardProp(item)
       );
       const total = playableProps.length;
       const settled = playableProps.filter((item) => item.status === "settled").length;
@@ -11948,10 +12223,10 @@ ${publicLink2}`;
         return;
       }
       if (room.source === "discord" && room.sport === "madden" && room.template_type === "weekly_pick_card") {
-        const { data: cards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(status, answer_options)").eq("room_id", roomId);
+        const { data: cards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(status, answer_options, answer_type)").eq("room_id", roomId);
         const playable = (cards ?? []).flatMap(
           (card) => (card.gameday_props ?? []).filter(
-            (prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0
+            (prop) => isRequiredWeeklyPickCardProp(prop)
           )
         );
         const unsettled = playable.filter((prop) => prop.status !== "settled").length;
@@ -12253,24 +12528,35 @@ ${publicLink2}`;
       const scoringMode = normalizeWeeklyPickCardScoringMode(
         roomMeta?.format_config?.scoring_mode
       ) ?? "all_correct";
-      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, status, answer_options)").eq("room_id", roomId);
+      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)").eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap(
         (card) => (card.gameday_props ?? []).filter(
-          (prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0
+          (prop) => isRequiredWeeklyPickCardProp(prop)
         )
       );
-      const totalRequiredProps = playableProps.length;
-      const allRequiredPropsSettled = totalRequiredProps > 0 && playableProps.every((prop) => prop.status === "settled");
+      const scoringProps = isMaddenWeekly ? playableProps.filter(
+        (prop) => weeklyPickCardPropRole(prop) === "main_matchup"
+      ) : playableProps;
+      const totalRequiredProps = scoringProps.length;
+      const allRequiredPropsSettled = totalRequiredProps > 0 && scoringProps.every((prop) => prop.status === "settled");
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       if (!participants?.length) {
-        res2.json({ leaderboard: [], scoring_mode: scoringMode });
+        res2.json({
+          leaderboard: [],
+          scoring_mode: scoringMode,
+          ...isMaddenWeekly ? { bonus: serializeWeeklyPickCardBonus(playableProps, []) } : {}
+        });
         return;
       }
       const participantIds = participants.map((p) => p.id);
-      const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
-      const scores = participants.map((p) => {
+      const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, selected_answer, numeric_answer, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
+      const scores = isMaddenWeekly ? buildWeeklyPickCardParticipantScores(
+        participants,
+        allPicks ?? [],
+        playableProps
+      ) : participants.map((p) => {
         const myPicks = (allPicks ?? []).filter(
-          (pk) => pk.participant_id === p.id
+          (pk) => pk.participant_id === p.id && scoringProps.some((prop) => prop.id === pk.prop_id)
         );
         const correct = myPicks.filter(
           (pk) => pk.is_correct === true
@@ -12285,10 +12571,11 @@ ${publicLink2}`;
           game_day_sp: correct * 10,
           correct_picks: correct,
           pending_picks: pending,
-          total_picks: isMaddenWeekly && roomMeta?.status === "finalized" ? totalRequiredProps : myPicks.length,
+          total_picks: myPicks.length,
           submitted_picks: myPicks.length
         };
-      }).sort(
+      });
+      scores.sort(
         (a, b) => b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
       );
       const leaderboard = isMaddenWeekly ? applyPickCardWinnerSemantics(
@@ -12306,7 +12593,11 @@ ${publicLink2}`;
           is_winner: roomMeta?.status === "finalized" && i === 0
         };
       });
-      res2.json({ leaderboard, scoring_mode: scoringMode });
+      res2.json({
+        leaderboard,
+        scoring_mode: scoringMode,
+        ...isMaddenWeekly ? { bonus: serializeWeeklyPickCardBonus(playableProps, leaderboard) } : {}
+      });
     }
   );
   app2.get(
@@ -12350,20 +12641,28 @@ ${publicLink2}`;
       ) ?? "all_correct";
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       const participantIds = (participants ?? []).map((p) => p.id);
-      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, status, answer_options)").eq("room_id", roomId);
+      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)").eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap(
         (card) => (card.gameday_props ?? []).filter(
-          (prop) => Array.isArray(prop.answer_options) && prop.answer_options.length > 0
+          (prop) => isRequiredWeeklyPickCardProp(prop)
         )
       );
-      const totalRequiredProps = playableProps.length;
-      const allRequiredPropsSettled = totalRequiredProps > 0 && playableProps.every((prop) => prop.status === "settled");
+      const scoringProps = isMaddenWeekly ? playableProps.filter(
+        (prop) => weeklyPickCardPropRole(prop) === "main_matchup"
+      ) : playableProps;
+      const totalRequiredProps = scoringProps.length;
+      const allRequiredPropsSettled = totalRequiredProps > 0 && scoringProps.every((prop) => prop.status === "settled");
+      const allPropsSettled = playableProps.length > 0 && playableProps.every((prop) => prop.status === "settled");
       let leaderboard = [];
       if (participantIds.length > 0) {
-        const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
-        const scores = (participants ?? []).map((p) => {
+        const { data: allPicks } = playableProps.length > 0 ? await supabase.from("gameday_picks").select("participant_id, prop_id, selected_answer, numeric_answer, is_correct").in("participant_id", participantIds).in("prop_id", playableProps.map((prop) => prop.id)) : { data: [] };
+        const scores = isMaddenWeekly ? buildWeeklyPickCardParticipantScores(
+          participants ?? [],
+          allPicks ?? [],
+          playableProps
+        ) : (participants ?? []).map((p) => {
           const myPicks = (allPicks ?? []).filter(
-            (pk) => pk.participant_id === p.id
+            (pk) => pk.participant_id === p.id && scoringProps.some((prop) => prop.id === pk.prop_id)
           );
           const correct = myPicks.filter((pk) => pk.is_correct === true).length;
           const pending = myPicks.filter((pk) => pk.is_correct === null).length;
@@ -12374,10 +12673,11 @@ ${publicLink2}`;
             game_day_sp: correct * 10,
             correct_picks: correct,
             pending_picks: pending,
-            total_picks: isMaddenWeekly ? totalRequiredProps : myPicks.length,
+            total_picks: myPicks.length,
             submitted_picks: myPicks.length
           };
-        }).sort(
+        });
+        scores.sort(
           (a, b) => b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
         );
         leaderboard = isMaddenWeekly ? applyPickCardWinnerSemantics(
@@ -12411,15 +12711,17 @@ ${publicLink2}`;
           room_name: room.room_name
         },
         scoring_mode: scoringMode,
-        all_props_settled: allRequiredPropsSettled,
+        all_props_settled: allPropsSettled,
         winner_determined: isMaddenWeekly ? allRequiredPropsSettled : true,
         winner: winnerRows[0] ?? null,
         winners: winnerRows,
         winner_participant_ids: winnerRows.map((entry) => entry.participant_id),
         tie: winnerRows.length > 1,
         leaderboard,
+        ...isMaddenWeekly ? { bonus: serializeWeeklyPickCardBonus(playableProps, leaderboard) } : {},
         total_participants: (participants ?? []).length,
-        total_props: totalRequiredProps
+        total_props: playableProps.length,
+        ...isMaddenWeekly ? { total_main_props: totalRequiredProps } : {}
       });
     }
   );

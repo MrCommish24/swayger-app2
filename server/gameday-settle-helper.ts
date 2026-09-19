@@ -14,7 +14,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { correctAnswerWriteFields, normalizeCorrectAnswers } from "./correct-answers.js";
+import { normalizeCorrectAnswers } from "./correct-answers.js";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -51,46 +51,56 @@ export async function settlePropCore(
   const answers = normalizeCorrectAnswers(correctAnswers, correctAnswer);
   if (answers.length === 0) throw new Error("At least one correct answer is required");
 
-  // 1. Mark prop settled
-  const { error: propError } = await (supabase
-    .from("gameday_props")
-    .update({
-      ...correctAnswerWriteFields(answers),
-      status: "settled",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", propId) as any);
-  if (propError) throw propError;
-
-  // 2 & 3. Reset then mark qualifying picks. This avoids fragile text `neq`
-  // filters and keeps corrections correct for any set size.
-  const { error: resetError } = await (supabase
-    .from("gameday_picks")
-    .update({ is_correct: false })
-    .eq("prop_id", propId) as any);
-  if (resetError) throw resetError;
-
-  const { error: scoreError } = await (supabase
-    .from("gameday_picks")
-    .update({ is_correct: true })
-    .eq("prop_id", propId)
-    .in("selected_answer", answers) as any);
-  if (scoreError) throw scoreError;
-
-  // 4. Cascade: mark card settled if all its props are now done
-  const { data: remaining } = await supabase
-    .from("gameday_props")
-    .select("id")
-    .eq("card_id", cardId)
-    .neq("status", "settled");
-
-  const cardAutoSettled = !remaining?.length;
-  if (cardAutoSettled) {
-    await (supabase
-      .from("gameday_pick_cards")
-      .update({ status: "settled", updated_at: new Date().toISOString() })
-      .eq("id", cardId) as any);
+  const { data, error } = await (supabase as any).rpc(
+    "settle_gameday_prop_atomic",
+    {
+      p_prop_id: propId,
+      p_correct_answer_ids: answers,
+      p_correct_numeric_answer: null,
+    },
+  );
+  if (error) throw error;
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result) throw new Error("Atomic prop settlement returned no result");
+  if (result.card_id !== cardId) {
+    throw new Error("Atomic prop settlement returned the wrong parent card");
   }
+  return {
+    propId,
+    cardId,
+    cardAutoSettled: result.card_auto_settled === true,
+  };
+}
 
-  return { propId, cardId, cardAutoSettled };
+export async function settleNumericPropCore(
+  supabase: SupabaseClient,
+  {
+    propId,
+    cardId,
+    correctNumericAnswer,
+  }: {
+    propId: string;
+    cardId: string;
+    correctNumericAnswer: number;
+  },
+): Promise<PropSettleResult> {
+  const { data, error } = await (supabase as any).rpc(
+    "settle_gameday_prop_atomic",
+    {
+      p_prop_id: propId,
+      p_correct_answer_ids: null,
+      p_correct_numeric_answer: correctNumericAnswer,
+    },
+  );
+  if (error) throw error;
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result) throw new Error("Atomic numeric settlement returned no result");
+  if (result.card_id !== cardId) {
+    throw new Error("Atomic numeric settlement returned the wrong parent card");
+  }
+  return {
+    propId,
+    cardId,
+    cardAutoSettled: result.card_auto_settled === true,
+  };
 }

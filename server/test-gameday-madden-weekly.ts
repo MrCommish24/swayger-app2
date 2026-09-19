@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import {
   applyPickCardWinnerSemantics,
+  buildWeeklyPickCardParticipantScores,
   normalizeWeeklyPickCardConfig,
   normalizeWeeklyPickCardMatchups,
 } from "./routes-gameday.js";
@@ -60,6 +61,60 @@ const bonusConfig = normalizeWeeklyPickCardConfig({
 check("valid manual bonus config is accepted", bonusConfig !== null);
 check("bonus label is trimmed", bonusConfig?.bonus.label === "Who wins the bonus game?");
 check("bonus options are trimmed and deduplicated", JSON.stringify(bonusConfig?.bonus.answer_options) === JSON.stringify(["Home", "Away"]));
+const structuredBonusConfig = normalizeWeeklyPickCardConfig({
+  ...baseConfig,
+  bonus: {
+    enabled: true,
+    game: {
+      team_a: " Packers ",
+      team_b: " Lions ",
+      line_text: "Packers +1.5",
+    },
+    total_prediction: {
+      enabled: true,
+      prompt: " Exact total points? ",
+      rule: "exact",
+    },
+  },
+}, validMatchups.length);
+check("structured bonus game and total are accepted", structuredBonusConfig !== null);
+check(
+  "structured bonus teams and line are normalized",
+  structuredBonusConfig?.bonus.game?.team_a === "Packers" &&
+    structuredBonusConfig?.bonus.game?.team_b === "Lions" &&
+    structuredBonusConfig?.bonus.game?.line_text === "Packers +1.5",
+);
+check(
+  "exact total config is normalized to the shared 0-200 range",
+  structuredBonusConfig?.bonus.total_prediction.enabled === true &&
+    structuredBonusConfig?.bonus.total_prediction.prompt === "Exact total points?" &&
+    structuredBonusConfig?.bonus.total_prediction.rule === "exact" &&
+    structuredBonusConfig?.bonus.total_prediction.min === 0 &&
+    structuredBonusConfig?.bonus.total_prediction.max === 200,
+);
+check(
+  "total prediction without a structured bonus game is rejected",
+  normalizeWeeklyPickCardConfig({
+    ...baseConfig,
+    bonus: {
+      enabled: true,
+      label: "Legacy bonus",
+      answer_options: ["A", "B"],
+      total_prediction: { enabled: true, rule: "exact" },
+    },
+  }, validMatchups.length) === null,
+);
+check(
+  "unsupported total prediction rule is rejected",
+  normalizeWeeklyPickCardConfig({
+    ...baseConfig,
+    bonus: {
+      enabled: true,
+      game: { team_a: "Packers", team_b: "Lions" },
+      total_prediction: { enabled: true, rule: "closest" },
+    },
+  }, validMatchups.length) === null,
+);
 check("missing week label is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, week_label: "" }, 2) === null);
 check("zero minimum is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 0 }, 2) === null);
 check("minimum above matchup count is rejected", normalizeWeeklyPickCardConfig({ ...baseConfig, minimum_matchups: 3 }, 2) === null);
@@ -107,6 +162,8 @@ check("more than 7 matchups are rejected", normalizeWeeklyPickCardMatchups(
 ) === null);
 
 const migration = readFileSync("supabase/gameday-madden-weekly-pick-card-v1.sql", "utf8");
+const bonusMigration = readFileSync("supabase/gameday-madden-pick-card-v2-bonus.sql", "utf8");
+const atomicSettlementMigration = readFileSync("supabase/gameday-atomic-prop-settlement.sql", "utf8");
 const routes = readFileSync("server/routes-gameday.ts", "utf8");
 const participantUi = readFileSync("app/gameday/[roomId]/index.tsx", "utf8");
 check("room route admits Madden before format branching", routes.includes('["nba", "soccer", "nfl", "madden"]'));
@@ -117,6 +174,14 @@ check("migration permits Madden rooms", migration.includes("'madden'"));
 check("migration permits weekly_pick_card", migration.includes("'weekly_pick_card'"));
 check("migration makes representative teams nullable", migration.includes("ALTER COLUMN team_a_name DROP NOT NULL"));
 check("migration adds optional line text", migration.includes("ADD COLUMN IF NOT EXISTS line_text TEXT"));
+check("V2 migration adds explicit prop roles", bonusMigration.includes("ADD COLUMN IF NOT EXISTS prop_role TEXT"));
+check("V2 migration stores typed numeric picks", bonusMigration.includes("ADD COLUMN IF NOT EXISTS numeric_answer INTEGER"));
+check("V2 migration stores typed numeric results", bonusMigration.includes("ADD COLUMN IF NOT EXISTS correct_numeric_answer INTEGER"));
+check("V2 public-pick snapshots expose prop role and numeric prediction", bonusMigration.includes("'prop_role', p.prop_role") && bonusMigration.includes("'numeric_prediction', gp.numeric_answer"));
+check("settlement uses one atomic database function", atomicSettlementMigration.includes("CREATE FUNCTION public.settle_gameday_prop_atomic"));
+check("atomic settlement tightens exact-total bounds", atomicSettlementMigration.includes("numeric_min = 0") && atomicSettlementMigration.includes("numeric_max = 200"));
+check("typed pick trigger rejects shape mismatches", atomicSettlementMigration.includes("CREATE TRIGGER gameday_picks_validate_answer_shape"));
+check("same-result settlement retries re-assert scores", routes.includes("Always run the atomic settlement on retries"));
 check("pick writes enforce the shared scheduled deadline", routes.includes('res.status(409).json({ error: "Picks are closed for this card." })'));
 check("Madden weekly cards remain manual reveal instead of auto-locking", routes.includes("isManualRevealMaddenCard"));
 check("room payload exposes server-authoritative editability", routes.includes("can_edit_picks: card.status === \"open\" && !deadlinePassed"));
@@ -187,6 +252,53 @@ check(
 check(
   "winner is withheld until all required props settle",
   applyPickCardWinnerSemantics(allCorrectScores, "most_correct", false).every((s) => !s.is_winner),
+);
+
+const separatedScores = buildWeeklyPickCardParticipantScores(
+  [
+    { id: "main-perfect-bonus-wrong", display_name: "One" },
+    { id: "main-wrong-bonus-perfect", display_name: "Two" },
+  ],
+  [
+    { participant_id: "main-perfect-bonus-wrong", prop_id: "main-1", selected_answer: "A", is_correct: true },
+    { participant_id: "main-perfect-bonus-wrong", prop_id: "main-2", selected_answer: "D", is_correct: true },
+    { participant_id: "main-perfect-bonus-wrong", prop_id: "bonus-game", selected_answer: "E", is_correct: false },
+    { participant_id: "main-perfect-bonus-wrong", prop_id: "bonus-total", selected_answer: "51", numeric_answer: 51, is_correct: false },
+    { participant_id: "main-wrong-bonus-perfect", prop_id: "main-1", selected_answer: "B", is_correct: false },
+    { participant_id: "main-wrong-bonus-perfect", prop_id: "main-2", selected_answer: "D", is_correct: true },
+    { participant_id: "main-wrong-bonus-perfect", prop_id: "bonus-game", selected_answer: "F", is_correct: true },
+    { participant_id: "main-wrong-bonus-perfect", prop_id: "bonus-total", selected_answer: "52", numeric_answer: 52, is_correct: true },
+  ],
+  [
+    { id: "main-1", prop_role: "main_matchup", answer_type: "choice", answer_options: ["A", "B"], status: "settled" },
+    { id: "main-2", prop_role: "main_matchup", answer_type: "choice", answer_options: ["C", "D"], status: "settled" },
+    { id: "bonus-game", prop_role: "bonus_game", answer_type: "choice", answer_options: ["E", "F"], status: "settled" },
+    { id: "bonus-total", prop_role: "bonus_total", answer_type: "integer", answer_options: [], status: "settled", correct_numeric_answer: 52 },
+  ],
+);
+const separatedStandings = applyPickCardWinnerSemantics(
+  separatedScores,
+  "all_correct",
+  true,
+);
+check(
+  "bonus correctness does not change main correct-pick counts",
+  separatedScores[0].correct_picks === 2 &&
+    separatedScores[1].correct_picks === 1,
+);
+check(
+  "main-perfect participant wins even when both bonus outcomes are wrong",
+  separatedStandings.find((row) => row.participant_id === "main-perfect-bonus-wrong")?.is_winner === true,
+);
+check(
+  "bonus-perfect participant does not win with a wrong main pick",
+  separatedStandings.find((row) => row.participant_id === "main-wrong-bonus-perfect")?.is_winner === false,
+);
+check(
+  "typed bonus totals remain available separately from main scores",
+  separatedScores[1].predicted_total === 52 &&
+    separatedScores[1].actual_total === 52 &&
+    separatedScores[1].exact_total_hit === true,
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

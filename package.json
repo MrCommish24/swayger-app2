@@ -27,6 +27,7 @@
     "test:gameday:nfl-weekly-slate-delivery": "npx tsx server/test-gameday-nfl-weekly-slate-bot-delivery.ts",
     "test:gameday:madden-weekly": "npx tsx server/test-gameday-madden-weekly.ts",
     "test:gameday:madden-weekly:e2e": "npx tsx server/test-gameday-madden-weekly-e2e.ts",
+    "test:gameday:madden-bonus-v2": "npx tsx server/test-gameday-madden-bonus-v2.ts",
     "test:gameday:madden-participation": "npx tsx server/test-gameday-madden-participation.ts",
     "test:fantasy:swayger-moments": "npx tsx server/test-fantasy-weekly-moments.ts",
     "test:fantasy:call-your-shot": "npx tsx server/test-fantasy-pick-share.ts",
