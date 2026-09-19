@@ -21,6 +21,7 @@
     "test:gameday:visibility": "npx tsx server/test-gameday-discord-visibility.ts",
     "test:gameday:subscriptions": "npx tsx server/test-gameday-discord-subscriptions.ts",
     "test:gameday:nfl": "npx tsx server/test-gameday-nfl-v1.ts",
+    "test:gameday:nfl-catalog": "npx tsx server/test-gameday-nfl-catalog.ts",
     "test:gameday:nfl-weekly-master-slate": "npx tsx server/test-gameday-nfl-weekly-master-slate.ts",
     "test:gameday:nfl-weekly-slate-publish": "npx tsx server/test-gameday-nfl-weekly-slate-publish.ts",
     "test:gameday:nfl-weekly-slate-delivery": "npx tsx server/test-gameday-nfl-weekly-slate-bot-delivery.ts",

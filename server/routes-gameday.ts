@@ -27,6 +27,7 @@ import {
 import { settlePropCore } from "./gameday-settle-helper.js";
 import { parseSettlementCorrectAnswers, sameCorrectAnswerSet } from "./correct-answers.js";
 import { getServiceSupabase } from "./supabase-service.js";
+import { getNflTeamCatalog } from "./gameday-nfl-catalog.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
 // Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
@@ -2901,6 +2902,33 @@ export function registerGamedayRoutes(app: Express) {
     const user = await getVerifiedGamedayUser(req);
     const email = (user?.email ?? "").toLowerCase();
     res.json({ isAdmin: !!user && getAllowedGamedayAdminEmails().includes(email) });
+  });
+
+  // ── GET /api/gameday/catalog/teams ─────────────────────────────────────────
+  // The catalog is global and contains no participant or room data, but remains
+  // bot-authenticated so the external Discord workflow uses the same protected
+  // integration boundary as room creation.
+  app.get("/api/gameday/catalog/teams", (req: Request, res: Response) => {
+    if (!isBotApiKeyValid(req)) {
+      res.status(401).json({ error: "Valid Game Day bot credentials are required" });
+      return;
+    }
+
+    const league = typeof req.query.league === "string"
+      ? req.query.league.trim().toLowerCase()
+      : "";
+    if (league !== "nfl") {
+      res.status(400).json({ error: "league must be nfl" });
+      return;
+    }
+
+    const teams = getNflTeamCatalog();
+    res.json({
+      sport: "football",
+      league: "nfl",
+      count: teams.length,
+      teams,
+    });
   });
 
   // ── GET /api/gameday/public-rooms ─────────────────────────────────────────
