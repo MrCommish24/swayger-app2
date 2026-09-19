@@ -1,0 +1,281 @@
+We need to close one source-of-truth gap in Discord Madden Pick Card Win Conditions.
+
+CONTEXT
+
+The Discord bot now supports two commissioner-selected Win Conditions:
+
+1. perfect_card
+2. most_correct
+
+Perfect Card maps naturally to the existing backend:
+
+scoring_mode = "all_correct"
+
+However, Claude found that no backend scoring_mode value currently exists or is documented for Most Correct.
+
+The Discord bot can calculate Most Correct winners from the backend's existing:
+
+- correct_picks
+- total_picks
+
+but we do NOT want Discord to be the only place that knows the card's winner semantics.
+
+The backend/web experience must agree with Discord.
+
+GOAL
+
+Add first-class backend support for:
+
+scoring_mode = "most_correct"
+
+for Discord Madden Weekly Pick Cards.
+
+Do not change Perfect Card behavior.
+
+==================================================
+SCORING MODES
+==================================================
+
+Support:
+
+all_correct
+most_correct
+
+Semantics:
+
+ALL_CORRECT
+
+Winner(s) are participants where:
+
+correct_picks === total_picks
+
+If nobody is perfect:
+- no winner
+
+Multiple perfect participants:
+- tied winners
+
+MOST_CORRECT
+
+Winner(s) are participant(s) with the highest correct_picks count after all required props are settled.
+
+Example:
+
+Darius 2/3
+Mike 1/3
+Chris 1/3
+
+Winner = Darius
+
+Tie:
+
+Darius 2/3
+Mike 2/3
+Chris 1/3
+
+Winners = Darius + Mike
+
+Do not add a tiebreaker.
+
+==================================================
+CREATION CONTRACT
+==================================================
+
+Discord bot should be allowed to send:
+
+Perfect Card:
+
+format_config.scoring_mode = "all_correct"
+
+Most Correct:
+
+format_config.scoring_mode = "most_correct"
+
+Inspect the current request validator.
+
+Update validation narrowly so both values are accepted.
+
+Do not loosen scoring_mode to arbitrary strings.
+
+Legacy cards with:
+
+all_correct
+
+remain unchanged.
+
+Cards without a scoring mode should preserve the current legacy/default behavior.
+
+==================================================
+FINAL STANDINGS
+==================================================
+
+The backend final standings response must determine winner semantics using scoring_mode.
+
+Do not make Discord independently authoritative.
+
+Expose enough information in final standings for clients to know:
+
+- scoring_mode
+- correct_picks
+- total_picks
+- winner / winning participant IDs or equivalent existing winner indicator
+- tie state if existing response shape supports it
+
+Prefer adapting the existing final-standings response rather than creating a second endpoint.
+
+For all_correct:
+
+2/3 must never be declared winner simply because it is the highest score.
+
+For most_correct:
+
+2/3 may be winner when it is the highest score.
+
+==================================================
+WEB EXPERIENCE
+==================================================
+
+Inspect the Madden Pick Card web/final receipt behavior.
+
+It should not contradict the configured Win Condition.
+
+At minimum:
+
+Perfect Card:
+- clearly preserve all-correct semantics
+
+Most Correct:
+- final standings reflect highest correct-pick total
+
+Do not perform a broad UI redesign.
+
+Do not make SP the source of truth for Pick Card winners.
+
+SP may continue to exist as a separate Swayger system.
+
+==================================================
+PARTIAL SETTLEMENT
+==================================================
+
+Do not change settlement.
+
+Existing semantics remain:
+
+- unsettled pick = null
+- correct = true
+- incorrect = false
+
+Do not declare final winners before all required matchups are settled.
+
+For future Game Day Status, provide/confirm enough data to calculate:
+
+Perfect Card:
+- still perfect
+- eliminated
+- remaining picks
+
+Most Correct:
+- correct_count
+- settled_count
+- remaining_count
+
+Do not build Game Day Status here.
+
+==================================================
+FINALIZATION
+==================================================
+
+Preserve:
+
+lock
+→ incremental settlement
+→ all settled
+→ explicit finalize
+→ final standings
+
+Do not auto-finalize.
+
+Do not change correction behavior.
+
+==================================================
+BOT CONTRACT
+==================================================
+
+Return the exact creation contract Claude should use.
+
+Expected:
+
+Perfect Card:
+{
+  "scoring_mode": "all_correct"
+}
+
+Most Correct:
+{
+  "scoring_mode": "most_correct"
+}
+
+Also return the exact final-standings fields Claude should trust instead of recomputing winner semantics independently.
+
+If possible, Discord should render winners from backend-authoritative final standings.
+
+==================================================
+TESTING
+==================================================
+
+Test at minimum:
+
+1. all_correct remains valid.
+2. most_correct is accepted.
+3. unknown scoring mode rejected.
+4. legacy all_correct card remains unchanged.
+5. legacy missing mode defaults safely.
+6. all_correct 3/3 wins.
+7. all_correct 2/3 does not win.
+8. all_correct nobody perfect => no winner.
+9. all_correct multiple perfect => tie.
+10. most_correct highest correct count wins.
+11. most_correct tied highest count => tied winners.
+12. most_correct lower participant does not win.
+13. SP does not override Pick Card winner semantics.
+14. winner not determined before all props settle.
+15. finalization remains explicit.
+16. settlement unchanged.
+17. correction unchanged.
+18. public-pick outbox unchanged.
+19. participant receipt states unchanged.
+20. one-matchup card works.
+21. seven-matchup card works.
+22. NFL regression green.
+23. NBA/web regression green.
+24. Fantasy regression green.
+25. production build green.
+
+Do not modify the external Discord bot.
+
+RETURN
+
+A. Existing scoring implementation found
+B. Backend changes made
+C. Accepted scoring_mode values
+D. Perfect Card backend semantics
+E. Most Correct backend semantics
+F. Tie behavior
+G. Final standings response contract
+H. Web behavior
+I. Legacy compatibility
+J. Schema/migration requirements
+K. Files changed
+L. Tests/assertion counts
+M. Regression results
+N. Commit hash
+O. Push status
+P. Publish requirements
+Q. Exact Claude contract update
+
+End with:
+
+BACKEND WIN CONDITION STATUS: PASS / FAIL
+PERFECT CARD SOURCE OF TRUTH: BACKEND / NOT BACKEND
+MOST CORRECT SOURCE OF TRUTH: BACKEND / NOT BACKEND
+READY TO HAND BACK TO CLAUDE: YES / NO
