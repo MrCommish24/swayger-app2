@@ -1,0 +1,248 @@
+The Pick Card Creator V2 backend implementation is approved.
+
+I have synced the local changes to GitHub.
+
+Please complete release verification and give me the exact external Discord-bot contract.
+
+FIRST — GIT / RELEASE CHECK
+
+Verify:
+
+1. HEAD == origin/main
+2. ahead 0
+3. behind 0
+4. tracked tree clean
+5. commit 55bf0a2 Add Madden Pick Card V2 bonus contract is present on origin/main
+6. both required Supabase migrations remain applied
+7. production server build remains green
+
+If all are true, confirm READY TO PUBLISH.
+
+Do not make additional product changes.
+
+SECOND — PROVIDE THE EXACT CLAUDE CONTRACT
+
+We are about to build the Discord Pick Card Creator V2.
+
+The bot will eventually support TWO commissioner creation paths:
+
+A. Paste / Import Slate
+B. Build Manually from NFL catalog
+
+Both must converge into the SAME normalized backend contract.
+
+Please return the exact production contract Claude needs.
+
+==================================================
+A. ROOM CREATION
+==================================================
+
+Give the exact:
+
+- endpoint
+- method
+- authentication headers
+- Discord guild/channel headers if required
+- complete request JSON
+
+Show THREE examples:
+
+1. No-bonus Perfect Card
+2. No-bonus Most Correct card
+3. Perfect Card with:
+   - main matchups
+   - Bonus Game
+   - Total Points prediction
+
+Include exact field names and nesting.
+
+Do not give conceptual pseudocode. Give the actual implemented contract.
+
+==================================================
+B. PROP TYPES / ROLES
+==================================================
+
+Document the exact values now used for:
+
+prop_role
+answer_type
+
+Show which values represent:
+
+- main matchup
+- bonus matchup
+- numeric total prediction
+
+Document any other required metadata.
+
+==================================================
+C. PARTICIPANT READ CONTRACT
+==================================================
+
+Show the exact response shape the web/client receives for:
+
+1. main matchup
+2. Bonus Game
+3. numeric Total Points prediction
+
+Include the fields Claude eventually needs to understand what players must answer.
+
+==================================================
+D. PARTICIPANT PICK WRITE CONTRACT
+==================================================
+
+Show the exact existing participant pick endpoint(s) and payloads for:
+
+1. categorical team selection
+2. numeric Total Points prediction
+
+Document numeric validation:
+- integer requirement
+- min
+- max
+- error behavior
+
+==================================================
+E. PUBLIC PICK EVENT CONTRACT
+==================================================
+
+Show how:
+
+pick_card_picks_submitted
+pick_card_picks_updated
+
+now serialize V2 picks.
+
+Give one exact sample event containing:
+
+- at least two main matchup selections
+- Bonus Game selection
+- Total Points prediction
+
+Document the fields Claude should use to render:
+
+🔥 Darius locked in
+
+Packers over Lions
+Bills over Chiefs
+
+Bonus
+Bears over Eagles
+Total: 54
+
+Do not modify the Discord bot yet.
+
+==================================================
+F. SETTLEMENT QUEUE
+==================================================
+
+Show the exact:
+
+GET /api/gameday/bot/rooms/:roomId/settlement
+
+V2 response shape.
+
+Demonstrate how the queue distinguishes:
+
+- unresolved main matchup
+- unresolved Bonus Game
+- unresolved numeric Total Points result
+
+==================================================
+G. SETTLEMENT WRITES
+==================================================
+
+Give exact endpoint/payload examples for:
+
+1. settling a normal matchup winner
+2. settling the Bonus Game winner
+3. entering actual Total Points
+4. correcting actual Total Points
+
+Document:
+- idempotency
+- corrected flag
+- participants_updated
+- progress behavior
+
+==================================================
+H. COMPLETION / FINALIZATION
+==================================================
+
+Clarify exactly what must be resolved before:
+
+all_settled = true
+
+Confirm whether all of these are required:
+
+- every main matchup
+- Bonus Game, if enabled
+- Bonus Total, if enabled
+
+Confirm that main winner semantics remain based ONLY on main matchups.
+
+==================================================
+I. FINAL STANDINGS
+==================================================
+
+Give the exact finalized Madden response shape including:
+
+- scoring_mode
+- winner_determined
+- winners
+- winner_participant_ids
+- tie
+- main leaderboard
+- bonus results
+
+Give a representative participant result showing:
+
+- main correct/total
+- is_winner
+- Bonus Game pick/correctness
+- predicted total
+- actual total
+- exact-total hit
+
+==================================================
+J. NFL CATALOG
+==================================================
+
+Confirm the exact production team catalog endpoint and response contract:
+
+GET /api/gameday/catalog/teams?league=nfl
+
+Document auth and fields.
+
+==================================================
+K. LEGACY COMPATIBILITY
+==================================================
+
+Confirm:
+
+- current manually entered Pick Cards still work
+- no-bonus cards still work
+- existing Perfect Card / Most Correct cards still work
+- old public-pick event handling remains compatible
+
+==================================================
+RETURN
+
+1. Git/release status
+2. Exact V2 creation contract
+3. Exact prop-role/answer-type values
+4. Exact participant read/write contracts
+5. Exact public-pick event contract
+6. Exact settlement contract
+7. Exact finalization/final-standings contract
+8. Exact NFL catalog contract
+9. Compatibility notes
+10. Any remaining blocker before Claude builds the dual-path creator
+
+End with:
+
+GIT SYNC STATUS: PASS / FAIL
+V2 MIGRATIONS APPLIED: YES / NO
+READY TO PUBLISH: YES / NO
+V2 CLAUDE CONTRACT COMPLETE: YES / NO
+READY TO BUILD DISCORD CREATOR V2: YES / NO
