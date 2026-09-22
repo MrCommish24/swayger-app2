@@ -21,6 +21,12 @@ import {
   GDParticipant,
   GDLeaderboardEntry,
 } from "@/lib/gameday-api";
+import {
+  buildPickPayload,
+  getIntegerBounds,
+  isPropAnswered,
+  parseIntegerPick,
+} from "@/lib/gameday-picks";
 import Colors from "@/constants/colors";
 import { Analytics, detectEntrySource, detectUtmCampaign, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
 import { getCommercialPlacement } from "@/lib/commercial-api";
@@ -304,7 +310,12 @@ export default function GameDayRoomScreen() {
       // (e.g. pregame picks must not trigger a re-seed when the halftime card is open).
       const serverHasPicksForUs =
         newOpenCard != null &&
-        newOpenCard.gameday_props.some((p: any) => data.my_picks[p.id] !== undefined);
+        newOpenCard.gameday_props.some(
+          (p: GDProp) =>
+            Object.prototype.hasOwnProperty.call(data.my_picks, p.id) ||
+            data.my_pick_details?.[p.id]?.numeric_answer !== null &&
+              data.my_pick_details?.[p.id]?.numeric_answer !== undefined,
+        );
 
       if (cardChanged || (serverHasPicksForUs && !picksSeededRef.current)) {
         if (cardChanged) {
@@ -315,7 +326,16 @@ export default function GameDayRoomScreen() {
           // Seed pendingPicks with whatever the server has saved for this card.
           const seeded: Record<string, string> = {};
           newOpenCard.gameday_props.forEach((p) => {
-            if (data.my_picks[p.id]) seeded[p.id] = data.my_picks[p.id];
+            const detail = data.my_pick_details?.[p.id];
+            if (
+              p.answer_type === "integer" &&
+              detail?.numeric_answer !== null &&
+              detail?.numeric_answer !== undefined
+            ) {
+              seeded[p.id] = String(detail.numeric_answer);
+            } else if (Object.prototype.hasOwnProperty.call(data.my_picks, p.id)) {
+              seeded[p.id] = data.my_picks[p.id];
+            }
           });
           // Mark as seeded only when we actually got real picks from the server.
           if (Object.keys(seeded).length > 0) picksSeededRef.current = true;
@@ -571,8 +591,9 @@ export default function GameDayRoomScreen() {
       setPickError("Picks are closed for this card.");
       return;
     }
-    const propIds = openCard.gameday_props.map((p) => p.id);
-    const missing = propIds.filter((id) => !pendingPicks[id]);
+    const missing = openCard.gameday_props.filter(
+      (prop) => !isPropAnswered(prop, pendingPicks[prop.id]),
+    );
     if (missing.length > 0) {
       setPickError(`Make a pick for every question (${missing.length} remaining).`);
       return;
@@ -581,11 +602,15 @@ export default function GameDayRoomScreen() {
     setSubmittingPicks(true);
     try {
       for (const prop of openCard.gameday_props) {
+        const body = buildPickPayload(prop, pendingPicks[prop.id]);
+        if (!body) {
+          throw new Error("Enter a valid whole number from 0 to 200.");
+        }
         await gamedayFetch(
           `/api/gameday/props/${prop.id}/pick`,
           {
             method: "POST",
-            body: JSON.stringify({ selected_answer: pendingPicks[prop.id] }),
+            body: JSON.stringify(body),
           },
           { session, guestSessionId }
         );
@@ -1211,7 +1236,9 @@ function PickCard({
   canEdit: boolean;
   isMaddenWeekly: boolean;
 }) {
-  const answered = card.gameday_props.filter((p) => myPicks[p.id]).length;
+  const answered = card.gameday_props.filter((p) =>
+    isPropAnswered(p, myPicks[p.id]),
+  ).length;
   const total = card.gameday_props.length;
   const allAnswered = answered === total;
 
@@ -1315,40 +1342,84 @@ function PropPicker({
   onSelect: (ans: string) => void;
   disabled: boolean;
 }) {
+  const isInteger = prop.answer_type === "integer";
+  const integerValue = isInteger ? parseIntegerPick(prop, selected) : null;
+  const hasIntegerText = isInteger && selected !== undefined && selected !== "";
+  const { min, max } = getIntegerBounds(prop);
+  const integerError =
+    hasIntegerText && integerValue === null
+      ? `Enter a whole number from ${min} to ${max}.`
+      : null;
+
   return (
     <View style={styles.propBlock}>
       <Text style={styles.propQuestion}>{prop.question}</Text>
       {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
-      <View style={styles.optionsRow}>
-        {prop.answer_options.map((ans) => {
-          const isSelected = selected === ans;
-          // Confirmed = saved to server and unchanged locally (green)
-          const isConfirmed = isSelected && serverPick === ans;
-          // Pending = locally selected but differs from what's on the server (blue)
-          const isPending = isSelected && !isConfirmed;
-          return (
-            <TouchableOpacity
-              key={ans}
-              style={[
-                styles.optionBtn,
-                isConfirmed && styles.optionBtnConfirmed,
-                isPending && styles.optionBtnActive,
-              ]}
-              onPress={() => onSelect(ans)}
-              disabled={disabled}
-              activeOpacity={0.75}
-            >
-              <Text style={[
-                styles.optionText,
-                isConfirmed && styles.optionTextConfirmed,
-                isPending && styles.optionTextActive,
-              ]}>
-                {ans}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {isInteger ? (
+        <>
+          <TextInput
+            style={[
+              styles.numericInput,
+              selected !== undefined &&
+                selected === serverPick &&
+                integerValue !== null &&
+                styles.numericInputConfirmed,
+              selected !== undefined &&
+                selected !== serverPick &&
+                integerValue !== null &&
+                styles.numericInputActive,
+              integerError && styles.numericInputError,
+              disabled && styles.numericInputDisabled,
+            ]}
+            value={selected ?? ""}
+            onChangeText={onSelect}
+            editable={!disabled}
+            keyboardType="numeric"
+            inputMode="numeric"
+            placeholder={`${min}–${max}`}
+            placeholderTextColor={C.textMuted}
+            accessibilityLabel={prop.question}
+          />
+          {integerError ? (
+            <Text style={styles.numericInputErrorText}>{integerError}</Text>
+          ) : (
+            <Text style={styles.numericInputHelper}>
+              Whole number from {min} to {max}
+            </Text>
+          )}
+        </>
+      ) : (
+        <View style={styles.optionsRow}>
+          {prop.answer_options.map((ans) => {
+            const isSelected = selected === ans;
+            // Confirmed = saved to server and unchanged locally (green)
+            const isConfirmed = isSelected && serverPick === ans;
+            // Pending = locally selected but differs from what's on the server (blue)
+            const isPending = isSelected && !isConfirmed;
+            return (
+              <TouchableOpacity
+                key={ans}
+                style={[
+                  styles.optionBtn,
+                  isConfirmed && styles.optionBtnConfirmed,
+                  isPending && styles.optionBtnActive,
+                ]}
+                onPress={() => onSelect(ans)}
+                disabled={disabled}
+                activeOpacity={0.75}
+              >
+                <Text style={[
+                  styles.optionText,
+                  isConfirmed && styles.optionTextConfirmed,
+                  isPending && styles.optionTextActive,
+                ]}>
+                  {ans}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }
@@ -1401,15 +1472,45 @@ function RevealCard({
           <View key={prop.id} style={styles.revealProp}>
             <Text style={styles.propQuestion}>{prop.question}</Text>
             {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
+            {prop.answer_type === "integer" ? (
+              <View style={[
+                styles.revealAnswer,
+                myPick !== undefined && styles.revealAnswerNumeric,
+              ]}>
+                <View style={styles.revealAnswerLeft}>
+                  <Text style={styles.revealAnswerText}>
+                    Total Points: {myPick ?? "No pick submitted"}
+                  </Text>
+                  {isSettled && prop.correct_numeric_answer !== null &&
+                  prop.correct_numeric_answer !== undefined ? (
+                    <Text style={styles.revealPickers}>
+                      Actual total: {prop.correct_numeric_answer}
+                    </Text>
+                  ) : null}
+                </View>
+                {isSettled && prop.correct_numeric_answer !== null &&
+                prop.correct_numeric_answer !== undefined &&
+                myPick !== undefined ? (
+                  <Text style={[
+                    styles.pickStatus,
+                    Number(myPick) === prop.correct_numeric_answer
+                      ? styles.pickStatusCorrect
+                      : styles.pickStatusIncorrect,
+                  ]}>
+                    {Number(myPick) === prop.correct_numeric_answer ? "CORRECT" : "INCORRECT"}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             {isSettled && correct ? (
               <View style={styles.correctAnswerRow}>
                 <Text style={styles.correctLabel}>✓ </Text>
                 <Text style={styles.correctAnswer}>{correct}</Text>
               </View>
-            ) : isMaddenWeekly ? (
+            ) : isMaddenWeekly && prop.answer_type !== "integer" ? (
               <Text style={styles.pendingSettlement}>Pending settlement · result not available yet</Text>
             ) : null}
-            {prop.answer_options.map((ans) => {
+            {prop.answer_type !== "integer" && prop.answer_options.map((ans) => {
               const pickers = distribute[ans] ?? [];
               const isMine = myPick === ans;
               const hasResult = isSettled && !!correct;
@@ -1664,6 +1765,24 @@ const styles = StyleSheet.create({
   propQuestion: { fontSize: 14, fontWeight: "600", color: C.text, marginBottom: 10, lineHeight: 20 },
   windowText: { fontSize: 12, color: C.textSecondary, marginBottom: 8 },
   optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  numericInput: {
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 8,
+    color: C.text,
+    fontSize: 18,
+    fontWeight: "700" as const,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    minHeight: 46,
+    width: 150,
+  },
+  numericInputActive: { borderColor: C.tint, backgroundColor: C.tint + "22" },
+  numericInputConfirmed: { borderColor: C.success, backgroundColor: C.success + "22" },
+  numericInputError: { borderColor: C.danger, backgroundColor: C.danger + "10" },
+  numericInputDisabled: { opacity: 0.65 },
+  numericInputHelper: { color: C.textMuted, fontSize: 11, marginTop: 5 },
+  numericInputErrorText: { color: C.danger, fontSize: 11, marginTop: 5 },
   optionBtn: {
     borderWidth: 1.5,
     borderColor: C.border,
@@ -1744,6 +1863,7 @@ const styles = StyleSheet.create({
   },
   revealAnswerWinner: { borderColor: C.success, backgroundColor: C.success + "14" },
   revealAnswerWrong: { borderColor: C.danger, backgroundColor: C.danger + "10" },
+  revealAnswerNumeric: { borderColor: C.tint + "88", backgroundColor: C.tint + "10" },
   revealAnswerLeft: { flex: 1 },
   revealAnswerText: { fontSize: 13, color: C.text, fontWeight: "600" },
   revealAnswerTextWinner: { color: C.success },

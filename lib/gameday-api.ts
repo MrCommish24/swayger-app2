@@ -94,6 +94,11 @@ export interface GDProp {
   answer_options: string[];
   line_text?: string | null;
   correct_answer: string | null;
+  correct_numeric_answer?: number | null;
+  prop_role?: "main_matchup" | "bonus_game" | "bonus_total" | null;
+  answer_type?: "choice" | "integer" | null;
+  numeric_min?: number | null;
+  numeric_max?: number | null;
   status: "pending" | "settled";
   display_order: number;
 }
@@ -141,6 +146,13 @@ export interface GDRoomResponse {
   cards: GDCard[];
   participant: GDParticipant | null;
   my_picks: Record<string, string>;
+  my_pick_details?: Record<
+    string,
+    {
+      selected_answer: string | null;
+      numeric_answer: number | null;
+    }
+  >;
   revealed_picks: Record<string, Record<string, string[]>>;
   participant_count: number;
 }
