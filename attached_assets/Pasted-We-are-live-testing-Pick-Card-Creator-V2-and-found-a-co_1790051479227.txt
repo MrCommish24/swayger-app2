@@ -1,0 +1,222 @@
+We are live-testing Pick Card Creator V2 and found a confirmed participant-web blocker.
+
+DO NOT redesign Pick Card architecture.
+
+The V2 backend is already creating the bonus_total prop correctly.
+
+LIVE EVIDENCE
+
+The participant card shows:
+
+- 3 main matchup props
+- 1 Bonus Game prop
+- "Total points in the Bonus Game?"
+- 4/5 answered
+
+However, under:
+
+"Total points in the Bonus Game?"
+
+there is NO input control.
+
+The participant therefore cannot answer the fifth required prop and cannot lock picks.
+
+This means the participant Game Day UI is not rendering V2 integer props.
+
+==================================================
+GOAL
+==================================================
+
+Add participant-side support for:
+
+answer_type = "integer"
+
+specifically the current:
+
+prop_role = "bonus_total"
+
+Do not create another backend representation.
+
+Use the existing backend contract.
+
+==================================================
+CURRENT BACKEND CONTRACT
+==================================================
+
+Integer prop example:
+
+{
+  "prop_role": "bonus_total",
+  "answer_type": "integer",
+  "question": "Total points in the Bonus Game?",
+  "numeric_min": 0,
+  "numeric_max": 200,
+  "answer_options": []
+}
+
+Participant write:
+
+POST /api/gameday/props/:propId/pick
+
+{
+  "numeric_answer": 54
+}
+
+Backend requires:
+- JSON number
+- integer
+- min 0
+- max 200
+
+Saved participant response provides:
+
+my_pick_details[propId] = {
+  "selected_answer": "54",
+  "numeric_answer": 54
+}
+
+numeric_answer is authoritative.
+
+==================================================
+PARTICIPANT UI
+==================================================
+
+For:
+
+answer_type === "integer"
+
+render a numeric input directly underneath the prop question.
+
+Example:
+
+Total points in the Bonus Game?
+
+[ 54 ]
+
+Requirements:
+
+- inputmode="numeric" or appropriate numeric mobile input
+- whole number only
+- respect numeric_min / numeric_max
+- display 0–200 validation clearly
+- persist existing saved numeric_answer when returning to the card
+- changing the value before lock updates the pick using existing pick endpoint
+- do not use answer_options
+- do not convert this into dozens/hundreds of buttons
+- do not treat numeric strings as the backend payload
+
+The request must send:
+
+{
+  "numeric_answer": Number(value)
+}
+
+after client validation.
+
+==================================================
+COMPLETION LOGIC
+==================================================
+
+The current card correctly knows this is the fifth required prop.
+
+Make sure the UI considers an integer prop answered when it has a valid saved numeric_answer.
+
+Important edge case:
+
+0 is a valid answer.
+
+Do NOT use truthiness such as:
+
+if (numeric_answer)
+
+because 0 would incorrectly count as unanswered.
+
+Use explicit null/undefined checks.
+
+==================================================
+LOCK BUTTON
+==================================================
+
+Once all 5 props have valid answers:
+
+- 3 main matchups
+- Bonus Game
+- Total Points
+
+the participant must be allowed to Lock in my picks.
+
+Preserve all current incomplete-card validation behavior.
+
+==================================================
+RECEIPT / PICK DISPLAY
+==================================================
+
+Where participant receipts/current picks are shown on the web, render the numeric answer sensibly:
+
+Total Points: 54
+
+Do not show:
+- undefined
+- [object Object]
+- blank selection
+
+==================================================
+DO NOT CHANGE
+==================================================
+
+Do not change:
+
+- backend schema
+- prop_role values
+- answer_type values
+- Bonus Game scoring
+- winner logic
+- Discord creator
+- settlement
+- finalization
+
+This is a participant-web rendering/write fix only.
+
+==================================================
+TESTS
+==================================================
+
+Test:
+
+1. choice prop still renders buttons.
+2. integer prop renders numeric input.
+3. existing numeric answer repopulates.
+4. 54 submits numeric_answer: 54.
+5. "54" is converted client-side to numeric 54 before API call.
+6. 0 works and counts as answered.
+7. 200 works.
+8. -1 rejected client-side.
+9. 201 rejected.
+10. 54.5 rejected.
+11. blank does not count as answered.
+12. card with 4/5 becomes 5/5 after valid total.
+13. Lock in my picks becomes available.
+14. returning to page preserves total.
+15. editing total before lock works.
+16. existing choice-only Game Day cards remain green.
+17. existing Madden no-bonus cards remain green.
+18. server/client build passes.
+
+RETURN:
+
+A. Root cause
+B. Files changed
+C. Integer input implementation
+D. Completion logic
+E. 0-value handling
+F. API payload behavior
+G. Tests/results
+H. Commit hash
+I. Push status
+J. Publish requirement
+
+End with:
+
+BONUS TOTAL PARTICIPANT INPUT: PASS / FAIL
+5/5 COMPLETION: PASS / FAIL
+READY TO RETEST LIVE: YES / NO
