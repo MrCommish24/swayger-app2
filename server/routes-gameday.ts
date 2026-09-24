@@ -3931,33 +3931,39 @@ export function registerGamedayRoutes(app: Express) {
     res.json({ room_id: room.id });
   });
 
-  // ── GET /api/gameday/rooms/:roomId ──────────────────────────────────────
+  // ── GET /api/gameday/rooms/:roomRef ─────────────────────────────────────
+  // Public room references accept either the canonical UUID or GDS short code.
   app.get(
-    "/api/gameday/rooms/:roomId",
+    "/api/gameday/rooms/:roomRef",
     async (req: Request, res: Response) => {
-      const { roomId } = req.params;
+      const roomRef = req.params.roomRef;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
 
-        let { data: room, error } = await supabase
+      let { data: room, error } = await supabase
         .from("gameday_rooms")
         .select(PUBLIC_ROOM_FIELDS)
         .eq("id", roomId)
         .single();
-        // Existing direct links stay readable until the additive Slate migration
-        // is installed. Slate rooms cannot exist on that older schema.
-        if (
-          error?.message?.includes("template_type") ||
-          error?.message?.includes("slate_config") ||
-          error?.message?.includes("format_config")
-        ) {
-          const legacy = await supabase
-            .from("gameday_rooms")
-            .select(LEGACY_PUBLIC_ROOM_FIELDS)
-            .eq("id", roomId)
-            .single();
-          room = legacy.data;
-          error = legacy.error;
-        }
+      // Existing direct links stay readable until the additive Slate migration
+      // is installed. Slate rooms cannot exist on that older schema.
+      if (
+        error?.message?.includes("template_type") ||
+        error?.message?.includes("slate_config") ||
+        error?.message?.includes("format_config")
+      ) {
+        const legacy = await supabase
+          .from("gameday_rooms")
+          .select(LEGACY_PUBLIC_ROOM_FIELDS)
+          .eq("id", roomId)
+          .single();
+        room = legacy.data;
+        error = legacy.error;
+      }
 
       if (error || !room) {
         res.status(404).json({ error: "Room not found" });
@@ -4528,14 +4534,141 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
-  // ── GET /api/gameday/bot/rooms/:roomId/settlement ───────────────────────
+  // ── GET /api/gameday/bot/rooms/current ─────────────────────────────────
+  // Recovers one action-eligible Discord room after a bot restart. A channel
+  // scopes discovery, but authorization still depends on the stored guild ID.
+  app.get(
+    "/api/gameday/bot/rooms/current",
+    async (req: Request, res: Response) => {
+      if (!isBotApiKeyValid(req)) {
+        res.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+
+      const guildId = getRequestedDiscordGuildId(req);
+      if (!guildId) {
+        res.status(400).json({
+          error: "X-Discord-Guild-ID is required for Discord operator requests",
+        });
+        return;
+      }
+
+      const rawChannelId = req.query.discord_channel_id;
+      const channelId = normalizeDiscordSubscriptionText(
+        typeof rawChannelId === "string" ? rawChannelId : null,
+        { required: true, maxLength: 128 },
+      );
+      if (!channelId) {
+        res.status(400).json({ error: "discord_channel_id is required" });
+        return;
+      }
+
+      const rawAction = req.query.action;
+      const action = typeof rawAction === "string" ? rawAction.trim().toLowerCase() : "";
+      if (action !== "lock" && action !== "resolve" && action !== "final") {
+        res.status(400).json({ error: "action must be lock, resolve, or final" });
+        return;
+      }
+
+      const supabase = getServiceSupabase();
+      const { data: rooms, error } = await supabase
+        .from("gameday_rooms")
+        .select(
+          "id, room_code, room_name, status, archived_at, source, discord_guild_id, discord_channel_id, gameday_pick_cards(id, status, gameday_props(id, answer_options, answer_type, status))",
+        )
+        .eq("source", "discord")
+        .eq("discord_guild_id", guildId)
+        .eq("discord_channel_id", channelId)
+        .eq("status", "active")
+        .is("archived_at", null);
+
+      if (error) {
+        console.error("[gameday] current-room lookup failed:", error.message);
+        res.status(500).json({ error: "Current room lookup failed" });
+        return;
+      }
+
+      const isEligible = (room: any) => {
+        const cards = Array.isArray(room.gameday_pick_cards)
+          ? room.gameday_pick_cards
+          : [];
+        if (action === "lock") {
+          return cards.some((card: any) => card.status === "open");
+        }
+
+        const requiredProps = cards.flatMap((card: any) =>
+          (Array.isArray(card.gameday_props) ? card.gameday_props : [])
+            .filter((prop: any) => isRequiredWeeklyPickCardProp(prop))
+            .map((prop: any) => ({ ...prop, card_status: card.status })),
+        );
+        if (action === "resolve") {
+          return requiredProps.some(
+            (prop: any) =>
+              prop.card_status === "locked" && prop.status !== "settled",
+          );
+        }
+
+        // Finalization is offered only when this room has playable results and
+        // every required prop is settled. The route remains authoritative.
+        return (
+          requiredProps.length > 0 &&
+          requiredProps.every((prop: any) => prop.status === "settled")
+        );
+      };
+
+      const candidates = (rooms ?? [])
+        .filter((room: any) => isEligible(room))
+        .map((room: any) => ({
+          id: room.id,
+          room_code: room.room_code ?? null,
+          room_name: room.room_name ?? null,
+          discord_guild_id: room.discord_guild_id,
+          discord_channel_id: room.discord_channel_id,
+          status: room.status,
+          finalized: room.status === "finalized",
+        }))
+        .sort((a: any, b: any) =>
+          String(a.room_code ?? a.id).localeCompare(String(b.room_code ?? b.id)),
+        );
+
+      if (candidates.length === 0) {
+        res.status(404).json({
+          error: "no_current_room",
+          action,
+          message: "No active room is eligible for this action in this Discord channel",
+        });
+        return;
+      }
+      if (candidates.length > 1) {
+        res.status(409).json({
+          error: "multiple_active_rooms",
+          rooms: candidates.map((room: any) => ({
+            room_id: room.id,
+            room_code: room.room_code,
+            room_name: room.room_name,
+            status: room.status,
+          })),
+        });
+        return;
+      }
+
+      res.json({ ok: true, room: candidates[0] });
+    },
+  );
+
+  // ── GET /api/gameday/bot/rooms/:roomRef/settlement ──────────────────────
   // Discord bots and the recorded web host can use this read-only contract to
   // drive a settlement UI without exposing answers to public participants.
   app.get(
-    "/api/gameday/bot/rooms/:roomId/settlement",
+    "/api/gameday/bot/rooms/:roomRef/settlement",
     async (req: Request, res: Response) => {
-      const { roomId } = req.params;
+      const roomRef = req.params.roomRef;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
       const operator = await requireGamedayRoomOperator(req, res, supabase, roomId);
       if (!operator) return;
       const { data: room } = await supabase
@@ -4852,12 +4985,17 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
-  // ── PATCH /api/gameday/rooms/:roomId/finalize ───────────────────────────
+  // ── PATCH /api/gameday/rooms/:roomRef/finalize ──────────────────────────
   app.patch(
-    "/api/gameday/rooms/:roomId/finalize",
+    "/api/gameday/rooms/:roomRef/finalize",
     async (req: Request, res: Response) => {
-      const { roomId } = req.params;
+      const roomRef = req.params.roomRef;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+      }
 
       const { data: room } = await supabase
         .from("gameday_rooms")

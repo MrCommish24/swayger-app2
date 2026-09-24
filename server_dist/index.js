@@ -11580,10 +11580,15 @@ ${publicLink2}`;
     res2.json({ room_id: room.id });
   });
   app2.get(
-    "/api/gameday/rooms/:roomId",
+    "/api/gameday/rooms/:roomRef",
     async (req, res2) => {
-      const { roomId } = req.params;
+      const roomRef = req.params.roomRef;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res2.status(404).json({ error: "Room not found" });
+        return;
+      }
       let { data: room, error } = await supabase.from("gameday_rooms").select(PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
       if (error?.message?.includes("template_type") || error?.message?.includes("slate_config") || error?.message?.includes("format_config")) {
         const legacy = await supabase.from("gameday_rooms").select(LEGACY_PUBLIC_ROOM_FIELDS).eq("id", roomId).single();
@@ -11957,10 +11962,102 @@ ${publicLink2}`;
     }
   );
   app2.get(
-    "/api/gameday/bot/rooms/:roomId/settlement",
+    "/api/gameday/bot/rooms/current",
     async (req, res2) => {
-      const { roomId } = req.params;
+      if (!isBotApiKeyValid(req)) {
+        res2.status(401).json({ error: "Valid Game Day bot credentials are required" });
+        return;
+      }
+      const guildId = getRequestedDiscordGuildId(req);
+      if (!guildId) {
+        res2.status(400).json({
+          error: "X-Discord-Guild-ID is required for Discord operator requests"
+        });
+        return;
+      }
+      const rawChannelId = req.query.discord_channel_id;
+      const channelId = normalizeDiscordSubscriptionText(
+        typeof rawChannelId === "string" ? rawChannelId : null,
+        { required: true, maxLength: 128 }
+      );
+      if (!channelId) {
+        res2.status(400).json({ error: "discord_channel_id is required" });
+        return;
+      }
+      const rawAction = req.query.action;
+      const action = typeof rawAction === "string" ? rawAction.trim().toLowerCase() : "";
+      if (action !== "lock" && action !== "resolve" && action !== "final") {
+        res2.status(400).json({ error: "action must be lock, resolve, or final" });
+        return;
+      }
       const supabase = getServiceSupabase();
+      const { data: rooms, error } = await supabase.from("gameday_rooms").select(
+        "id, room_code, room_name, status, archived_at, source, discord_guild_id, discord_channel_id, gameday_pick_cards(id, status, gameday_props(id, answer_options, answer_type, status))"
+      ).eq("source", "discord").eq("discord_guild_id", guildId).eq("discord_channel_id", channelId).eq("status", "active").is("archived_at", null);
+      if (error) {
+        console.error("[gameday] current-room lookup failed:", error.message);
+        res2.status(500).json({ error: "Current room lookup failed" });
+        return;
+      }
+      const isEligible = (room) => {
+        const cards = Array.isArray(room.gameday_pick_cards) ? room.gameday_pick_cards : [];
+        if (action === "lock") {
+          return cards.some((card) => card.status === "open");
+        }
+        const requiredProps = cards.flatMap(
+          (card) => (Array.isArray(card.gameday_props) ? card.gameday_props : []).filter((prop) => isRequiredWeeklyPickCardProp(prop)).map((prop) => ({ ...prop, card_status: card.status }))
+        );
+        if (action === "resolve") {
+          return requiredProps.some(
+            (prop) => prop.card_status === "locked" && prop.status !== "settled"
+          );
+        }
+        return requiredProps.length > 0 && requiredProps.every((prop) => prop.status === "settled");
+      };
+      const candidates = (rooms ?? []).filter((room) => isEligible(room)).map((room) => ({
+        id: room.id,
+        room_code: room.room_code ?? null,
+        room_name: room.room_name ?? null,
+        discord_guild_id: room.discord_guild_id,
+        discord_channel_id: room.discord_channel_id,
+        status: room.status,
+        finalized: room.status === "finalized"
+      })).sort(
+        (a, b) => String(a.room_code ?? a.id).localeCompare(String(b.room_code ?? b.id))
+      );
+      if (candidates.length === 0) {
+        res2.status(404).json({
+          error: "no_current_room",
+          action,
+          message: "No active room is eligible for this action in this Discord channel"
+        });
+        return;
+      }
+      if (candidates.length > 1) {
+        res2.status(409).json({
+          error: "multiple_active_rooms",
+          rooms: candidates.map((room) => ({
+            room_id: room.id,
+            room_code: room.room_code,
+            room_name: room.room_name,
+            status: room.status
+          }))
+        });
+        return;
+      }
+      res2.json({ ok: true, room: candidates[0] });
+    }
+  );
+  app2.get(
+    "/api/gameday/bot/rooms/:roomRef/settlement",
+    async (req, res2) => {
+      const roomRef = req.params.roomRef;
+      const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res2.status(404).json({ error: "Room not found" });
+        return;
+      }
       const operator = await requireGamedayRoomOperator(req, res2, supabase, roomId);
       if (!operator) return;
       const { data: room } = await supabase.from("gameday_rooms").select("id, room_code, room_name, status, archived_at, source, sport, template_type, discord_guild_id").eq("id", roomId).maybeSingle();
@@ -12202,10 +12299,15 @@ ${publicLink2}`;
     }
   );
   app2.patch(
-    "/api/gameday/rooms/:roomId/finalize",
+    "/api/gameday/rooms/:roomRef/finalize",
     async (req, res2) => {
-      const { roomId } = req.params;
+      const roomRef = req.params.roomRef;
       const supabase = getServiceSupabase();
+      const roomId = await resolveRoomRef(supabase, roomRef);
+      if (!roomId) {
+        res2.status(404).json({ error: "Room not found" });
+        return;
+      }
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at, source, sport, template_type").eq("id", roomId).single();
       if (!room) {
         res2.status(404).json({ error: "Room not found" });

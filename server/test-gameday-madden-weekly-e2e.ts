@@ -623,6 +623,24 @@ async function main() {
       JSON.stringify(created.body),
     );
     if (!roomId) throw new Error("Madden room creation did not return a room ID");
+    const roomCode = created.body.room?.room_code as string | undefined;
+    const settlementChannelId = `MADDEN_SETTLEMENT_CHANNEL_${runId}`;
+    if (!roomCode) throw new Error("Madden room creation did not return a room code");
+
+    const detailByRoomCode = await request(`/api/gameday/rooms/${roomCode.toLowerCase()}`);
+    expect(
+      "room detail resolves a case-insensitive room code to the canonical UUID",
+      detailByRoomCode.status === 200 &&
+        detailByRoomCode.body.room?.id === roomId &&
+        detailByRoomCode.body.room?.room_code === roomCode,
+      JSON.stringify(detailByRoomCode.body.room),
+    );
+    const unknownCodeDetail = await request("/api/gameday/rooms/GDS-00000");
+    expect(
+      "room detail returns 404 for an unknown room code",
+      unknownCodeDetail.status === 404,
+      JSON.stringify(unknownCodeDetail.body),
+    );
 
     const hostData = await request(`/api/gameday/rooms/${roomId}`);
     const cards = hostData.body.cards ?? [];
@@ -721,6 +739,105 @@ async function main() {
       opened.status === 200 && opened.body.ok === true,
       JSON.stringify(opened.body),
     );
+    const currentLockRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery returns the sole open room for lock",
+      currentLockRoom.status === 200 &&
+        currentLockRoom.body.ok === true &&
+        currentLockRoom.body.room?.id === roomId &&
+        currentLockRoom.body.room?.room_code === roomCode &&
+        currentLockRoom.body.room?.discord_guild_id === botGuildId &&
+        currentLockRoom.body.room?.discord_channel_id === settlementChannelId,
+      JSON.stringify(currentLockRoom.body),
+    );
+    const currentResolveBeforeLock = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=resolve`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery excludes an open card from resolve",
+      currentResolveBeforeLock.status === 404 &&
+        currentResolveBeforeLock.body.error === "no_current_room",
+      JSON.stringify(currentResolveBeforeLock.body),
+    );
+    const wrongGuildCurrentRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+      { apiKey: botApiKey, discordGuildHeader: `${botGuildId}_OTHER` },
+    );
+    expect(
+      "current-room discovery never returns a room from another guild",
+      wrongGuildCurrentRoom.status === 404 &&
+        wrongGuildCurrentRoom.body.error === "no_current_room",
+      JSON.stringify(wrongGuildCurrentRoom.body),
+    );
+    const wrongChannelCurrentRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(`${settlementChannelId}_OTHER`)}&action=lock`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery never returns a room from another channel",
+      wrongChannelCurrentRoom.status === 404 &&
+        wrongChannelCurrentRoom.body.error === "no_current_room",
+      JSON.stringify(wrongChannelCurrentRoom.body),
+    );
+    const unauthenticatedCurrentRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+    );
+    expect(
+      "current-room discovery requires bot credentials",
+      unauthenticatedCurrentRoom.status === 401,
+      JSON.stringify(unauthenticatedCurrentRoom.body),
+    );
+    const missingGuildCurrentRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+      { apiKey: botApiKey },
+    );
+    expect(
+      "current-room discovery requires the Discord guild header",
+      missingGuildCurrentRoom.status === 400,
+      JSON.stringify(missingGuildCurrentRoom.body),
+    );
+    const invalidActionCurrentRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=archive`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery rejects unsupported actions",
+      invalidActionCurrentRoom.status === 400,
+      JSON.stringify(invalidActionCurrentRoom.body),
+    );
+    const settlementByRoomCode = await request(
+      `/api/gameday/bot/rooms/${roomCode}/settlement`,
+      { ...botOperator },
+    );
+    expect(
+      "bot settlement queue accepts a room code",
+      settlementByRoomCode.status === 200 &&
+        settlementByRoomCode.body.room_id === roomId &&
+        settlementByRoomCode.body.room_code === roomCode,
+      JSON.stringify(settlementByRoomCode.body),
+    );
+    const wrongGuildSettlementByRoomCode = await request(
+      `/api/gameday/bot/rooms/${roomCode}/settlement`,
+      { apiKey: botApiKey, discordGuildHeader: `${botGuildId}_OTHER` },
+    );
+    expect(
+      "bot settlement rejects a room code from another guild",
+      wrongGuildSettlementByRoomCode.status === 403,
+      JSON.stringify(wrongGuildSettlementByRoomCode.body),
+    );
+    const unknownCodeSettlement = await request(
+      "/api/gameday/bot/rooms/GDS-00000/settlement",
+      { ...botOperator },
+    );
+    expect(
+      "bot settlement returns 404 for an unknown room code",
+      unknownCodeSettlement.status === 404,
+      JSON.stringify(unknownCodeSettlement.body),
+    );
 
     for (const prop of props) {
       const guestPick = await request(`/api/gameday/props/${prop.id}/pick`, {
@@ -806,6 +923,29 @@ async function main() {
         earlyFinalize.body.error === "Cannot finalize while matchups remain unsettled" &&
         earlyFinalize.body.remaining_matchups === props.length,
       JSON.stringify(earlyFinalize.body),
+    );
+    const earlyFinalizeByRoomCode = await request(
+      `/api/gameday/rooms/${roomCode}/finalize`,
+      { method: "PATCH", ...botOperator },
+    );
+    expect(
+      "finalization by room code preserves the unresolved-props 409",
+      earlyFinalizeByRoomCode.status === 409 &&
+        earlyFinalizeByRoomCode.body.error === "Cannot finalize while matchups remain unsettled",
+      JSON.stringify(earlyFinalizeByRoomCode.body),
+    );
+    const wrongGuildFinalizeByRoomCode = await request(
+      `/api/gameday/rooms/${roomCode}/finalize`,
+      {
+        method: "PATCH",
+        apiKey: botApiKey,
+        discordGuildHeader: `${botGuildId}_OTHER`,
+      },
+    );
+    expect(
+      "finalization rejects a room code from another guild",
+      wrongGuildFinalizeByRoomCode.status === 403,
+      JSON.stringify(wrongGuildFinalizeByRoomCode.body),
     );
     const earlySettlement = await request(`/api/gameday/props/${props[0].id}/settle`, {
       method: "PATCH",
@@ -912,7 +1052,20 @@ async function main() {
       JSON.stringify(afterDeadline.body.my_picks),
     );
 
-    const locked = await request(`/api/gameday/cards/${card.id}/lock`, {
+    const recoveredRoom = await request(`/api/gameday/rooms/${roomCode}`);
+    const recoveredCard = (recoveredRoom.body.cards ?? []).find(
+      (value: any) => value.phase === "pregame",
+    );
+    expect(
+      "room-code detail restores the room UUID and open card needed after bot restart",
+      recoveredRoom.status === 200 &&
+        recoveredRoom.body.room?.id === roomId &&
+        recoveredCard?.id === card.id &&
+        recoveredCard?.status === "open",
+      JSON.stringify({ room: recoveredRoom.body.room, card: recoveredCard }),
+    );
+
+    const locked = await request(`/api/gameday/cards/${recoveredCard?.id}/lock`, {
       method: "PATCH",
       ...botOperator,
     });
@@ -920,6 +1073,17 @@ async function main() {
       "commissioner can manually lock the Madden card after the deadline",
       locked.status === 200 && locked.body.ok === true,
       JSON.stringify(locked.body),
+    );
+    const currentResolveRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=resolve`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery returns the locked room for resolve",
+      currentResolveRoom.status === 200 &&
+        currentResolveRoom.body.room?.id === roomId &&
+        currentResolveRoom.body.room?.room_code === roomCode,
+      JSON.stringify(currentResolveRoom.body),
     );
 
     const pickAfterLock = await request(`/api/gameday/props/${props[0].id}/pick`, {
@@ -958,6 +1122,16 @@ async function main() {
         firstSettlement.body.all_settled === false &&
         firstSettlement.body.participants_updated === 2,
       JSON.stringify(firstSettlement.body),
+    );
+    const currentResolveAfterPartialSettlement = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=resolve`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery keeps a partially settled card available for resolve",
+      currentResolveAfterPartialSettlement.status === 200 &&
+        currentResolveAfterPartialSettlement.body.room?.id === roomId,
+      JSON.stringify(currentResolveAfterPartialSettlement.body),
     );
     const afterFirstSettlement = await service
       .from("gameday_picks")
@@ -1068,6 +1242,24 @@ async function main() {
         retry.body.all_settled === true,
       JSON.stringify(retry.body),
     );
+    const currentResolveAfterAllSettled = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=resolve`,
+      { ...botOperator },
+    );
+    const currentFinalRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=final`,
+      { ...botOperator },
+    );
+    expect(
+      "current-room discovery moves a fully settled room from resolve to final",
+      currentResolveAfterAllSettled.status === 404 &&
+        currentFinalRoom.status === 200 &&
+        currentFinalRoom.body.room?.id === roomId,
+      JSON.stringify({
+        resolve: currentResolveAfterAllSettled.body,
+        final: currentFinalRoom.body,
+      }),
+    );
 
     const leaderboard = await request(`/api/gameday/rooms/${roomId}/leaderboard`);
     const leaderboardRows = leaderboard.body.leaderboard ?? [];
@@ -1096,22 +1288,69 @@ async function main() {
         authStanding?.game_day_sp === 30,
       JSON.stringify(leaderboard.body),
     );
+    const leaderboardByRoomCode = await request(
+      `/api/gameday/rooms/${roomCode}/leaderboard`,
+    );
+    expect(
+      "existing public leaderboard room-code support remains available",
+      leaderboardByRoomCode.status === 200 &&
+        (leaderboardByRoomCode.body.leaderboard ?? []).length === leaderboardRows.length,
+      JSON.stringify(leaderboardByRoomCode.body),
+    );
 
-    const finalized = await request(`/api/gameday/rooms/${roomId}/finalize`, {
+    const finalized = await request(`/api/gameday/rooms/${roomCode}/finalize`, {
       method: "PATCH",
       ...botOperator,
     });
     expect(
-      "Madden room finalization works",
+      "Madden room finalization works by room code",
       finalized.status === 200 && finalized.body.ok === true,
       JSON.stringify(finalized.body),
     );
-    const finalStandings = await request(
-      `/api/gameday/rooms/${roomId}/final-standings`,
+    const repeatedFinalize = await request(`/api/gameday/rooms/${roomId}/finalize`, {
+      method: "PATCH",
+      ...botOperator,
+    });
+    expect(
+      "repeated UUID finalization remains idempotent after code-based finalize",
+      repeatedFinalize.status === 200 && repeatedFinalize.body.ok === true &&
+        repeatedFinalize.body.already === true,
+      JSON.stringify(repeatedFinalize.body),
+    );
+    const currentFinalizedRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=final`,
+      { ...botOperator },
+    );
+    const currentFinalizedLockRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+      { ...botOperator },
+    );
+    const currentFinalizedResolveRoom = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=resolve`,
+      { ...botOperator },
     );
     expect(
-      "final standings are available after Madden finalization",
-      finalStandings.status === 200 && finalStandings.body.finalized === true,
+      "current-room discovery excludes a finalized room from every action",
+      currentFinalizedRoom.status === 404 &&
+        currentFinalizedLockRoom.status === 404 &&
+        currentFinalizedResolveRoom.status === 404 &&
+        [currentFinalizedRoom, currentFinalizedLockRoom, currentFinalizedResolveRoom]
+          .every((response) => response.body.error === "no_current_room"),
+      JSON.stringify({
+        final: currentFinalizedRoom.body,
+        lock: currentFinalizedLockRoom.body,
+        resolve: currentFinalizedResolveRoom.body,
+      }),
+    );
+    const finalStandings = await request(
+      `/api/gameday/rooms/${roomCode}/final-standings`,
+    );
+    expect(
+      "existing final-standings room-code support remains available after Madden finalization",
+      finalStandings.status === 200 &&
+        finalStandings.body.finalized === true &&
+        finalStandings.body.room_id === roomId &&
+        finalStandings.body.room_code === roomCode,
       JSON.stringify(finalStandings.body),
     );
     const postFinalizeSettlement = await request(
@@ -1126,6 +1365,55 @@ async function main() {
       "finalized Madden room rejects further settlement",
       postFinalizeSettlement.status === 400,
       JSON.stringify(postFinalizeSettlement.body),
+    );
+
+    const ambiguousRooms: string[] = [];
+    for (const suffix of ["A", "B"]) {
+      const ambiguous = await request("/api/gameday/rooms", {
+        method: "POST",
+        ...botOperator,
+        body: {
+          ...basePayload,
+          room_name: `Ambiguous recovery room ${suffix} ${runId}`,
+          discord_guild_id: botGuildId,
+          discord_channel_id: settlementChannelId,
+          discord_user_id: `MADDEN_AMBIGUOUS_${suffix}_${runId}`,
+        },
+      });
+      const ambiguousRoomId = ambiguous.body.room_id as string | undefined;
+      if (ambiguousRoomId) {
+        roomIds.push(ambiguousRoomId);
+        ambiguousRooms.push(ambiguousRoomId);
+      }
+      expect(
+        `same-channel ambiguity fixture ${suffix} is created`,
+        ambiguous.status === 200 && !!ambiguousRoomId,
+        JSON.stringify(ambiguous.body),
+      );
+    }
+    const ambiguousCurrentLock = await request(
+      `/api/gameday/bot/rooms/current?discord_channel_id=${encodeURIComponent(settlementChannelId)}&action=lock`,
+      { ...botOperator },
+    );
+    const ambiguousIds = (ambiguousCurrentLock.body.rooms ?? []).map(
+      (room: any) => room.room_id,
+    );
+    expect(
+      "current-room discovery returns 409 rather than choosing between active rooms",
+      ambiguousCurrentLock.status === 409 &&
+        ambiguousCurrentLock.body.error === "multiple_active_rooms" &&
+        ambiguousIds.length === 2 &&
+        ambiguousRooms.every((id) => ambiguousIds.includes(id)),
+      JSON.stringify(ambiguousCurrentLock.body),
+    );
+    const explicitCodeDuringAmbiguity = await request(
+      `/api/gameday/rooms/${ambiguousCurrentLock.body.rooms?.[0]?.room_code}`,
+    );
+    expect(
+      "explicit room-code detail remains available when current-room discovery is ambiguous",
+      explicitCodeDuringAmbiguity.status === 200 &&
+        ambiguousIds.includes(explicitCodeDuringAmbiguity.body.room?.id),
+      JSON.stringify(explicitCodeDuringAmbiguity.body.room),
     );
   } finally {
     if (roomIds.length) {
