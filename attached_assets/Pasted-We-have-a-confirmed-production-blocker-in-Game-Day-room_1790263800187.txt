@@ -1,0 +1,464 @@
+We have a confirmed production blocker in Game Day room recovery after Discord bot restart.
+
+The Discord bot work is already complete and shipped in commit:
+
+969f7101
+
+The bot cannot become fully restart-safe until the backend supports room-code resolution for active/not-yet-finalized rooms.
+
+==================================================
+CONFIRMED LIVE FAILURE
+==================================================
+
+Production room:
+
+GDS-CVALJ
+
+Current live behavior:
+
+GET /api/gameday/rooms/GDS-CVALJ
+→ 404 Room not found
+
+GET /api/gameday/bot/rooms/GDS-CVALJ/settlement
+→ 404 Room not found
+
+GET /api/gameday/rooms/GDS-CVALJ/leaderboard
+→ 200
+
+GET /api/gameday/rooms/GDS-CVALJ/final-standings
+→ supports room_code
+
+The issue is therefore inconsistent backend roomRef handling.
+
+Some endpoints accept:
+- UUID
+- room_code
+
+Others accept UUID only.
+
+This makes Discord bot recovery after restart impossible for:
+- lock
+- resolve
+- not-yet-finalized final
+
+because the bot loses its in-memory room UUID cache.
+
+==================================================
+GOAL
+==================================================
+
+Make already-created Game Day rooms fully recoverable from the backend after any bot restart.
+
+The backend/database must remain the source of truth.
+
+A Discord bot restart must NOT make an existing Pick Card unmanageable.
+
+==================================================
+PART 1 — ADD ROOMREF SUPPORT CONSISTENTLY
+==================================================
+
+Inspect existing room lookup helpers.
+
+We already have at least some routes where:
+
+:roomRef
+
+accepts either:
+- room UUID
+- room_code such as GDS-CVALJ
+
+Reuse that lookup behavior.
+
+Do NOT create duplicated room-resolution logic if a shared helper already exists.
+
+Update these routes so they accept UUID OR room_code:
+
+1. Room detail
+
+CURRENT:
+GET /api/gameday/rooms/:roomId
+
+DESIRED:
+GET /api/gameday/rooms/:roomRef
+
+where :roomRef can be:
+- UUID
+- GDS-XXXXX
+
+2. Settlement queue
+
+CURRENT:
+GET /api/gameday/bot/rooms/:roomId/settlement
+
+DESIRED:
+GET /api/gameday/bot/rooms/:roomRef/settlement
+
+where :roomRef can be:
+- UUID
+- GDS-XXXXX
+
+3. Finalize
+
+CURRENT:
+PATCH /api/gameday/rooms/:roomId/finalize
+
+DESIRED:
+PATCH /api/gameday/rooms/:roomRef/finalize
+
+where :roomRef can be:
+- UUID
+- GDS-XXXXX
+
+Do not break UUID callers.
+
+==================================================
+PART 2 — LOCK PATH
+==================================================
+
+Inspect the current lock endpoint/path used by the bot.
+
+Whatever route ultimately locks a room/card must also be callable when the room was originally discovered by room_code.
+
+If the bot flow is:
+
+room_code
+→ GET room detail
+→ receive UUID
+→ lock card
+
+then simply fixing room-detail may be sufficient.
+
+If lock itself uses another UUID-only endpoint, extend the same roomRef behavior there too.
+
+Return the exact lock path and what changed.
+
+==================================================
+PART 3 — BOT-AUTHORIZATION MUST REMAIN SAFE
+==================================================
+
+For bot-authenticated Game Day routes, preserve current security.
+
+If X-Discord-Guild-ID is supplied:
+
+the resolved room's:
+
+discord_guild_id
+
+must match the header.
+
+A room_code must NOT allow a bot interaction from another Discord guild to operate the room.
+
+Preserve any existing channel-scoping rules.
+
+Do not weaken authorization just because room_code is now accepted.
+
+==================================================
+PART 4 — CURRENT ROOM LOOKUP FOR NO-ROOM-CODE UX
+==================================================
+
+We also need a backend discovery endpoint for when the commissioner runs:
+
+/swayger gameday lock
+
+without specifying room_code after a bot restart.
+
+Add one focused bot-authenticated endpoint.
+
+Preferred shape:
+
+GET /api/gameday/bot/rooms/current
+
+Headers:
+
+Authorization: Bearer <GAMEDAY_BOT_API_KEY>
+or existing x-api-key form
+
+X-Discord-Guild-ID: <guild id>
+
+Query params:
+
+discord_channel_id=<channel id>
+action=lock|resolve|final
+
+The exact route name may differ if an existing convention is better.
+
+The important requirement is:
+
+guild + channel + intended action
+→ return the appropriate current room
+
+==================================================
+CURRENT-ROOM SELECTION RULES
+==================================================
+
+Selection must be conservative and deterministic.
+
+For action=lock:
+eligible:
+- room/card currently open
+- same discord_guild_id
+- same discord_channel_id
+- not finalized
+
+For action=resolve:
+eligible:
+- locked or partially settled
+- same guild/channel
+- not finalized
+
+For action=final:
+eligible:
+- same guild/channel
+- not finalized
+- all required props settled / eligible to finalize
+
+If exactly one candidate exists:
+return it.
+
+If zero:
+return 404 / clear no-current-room result.
+
+If more than one plausible candidate exists:
+do NOT silently choose based only on global recency.
+
+Return conflict such as:
+
+409
+
+{
+  "error": "multiple_active_rooms",
+  "rooms": [
+    {
+      "room_id": "...",
+      "room_code": "...",
+      "room_name": "...",
+      "status": "..."
+    }
+  ]
+}
+
+The bot can then ask the commissioner to specify room_code.
+
+Do not choose the wrong competition.
+
+==================================================
+RESPONSE CONTRACT
+==================================================
+
+For a successful current-room lookup, return enough for the bot to repopulate cache:
+
+{
+  "ok": true,
+  "room": {
+    "id": "room-uuid",
+    "room_code": "GDS-CVALJ",
+    "room_name": "...",
+    "discord_guild_id": "...",
+    "discord_channel_id": "...",
+    "status": "...",
+    "finalized": false
+  }
+}
+
+Use the real existing field names if they differ.
+
+==================================================
+ROOMREF HELPER
+==================================================
+
+Prefer one shared helper such as:
+
+resolveGamedayRoomRef(roomRef)
+
+Behavior:
+
+if valid UUID:
+  lookup by id
+
+else:
+  lookup by room_code
+
+Return the same canonical room row.
+
+Use this helper consistently across:
+
+- room detail
+- settlement
+- finalize
+- any other touched Game Day route where roomRef support is now appropriate
+
+Do not broadly refactor unrelated routes.
+
+==================================================
+BACKWARD COMPATIBILITY
+==================================================
+
+Must preserve:
+
+- all UUID-based callers
+- participant room reads
+- public leaderboard
+- final standings
+- bot settlement
+- lock
+- finalization
+- Madden Pick Card V2
+- NBA Game Day
+- Fantasy flows
+- public-pick outbox
+- current auth rules
+
+No schema migration should be required unless a missing index is truly necessary.
+
+If room_code is not indexed/unique enough for safe lookup, inspect and report before changing schema.
+
+==================================================
+TESTING
+==================================================
+
+Add tests for at least:
+
+ROOMREF
+
+1. GET room detail by UUID works.
+2. GET room detail by room_code works.
+3. Unknown room_code returns 404.
+4. UUID behavior unchanged.
+
+SETTLEMENT
+
+5. Settlement queue by UUID works.
+6. Settlement queue by room_code works.
+7. Wrong guild rejected for room_code.
+8. Correct guild accepted.
+
+FINALIZE
+
+9. Finalize by UUID works.
+10. Finalize by room_code works.
+11. Finalize unresolved room still 409.
+12. Repeated finalize remains idempotent.
+13. Wrong guild rejected.
+
+LOCK SUPPORT
+
+14. The bot's lock recovery path can obtain UUID/state from room_code after restart.
+15. Any UUID-only lock dependency discovered is fixed.
+
+CURRENT ROOM DISCOVERY
+
+16. action=lock returns exactly one open room.
+17. action=resolve returns exactly one locked/settleable room.
+18. action=final returns exactly one finalizable room.
+19. wrong guild returns none/unauthorized.
+20. wrong channel does not return another channel's room.
+21. zero candidates returns clear 404/no-room response.
+22. multiple candidates returns 409, never silently picks one.
+23. finalized room excluded from lock/resolve selection.
+24. explicit room_code lookup remains available even when current-room lookup is ambiguous.
+
+REGRESSION
+
+25. Existing leaderboard room_code support remains green.
+26. Existing final-standings room_code support remains green.
+27. Madden V2 tests green.
+28. settlement tests green.
+29. public-pick outbox tests green.
+30. server build green.
+
+Run all relevant suites.
+
+==================================================
+LIVE PRODUCTION ACCEPTANCE TEST
+==================================================
+
+After publish, we will reuse the existing production room if lifecycle permits.
+
+Critical scenario:
+
+1. Existing room code:
+   GDS-CVALJ
+
+2. After fresh bot restart:
+
+GET /api/gameday/rooms/GDS-CVALJ
+→ MUST return 200 and canonical room UUID.
+
+3. Settlement by room_code:
+GET /api/gameday/bot/rooms/GDS-CVALJ/settlement
+→ MUST return 200 when properly authorized.
+
+4. Bot:
+/swayger gameday lock room_code:GDS-CVALJ
+→ must work if room still open.
+
+5. Restart bot.
+
+/swayger gameday resolve room_code:GDS-CVALJ
+→ must work.
+
+6. Restart bot.
+
+/swayger gameday final room_code:GDS-CVALJ
+→ must work once eligible.
+
+7. Create another open card.
+
+8. Restart bot.
+
+/swayger gameday lock
+
+with no room_code:
+→ backend current-room discovery must identify the room by guild + channel.
+
+==================================================
+DO NOT BUILD
+==================================================
+
+Do not build:
+
+- bot-local persistence
+- Redis
+- cloud bot hosting
+- Discord identity
+- Game Day status
+- Neon integration
+- EA integration
+- new settlement rules
+- new winner logic
+
+This task is only backend room recovery/discovery.
+
+==================================================
+RETURN
+==================================================
+
+A. Root cause confirmed
+B. Existing shared roomRef logic found
+C. Exact routes changed
+D. Shared roomRef helper behavior
+E. Room-detail room_code behavior
+F. Settlement room_code behavior
+G. Finalize room_code behavior
+H. Lock path impact
+I. Current-room discovery endpoint
+J. Selection/ambiguity rules
+K. Guild/channel authorization
+L. Schema/index changes if any
+M. Files changed
+N. Tests/assertion counts
+O. Regression results
+P. Commit hash
+Q. Push status
+R. Publish requirement
+S. Exact bot contract Claude should use after this deploy
+
+End with:
+
+ROOM DETAIL BY ROOM_CODE: PASS / FAIL
+SETTLEMENT BY ROOM_CODE: PASS / FAIL
+FINALIZE BY ROOM_CODE: PASS / FAIL
+CURRENT ROOM DISCOVERY: PASS / FAIL
+GUILD/CHANNEL SAFETY: PASS / FAIL
+RESTART-SAFE BACKEND CONTRACT: PASS / FAIL
+READY TO PUBLISH: YES / NO
