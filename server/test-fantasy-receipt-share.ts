@@ -1,6 +1,7 @@
 import {
   buildDraftDayReceiptShareText,
   buildWeeklyReceiptShareText,
+  formatWeeklyReceiptReward,
   getWeeklyReceiptSafeFact,
   getCompactReceiptLeaderboard,
   WEEKLY_COMPACT_RECEIPT_MAX_ROWS,
@@ -39,6 +40,7 @@ const shortUrl = "https://example.test/r/abcdefghijkl2345";
 const singleText = buildDraftDayReceiptShareText(receipt, shortUrl);
 assert(singleText.includes("Alex won Sunday Crew's Draft Day with 8 pts."), "Single-winner share text is concise and complete");
 assert(singleText.endsWith(shortUrl), "Share text includes the stable short URL");
+assert(!singleText.includes("reward"), "Draft Day share text remains unchanged and reward-free");
 
 const coWinnerReceipt = {
   ...receipt,
@@ -111,12 +113,19 @@ const weeklyReceipt: WeeklyReceiptData = {
   ],
   winners: [{ display_name: "J Askew", team_name: "Blue", points: 20, correct_count: 4, rank: 1, rank_label: "1" }],
   competition_props: weeklyProps,
+  reward_description: "League dues",
+  reward_amount_display: "$25",
   next_week_number: 2,
   next_week_published: false,
 };
 const weeklyText = buildWeeklyReceiptShareText(weeklyReceipt, shortUrl);
 assert(weeklyText.includes("J Askew wins at 20 SP."), "Weekly winner score uses SP");
+assert(weeklyText.includes("🎁 Weekly reward: $25 · League dues"), "Weekly share text includes this week's amount and reward");
 assert(!weeklyText.includes("Mr Roarke") && !weeklyText.includes("10 pts"), "Weekly fact is not derived from Swayger standings");
+assert(formatWeeklyReceiptReward("$25", "League dues") === "$25 · League dues", "Reward formatter combines amount and description");
+assert(formatWeeklyReceiptReward("$25", null) === "$25", "Reward formatter supports amount-only rewards");
+assert(formatWeeklyReceiptReward(null, "League dues") === "League dues", "Reward formatter supports description-only rewards");
+assert(formatWeeklyReceiptReward("  ", null) === null, "Reward formatter omits blank or absent rewards");
 assert(getWeeklyReceiptSafeFact(weeklyReceipt) === "💥 Biggest blowout: Dispimpin.", "Largest-margin result has first priority");
 assert(
   getWeeklyReceiptSafeFact({ ...weeklyReceipt, competition_props: weeklyProps.filter((prop) => prop.prop_id !== "largest") }) ===
@@ -167,6 +176,18 @@ assert(
     next_week_reward_amount_display: "$10",
   }, shortUrl).includes("Week 2 is live — $10 up for grabs."),
   "Published next week includes its reward",
+);
+const nextWeekOnlyRewardText = buildWeeklyReceiptShareText({
+  ...weeklyReceipt,
+  reward_description: null,
+  reward_amount_display: null,
+  next_week_published: true,
+  next_week_reward_amount_display: "$10",
+}, shortUrl);
+assert(
+  !nextWeekOnlyRewardText.includes("🎁 Weekly reward:") &&
+    nextWeekOnlyRewardText.includes("Week 2 is live — $10 up for grabs."),
+  "Next-week reward stays in its CTA and is not presented as this week's prize",
 );
 assert(weeklyText.endsWith(shortUrl), "Weekly share text preserves the stable short URL");
 assert(!/in the books|tie for the win|of the week/.test(weeklyText), "Weekly share text omits redundant verbose wording");

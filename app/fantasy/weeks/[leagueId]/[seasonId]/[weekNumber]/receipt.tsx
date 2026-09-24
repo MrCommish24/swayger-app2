@@ -289,7 +289,7 @@ export default function WeeklyReceiptScreen() {
       </ScrollView>
       <View pointerEvents="none" style={styles.captureStage}>
         <View ref={captureCardRef} collapsable={false}>
-          <CompactCompetitionReceipt data={receipt as CompetitionReceiptData} variant="weekly" />
+          <CompactCompetitionReceipt data={receipt} variant="weekly" />
         </View>
       </View>
     </View>

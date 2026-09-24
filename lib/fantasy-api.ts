@@ -190,6 +190,9 @@ export interface CompetitionReceiptData {
 export interface WeeklyReceiptData extends CompetitionReceiptData {
   week_number: number;
   week?: number;
+  /** Reward snapshot attached to the resolved weekly room. */
+  reward_description?: string | null;
+  reward_amount_display?: string | null;
   standings?: CompetitionReceiptLeaderboardEntry[];
   final_standings?: CompetitionReceiptLeaderboardEntry[];
   league_picks?: {

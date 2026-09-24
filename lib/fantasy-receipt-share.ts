@@ -94,6 +94,16 @@ export function getWeeklyReceiptSafeFact(data: WeeklyReceiptData): string {
   return "";
 }
 
+export function formatWeeklyReceiptReward(
+  amountDisplay?: string | null,
+  description?: string | null,
+): string | null {
+  const details = [amountDisplay, description]
+    .map((value) => value?.trim() ?? "")
+    .filter(Boolean);
+  return details.length > 0 ? details.join(" · ") : null;
+}
+
 export function buildWeeklyReceiptShareText(
   data: WeeklyReceiptData,
   shortUrl: string,
@@ -104,6 +114,10 @@ export function buildWeeklyReceiptShareText(
   const leagueName = data.league_name ?? "Our league";
   const week = data.week_number;
   const fact = getWeeklyReceiptSafeFact(data);
+  const rewardDetails = formatWeeklyReceiptReward(
+    data.reward_amount_display,
+    data.reward_description,
+  );
   const nextWeek = data.next_week_number ?? week + 1;
   const result = winners.length > 1
     ? `${winnerLabel} tie at ${points} SP.`
@@ -116,6 +130,7 @@ export function buildWeeklyReceiptShareText(
   return [
     `🏆 ${leagueName} — Week ${week}`,
     result,
+    rewardDetails ? `🎁 Weekly reward: ${rewardDetails}` : "",
     fact,
     cta,
     shortUrl,

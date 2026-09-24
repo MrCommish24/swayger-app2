@@ -1,7 +1,8 @@
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import type { CompetitionReceiptData } from "@/lib/fantasy-api";
+import type { CompetitionReceiptData, WeeklyReceiptData } from "@/lib/fantasy-api";
 import {
+  formatWeeklyReceiptReward,
   getCompactReceiptLeaderboard,
   WEEKLY_COMPACT_RECEIPT_MAX_ROWS,
   WEEKLY_COMPACT_RECEIPT_MAX_TIE_ROWS,
@@ -12,7 +13,12 @@ import SwaygerMark from "@/components/SwaygerMark";
 const C = Colors.dark;
 
 interface CompactCompetitionReceiptProps {
-  data: CompetitionReceiptData;
+  data: CompetitionReceiptData & Partial<
+    Pick<
+      WeeklyReceiptData,
+      "week_number" | "reward_description" | "reward_amount_display"
+    >
+  >;
   variant?: "draft_day" | "weekly";
 }
 
@@ -22,6 +28,9 @@ export function CompactCompetitionReceipt({
 }: CompactCompetitionReceiptProps) {
   const winners = data.winners ?? [];
   const isWeekly = variant === "weekly";
+  const weeklyReward = isWeekly
+    ? formatWeeklyReceiptReward(data.reward_amount_display, data.reward_description)
+    : null;
   const leaderboard = getCompactReceiptLeaderboard(
     data.leaderboard ?? [],
     isWeekly ? WEEKLY_COMPACT_RECEIPT_MAX_ROWS : undefined,
@@ -43,7 +52,7 @@ export function CompactCompetitionReceipt({
         </Text>
         <Text style={styles.season}>
           {variant === "weekly"
-            ? `Week ${(data as CompetitionReceiptData & { week_number?: number }).week_number ?? ""}${data.season_year ? ` · ${data.season_year}` : ""}`
+            ? `Week ${data.week_number ?? ""}${data.season_year ? ` · ${data.season_year}` : ""}`
             : `Draft Day${data.season_year ? ` · ${data.season_year}` : ""}`}
         </Text>
       </View>
@@ -71,6 +80,15 @@ export function CompactCompetitionReceipt({
           <Text style={styles.noWinner}>No winner recorded</Text>
         )}
       </View>
+
+      {weeklyReward ? (
+        <View style={styles.weeklyRewardCard}>
+          <Text style={styles.weeklyRewardLabel}>WEEKLY REWARD</Text>
+          <Text style={styles.weeklyRewardText} numberOfLines={2}>
+            {weeklyReward}
+          </Text>
+        </View>
+      ) : null}
 
       <Text style={[styles.sectionLabel, isWeekly && styles.weeklySectionLabel]}>TOP STANDINGS</Text>
       <View style={[styles.standings, isWeekly && styles.weeklyStandings]}>
@@ -159,6 +177,24 @@ const styles = StyleSheet.create({
   winnerPoints: { color: "#F5A623", fontSize: 14, fontWeight: "800", marginTop: 3 },
   weeklyWinnerPoints: { fontSize: 13, marginTop: 2 },
   noWinner: { color: "#A9B7C8", fontSize: 13 },
+  weeklyRewardCard: {
+    marginHorizontal: 13,
+    marginBottom: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 11,
+    backgroundColor: "#201704",
+    borderWidth: 1,
+    borderColor: "#8A5A13",
+  },
+  weeklyRewardLabel: {
+    color: "#F5A623",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    marginBottom: 3,
+  },
+  weeklyRewardText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   sectionLabel: { color: "#7A8FA8", fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginHorizontal: 22, marginBottom: 8 },
   weeklySectionLabel: { marginHorizontal: 20, marginBottom: 6 },
   standings: { marginHorizontal: 18, borderRadius: 13, overflow: "hidden", backgroundColor: "#111C30", borderWidth: 1, borderColor: "#1E2D45" },
