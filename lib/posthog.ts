@@ -206,6 +206,8 @@ export const Analytics = {
     capture("fantasy_receipt_shared", fCtx(ctx, extra)),
   fantasyReceiptLinkCopied: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
     capture("fantasy_receipt_link_copied", fCtx(ctx, extra)),
+  fantasyReceiptShareTextCopied: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
+    capture("fantasy_receipt_share_text_copied", fCtx(ctx, extra)),
   fantasyPickShareOpened: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>
     capture("fantasy_pick_share_opened", fCtx(ctx, extra)),
   fantasyPickShared: (ctx: FantasyAnalyticsContext, extra?: Record<string, string | number | boolean>) =>

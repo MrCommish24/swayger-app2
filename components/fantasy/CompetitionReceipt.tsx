@@ -29,8 +29,10 @@ interface CompetitionReceiptProps {
   canShare: boolean;
   sharing: boolean;
   copied: boolean;
+  shareTextCopied?: boolean;
   onShare: () => void;
   onCopy: () => void;
+  onCopyShareText?: () => void;
   onViewLeaguePicks: () => void;
 }
 
@@ -40,8 +42,10 @@ export function CompetitionReceipt({
   canShare,
   sharing,
   copied,
+  shareTextCopied = false,
   onShare,
   onCopy,
+  onCopyShareText,
   onViewLeaguePicks,
 }: CompetitionReceiptProps) {
   const winners = data.winners ?? [];
@@ -178,6 +182,18 @@ export function CompetitionReceipt({
                 </Text>
               )}
           </TouchableOpacity>
+          {variant === "weekly" && onCopyShareText && (
+            <TouchableOpacity
+              style={[styles.copyButton, shareTextCopied && styles.copyButtonCopied]}
+              onPress={onCopyShareText}
+              activeOpacity={0.82}
+              accessibilityLabel="Copy Weekly Receipt Share Text"
+            >
+              <Text style={[styles.copyButtonText, shareTextCopied && styles.copyButtonTextCopied]}>
+                {shareTextCopied ? "✓ Share text copied!" : "Copy Share Text"}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.copyButton, copied && styles.copyButtonCopied]}
             onPress={onCopy}

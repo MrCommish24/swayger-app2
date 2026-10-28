@@ -55,6 +55,7 @@ export default function WeeklyReceiptScreen() {
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareTextCopied, setShareTextCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shortUrl, setShortUrl] = useState<string | null>(null);
   const captureCardRef = useRef<View | null>(null);
@@ -140,6 +141,14 @@ export default function WeeklyReceiptScreen() {
     if (result.action === Share.dismissedAction) throw new Error("Share dismissed");
   }, []);
 
+  const markShareTextCopied = useCallback(() => {
+    if (!mountedRef.current) return;
+    setShareTextCopied(true);
+    setTimeout(() => {
+      if (mountedRef.current) setShareTextCopied(false);
+    }, 2000);
+  }, []);
+
   const handleShare = useCallback(async () => {
     if (!receipt || sharing) return;
     setSharing(true);
@@ -175,7 +184,10 @@ export default function WeeklyReceiptScreen() {
           link.click();
           URL.revokeObjectURL(downloadUrl);
           await Clipboard.setStringAsync(message);
-          if (mountedRef.current) setCopied(true);
+          markShareTextCopied();
+          Analytics.fantasyReceiptShareTextCopied(analyticsContext(), {
+            share_surface: "download_fallback",
+          });
           Analytics.fantasyReceiptShared(analyticsContext(), { share_surface: "download_copy" });
         }
       } else {
@@ -202,7 +214,7 @@ export default function WeeklyReceiptScreen() {
     } finally {
       if (mountedRef.current) setSharing(false);
     }
-  }, [analyticsContext, ensureShortUrl, receipt, sharing, shortUrl, textShare, wn]);
+  }, [analyticsContext, ensureShortUrl, markShareTextCopied, receipt, sharing, shortUrl, textShare, wn]);
 
   const handleCopy = useCallback(async () => {
     if (copied) return;
@@ -216,6 +228,19 @@ export default function WeeklyReceiptScreen() {
       }
     } catch { /* clipboard may be unavailable in restricted previews */ }
   }, [analyticsContext, copied, ensureShortUrl]);
+
+  const handleCopyShareText = useCallback(async () => {
+    if (!receipt) return;
+    try {
+      const url = await ensureShortUrl();
+      const message = buildWeeklyReceiptShareText(receipt, url);
+      await Clipboard.setStringAsync(message);
+      markShareTextCopied();
+      Analytics.fantasyReceiptShareTextCopied(analyticsContext(), {
+        share_surface: "copy_text_button",
+      });
+    } catch { /* clipboard may be unavailable in restricted previews */ }
+  }, [analyticsContext, ensureShortUrl, markShareTextCopied, receipt]);
 
   if (authLoading || guestTokenLoading || (loading && !receipt)) {
     return <View style={[styles.center, { paddingTop: insets.top }]}><ActivityIndicator color={C.tint} size="large" /></View>;
@@ -263,8 +288,10 @@ export default function WeeklyReceiptScreen() {
           canShare={!!canShare}
           sharing={sharing}
           copied={copied}
+          shareTextCopied={shareTextCopied}
           onShare={handleShare}
           onCopy={handleCopy}
+          onCopyShareText={handleCopyShareText}
           onViewLeaguePicks={() => router.push(`/fantasy/weeks/${leagueId}/${seasonId}/${wn}/league-picks` as any)}
         />
         <View style={styles.nextWeekCard}>

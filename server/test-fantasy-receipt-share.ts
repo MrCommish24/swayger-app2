@@ -13,6 +13,8 @@ import {
   renderWeeklyReceiptPreviewHtml,
   renderWeeklyReceiptPreviewSvg,
 } from "./fantasy-weekly-preview";
+import fs from "node:fs";
+import path from "node:path";
 
 const receipt: CompetitionReceiptData = {
   finalized: true,
@@ -232,5 +234,28 @@ assert(
     !/question|selected_answer|participant_id/i.test(previewSvg),
   "Preview image is compact, branded, result-only, and viewer-independent",
 );
+
+const weeklyReceiptScreen = fs.readFileSync(
+  path.resolve("app/fantasy/weeks/[leagueId]/[seasonId]/[weekNumber]/receipt.tsx"),
+  "utf8",
+);
+const receiptComponent = fs.readFileSync(
+  path.resolve("components/fantasy/CompetitionReceipt.tsx"),
+  "utf8",
+);
+const analyticsSource = fs.readFileSync(path.resolve("lib/posthog.ts"), "utf8");
+if (
+  !weeklyReceiptScreen.includes("const handleCopyShareText = useCallback") ||
+  !weeklyReceiptScreen.includes("buildWeeklyReceiptShareText(receipt, url)") ||
+  !weeklyReceiptScreen.includes("Clipboard.setStringAsync(message)") ||
+  !weeklyReceiptScreen.includes("onCopyShareText={handleCopyShareText}") ||
+  !weeklyReceiptScreen.includes('share_surface: "copy_text_button"') ||
+  !receiptComponent.includes("variant === \"weekly\" && onCopyShareText") ||
+  !receiptComponent.includes("Copy Share Text") ||
+  !analyticsSource.includes('capture("fantasy_receipt_share_text_copied"')
+) {
+  throw new Error("Weekly receipt copy-share-text action is not fully wired");
+}
+console.log("Receipt share text-copy UI wiring passed");
 
 console.log("Receipt share helper result: 27 passed, 0 failed");
