@@ -40,6 +40,7 @@
 - [Fantasy shared-link navigation](fantasy-shared-link-navigation.md) — direct weekly links need explicit replace destinations; browser-history back can be inert.
 - [Madden Weekly Pick Card](gameday-madden-weekly-pick-card.md) — normalized main/bonus roles, exact totals, main-only winners, atomic settlement, and deferred import boundaries
 - [Madden Discord participation outbox](gameday-madden-participation-outbox.md) — versioned public pick snapshots, mixed-caller safety, causal guild-scoped delivery, explicit opt-in rollout.
+- [Post-merge setup](post-merge-hook.md) — keep database migrations explicit; update firewall-blocked locked packages instead of bypassing policy.
 - [Fantasy Weekly Receipt](gameday-fantasy-weekly-receipt.md) — live weekly alias schema is applied; receipts are finalized, member-authorized, viewer-independent, and archive-readable.
 - [Fantasy Weekly Swayger Moments](gameday-fantasy-swayger-moments.md) — titles derive from stable template IDs; source-library copy may evolve, but published weekly props remain immutable.
 - [Fantasy Call Your Shot](gameday-fantasy-call-your-shot.md) — voluntary one-pick sharing stays client-side, uses confirmed answers, and links only to authorized Weekly play.
