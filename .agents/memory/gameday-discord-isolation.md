@@ -18,6 +18,10 @@ stored guild boundary. Separately, a verified Game Day admin session may archive
 any room from Host Tools; ordinary human hosts remain limited to their own
 web-hosted rooms.
 
+Host Tools bulk archive validates access to every selected room before changing
+any of them, limits a batch to 50 rooms, and rejects finalized rooms as a set.
+Restore uses the same verified-host/admin boundary and records a separate event.
+
 The browser does not directly query Game Day tables; it uses Express routes.
 However, the public Supabase anon client can currently read Game Day tables and
 authorization columns directly, so API response minimization does not provide
@@ -29,6 +33,12 @@ bot caller. The Host Tools exception is separately authenticated and gated by
 the configured Game Day host and admin allowlists. Service-role API
 authorization also cannot protect a direct PostgREST caller if live table
 grants and RLS permit it.
+
+**Why:** Bulk actions must not partially archive a mixed-authority selection,
+and restoring a room should not be a way to bypass the ownership boundary.
+
+**How to apply:** Reuse the same host/admin actor check for bulk archive and
+restore, validate the full set before mutation, and audit each changed room.
 
 **How to apply:** Keep public participant reads and share links unauthenticated
 where the product needs them, but require the guild-scoped bot contract for

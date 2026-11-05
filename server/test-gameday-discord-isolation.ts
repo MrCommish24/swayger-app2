@@ -17,7 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 34;
+const EXPECTED_ASSERTIONS = 38;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -299,6 +299,57 @@ async function main() {
       "Game Day admin can archive a Discord room from Host Tools",
       adminArchive.status === 200 && adminArchive.body.ok === true,
       JSON.stringify(adminArchive.body),
+    );
+    const adminRestore = await request(`/api/gameday/rooms/${noStoredGuild.data.id}/restore`, {
+      method: "PATCH",
+      token: host.accessToken,
+    });
+    expect(
+      "Game Day admin can restore an archived room",
+      adminRestore.status === 200 && adminRestore.body.ok === true,
+      JSON.stringify(adminRestore.body),
+    );
+    const nonHostRestore = await request(`/api/gameday/rooms/${noStoredGuild.data.id}/restore`, {
+      method: "PATCH",
+      token: nonHost.accessToken,
+    });
+    expect(
+      "ordinary users cannot restore an archived room",
+      nonHostRestore.status === 403,
+      String(nonHostRestore.status),
+    );
+
+    const batchRoom = await request("/api/gameday/rooms", {
+      method: "POST",
+      token: host.accessToken,
+      body: { ...roomPayload, room_name: `Batch archive room ${runId}` },
+    });
+    const batchRoomId = batchRoom.body.room_id as string | undefined;
+    if (batchRoom.status !== 200 || !batchRoomId) {
+      throw new Error(`Could not create batch archive fixture: ${JSON.stringify(batchRoom.body)}`);
+    }
+    roomIds.push(batchRoomId);
+    const deniedBatchArchive = await request("/api/gameday/rooms/archive-batch", {
+      method: "PATCH",
+      token: nonHost.accessToken,
+      body: { room_ids: [noStoredGuild.data.id, batchRoomId] },
+    });
+    expect(
+      "ordinary users cannot bulk archive rooms",
+      deniedBatchArchive.status === 403,
+      String(deniedBatchArchive.status),
+    );
+    const batchArchive = await request("/api/gameday/rooms/archive-batch", {
+      method: "PATCH",
+      token: host.accessToken,
+      body: { room_ids: [noStoredGuild.data.id, batchRoomId] },
+    });
+    expect(
+      "Game Day admin can bulk archive selected rooms",
+      batchArchive.status === 200 &&
+        batchArchive.body.ok === true &&
+        batchArchive.body.archived_ids?.length === 2,
+      JSON.stringify(batchArchive.body),
     );
 
     const archived = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {

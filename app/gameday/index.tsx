@@ -84,7 +84,9 @@ export default function GameDayHub() {
   const [fantasyLoading, setFantasyLoading] = useState(false);
   const [joinedRooms, setJoinedRooms] = useState<JoinedRoom[]>([]);
   const [joinedRoomsLoading, setJoinedRoomsLoading] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<RoomSummary | null>(null);
+  const [archiveTargets, setArchiveTargets] = useState<RoomSummary[]>([]);
+  const [archiveAction, setArchiveAction] = useState<"archive" | "restore">("archive");
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archivingRoomId, setArchivingRoomId] = useState<string | null>(null);
 
@@ -138,6 +140,18 @@ export default function GameDayHub() {
         { session }
       );
       setRooms(data.rooms);
+      setSelectedRoomIds((current) =>
+        current.filter((roomId) =>
+          data.rooms.some(
+            (room) =>
+              room.id === roomId &&
+              room.can_archive &&
+              !room.archived_at &&
+              room.status !== "finalized" &&
+              room.status !== "final",
+          ),
+        ),
+      );
       setError(null);
       setLoading(false);
       setRefreshing(false);
@@ -200,36 +214,73 @@ export default function GameDayHub() {
   };
 
   const archiveRoom = async () => {
-    if (!archiveTarget || !session) return;
-    const target = archiveTarget;
+    if (archiveTargets.length === 0 || !session) return;
+    const targets = archiveTargets;
+    const action = archiveAction;
     setArchiveError(null);
-    setArchivingRoomId(target.id);
+    setArchivingRoomId(targets.length > 1 ? "bulk" : targets[0].id);
     try {
-      await gamedayFetch(
-        `/api/gameday/rooms/${target.id}/archive`,
-        { method: "PATCH", body: JSON.stringify({}) },
-        { session },
-      );
+      let changedIds: string[];
+      if (action === "restore") {
+        const target = targets[0];
+        await gamedayFetch(
+          `/api/gameday/rooms/${target.id}/restore`,
+          { method: "PATCH", body: JSON.stringify({}) },
+          { session },
+        );
+        changedIds = [target.id];
+      } else if (targets.length > 1) {
+        const result = await gamedayFetch<{ archived_ids: string[] }>(
+          "/api/gameday/rooms/archive-batch",
+          {
+            method: "PATCH",
+            body: JSON.stringify({ room_ids: targets.map((room) => room.id) }),
+          },
+          { session },
+        );
+        changedIds = result.archived_ids;
+      } else {
+        const target = targets[0];
+        await gamedayFetch(
+          `/api/gameday/rooms/${target.id}/archive`,
+          { method: "PATCH", body: JSON.stringify({}) },
+          { session },
+        );
+        changedIds = [target.id];
+      }
       const archivedAt = new Date().toISOString();
       setRooms((current) =>
         current.map((room) =>
-          room.id === target.id ? { ...room, archived_at: archivedAt } : room,
+          changedIds.includes(room.id)
+            ? { ...room, archived_at: action === "archive" ? archivedAt : null }
+            : room,
         ),
       );
-      setJoinedRooms((current) =>
-        current.filter((room) => room.room_id !== target.id),
-      );
-      queryClient.setQueriesData<{ rooms: JoinedRoom[] }>(
-        { queryKey: ["gameday", "my-rooms"] },
-        (current) =>
-          current
-            ? { ...current, rooms: current.rooms.filter((room) => room.room_id !== target.id) }
-            : current,
-      );
+      if (action === "archive") {
+        setJoinedRooms((current) =>
+          current.filter((room) => !changedIds.includes(room.room_id)),
+        );
+        queryClient.setQueriesData<{ rooms: JoinedRoom[] }>(
+          { queryKey: ["gameday", "my-rooms"] },
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  rooms: current.rooms.filter((room) => !changedIds.includes(room.room_id)),
+                }
+              : current,
+        );
+        setSelectedRoomIds((current) =>
+          current.filter((roomId) => !changedIds.includes(roomId)),
+        );
+      } else {
+        void fetchJoinedRooms();
+      }
+      void queryClient.invalidateQueries({ queryKey: ["gameday", "my-rooms"] });
       void queryClient.invalidateQueries({ queryKey: ["gameday", "public-rooms"] });
-      setArchiveTarget(null);
+      setArchiveTargets([]);
     } catch (err: any) {
-      setArchiveError(err?.message ?? "Could not archive this room.");
+      setArchiveError(err?.message ?? `Could not ${action} this room.`);
     } finally {
       setArchivingRoomId(null);
     }
@@ -408,6 +459,14 @@ export default function GameDayHub() {
     ? rooms
     : rooms.filter((r) => !r.archived_at);
   const hasArchivedRooms = rooms.some((r) => !!r.archived_at);
+  const selectedRooms = rooms.filter(
+    (room) =>
+      selectedRoomIds.includes(room.id) &&
+      room.can_archive &&
+      !room.archived_at &&
+      room.status !== "finalized" &&
+      room.status !== "final",
+  );
 
   return (
     <>
@@ -437,6 +496,36 @@ export default function GameDayHub() {
           <Text style={styles.newBtnText}>+ New Room</Text>
         </TouchableOpacity>
       </View>
+
+      {selectedRooms.length > 0 ? (
+        <View style={styles.bulkArchiveBar}>
+          <Text style={styles.bulkArchiveCount}>
+            {selectedRooms.length} room{selectedRooms.length === 1 ? "" : "s"} selected
+          </Text>
+          <View style={styles.bulkArchiveActions}>
+            <TouchableOpacity
+              onPress={() => setSelectedRoomIds([])}
+              style={styles.bulkClearButton}
+              accessibilityRole="button"
+            >
+              <Text style={styles.bulkClearText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                setArchiveError(null);
+                setArchiveAction("archive");
+                setArchiveTargets(selectedRooms);
+              }}
+              style={styles.bulkArchiveButton}
+              accessibilityRole="button"
+            >
+              <Text style={styles.bulkArchiveButtonText}>
+                Archive selected
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
 
       {renderContinuePlaying()}
 
@@ -521,18 +610,67 @@ export default function GameDayHub() {
               <Text style={styles.enterHint}>Tap to open Host Control →</Text>
             </TouchableOpacity>
 
-            {room.can_archive && !room.archived_at && room.status !== "finalized" && room.status !== "final" ? (
-              <TouchableOpacity
-                style={styles.archiveAction}
-                onPress={() => {
-                  setArchiveError(null);
-                  setArchiveTarget(room);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Archive ${room.room_name}`}
-              >
-                <Text style={styles.archiveActionText}>Archive room</Text>
-              </TouchableOpacity>
+            {room.can_archive &&
+            room.status !== "finalized" &&
+            room.status !== "final" ? (
+              <View style={styles.roomActionRow}>
+                {room.archived_at ? (
+                  <TouchableOpacity
+                    style={styles.restoreAction}
+                    onPress={() => {
+                      setArchiveError(null);
+                      setArchiveAction("restore");
+                      setArchiveTargets([room]);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Restore ${room.room_name}`}
+                  >
+                    <Text style={styles.restoreActionText}>Restore room</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.selectRoomAction}
+                      onPress={() =>
+                        setSelectedRoomIds((current) =>
+                          current.includes(room.id)
+                            ? current.filter((id) => id !== room.id)
+                            : current.length >= 50
+                              ? current
+                              : [...current, room.id],
+                        )
+                      }
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selectedRoomIds.includes(room.id) }}
+                      accessibilityLabel={`Select ${room.room_name} for bulk archive`}
+                    >
+                      <View
+                        style={[
+                          styles.selectRoomCheckbox,
+                          selectedRoomIds.includes(room.id) && styles.selectRoomCheckboxChecked,
+                        ]}
+                      >
+                        {selectedRoomIds.includes(room.id) ? (
+                          <Text style={styles.selectRoomCheckmark}>✓</Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.selectRoomText}>Select</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.archiveAction}
+                      onPress={() => {
+                        setArchiveError(null);
+                        setArchiveAction("archive");
+                        setArchiveTargets([room]);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Archive ${room.room_name}`}
+                    >
+                      <Text style={styles.archiveActionText}>Archive room</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
             ) : null}
           </View>
         ))
@@ -555,23 +693,39 @@ export default function GameDayHub() {
       <Modal
         transparent
         animationType="fade"
-        visible={!!archiveTarget}
+        visible={archiveTargets.length > 0}
         onRequestClose={() => {
-          if (!archivingRoomId) setArchiveTarget(null);
+          if (!archivingRoomId) setArchiveTargets([]);
         }}
       >
         <View style={styles.archiveModalBackdrop}>
           <View style={styles.archiveModalCard}>
-            <Text style={styles.archiveModalTitle}>Archive this room?</Text>
-            <Text style={styles.archiveModalBody}>
-              {archiveTarget?.room_name} will disappear from Live Now and Continue Playing for everyone.
-              Its room history and picks will be retained.
+            <Text style={styles.archiveModalTitle}>
+              {archiveAction === "restore"
+                ? "Restore this room?"
+                : archiveTargets.length > 1
+                  ? `Archive ${archiveTargets.length} rooms?`
+                  : "Archive this room?"}
             </Text>
+            <Text style={styles.archiveModalBody}>
+              {archiveAction === "restore"
+                ? `${archiveTargets[0]?.room_name} will return to active room lists. Its history and picks have been retained.`
+                : archiveTargets.length > 1
+                  ? "These rooms will disappear from Live Now and Continue Playing for everyone. Their histories and picks will be retained."
+                  : `${archiveTargets[0]?.room_name} will disappear from Live Now and Continue Playing for everyone. Its room history and picks will be retained.`}
+            </Text>
+            {archiveAction === "archive" && archiveTargets.length > 1 ? (
+              <ScrollView style={styles.archiveModalRoomList}>
+                <Text style={styles.archiveModalRoomNames}>
+                  {archiveTargets.map((room) => `• ${room.room_name}`).join("\n")}
+                </Text>
+              </ScrollView>
+            ) : null}
             {archiveError ? <Text style={styles.archiveModalError}>{archiveError}</Text> : null}
             <View style={styles.archiveModalActions}>
               <TouchableOpacity
                 style={styles.archiveCancelButton}
-                onPress={() => setArchiveTarget(null)}
+                onPress={() => setArchiveTargets([])}
                 disabled={!!archivingRoomId}
                 accessibilityRole="button"
               >
@@ -586,7 +740,13 @@ export default function GameDayHub() {
                 {archivingRoomId ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.archiveConfirmText}>Archive room</Text>
+                  <Text style={styles.archiveConfirmText}>
+                    {archiveAction === "restore"
+                      ? "Restore room"
+                      : archiveTargets.length > 1
+                        ? "Archive rooms"
+                        : "Archive room"}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -626,6 +786,29 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   newBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  bulkArchiveBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  bulkArchiveCount: { color: C.text, fontSize: 14, fontWeight: "600", flex: 1 },
+  bulkArchiveActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  bulkClearButton: { paddingVertical: 8, paddingHorizontal: 10 },
+  bulkClearText: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  bulkArchiveButton: {
+    backgroundColor: "#dc2626",
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  bulkArchiveButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 
   // Room card
   roomCard: {
@@ -643,8 +826,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   archiveAction: {
-    alignSelf: "flex-start",
-    marginTop: 12,
     borderWidth: 1,
     borderColor: "#ef4444",
     borderRadius: 8,
@@ -652,6 +833,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   archiveActionText: { color: "#ef4444", fontSize: 13, fontWeight: "700" },
+  roomActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 12,
+  },
+  selectRoomAction: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 },
+  selectRoomCheckbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: C.textMuted,
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectRoomCheckboxChecked: { backgroundColor: C.tint, borderColor: C.tint },
+  selectRoomCheckmark: { color: "#fff", fontSize: 14, fontWeight: "800", lineHeight: 17 },
+  selectRoomText: { color: C.textSecondary, fontSize: 13, fontWeight: "600" },
+  restoreAction: {
+    borderWidth: 1,
+    borderColor: C.tint,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  restoreActionText: { color: C.tint, fontSize: 13, fontWeight: "700" },
   roomName: {
     fontSize: 17,
     fontWeight: "700",
@@ -716,6 +924,19 @@ const styles = StyleSheet.create({
   },
   archiveModalTitle: { color: C.text, fontSize: 20, fontWeight: "700", marginBottom: 10 },
   archiveModalBody: { color: C.textSecondary, fontSize: 14, lineHeight: 21 },
+  archiveModalRoomNames: {
+    color: C.text,
+    fontSize: 13,
+    lineHeight: 19,
+    paddingVertical: 10,
+  },
+  archiveModalRoomList: {
+    maxHeight: 180,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: C.border,
+  },
   archiveModalError: { color: "#f87171", fontSize: 13, marginTop: 10 },
   archiveModalActions: {
     flexDirection: "row",
