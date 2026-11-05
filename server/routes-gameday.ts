@@ -3239,7 +3239,7 @@ export function registerGamedayRoutes(app: Express) {
     // Try fetching with room_code + source; fall back if columns don't exist yet.
     let baseQuery = supabase
       .from("gameday_rooms")
-      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at")
+      .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at, host_user_id")
       .order("created_at", { ascending: false });
     if (!isAdminUser) baseQuery = (baseQuery as any).eq("host_user_id", user.id);
 
@@ -3249,7 +3249,7 @@ export function registerGamedayRoutes(app: Express) {
       console.warn("[gameday] rooms list with room_code/source failed, retrying without:", error.message);
       let retryQuery = supabase
         .from("gameday_rooms")
-        .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at")
+        .select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at, host_user_id")
         .order("created_at", { ascending: false });
       if (!isAdminUser) retryQuery = (retryQuery as any).eq("host_user_id", user.id);
       const retry = await retryQuery;
@@ -3257,7 +3257,7 @@ export function registerGamedayRoutes(app: Express) {
         res.status(500).json({ error: retry.error.message });
         return;
       }
-      rooms = retry.data;
+      rooms = retry.data as any;
     }
 
     const roomList = rooms ?? [];
@@ -3299,11 +3299,17 @@ export function registerGamedayRoutes(app: Express) {
       });
     }
     res.json({
-      rooms: roomList.map((r: any) => ({
-        ...r,
-        participant_count: counts[r.id] ?? 0,
-        host_link: `${APP_URL}/gameday/${r.id}/host`,
-      })),
+      rooms: roomList.map((r: any) => {
+        const { host_user_id: roomHostId, ...roomSummary } = r;
+        return {
+          ...roomSummary,
+          participant_count: counts[r.id] ?? 0,
+          host_link: `${APP_URL}/gameday/${r.id}/host`,
+          can_archive:
+            isAdminUser ||
+            (r.source !== "discord" && roomHostId === user.id),
+        };
+      }),
     });
   });
 
@@ -5141,8 +5147,18 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      const hostId = await requireGamedayHost(req, res);
-      if (!hostId) return;
+      const user = await getVerifiedGamedayUser(req);
+      if (!user) {
+        res.status(401).json({ error: "Invalid or expired Supabase token" });
+        return;
+      }
+      const userEmail = user.email.toLowerCase();
+      if (!getAllowedGamedayEmails().includes(userEmail)) {
+        res.status(403).json({ error: "Not authorized as Game Day host" });
+        return;
+      }
+      const isAdminUser = getAllowedGamedayAdminEmails().includes(userEmail);
+      const hostId = user.id;
 
       const { roomId } = req.params;
 
@@ -5156,7 +5172,13 @@ export function registerGamedayRoutes(app: Express) {
         res.status(404).json({ error: "Room not found" });
         return;
       }
-      if (!requireOwnedHumanRoom(res, (room as any).host_user_id, hostId)) return;
+      if (!isAdminUser) {
+        if ((room as any).source === "discord") {
+          res.status(403).json({ error: "Discord rooms require Game Day admin access to archive here" });
+          return;
+        }
+        if (!requireOwnedHumanRoom(res, (room as any).host_user_id, hostId)) return;
+      }
       if ((room as any).status === "finalized") {
         res.status(400).json({
           error: "Finalized rooms cannot be archived — they are preserved as receipts.",
@@ -5182,6 +5204,7 @@ export function registerGamedayRoutes(app: Express) {
 
       await logEvent(supabase, roomId, null, hostId, "room_archived", {
         archived_by: hostId,
+        archive_role: isAdminUser ? "gameday_admin" : "room_host",
         source: (room as any).source ?? "app",
       });
 

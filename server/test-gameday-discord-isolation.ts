@@ -17,7 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 32;
+const EXPECTED_ASSERTIONS = 34;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -281,6 +281,24 @@ async function main() {
       "bot cannot archive a Discord room without stored guild metadata",
       noStoredGuildArchive.status === 403,
       String(noStoredGuildArchive.status),
+    );
+    const nonHostArchive = await request(`/api/gameday/rooms/${noStoredGuild.data.id}/archive`, {
+      method: "PATCH",
+      token: nonHost.accessToken,
+    });
+    expect(
+      "ordinary users cannot archive Discord rooms",
+      nonHostArchive.status === 403,
+      String(nonHostArchive.status),
+    );
+    const adminArchive = await request(`/api/gameday/rooms/${noStoredGuild.data.id}/archive`, {
+      method: "PATCH",
+      token: host.accessToken,
+    });
+    expect(
+      "Game Day admin can archive a Discord room from Host Tools",
+      adminArchive.status === 200 && adminArchive.body.ok === true,
+      JSON.stringify(adminArchive.body),
     );
 
     const archived = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {

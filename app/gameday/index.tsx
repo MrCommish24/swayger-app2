@@ -7,9 +7,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch } from "@/lib/gameday-api";
 import { fantasyFetch, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
@@ -25,11 +27,12 @@ interface RoomSummary {
   team_a_name: string;
   team_b_name: string;
   game_date: string | null;
-  status: "draft" | "active" | "final";
+  status: string;
   created_at: string;
   participant_count: number;
   room_code?: string | null;
   archived_at?: string | null;
+  can_archive?: boolean;
 }
 
 interface JoinedRoom {
@@ -65,6 +68,7 @@ export default function GameDayHub() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session, isLoading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
 
   // Resolved server-side so GAMEDAY_HOST_EMAILS is the single source of truth.
   const [isHost, setIsHost] = useState<boolean | null>(null);
@@ -80,6 +84,9 @@ export default function GameDayHub() {
   const [fantasyLoading, setFantasyLoading] = useState(false);
   const [joinedRooms, setJoinedRooms] = useState<JoinedRoom[]>([]);
   const [joinedRoomsLoading, setJoinedRoomsLoading] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<RoomSummary | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archivingRoomId, setArchivingRoomId] = useState<string | null>(null);
 
   /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
   function cleanError(raw: string): string {
@@ -190,6 +197,42 @@ export default function GameDayHub() {
     if (isHost) fetchRooms(true);
     fetchFantasyLeagues();
     fetchJoinedRooms().finally(() => setRefreshing(false));
+  };
+
+  const archiveRoom = async () => {
+    if (!archiveTarget || !session) return;
+    const target = archiveTarget;
+    setArchiveError(null);
+    setArchivingRoomId(target.id);
+    try {
+      await gamedayFetch(
+        `/api/gameday/rooms/${target.id}/archive`,
+        { method: "PATCH", body: JSON.stringify({}) },
+        { session },
+      );
+      const archivedAt = new Date().toISOString();
+      setRooms((current) =>
+        current.map((room) =>
+          room.id === target.id ? { ...room, archived_at: archivedAt } : room,
+        ),
+      );
+      setJoinedRooms((current) =>
+        current.filter((room) => room.room_id !== target.id),
+      );
+      queryClient.setQueriesData<{ rooms: JoinedRoom[] }>(
+        { queryKey: ["gameday", "my-rooms"] },
+        (current) =>
+          current
+            ? { ...current, rooms: current.rooms.filter((room) => room.room_id !== target.id) }
+            : current,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["gameday", "public-rooms"] });
+      setArchiveTarget(null);
+    } catch (err: any) {
+      setArchiveError(err?.message ?? "Could not archive this room.");
+    } finally {
+      setArchivingRoomId(null);
+    }
   };
 
   function joinedRoomLabel(room: JoinedRoom): string {
@@ -367,6 +410,7 @@ export default function GameDayHub() {
   const hasArchivedRooms = rooms.some((r) => !!r.archived_at);
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={[
@@ -433,47 +477,64 @@ export default function GameDayHub() {
         </View>
       ) : (
         displayedRooms.map((room) => (
-          <TouchableOpacity
+          <View
             key={room.id}
             style={[styles.roomCard, room.archived_at ? styles.roomCardArchived : null]}
-            onPress={() => router.push(`/gameday/${room.id}/host` as never)}
-            activeOpacity={0.75}
           >
-            <View style={styles.roomCardTop}>
-              <Text style={styles.roomName} numberOfLines={1}>
-                {room.room_name}
-              </Text>
-              <View style={[
-                styles.statusBadge,
-                { borderColor: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
-              ]}>
-                <Text style={[
-                  styles.statusText,
-                  { color: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
-                ]}>
-                  {room.archived_at ? "Archived" : (STATUS_LABEL[room.status] ?? room.status)}
+            <TouchableOpacity
+              onPress={() => router.push(`/gameday/${room.id}/host` as never)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.roomCardTop}>
+                <Text style={styles.roomName} numberOfLines={1}>
+                  {room.room_name}
                 </Text>
+                <View style={[
+                  styles.statusBadge,
+                  { borderColor: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    { color: room.archived_at ? C.textMuted : (STATUS_COLOR[room.status] ?? C.textMuted) },
+                  ]}>
+                    {room.archived_at ? "Archived" : (STATUS_LABEL[room.status] ?? room.status)}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <Text style={styles.matchup}>
-              {room.team_a_name} vs {room.team_b_name}
-            </Text>
-
-            <View style={styles.roomCardMeta}>
-              {room.game_date ? (
-                <Text style={styles.metaChip}>{formatDate(room.game_date)}</Text>
-              ) : null}
-              <Text style={styles.metaChip}>
-                {room.participant_count} player{room.participant_count !== 1 ? "s" : ""}
+              <Text style={styles.matchup}>
+                {room.team_a_name} vs {room.team_b_name}
               </Text>
-              {room.room_code ? (
-                <Text style={styles.roomCodeChip}>{room.room_code}</Text>
-              ) : null}
-            </View>
 
-            <Text style={styles.enterHint}>Tap to open Host Control →</Text>
-          </TouchableOpacity>
+              <View style={styles.roomCardMeta}>
+                {room.game_date ? (
+                  <Text style={styles.metaChip}>{formatDate(room.game_date)}</Text>
+                ) : null}
+                <Text style={styles.metaChip}>
+                  {room.participant_count} player{room.participant_count !== 1 ? "s" : ""}
+                </Text>
+                {room.room_code ? (
+                  <Text style={styles.roomCodeChip}>{room.room_code}</Text>
+                ) : null}
+              </View>
+
+              <Text style={styles.enterHint}>Tap to open Host Control →</Text>
+            </TouchableOpacity>
+
+            {room.can_archive && !room.archived_at && room.status !== "finalized" && room.status !== "final" ? (
+              <TouchableOpacity
+                style={styles.archiveAction}
+                onPress={() => {
+                  setArchiveError(null);
+                  setArchiveTarget(room);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Archive ${room.room_name}`}
+              >
+                <Text style={styles.archiveActionText}>Archive room</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         ))
       )}
 
@@ -491,6 +552,48 @@ export default function GameDayHub() {
 
       {renderFantasySection()}
     </ScrollView>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!archiveTarget}
+        onRequestClose={() => {
+          if (!archivingRoomId) setArchiveTarget(null);
+        }}
+      >
+        <View style={styles.archiveModalBackdrop}>
+          <View style={styles.archiveModalCard}>
+            <Text style={styles.archiveModalTitle}>Archive this room?</Text>
+            <Text style={styles.archiveModalBody}>
+              {archiveTarget?.room_name} will disappear from Live Now and Continue Playing for everyone.
+              Its room history and picks will be retained.
+            </Text>
+            {archiveError ? <Text style={styles.archiveModalError}>{archiveError}</Text> : null}
+            <View style={styles.archiveModalActions}>
+              <TouchableOpacity
+                style={styles.archiveCancelButton}
+                onPress={() => setArchiveTarget(null)}
+                disabled={!!archivingRoomId}
+                accessibilityRole="button"
+              >
+                <Text style={styles.archiveCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.archiveConfirmButton, archivingRoomId && styles.archiveConfirmDisabled]}
+                onPress={archiveRoom}
+                disabled={!!archivingRoomId}
+                accessibilityRole="button"
+              >
+                {archivingRoomId ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.archiveConfirmText}>Archive room</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -539,6 +642,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
+  archiveAction: {
+    alignSelf: "flex-start",
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#ef4444",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  archiveActionText: { color: "#ef4444", fontSize: 13, fontWeight: "700" },
   roomName: {
     fontSize: 17,
     fontWeight: "700",
@@ -584,6 +697,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   archivedToggleText: { fontSize: 13, color: C.textMuted, textDecorationLine: "underline" },
+
+  archiveModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  archiveModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    padding: 20,
+  },
+  archiveModalTitle: { color: C.text, fontSize: 20, fontWeight: "700", marginBottom: 10 },
+  archiveModalBody: { color: C.textSecondary, fontSize: 14, lineHeight: 21 },
+  archiveModalError: { color: "#f87171", fontSize: 13, marginTop: 10 },
+  archiveModalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 20,
+  },
+  archiveCancelButton: {
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  archiveCancelText: { color: C.text, fontSize: 14, fontWeight: "600" },
+  archiveConfirmButton: {
+    minWidth: 112,
+    alignItems: "center",
+    backgroundColor: "#dc2626",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  archiveConfirmDisabled: { opacity: 0.65 },
+  archiveConfirmText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 
   // Error
   errorBox: {
