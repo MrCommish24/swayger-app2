@@ -5089,6 +5089,156 @@ export function registerGamedayRoutes(app: Express) {
     }
   );
 
+  // ── POST/PATCH /api/gameday/rooms/archive-batch ──────────────────────────
+  // Archive several rooms independently while preserving the single-room
+  // authorization and audit rules for each room.
+  const archiveBatchHandler = async (req: Request, res: Response) => {
+    const roomIds = req.body?.room_ids;
+    if (
+      !Array.isArray(roomIds) ||
+      roomIds.length < 1 ||
+      roomIds.length > 50 ||
+      roomIds.some((id: unknown) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    ) {
+      res.status(400).json({ error: "room_ids must contain between 1 and 50 room IDs" });
+      return;
+    }
+
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Invalid or expired Supabase token" });
+      return;
+    }
+    const userEmail = user.email.toLowerCase();
+    if (!getAllowedGamedayEmails().includes(userEmail)) {
+      res.status(403).json({ error: "Not authorized as Game Day host" });
+      return;
+    }
+    const isAdminUser = getAllowedGamedayAdminEmails().includes(userEmail);
+    const supabase = getServiceSupabase();
+    const uniqueRoomIds = [...new Set(roomIds as string[])];
+    const results: {
+      room_id: string;
+      ok: boolean;
+      status: number;
+      already?: boolean;
+      archived_at?: string;
+      error?: string;
+    }[] = [];
+
+    for (const roomId of uniqueRoomIds) {
+      const { data: room, error: roomError } = await supabase
+        .from("gameday_rooms")
+        .select("host_user_id, status, archived_at, source")
+        .eq("id", roomId)
+        .maybeSingle();
+
+      if (roomError) {
+        results.push({ room_id: roomId, ok: false, status: 500, error: "Could not load room" });
+        continue;
+      }
+      if (!room) {
+        results.push({ room_id: roomId, ok: false, status: 404, error: "Room not found" });
+        continue;
+      }
+
+      if (!isAdminUser) {
+        if ((room as any).source === "discord") {
+          results.push({
+            room_id: roomId,
+            ok: false,
+            status: 403,
+            error: "Discord rooms require Game Day admin access to archive here",
+          });
+          continue;
+        }
+        if ((room as any).host_user_id !== user.id) {
+          results.push({ room_id: roomId, ok: false, status: 403, error: "Not your room" });
+          continue;
+        }
+      }
+      if ((room as any).status === "finalized" || (room as any).status === "final") {
+        results.push({
+          room_id: roomId,
+          ok: false,
+          status: 400,
+          error: "Finalized rooms cannot be archived — they are preserved as receipts.",
+        });
+        continue;
+      }
+      if ((room as any).archived_at) {
+        results.push({
+          room_id: roomId,
+          ok: true,
+          status: 200,
+          already: true,
+          archived_at: (room as any).archived_at,
+        });
+        continue;
+      }
+
+      const archivedAt = new Date().toISOString();
+      const { data: updatedRoom, error: updateError } = await supabase
+        .from("gameday_rooms")
+        .update({ archived_at: archivedAt })
+        .eq("id", roomId)
+        .is("archived_at", null)
+        .neq("status", "finalized")
+        .neq("status", "final")
+        .select("id")
+        .maybeSingle();
+
+      if (updateError) {
+        console.error("[gameday] batch archive error:", updateError.message);
+        results.push({ room_id: roomId, ok: false, status: 500, error: "Failed to archive room" });
+        continue;
+      }
+      if (!updatedRoom) {
+        const { data: currentRoom } = await supabase
+          .from("gameday_rooms")
+          .select("status, archived_at")
+          .eq("id", roomId)
+          .maybeSingle();
+        if (currentRoom?.archived_at) {
+          results.push({
+            room_id: roomId,
+            ok: true,
+            status: 200,
+            already: true,
+            archived_at: currentRoom.archived_at,
+          });
+        } else if (currentRoom?.status === "finalized" || currentRoom?.status === "final") {
+          results.push({
+            room_id: roomId,
+            ok: false,
+            status: 400,
+            error: "Finalized rooms cannot be archived — they are preserved as receipts.",
+          });
+        } else {
+          results.push({ room_id: roomId, ok: false, status: 500, error: "Failed to archive room" });
+        }
+        continue;
+      }
+
+      await logEvent(supabase, roomId, null, user.id, "room_archived", {
+        archived_by: user.id,
+        archive_role: isAdminUser ? "gameday_admin" : "room_host",
+        source: (room as any).source ?? "app",
+      });
+      console.log(`[gameday] room archived: ${roomId} by ${user.id.slice(0, 8)}…`);
+      results.push({ room_id: roomId, ok: true, status: 200, archived_at: archivedAt });
+    }
+
+    res.json({
+      ok: true,
+      results,
+      archived_ids: results.filter((result) => result.ok && !result.already).map((result) => result.room_id),
+      already_archived: results.filter((result) => result.ok && result.already).map((result) => result.room_id),
+    });
+  };
+  app.post("/api/gameday/rooms/archive-batch", archiveBatchHandler);
+  app.patch("/api/gameday/rooms/archive-batch", archiveBatchHandler);
+
   // ── PATCH /api/gameday/rooms/:roomId/archive ─────────────────────────────
   // Soft-deletes an owned web-hosted room by setting archived_at = now().
   // Discord rooms are operated only through the guild-scoped bot lifecycle.
@@ -5225,94 +5375,6 @@ export function registerGamedayRoutes(app: Express) {
       console.log(`[gameday] room archived: ${roomId} by ${hostId.slice(0, 8)}…`);
       res.json({ ok: true });
     }
-  );
-
-  // ── PATCH /api/gameday/rooms/archive-batch ───────────────────────────────
-  // Archives a reviewed set of active rooms atomically after validating access.
-  app.patch(
-    "/api/gameday/rooms/archive-batch",
-    async (req: Request, res: Response) => {
-      const actor = await requireRoomArchiveActor(req, res);
-      if (!actor) return;
-      const requestedIds = req.body?.room_ids;
-      if (
-        !Array.isArray(requestedIds) ||
-        requestedIds.length === 0 ||
-        requestedIds.length > 50 ||
-        requestedIds.some(
-          (id: unknown) =>
-            typeof id !== "string" ||
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id),
-        )
-      ) {
-        res.status(400).json({ error: "Select between 1 and 50 rooms to archive" });
-        return;
-      }
-      const roomIds = [...new Set(requestedIds as string[])];
-      const supabase = getServiceSupabase();
-      const { data: rooms, error: readError } = await supabase
-        .from("gameday_rooms")
-        .select("id, host_user_id, source, status, archived_at, room_name")
-        .in("id", roomIds);
-      if (readError) {
-        res.status(500).json({ error: "Could not load selected rooms" });
-        return;
-      }
-      if ((rooms ?? []).length !== roomIds.length) {
-        res.status(404).json({ error: "One or more selected rooms could not be found" });
-        return;
-      }
-      if ((rooms ?? []).some((room) => !hasRoomArchiveAccess(room as any, actor))) {
-        res.status(403).json({ error: "You are not authorized to archive every selected room" });
-        return;
-      }
-      const finalizedRooms = (rooms ?? []).filter(
-        (room) => room.status === "finalized" || room.status === "final",
-      );
-      if (finalizedRooms.length > 0) {
-        res.status(400).json({
-          error: `Finalized rooms cannot be archived: ${finalizedRooms.map((room) => room.room_name).join(", ")}`,
-        });
-        return;
-      }
-      const activeRooms = (rooms ?? []).filter((room) => !room.archived_at);
-      if (activeRooms.length === 0) {
-        res.json({ ok: true, archived_ids: [], already_archived: roomIds });
-        return;
-      }
-      const archivedAt = new Date().toISOString();
-      const activeIds = activeRooms.map((room) => room.id);
-      const { data: archivedRows, error: updateError } = await supabase
-        .from("gameday_rooms")
-        .update({ archived_at: archivedAt })
-        .in("id", activeIds)
-        .is("archived_at", null)
-        .neq("status", "finalized")
-        .neq("status", "final")
-        .select("id");
-      if (updateError) {
-        res.status(500).json({ error: "Failed to archive selected rooms" });
-        return;
-      }
-      const archivedIds = (archivedRows ?? []).map((room) => room.id);
-      const roomById = new Map((rooms ?? []).map((room) => [room.id, room]));
-      await Promise.all(
-        archivedIds.map((id) => {
-          const room = roomById.get(id);
-          return logEvent(supabase, id, null, actor.id, "room_archived", {
-            archived_by: actor.id,
-            archive_role: actor.isAdmin ? "gameday_admin" : "room_host",
-            source: room?.source ?? "app",
-            batch_archive: true,
-          });
-        }),
-      );
-      res.json({
-        ok: true,
-        archived_ids: archivedIds,
-        already_archived: roomIds.filter((id) => !activeIds.includes(id)),
-      });
-    },
   );
 
   // ── PATCH /api/gameday/rooms/:roomId/restore ────────────────────────────

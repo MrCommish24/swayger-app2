@@ -78,6 +78,8 @@ export default function GameDayHub() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
 
   // ── Fantasy leagues (any signed-in user, independent of host status) ──────
   const [fantasyLeagues, setFantasyLeagues] = useState<FantasyLeague[]>([]);
@@ -86,9 +88,8 @@ export default function GameDayHub() {
   const [joinedRoomsLoading, setJoinedRoomsLoading] = useState(false);
   const [archiveTargets, setArchiveTargets] = useState<RoomSummary[]>([]);
   const [archiveAction, setArchiveAction] = useState<"archive" | "restore">("archive");
-  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const [archivingRoomId, setArchivingRoomId] = useState<string | null>(null);
+  const [archivingRooms, setArchivingRooms] = useState(false);
 
   /** Strip raw HTML error bodies (e.g. Express "Cannot GET …") into a friendly message. */
   function cleanError(raw: string): string {
@@ -174,6 +175,7 @@ export default function GameDayHub() {
     if (authLoading) return;
     if (!session) {
       setIsHost(false);
+      setIsAdmin(false);
       setLoading(false);
       setJoinedRooms([]);
       return;
@@ -188,6 +190,9 @@ export default function GameDayHub() {
         setLoading(false);
         fetchJoinedRooms();
       });
+    gamedayFetch<{ isAdmin: boolean }>("/api/admin/is-admin", {}, { session })
+      .then((d) => setIsAdmin(d.isAdmin))
+      .catch(() => setIsAdmin(false));
   }, [authLoading, session, fetchJoinedRooms]);
 
   useEffect(() => {
@@ -218,9 +223,10 @@ export default function GameDayHub() {
     const targets = archiveTargets;
     const action = archiveAction;
     setArchiveError(null);
-    setArchivingRoomId(targets.length > 1 ? "bulk" : targets[0].id);
+    setArchivingRooms(true);
     try {
-      let changedIds: string[];
+      let changedIds: string[] = [];
+      let failedTargets: RoomSummary[] = [];
       if (action === "restore") {
         const target = targets[0];
         await gamedayFetch(
@@ -230,7 +236,10 @@ export default function GameDayHub() {
         );
         changedIds = [target.id];
       } else if (targets.length > 1) {
-        const result = await gamedayFetch<{ archived_ids: string[] }>(
+        const result = await gamedayFetch<{
+          archived_ids: string[];
+          results?: { room_id: string; ok: boolean; error?: string }[];
+        }>(
           "/api/gameday/rooms/archive-batch",
           {
             method: "PATCH",
@@ -238,7 +247,22 @@ export default function GameDayHub() {
           },
           { session },
         );
-        changedIds = result.archived_ids;
+        const roomResults = result.results ?? [];
+        changedIds = roomResults.length
+          ? roomResults.filter((roomResult) => roomResult.ok).map((roomResult) => roomResult.room_id)
+          : result.archived_ids;
+        failedTargets = targets.filter((room) => !changedIds.includes(room.id));
+        if (failedTargets.length) {
+          const errorsById = new Map(
+            roomResults.map((roomResult) => [
+              roomResult.room_id,
+              roomResult.error ?? "Could not archive this room.",
+            ]),
+          );
+          setArchiveError(
+            `Could not archive ${failedTargets.map((room) => `${room.room_name}: ${errorsById.get(room.id)}`).join("; ")}`,
+          );
+        }
       } else {
         const target = targets[0];
         await gamedayFetch(
@@ -278,11 +302,15 @@ export default function GameDayHub() {
       }
       void queryClient.invalidateQueries({ queryKey: ["gameday", "my-rooms"] });
       void queryClient.invalidateQueries({ queryKey: ["gameday", "public-rooms"] });
+      if (failedTargets.length) {
+        setArchiveTargets(failedTargets);
+        return;
+      }
       setArchiveTargets([]);
     } catch (err: any) {
       setArchiveError(err?.message ?? `Could not ${action} this room.`);
     } finally {
-      setArchivingRoomId(null);
+      setArchivingRooms(false);
     }
   };
 
@@ -459,14 +487,10 @@ export default function GameDayHub() {
     ? rooms
     : rooms.filter((r) => !r.archived_at);
   const hasArchivedRooms = rooms.some((r) => !!r.archived_at);
-  const selectedRooms = rooms.filter(
-    (room) =>
-      selectedRoomIds.includes(room.id) &&
-      room.can_archive &&
-      !room.archived_at &&
-      room.status !== "finalized" &&
-      room.status !== "final",
-  );
+  const canArchiveRoom = (room: RoomSummary) =>
+    !!room.can_archive && !room.archived_at && room.status !== "finalized" && room.status !== "final";
+  const eligibleRooms = displayedRooms.filter(canArchiveRoom);
+  const selectedRooms = eligibleRooms.filter((room) => selectedRoomIds.includes(room.id));
 
   return (
     <>
@@ -526,7 +550,6 @@ export default function GameDayHub() {
           </View>
         </View>
       ) : null}
-
       {renderContinuePlaying()}
 
       {error ? (
@@ -629,33 +652,35 @@ export default function GameDayHub() {
                   </TouchableOpacity>
                 ) : (
                   <>
-                    <TouchableOpacity
-                      style={styles.selectRoomAction}
-                      onPress={() =>
-                        setSelectedRoomIds((current) =>
-                          current.includes(room.id)
-                            ? current.filter((id) => id !== room.id)
-                            : current.length >= 50
-                              ? current
-                              : [...current, room.id],
-                        )
-                      }
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: selectedRoomIds.includes(room.id) }}
-                      accessibilityLabel={`Select ${room.room_name} for bulk archive`}
-                    >
-                      <View
-                        style={[
-                          styles.selectRoomCheckbox,
-                          selectedRoomIds.includes(room.id) && styles.selectRoomCheckboxChecked,
-                        ]}
+                    {isAdmin ? (
+                      <TouchableOpacity
+                        style={styles.selectRoomAction}
+                        onPress={() =>
+                          setSelectedRoomIds((current) =>
+                            current.includes(room.id)
+                              ? current.filter((id) => id !== room.id)
+                              : current.length >= 50
+                                ? current
+                                : [...current, room.id],
+                          )
+                        }
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selectedRoomIds.includes(room.id) }}
+                        accessibilityLabel={`Select ${room.room_name} for bulk archive`}
                       >
-                        {selectedRoomIds.includes(room.id) ? (
-                          <Text style={styles.selectRoomCheckmark}>✓</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.selectRoomText}>Select</Text>
-                    </TouchableOpacity>
+                        <View
+                          style={[
+                            styles.selectRoomCheckbox,
+                            selectedRoomIds.includes(room.id) && styles.selectRoomCheckboxChecked,
+                          ]}
+                        >
+                          {selectedRoomIds.includes(room.id) ? (
+                            <Text style={styles.selectRoomCheckmark}>✓</Text>
+                          ) : null}
+                        </View>
+                        <Text style={styles.selectRoomText}>Select</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                       style={styles.archiveAction}
                       onPress={() => {
@@ -695,7 +720,7 @@ export default function GameDayHub() {
         animationType="fade"
         visible={archiveTargets.length > 0}
         onRequestClose={() => {
-          if (!archivingRoomId) setArchiveTargets([]);
+          if (!archivingRooms) setArchiveTargets([]);
         }}
       >
         <View style={styles.archiveModalBackdrop}>
@@ -726,18 +751,18 @@ export default function GameDayHub() {
               <TouchableOpacity
                 style={styles.archiveCancelButton}
                 onPress={() => setArchiveTargets([])}
-                disabled={!!archivingRoomId}
+                disabled={archivingRooms}
                 accessibilityRole="button"
               >
-                <Text style={styles.archiveCancelText}>Cancel</Text>
+                <Text style={styles.archiveCancelText}>{archiveError ? "Close" : "Cancel"}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.archiveConfirmButton, archivingRoomId && styles.archiveConfirmDisabled]}
+                style={[styles.archiveConfirmButton, archivingRooms && styles.archiveConfirmDisabled]}
                 onPress={archiveRoom}
-                disabled={!!archivingRoomId}
+                disabled={archivingRooms}
                 accessibilityRole="button"
               >
-                {archivingRoomId ? (
+                {archivingRooms ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.archiveConfirmText}>

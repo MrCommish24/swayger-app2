@@ -17,7 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 38;
+const EXPECTED_ASSERTIONS = 44;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -350,6 +350,103 @@ async function main() {
         batchArchive.body.ok === true &&
         batchArchive.body.archived_ids?.length === 2,
       JSON.stringify(batchArchive.body),
+    );
+
+    const unauthenticatedBatch = await request("/api/gameday/rooms/archive-batch", {
+      method: "POST",
+      body: { room_ids: [appRoom.body.room_id, archiveRoomId] },
+    });
+    expect(
+      "batch archive requires an authenticated host",
+      unauthenticatedBatch.status === 401,
+      String(unauthenticatedBatch.status),
+    );
+    const malformedBatch = await request("/api/gameday/rooms/archive-batch", {
+      method: "POST",
+      token: host.accessToken,
+      body: { room_ids: ["not-a-room-id", archiveRoomId] },
+    });
+    expect(
+      "batch archive rejects malformed room IDs",
+      malformedBatch.status === 400,
+      String(malformedBatch.status),
+    );
+
+    async function createWebRoom(name: string, token: string) {
+      const created = await request("/api/gameday/rooms", {
+        method: "POST",
+        token,
+        body: { ...roomPayload, room_name: name },
+      });
+      if (created.status !== 200 || !created.body.room_id) {
+        throw new Error(`Could not create archive fixture: ${JSON.stringify(created.body)}`);
+      }
+      roomIds.push(created.body.room_id);
+      return created.body.room_id as string;
+    }
+    const batchRoomA = await createWebRoom(`Batch archive A ${runId}`, host.accessToken);
+    const batchRoomB = await createWebRoom(`Batch archive B ${runId}`, host.accessToken);
+    const finalizedBatchRoom = await createWebRoom(`Batch finalized ${runId}`, host.accessToken);
+    const markFinalized = await service
+      .from("gameday_rooms")
+      .update({ status: "finalized" })
+      .eq("id", finalizedBatchRoom);
+    if (markFinalized.error) {
+      throw new Error(`Could not mark finalized archive fixture: ${markFinalized.error.message}`);
+    }
+
+    const adminBatch = await request("/api/gameday/rooms/archive-batch", {
+      method: "POST",
+      token: host.accessToken,
+      body: { room_ids: [batchRoomA, batchRoomB, finalizedBatchRoom] },
+    });
+    const adminBatchResults = adminBatch.body.results ?? [];
+    expect(
+      "admin batch archives eligible rooms and reports finalized rooms",
+      adminBatch.status === 200 &&
+        adminBatchResults.find((result: any) => result.room_id === batchRoomA)?.ok === true &&
+        adminBatchResults.find((result: any) => result.room_id === batchRoomB)?.ok === true &&
+        adminBatchResults.find((result: any) => result.room_id === finalizedBatchRoom)?.status === 400,
+      JSON.stringify(adminBatch.body),
+    );
+    const finalizedBatchRecord = await service
+      .from("gameday_rooms")
+      .select("status, archived_at")
+      .eq("id", finalizedBatchRoom)
+      .single();
+    expect(
+      "batch archive preserves finalized room receipts",
+      finalizedBatchRecord.data?.status === "finalized" && !finalizedBatchRecord.data?.archived_at,
+      JSON.stringify(finalizedBatchRecord.data),
+    );
+    const batchAuditEvents = await service
+      .from("gameday_events")
+      .select("room_id, event_type, user_id")
+      .in("room_id", [batchRoomA, batchRoomB]);
+    expect(
+      "batch archive records one room_archived audit event per archived room",
+      !batchAuditEvents.error &&
+        [batchRoomA, batchRoomB].every((id) =>
+          (batchAuditEvents.data ?? []).some(
+            (event) => event.room_id === id && event.event_type === "room_archived" && event.user_id === hostUserId,
+          ),
+        ),
+      JSON.stringify(batchAuditEvents.data),
+    );
+
+    process.env.GAMEDAY_HOST_EMAILS = `${hostEmail},${nonHostEmail}`;
+    const nonAdminRoom = await createWebRoom(`Non-admin batch room ${runId}`, nonHost.accessToken);
+    const nonAdminBatch = await request("/api/gameday/rooms/archive-batch", {
+      method: "POST",
+      token: nonHost.accessToken,
+      body: { room_ids: [nonAdminRoom, appRoom.body.room_id] },
+    });
+    expect(
+      "non-admin batch archives its own room but cannot archive another host's room",
+      nonAdminBatch.status === 200 &&
+        nonAdminBatch.body.results?.find((result: any) => result.room_id === nonAdminRoom)?.ok === true &&
+        nonAdminBatch.body.results?.find((result: any) => result.room_id === appRoom.body.room_id)?.status === 403,
+      JSON.stringify(nonAdminBatch.body),
     );
 
     const archived = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
