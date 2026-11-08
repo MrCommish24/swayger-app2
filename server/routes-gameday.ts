@@ -5428,13 +5428,21 @@ export function registerGamedayRoutes(app: Express) {
         res.json({ ok: true, already: true });
         return;
       }
-      const { error: updateError } = await supabase
+      const { data: restoredRoom, error: updateError } = await supabase
         .from("gameday_rooms")
         .update({ archived_at: null })
         .eq("id", req.params.roomId)
-        .not("archived_at", "is", null);
+        .not("archived_at", "is", null)
+        .select("id")
+        .maybeSingle();
       if (updateError) {
         res.status(500).json({ error: "Failed to restore room" });
+        return;
+      }
+      if (!restoredRoom) {
+        // Another restore request may have cleared archived_at after our read.
+        // Treat it as idempotent and avoid emitting a duplicate audit event.
+        res.json({ ok: true, already: true });
         return;
       }
       await logEvent(supabase, req.params.roomId, null, actor.id, "room_restored", {
@@ -5442,7 +5450,7 @@ export function registerGamedayRoutes(app: Express) {
         restore_role: actor.isAdmin ? "gameday_admin" : "room_host",
         source: room.source ?? "app",
       });
-      res.json({ ok: true });
+      res.json({ ok: true, restored: true });
     },
   );
 

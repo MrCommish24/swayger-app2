@@ -298,6 +298,7 @@ export default function GameDayHub() {
           current.filter((roomId) => !changedIds.includes(roomId)),
         );
       } else {
+        setShowArchived(false);
         void fetchJoinedRooms();
       }
       void queryClient.invalidateQueries({ queryKey: ["gameday", "my-rooms"] });

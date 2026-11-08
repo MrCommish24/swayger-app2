@@ -529,6 +529,78 @@ async function main() {
         !afterArchive.body.rooms?.some((room: any) => room.room_id === duplicated.body.room_id),
       JSON.stringify(afterArchive.body),
     );
+    const restored = await request(
+      `/api/gameday/rooms/${duplicated.body.room_id}/restore`,
+      { method: "PATCH", token: host.token },
+    );
+    expect(
+      "room host can restore an archived room",
+      restored.status === 200 && restored.body.ok === true && restored.body.restored === true,
+      JSON.stringify(restored.body),
+    );
+    const restoredHostRooms = await request("/api/gameday/rooms", { token: host.token });
+    const restoredParticipantRooms = await request("/api/gameday/my-rooms", {
+      token: player.token,
+    });
+    expect(
+      "restored room returns to active host and participant lists",
+      restoredHostRooms.status === 200 &&
+        restoredHostRooms.body.rooms?.some(
+          (room: any) => room.id === duplicated.body.room_id && !room.archived_at,
+        ) &&
+        restoredParticipantRooms.status === 200 &&
+        restoredParticipantRooms.body.rooms?.some(
+          (room: any) => room.room_id === duplicated.body.room_id,
+        ),
+      JSON.stringify({
+        hostRooms: restoredHostRooms.body.rooms?.filter(
+          (room: any) => room.id === duplicated.body.room_id,
+        ),
+        participantRooms: restoredParticipantRooms.body.rooms?.filter(
+          (room: any) => room.room_id === duplicated.body.room_id,
+        ),
+      }),
+    );
+    const restoreHistory = await service
+      .from("gameday_events")
+      .select("event_type, user_id")
+      .eq("room_id", duplicated.body.room_id)
+      .in("event_type", ["room_archived", "room_restored"]);
+    const retainedParticipant = await service
+      .from("gameday_participants")
+      .select("id")
+      .eq("room_id", duplicated.body.room_id)
+      .eq("user_id", player.id)
+      .maybeSingle();
+    expect(
+      "restore retains room participant history and records the actor",
+      !restoreHistory.error &&
+        restoreHistory.data?.some(
+          (event: any) => event.event_type === "room_archived" && event.user_id === host.id,
+        ) &&
+        restoreHistory.data?.some(
+          (event: any) => event.event_type === "room_restored" && event.user_id === host.id,
+        ) &&
+        !!retainedParticipant.data,
+      JSON.stringify({ events: restoreHistory.data, participant: retainedParticipant.data }),
+    );
+    const restoredAgain = await request(
+      `/api/gameday/rooms/${duplicated.body.room_id}/restore`,
+      { method: "PATCH", token: host.token },
+    );
+    const restoreEventsAfterRetry = await service
+      .from("gameday_events")
+      .select("id")
+      .eq("room_id", duplicated.body.room_id)
+      .eq("event_type", "room_restored");
+    expect(
+      "restoring an active room is idempotent",
+      restoredAgain.status === 200 &&
+        restoredAgain.body.ok === true &&
+        restoredAgain.body.already === true &&
+        restoreEventsAfterRetry.data?.length === 1,
+      JSON.stringify({ response: restoredAgain.body, restoreEvents: restoreEventsAfterRetry.data }),
+    );
 
     const locked = await request(`/api/gameday/cards/${pregame.id}/lock`, {
       method: "PATCH",

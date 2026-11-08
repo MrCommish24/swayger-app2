@@ -17,7 +17,7 @@ dotenv.config();
 
 let passed = 0;
 let failed = 0;
-const EXPECTED_ASSERTIONS = 44;
+const EXPECTED_ASSERTIONS = 45;
 
 function expect(label: string, condition: boolean, detail?: string) {
   if (condition) {
@@ -447,6 +447,23 @@ async function main() {
         nonAdminBatch.body.results?.find((result: any) => result.room_id === nonAdminRoom)?.ok === true &&
         nonAdminBatch.body.results?.find((result: any) => result.room_id === appRoom.body.room_id)?.status === 403,
       JSON.stringify(nonAdminBatch.body),
+    );
+    const nonAdminRestore = await request(`/api/gameday/rooms/${nonAdminRoom}/restore`, {
+      method: "PATCH",
+      token: nonHost.accessToken,
+    });
+    const nonAdminRestoreEvent = await service
+      .from("gameday_events")
+      .select("metadata")
+      .eq("room_id", nonAdminRoom)
+      .eq("event_type", "room_restored")
+      .maybeSingle();
+    expect(
+      "non-admin Game Day host can restore their own room",
+      nonAdminRestore.status === 200 &&
+        nonAdminRestore.body.restored === true &&
+        nonAdminRestoreEvent.data?.metadata?.restore_role === "room_host",
+      JSON.stringify({ response: nonAdminRestore.body, event: nonAdminRestoreEvent.data }),
     );
 
     const archived = await request(`/api/gameday/rooms/${archiveRoomId}/archive`, {
