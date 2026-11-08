@@ -5,6 +5,7 @@ import { getApiUrl } from "@/lib/query-client";
 interface FetchOpts {
   session?: Session | null;
   guestSessionId?: string | null;
+  participantSession?: string | null;
 }
 
 export async function gamedayFetch<T = unknown>(
@@ -20,10 +21,20 @@ export async function gamedayFetch<T = unknown>(
   if (auth.session?.access_token) {
     headers["Authorization"] = `Bearer ${auth.session.access_token}`;
   }
-  if (auth.guestSessionId) {
+  if (auth.participantSession) {
+    // A room-scoped participant credential is authoritative over account/legacy guest auth.
+    delete headers["Authorization"];
+    delete headers["X-Guest-Session"];
+    headers["X-Gameday-Participant-Session"] = auth.participantSession;
+  } else if (auth.guestSessionId) {
     headers["X-Guest-Session"] = auth.guestSessionId;
   }
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, {
+    ...init,
+    body: init.body ?? undefined,
+    signal: init.signal ?? undefined,
+    headers,
+  } as Parameters<typeof fetch>[1]);
   if (!res.ok) {
     const text = await res.text().catch(() => `HTTP ${res.status}`);
     let msg = text;
@@ -31,6 +42,14 @@ export async function gamedayFetch<T = unknown>(
       const json = JSON.parse(text);
       msg = json.error ?? text;
     } catch { /* not json */ }
+    // Never allow a bearer link token echoed by a server/proxy into UI errors or logs.
+    const requestBody = typeof init.body === "string" ? init.body : "";
+    try {
+      const body = JSON.parse(requestBody);
+      if (typeof body.token === "string" && body.token && typeof msg === "string") {
+        msg = msg.split(body.token).join("[redacted]");
+      }
+    } catch { /* body is not JSON */ }
     throw new Error(msg);
   }
   return res.json() as Promise<T>;
@@ -126,6 +145,7 @@ export interface GDParticipant {
   guest_session_id: string | null;
   display_name: string;
   is_guest: boolean;
+  identity_provider?: "discord" | string | null;
 }
 
 export interface GDLeaderboardEntry {

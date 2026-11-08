@@ -7394,7 +7394,7 @@ function registerPropsRoutes(app2) {
 }
 
 // server/routes-gameday.ts
-import { createHash } from "crypto";
+import { createHash as createHash2 } from "crypto";
 
 // server/gameday-template.ts
 var NBA_PLAYOFF_TEMPLATE = [
@@ -8904,15 +8904,105 @@ function getNflTeamCatalog() {
   return NFL_TEAM_CATALOG.map((team) => ({ ...team }));
 }
 
+// server/gameday-discord-identity.ts
+import { createHash, randomBytes } from "node:crypto";
+var hashParticipantSecret = (value) => createHash("sha256").update(value).digest("hex");
+var createParticipantSecret = () => randomBytes(32).toString("hex");
+var snowflake = (value) => typeof value === "string" && /^[0-9]{1,32}$/.test(value);
+var uuid = (value) => typeof value === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+var secret = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+function validDiscordDisplayName(value) {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100 && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
+}
+function failure(res2, code, status, message) {
+  return res2.status(status).json({ error: message, code });
+}
+function rpcFailure(res2, message) {
+  const errors = {
+    room_not_found: [404, "Room not found."],
+    guild_mismatch: [403, "Discord guild is not authorized for this room."],
+    ineligible_room: [403, "This room does not support Discord Madden participant links."],
+    room_closed: [409, "This Pick Card is closed or no longer active."],
+    invalid_token: [400, "Invalid picks link. Return to Discord and request a fresh picks link."],
+    wrong_room: [400, "This picks link belongs to a different room. Return to Discord and request a fresh picks link."],
+    token_used: [409, "This picks link has already been used. Return to Discord and request a fresh picks link."],
+    token_revoked: [410, "This picks link was replaced. Return to Discord and request a fresh picks link."],
+    token_expired: [410, "This picks link has expired. Return to Discord and request a fresh picks link."]
+  };
+  for (const [code, [status, text]] of Object.entries(errors)) {
+    if (message.includes(code)) return failure(res2, code, status, text);
+  }
+  return failure(res2, "identity_unavailable", 503, "Unable to prepare your picks session. Return to Discord and request a fresh picks link.");
+}
+function registerDiscordIdentityRoutes(app2, isBotValid, appUrl) {
+  const limits = /* @__PURE__ */ new Map();
+  app2.post("/api/gameday/rooms/:roomId/discord-participant-link", async (req, res2) => {
+    res2.set("Cache-Control", "no-store");
+    if (!isBotValid(req)) return failure(res2, "unauthorized", 401, "Valid Game Day bot credentials are required.");
+    const guild = req.header("X-Discord-Guild-ID");
+    const { discord_user_id: user, discord_display_name: displayName } = req.body ?? {};
+    if (!uuid(req.params.roomId) || !snowflake(guild) || !snowflake(user) || !validDiscordDisplayName(displayName)) {
+      return failure(res2, "invalid_request", 400, "A room UUID, digit-string guild/user IDs, and a nonblank display name of at most 100 characters without controls are required.");
+    }
+    const now = Date.now();
+    for (const [key2, limit2] of limits) if (limit2.reset <= now) limits.delete(key2);
+    const key = `${guild}:${user}`;
+    const limit = limits.get(key) ?? { count: 0, reset: now + 6e4 };
+    if (limit.count >= 10 || !limits.has(key) && limits.size >= 1e4) {
+      res2.set("Retry-After", "60");
+      return failure(res2, "rate_limited", 429, "Too many picks link requests. Try again in a minute.");
+    }
+    limit.count++;
+    limits.set(key, limit);
+    const rawToken = createParticipantSecret();
+    const { data, error } = await getServiceSupabase().rpc("issue_gameday_discord_link", {
+      p_room_id: req.params.roomId,
+      p_guild_id: guild,
+      p_user_id: user,
+      p_display_name: displayName.trim(),
+      p_token_hash: hashParticipantSecret(rawToken)
+    });
+    if (error) return rpcFailure(res2, error.message);
+    const participantUrl = new URL(`/gameday/${req.params.roomId}`, appUrl);
+    participantUrl.searchParams.set("discord_token", rawToken);
+    return res2.status(201).json({ participant_url: participantUrl.toString(), expires_at: data.expires_at, expires_in_seconds: 600 });
+  });
+  app2.post("/api/gameday/discord-participant-link/redeem", async (req, res2) => {
+    res2.set("Cache-Control", "no-store");
+    const { token, room_id: expectedRoom } = req.body ?? {};
+    if (!secret(token) || expectedRoom !== void 0 && !uuid(expectedRoom)) {
+      return failure(res2, "invalid_token", 400, "Invalid picks link. Return to Discord and request a fresh picks link.");
+    }
+    const participantSession = createParticipantSecret();
+    const { data, error } = await getServiceSupabase().rpc("redeem_gameday_discord_link", {
+      p_token_hash: hashParticipantSecret(token),
+      p_session_hash: hashParticipantSecret(participantSession),
+      p_expected_room_id: expectedRoom ?? null
+    });
+    if (error) return rpcFailure(res2, error.message);
+    return res2.json({ ...data, participant_session: participantSession });
+  });
+}
+async function resolveDiscordParticipantSession(req, roomId) {
+  const raw = req.header("X-Gameday-Participant-Session");
+  if (raw === void 0) return null;
+  const invalid = () => Object.assign(new Error("Your picks session has expired or is invalid. Return to Discord and request a fresh picks link."), { status: 401 });
+  if (!secret(raw)) throw invalid();
+  const { data, error } = await getServiceSupabase().from("gameday_discord_participant_sessions").select("participant_id").eq("session_hash", hashParticipantSecret(raw)).eq("room_id", roomId).gt("expires_at", (/* @__PURE__ */ new Date()).toISOString()).maybeSingle();
+  if (error) throw Object.assign(new Error("Participant sessions are temporarily unavailable."), { status: 503 });
+  if (!data) throw invalid();
+  return data.participant_id;
+}
+
 // server/routes-gameday.ts
 var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
 function _tokenFingerprint(token) {
-  return createHash("sha256").update(token).digest("hex").slice(0, 16);
+  return createHash2("sha256").update(token).digest("hex").slice(0, 16);
 }
 function _computeRequestHash(group_key, canonical_answer_normalized, prop_ids, expected_count, operatorFingerprint) {
   const sorted = [...prop_ids].sort().join(",");
   const raw = [group_key, canonical_answer_normalized, sorted, String(expected_count), operatorFingerprint].join("|");
-  return createHash("sha256").update(raw).digest("hex");
+  return createHash2("sha256").update(raw).digest("hex");
 }
 function _genOpId() {
   return `gso-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -9406,17 +9496,21 @@ async function resolveRoomRef(supabase, roomRef) {
   const { data } = await supabase.from("gameday_rooms").select("id").eq("room_code", roomRef.toUpperCase().trim()).maybeSingle();
   return data?.id ?? null;
 }
-async function getCallerIdentity(req) {
+async function getCallerIdentity(req, roomRef) {
+  if (Array.isArray(roomRef)) throw Object.assign(new Error("Invalid room reference"), { status: 400 });
+  const roomId = roomRef;
+  const discordParticipantId = await resolveDiscordParticipantSession(req, roomId);
+  if (discordParticipantId) return { userId: null, guestSessionId: null, discordParticipantId };
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) {
     const supabase = getServiceSupabase();
     const {
       data: { user }
     } = await supabase.auth.getUser(auth.slice(7));
-    if (user) return { userId: user.id, guestSessionId: null };
+    if (user) return { userId: user.id, guestSessionId: null, discordParticipantId: null };
   }
   const guestSession = req.headers["x-guest-session"] || null;
-  return { userId: null, guestSessionId: guestSession };
+  return { userId: null, guestSessionId: guestSession, discordParticipantId: null };
 }
 async function logEvent(supabase, roomId, participantId, userId, eventType, metadata) {
   try {
@@ -9926,6 +10020,7 @@ async function createPrivateSundaySlateRoom(supabase, input) {
   };
 }
 function registerGamedayRoutes(app2) {
+  registerDiscordIdentityRoutes(app2, isBotApiKeyValid, APP_URL2);
   setImmediate(() => {
     try {
       _recoverStaleSettleOps(getServiceSupabase()).catch((error) => {
@@ -11076,12 +11171,12 @@ function registerGamedayRoutes(app2) {
     }
     const supabase = getServiceSupabase();
     const isAdminUser = getAllowedGamedayAdminEmails().includes(user.email.toLowerCase());
-    let baseQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at").order("created_at", { ascending: false });
+    let baseQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, room_code, source, archived_at, host_user_id").order("created_at", { ascending: false });
     if (!isAdminUser) baseQuery = baseQuery.eq("host_user_id", user.id);
     let { data: rooms, error } = await baseQuery;
     if (error) {
       console.warn("[gameday] rooms list with room_code/source failed, retrying without:", error.message);
-      let retryQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at").order("created_at", { ascending: false });
+      let retryQuery = supabase.from("gameday_rooms").select("id, room_name, team_a_name, team_b_name, game_date, status, created_at, archived_at, host_user_id").order("created_at", { ascending: false });
       if (!isAdminUser) retryQuery = retryQuery.eq("host_user_id", user.id);
       const retry = await retryQuery;
       if (retry.error) {
@@ -11119,11 +11214,15 @@ function registerGamedayRoutes(app2) {
       });
     }
     res2.json({
-      rooms: roomList.map((r) => ({
-        ...r,
-        participant_count: counts[r.id] ?? 0,
-        host_link: `${APP_URL2}/gameday/${r.id}/host`
-      }))
+      rooms: roomList.map((r) => {
+        const { host_user_id: roomHostId, ...roomSummary } = r;
+        return {
+          ...roomSummary,
+          participant_count: counts[r.id] ?? 0,
+          host_link: `${APP_URL2}/gameday/${r.id}/host`,
+          can_archive: isAdminUser || r.source !== "discord" && roomHostId === user.id
+        };
+      })
     });
   });
   app2.get("/api/gameday/template", async (req, res2) => {
@@ -11614,16 +11713,19 @@ ${publicLink2}`;
           )
         };
       });
-      const { userId, guestSessionId } = await getCallerIdentity(req);
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
       console.log(
         `[gameday] room fetch ${roomId}: userId=${userId ? userId.slice(0, 8) + "\u2026" : "null"} guest=${guestSessionId ? guestSessionId.slice(0, 8) + "\u2026" : "null"}`
       );
       let participant = null;
-      if (userId) {
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("id", discordParticipantId).eq("room_id", roomId).maybeSingle();
+        participant = data ? { ...data, identity_provider: "discord" } : null;
+      } else if (userId) {
         const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         participant = data;
       } else if (guestSessionId) {
-        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("guest_session_id", guestSessionId).maybeSingle();
+        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest, created_at").eq("room_id", roomId).eq("guest_session_id", guestSessionId).maybeSingle();
         participant = data;
       }
       console.log(
@@ -11702,7 +11804,12 @@ ${publicLink2}`;
         res2.status(410).json({ error: "This Game Day room is no longer active." });
         return;
       }
-      const { userId, guestSessionId: existingSession } = await getCallerIdentity(req);
+      const { userId, guestSessionId: existingSession, discordParticipantId } = await getCallerIdentity(req, roomId);
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants").select("id, room_id, display_name, is_guest").eq("id", discordParticipantId).eq("room_id", roomId).single();
+        res2.json({ participant: { ...data, identity_provider: "discord" } });
+        return;
+      }
       if (userId) {
         const { data: existing } = await supabase.from("gameday_participants").select("*").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         if (existing) {
@@ -11873,10 +11980,13 @@ ${publicLink2}`;
           return;
         }
       }
-      const { userId, guestSessionId } = await getCallerIdentity(req);
       const roomId = prop.gameday_pick_cards?.room_id;
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
       let participant = null;
-      if (userId) {
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants").select("*").eq("id", discordParticipantId).eq("room_id", roomId).maybeSingle();
+        participant = data;
+      } else if (userId) {
         const { data } = await supabase.from("gameday_participants").select("*").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         participant = data;
       } else if (guestSessionId) {
@@ -12069,7 +12179,7 @@ ${publicLink2}`;
         res2.status(410).json({ error: "Room is archived" });
         return;
       }
-      if (room.status === "finalized") {
+      if (room.status === "finalized" || room.status === "final") {
         res2.status(400).json({ error: "Room is finalized \u2014 results are read-only" });
         return;
       }
@@ -12368,6 +12478,133 @@ ${publicLink2}`;
       res2.json({ ok: true });
     }
   );
+  const archiveBatchHandler = async (req, res2) => {
+    const roomIds = req.body?.room_ids;
+    if (!Array.isArray(roomIds) || roomIds.length < 1 || roomIds.length > 50 || roomIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
+      res2.status(400).json({ error: "room_ids must contain between 1 and 50 room IDs" });
+      return;
+    }
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res2.status(401).json({ error: "Invalid or expired Supabase token" });
+      return;
+    }
+    const userEmail = user.email.toLowerCase();
+    if (!getAllowedGamedayEmails().includes(userEmail)) {
+      res2.status(403).json({ error: "Not authorized as Game Day host" });
+      return;
+    }
+    const isAdminUser = getAllowedGamedayAdminEmails().includes(userEmail);
+    const supabase = getServiceSupabase();
+    const uniqueRoomIds = [...new Set(roomIds)];
+    const results = [];
+    for (const roomId of uniqueRoomIds) {
+      const { data: room, error: roomError } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at, source").eq("id", roomId).maybeSingle();
+      if (roomError) {
+        results.push({ room_id: roomId, ok: false, status: 500, error: "Could not load room" });
+        continue;
+      }
+      if (!room) {
+        results.push({ room_id: roomId, ok: false, status: 404, error: "Room not found" });
+        continue;
+      }
+      if (!isAdminUser) {
+        if (room.source === "discord") {
+          results.push({
+            room_id: roomId,
+            ok: false,
+            status: 403,
+            error: "Discord rooms require Game Day admin access to archive here"
+          });
+          continue;
+        }
+        if (room.host_user_id !== user.id) {
+          results.push({ room_id: roomId, ok: false, status: 403, error: "Not your room" });
+          continue;
+        }
+      }
+      if (room.status === "finalized" || room.status === "final") {
+        results.push({
+          room_id: roomId,
+          ok: false,
+          status: 400,
+          error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
+        });
+        continue;
+      }
+      if (room.archived_at) {
+        results.push({
+          room_id: roomId,
+          ok: true,
+          status: 200,
+          already: true,
+          archived_at: room.archived_at
+        });
+        continue;
+      }
+      const archivedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const { data: updatedRoom, error: updateError } = await supabase.from("gameday_rooms").update({ archived_at: archivedAt }).eq("id", roomId).is("archived_at", null).neq("status", "finalized").neq("status", "final").select("id").maybeSingle();
+      if (updateError) {
+        console.error("[gameday] batch archive error:", updateError.message);
+        results.push({ room_id: roomId, ok: false, status: 500, error: "Failed to archive room" });
+        continue;
+      }
+      if (!updatedRoom) {
+        const { data: currentRoom } = await supabase.from("gameday_rooms").select("status, archived_at").eq("id", roomId).maybeSingle();
+        if (currentRoom?.archived_at) {
+          results.push({
+            room_id: roomId,
+            ok: true,
+            status: 200,
+            already: true,
+            archived_at: currentRoom.archived_at
+          });
+        } else if (currentRoom?.status === "finalized" || currentRoom?.status === "final") {
+          results.push({
+            room_id: roomId,
+            ok: false,
+            status: 400,
+            error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
+          });
+        } else {
+          results.push({ room_id: roomId, ok: false, status: 500, error: "Failed to archive room" });
+        }
+        continue;
+      }
+      await logEvent(supabase, roomId, null, user.id, "room_archived", {
+        archived_by: user.id,
+        archive_role: isAdminUser ? "gameday_admin" : "room_host",
+        source: room.source ?? "app"
+      });
+      console.log(`[gameday] room archived: ${roomId} by ${user.id.slice(0, 8)}\u2026`);
+      results.push({ room_id: roomId, ok: true, status: 200, archived_at: archivedAt });
+    }
+    res2.json({
+      ok: true,
+      results,
+      archived_ids: results.filter((result) => result.ok && !result.already).map((result) => result.room_id),
+      already_archived: results.filter((result) => result.ok && result.already).map((result) => result.room_id)
+    });
+  };
+  app2.post("/api/gameday/rooms/archive-batch", archiveBatchHandler);
+  app2.patch("/api/gameday/rooms/archive-batch", archiveBatchHandler);
+  const requireRoomArchiveActor = async (req, res2) => {
+    const user = await getVerifiedGamedayUser(req);
+    if (!user) {
+      res2.status(401).json({ error: "Invalid or expired Supabase token" });
+      return null;
+    }
+    const email = user.email.toLowerCase();
+    if (!getAllowedGamedayEmails().includes(email)) {
+      res2.status(403).json({ error: "Not authorized as Game Day host" });
+      return null;
+    }
+    return {
+      id: user.id,
+      isAdmin: getAllowedGamedayAdminEmails().includes(email)
+    };
+  };
+  const hasRoomArchiveAccess = (room, actor) => actor.isAdmin || room.source !== "discord" && room.host_user_id === actor.id;
   app2.patch(
     "/api/gameday/rooms/:roomId/archive",
     async (req, res2) => {
@@ -12385,7 +12622,7 @@ ${publicLink2}`;
           res2.status(404).json({ error: "Room not found" });
           return;
         }
-        if (discordRoom.status === "finalized") {
+        if (discordRoom.status === "finalized" || discordRoom.status === "final") {
           res2.status(400).json({
             error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
           });
@@ -12410,16 +12647,20 @@ ${publicLink2}`;
         res2.json({ ok: true });
         return;
       }
-      const hostId = await requireGamedayHost(req, res2);
-      if (!hostId) return;
+      const actor = await requireRoomArchiveActor(req, res2);
+      if (!actor) return;
+      const hostId = actor.id;
       const { roomId } = req.params;
       const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, status, archived_at, source").eq("id", roomId).single();
       if (!room) {
         res2.status(404).json({ error: "Room not found" });
         return;
       }
-      if (!requireOwnedHumanRoom(res2, room.host_user_id, hostId)) return;
-      if (room.status === "finalized") {
+      if (!hasRoomArchiveAccess(room, actor)) {
+        res2.status(403).json({ error: "Not authorized to archive this room" });
+        return;
+      }
+      if (room.status === "finalized" || room.status === "final") {
         res2.status(400).json({
           error: "Finalized rooms cannot be archived \u2014 they are preserved as receipts."
         });
@@ -12437,9 +12678,46 @@ ${publicLink2}`;
       }
       await logEvent(supabase, roomId, null, hostId, "room_archived", {
         archived_by: hostId,
+        archive_role: actor.isAdmin ? "gameday_admin" : "room_host",
         source: room.source ?? "app"
       });
       console.log(`[gameday] room archived: ${roomId} by ${hostId.slice(0, 8)}\u2026`);
+      res2.json({ ok: true });
+    }
+  );
+  app2.patch(
+    "/api/gameday/rooms/:roomId/restore",
+    async (req, res2) => {
+      const actor = await requireRoomArchiveActor(req, res2);
+      if (!actor) return;
+      const supabase = getServiceSupabase();
+      const { data: room } = await supabase.from("gameday_rooms").select("host_user_id, source, status, archived_at").eq("id", req.params.roomId).single();
+      if (!room) {
+        res2.status(404).json({ error: "Room not found" });
+        return;
+      }
+      if (!hasRoomArchiveAccess(room, actor)) {
+        res2.status(403).json({ error: "Not authorized to restore this room" });
+        return;
+      }
+      if (room.status === "finalized" || room.status === "final") {
+        res2.status(400).json({ error: "Finalized rooms cannot be restored to active play" });
+        return;
+      }
+      if (!room.archived_at) {
+        res2.json({ ok: true, already: true });
+        return;
+      }
+      const { error: updateError } = await supabase.from("gameday_rooms").update({ archived_at: null }).eq("id", req.params.roomId).not("archived_at", "is", null);
+      if (updateError) {
+        res2.status(500).json({ error: "Failed to restore room" });
+        return;
+      }
+      await logEvent(supabase, req.params.roomId, null, actor.id, "room_restored", {
+        restored_by: actor.id,
+        restore_role: actor.isAdmin ? "gameday_admin" : "room_host",
+        source: room.source ?? "app"
+      });
       res2.json({ ok: true });
     }
   );
@@ -12832,8 +13110,8 @@ ${publicLink2}`;
     async (req, res2) => {
       const { roomId } = req.params;
       const supabase = getServiceSupabase();
-      const { userId, guestSessionId } = await getCallerIdentity(req);
-      let participantId = null;
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
+      let participantId = discordParticipantId;
       if (userId) {
         const { data: p } = await supabase.from("gameday_participants").select("id").eq("room_id", roomId).eq("user_id", userId).maybeSingle();
         participantId = p?.id ?? null;
@@ -13952,7 +14230,7 @@ ${html.slice(0, 800)}`);
 }
 
 // server/routes-fantasy.ts
-import { createHash as createHash2, randomBytes as randomBytes2 } from "crypto";
+import { createHash as createHash3, randomBytes as randomBytes3 } from "crypto";
 
 // lib/fantasy-weekly-moments.ts
 var WEEKLY_MOMENTS = {
@@ -14061,7 +14339,7 @@ function addSwaygerRunFlag(response, leagueId, value = process.env[SWAYGER_RUN_L
 }
 
 // server/fantasy-pick-share-short-link.ts
-import { randomBytes } from "crypto";
+import { randomBytes as randomBytes2 } from "crypto";
 
 // lib/fantasy-pick-share.ts
 function safeLabel(value, maxLength) {
@@ -14252,7 +14530,7 @@ function isFantasyPickSharePackagingEnabled() {
   return process.env.FANTASY_PICK_SHARE_PACKAGING_ENABLED !== "false";
 }
 function generateFantasyPickShareCode() {
-  const bytes = randomBytes(16);
+  const bytes = randomBytes2(16);
   let code = "";
   for (const byte of bytes) code += SHORT_CODE_ALPHABET[byte & 31];
   return code;
@@ -14452,14 +14730,14 @@ function _computeAddMemberHash(leagueId, seasonId, operatorUserId, displayName, 
     displayName.trim().toLowerCase(),
     teamName.trim().toLowerCase()
   ].join("|");
-  return createHash2("sha256").update(raw).digest("hex");
+  return createHash3("sha256").update(raw).digest("hex");
 }
 function _correctAnswers(prop) {
   return normalizeCorrectAnswers(prop?.correct_answer_ids, prop?.correct_answer);
 }
 var _RECEIPT_ALIAS_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567";
 function _generateReceiptAliasCode() {
-  const bytes = randomBytes2(16);
+  const bytes = randomBytes3(16);
   let code = "";
   for (const byte of bytes) {
     code += _RECEIPT_ALIAS_ALPHABET[byte & 31];
@@ -18582,8 +18860,8 @@ function registerFantasyRoutes(app2) {
         const { data: teamMgr } = await supabase.from("fantasy_team_managers").select("fantasy_teams(team_name)").eq("season_member_id", seasonMember.id).eq("is_active", true).maybeSingle();
         teamName = teamMgr?.fantasy_teams?.team_name ?? null;
       }
-      const rawToken = randomBytes2(32).toString("hex");
-      const tokenHash = createHash2("sha256").update(rawToken).digest("hex");
+      const rawToken = randomBytes3(32).toString("hex");
+      const tokenHash = createHash3("sha256").update(rawToken).digest("hex");
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3).toISOString();
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         "create_member_recovery_token",
@@ -18629,7 +18907,7 @@ function registerFantasyRoutes(app2) {
         res2.status(400).json({ error: "Token required" });
         return;
       }
-      const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
+      const tokenHash = createHash3("sha256").update(token.trim()).digest("hex");
       const supabase = getServiceSupabase();
       const { data: tokenRecord } = await supabase.from("fantasy_member_recovery_tokens").select("status, expires_at, league_id, league_season_id, league_member_id").eq("token_hash", tokenHash).maybeSingle();
       if (!tokenRecord) {
@@ -18669,7 +18947,7 @@ function registerFantasyRoutes(app2) {
       }
       const userId = requireFantasyAuth(req, res2);
       if (!userId) return;
-      const tokenHash = createHash2("sha256").update(token.trim()).digest("hex");
+      const tokenHash = createHash3("sha256").update(token.trim()).digest("hex");
       const supabase = getServiceSupabase();
       const { data: rpcResult, error: rpcError } = await supabase.rpc(
         "redeem_member_recovery_token",
@@ -20828,7 +21106,7 @@ function setupCors(app2) {
       );
       res2.header(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Guest-Session, X-Discord-Guild-ID, x-api-key, x-admin-token, X-Fantasy-Guest-Token, Idempotency-Key"
+        "Content-Type, Authorization, X-Guest-Session, X-Gameday-Participant-Session, X-Discord-Guild-ID, x-api-key, x-admin-token, X-Fantasy-Guest-Token, Idempotency-Key"
       );
       res2.header("Access-Control-Allow-Credentials", "true");
     }
@@ -20871,7 +21149,7 @@ function setupRequestLogging(app2) {
       if (!path6.startsWith("/api")) return;
       const duration = Date.now() - start;
       let logLine = `${req.method} ${path6} ${res2.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && !path6.includes("discord-participant-link")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
       if (logLine.length > 80) {

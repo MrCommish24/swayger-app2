@@ -57,7 +57,7 @@ function setupCors(app: express.Application) {
       );
       res.header(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Guest-Session, X-Discord-Guild-ID, x-api-key, x-admin-token, X-Fantasy-Guest-Token, Idempotency-Key",
+        "Content-Type, Authorization, X-Guest-Session, X-Gameday-Participant-Session, X-Discord-Guild-ID, x-api-key, x-admin-token, X-Fantasy-Guest-Token, Idempotency-Key",
       );
       res.header("Access-Control-Allow-Credentials", "true");
     }
@@ -111,7 +111,7 @@ function setupRequestLogging(app: express.Application) {
       const duration = Date.now() - start;
 
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && !path.includes("discord-participant-link")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 

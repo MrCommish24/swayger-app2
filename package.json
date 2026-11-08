@@ -18,6 +18,7 @@
     "test:commercial": "TEST_API_BASE=http://127.0.0.1:5000 npx tsx server/test-commercial-workflow.ts",
     "test:gameday:correct-answers": "npx tsx server/gameday-correct-answers.test.ts",
     "test:gameday:discord": "npx tsx server/test-gameday-discord-isolation.ts",
+    "test:gameday:discord-identity": "npx tsx server/test-gameday-discord-identity.ts",
     "test:gameday:visibility": "npx tsx server/test-gameday-discord-visibility.ts",
     "test:gameday:subscriptions": "npx tsx server/test-gameday-discord-subscriptions.ts",
     "test:gameday:nfl": "npx tsx server/test-gameday-nfl-v1.ts",

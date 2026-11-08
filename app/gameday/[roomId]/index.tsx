@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
@@ -37,6 +38,45 @@ import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 
 const C = Colors.dark;
 const GUEST_KEY = (roomId: string) => `gd_guest_${roomId}`;
+const DISCORD_SESSION_KEY = (roomId: string) => `gd_discord_session_${roomId}`;
+
+interface DiscordRedeemResponse {
+  participant: GDParticipant;
+  participant_session: string;
+  session_expires_at: string;
+}
+
+const discordRedeems = new Map<string, Promise<DiscordRedeemResponse>>();
+
+function redeemDiscordToken(token: string, roomId: string): Promise<DiscordRedeemResponse> {
+  const key = `${roomId}:${token}`;
+  const existing = discordRedeems.get(key);
+  if (existing) return existing;
+  const request = gamedayFetch<DiscordRedeemResponse>(
+    "/api/gameday/discord-participant-link/redeem",
+    { method: "POST", body: JSON.stringify({ token, room_id: roomId }) },
+  );
+  discordRedeems.set(key, request);
+  // Retain briefly for Strict Mode remounts, not for the lifetime of the app.
+  const clear = () => setTimeout(() => discordRedeems.delete(key), 30_000);
+  request.then(clear, clear);
+  return request;
+}
+
+async function readDiscordSession(roomId: string): Promise<string | null> {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return window.localStorage.getItem(DISCORD_SESSION_KEY(roomId));
+  }
+  return AsyncStorage.getItem(DISCORD_SESSION_KEY(roomId));
+}
+
+async function storeDiscordSession(roomId: string, value: string): Promise<void> {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.localStorage.setItem(DISCORD_SESSION_KEY(roomId), value);
+    return;
+  }
+  await AsyncStorage.setItem(DISCORD_SESSION_KEY(roomId), value);
+}
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -174,13 +214,30 @@ function getCountdownCopy(
 }
 
 export default function GameDayRoomScreen() {
-  const { roomId, from } = useLocalSearchParams<{ roomId: string; from?: string }>();
+  const { roomId, from, discord_token } = useLocalSearchParams<{ roomId: string; from?: string; discord_token?: string | string[] }>();
+  const queryToken = Array.isArray(discord_token) ? discord_token[0] : discord_token;
+  const discordTokenRef = useRef<string | null>(discord_token !== undefined ? queryToken ?? "" : null);
+  // Remove the bearer credential before pageview effects or any later navigation can observe it.
+  if (discord_token !== undefined && Platform.OS === "web" && typeof window !== "undefined") {
+    try {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("discord_token");
+      window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    } catch { /* Keep rendering even if browser history is unavailable. */ }
+  }
   const router = useRouter();
   const fromCaptain = from === "captain";
   const insets = useSafeAreaInsets();
   const { session, profile } = useAuth();
 
   const [guestSessionId, setGuestSessionId] = useState<string | null>(null);
+  const [participantSession, setParticipantSession] = useState<string | null>(null);
+  const [participantSessionReady, setParticipantSessionReady] = useState(false);
+  const [discordLinkState, setDiscordLinkState] = useState<"none" | "pending" | "success" | "error">(
+    discordTokenRef.current !== null ? "pending" : "none"
+  );
+  const [discordDisplayName, setDiscordDisplayName] = useState<string | null>(null);
+  const [discordLinkError, setDiscordLinkError] = useState<string | null>(null);
   const [roomData, setRoomData] = useState<GDRoomResponse | null>(null);
   const [commercialOffer, setCommercialOffer] = useState<Awaited<ReturnType<typeof getCommercialPlacement>>>(null);
   const [leaderboard, setLeaderboard] = useState<GDLeaderboardEntry[]>([]);
@@ -208,6 +265,7 @@ export default function GameDayRoomScreen() {
   const picksSeededRef = useRef(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const roomFetchVersionRef = useRef(0);
   const receiptRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
   const [countdownSecsLeft, setCountdownSecsLeft] = useState(0);
@@ -230,6 +288,63 @@ export default function GameDayRoomScreen() {
       const stored = window.localStorage.getItem(GUEST_KEY(roomId));
       if (stored) setGuestSessionId(stored);
     }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+    const token = discordTokenRef.current;
+    const initializeCredential = async () => {
+      if (token !== null) {
+        setDiscordLinkState("pending");
+        setParticipantSessionReady(false);
+        try {
+          const result = await redeemDiscordToken(token, roomId);
+          if (
+            !result.participant ||
+            typeof result.participant_session !== "string" ||
+            !result.participant_session
+          ) {
+            throw new Error("The Discord picks link returned an invalid participant session.");
+          }
+          if (result.participant.room_id !== roomId) {
+            throw new Error("This Discord link is for a different Game Day room.");
+          }
+          await storeDiscordSession(roomId, result.participant_session);
+          if (cancelled) return;
+          setParticipantSession(result.participant_session);
+          setDiscordDisplayName(result.participant.display_name);
+          setDiscordLinkState("success");
+          setDiscordLinkError(null);
+          setParticipantSessionReady(true);
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          const message = err instanceof Error ? err.message : "The Discord picks link could not be verified.";
+          setDiscordLinkError(message);
+          setDiscordLinkState("error");
+          setParticipantSessionReady(true);
+          setLoading(false);
+          return;
+        }
+      }
+
+      try {
+        const saved = await readDiscordSession(roomId);
+        if (cancelled) return;
+        if (saved) {
+          setParticipantSession(saved);
+          setDiscordLinkState("success");
+        }
+      } catch {
+        // Storage may be unavailable; retain the ordinary guest/account flow.
+      }
+      if (!cancelled) setParticipantSessionReady(true);
+    };
+    initializeCredential();
+    return () => {
+      cancelled = true;
+    };
   }, [roomId]);
 
   const hasTrackedView = useRef(false);
@@ -261,16 +376,21 @@ export default function GameDayRoomScreen() {
   };
 
   const fetchRoom = useCallback(async () => {
-    if (!roomId) return;
+    if (!roomId || !participantSessionReady || discordLinkState === "pending" || discordLinkState === "error") return;
+    const requestVersion = ++roomFetchVersionRef.current;
     try {
       const data = await gamedayFetch<GDRoomResponse>(
         `/api/gameday/rooms/${roomId}`,
         {},
-        { session, guestSessionId }
+        { session, guestSessionId, participantSession }
       );
+      if (requestVersion !== roomFetchVersionRef.current) return;
       setRoomData(data);
       setError(null);
-      const roomCode = data.room.room_code ?? undefined;
+      if (data.participant?.identity_provider === "discord") {
+        setDiscordDisplayName(data.participant.display_name);
+        setDiscordLinkState("success");
+      }
       if (!hasTrackedView.current) {
         hasTrackedView.current = true;
         Analytics.gamedayRoomViewed(
@@ -292,7 +412,7 @@ export default function GameDayRoomScreen() {
         gamedayFetch(
           `/api/gameday/rooms/${roomId}/final-standings-viewed`,
           { method: "POST", body: JSON.stringify({}) },
-          { session, guestSessionId }
+          { session, guestSessionId, participantSession }
         ).catch(() => {});
       }
 
@@ -355,11 +475,11 @@ export default function GameDayRoomScreen() {
       // If participant was null before but now exists: clear join flow
       if (data.participant) setJoinStep(null);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load room");
+      if (requestVersion === roomFetchVersionRef.current) setError(e.message ?? "Failed to load room");
     } finally {
-      setLoading(false);
+      if (requestVersion === roomFetchVersionRef.current) setLoading(false);
     }
-  }, [roomId, session, guestSessionId]);
+  }, [roomId, session, guestSessionId, participantSession, participantSessionReady, discordLinkState]);
 
   const fetchLeaderboard = useCallback(async () => {
     if (!roomId) return;
@@ -422,6 +542,7 @@ export default function GameDayRoomScreen() {
 
   // Initial load and polling
   useEffect(() => {
+    if (!participantSessionReady || discordLinkState === "pending" || discordLinkState === "error") return;
     fetchRoom();
     fetchLeaderboard();
 
@@ -431,9 +552,10 @@ export default function GameDayRoomScreen() {
     }, 15_000);
 
     return () => {
+      roomFetchVersionRef.current += 1;
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [fetchRoom, fetchLeaderboard]);
+  }, [fetchRoom, fetchLeaderboard, participantSessionReady, discordLinkState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -456,9 +578,10 @@ export default function GameDayRoomScreen() {
       setJoinStep(null);
       return;
     }
+    if (discordLinkState !== "none") return;
     // No participant found — show join prompt
     if (joinStep === null) setJoinStep("choose");
-  }, [roomData]);
+  }, [roomData, discordLinkState]);
 
   // Once-per-session leaderboard view — fires when leaderboard data first arrives.
   // Guarded by ref so polling never re-fires it.
@@ -490,7 +613,7 @@ export default function GameDayRoomScreen() {
 
   // Auto-join logged-in users
   const autoJoinLoggedIn = useCallback(async () => {
-    if (!roomId || !session) return;
+    if (!roomId || !session || participantSession || discordLinkState !== "none") return;
     setJoining(true);
     try {
       await gamedayFetch(
@@ -512,9 +635,10 @@ export default function GameDayRoomScreen() {
     } finally {
       setJoining(false);
     }
-  }, [roomId, session]);
+  }, [roomId, session, participantSession, discordLinkState]);
 
   const handleJoinAsGuest = async () => {
+    if (discordTokenRef.current || participantSession || discordLinkState !== "none") return;
     if (!guestName.trim()) {
       setJoinError("Enter your name to join.");
       return;
@@ -612,7 +736,7 @@ export default function GameDayRoomScreen() {
             method: "POST",
             body: JSON.stringify(body),
           },
-          { session, guestSessionId }
+          { session, guestSessionId, participantSession }
         );
       }
       Analytics.gamedayPickSubmitted(
@@ -636,6 +760,18 @@ export default function GameDayRoomScreen() {
   };
 
   // ── Render helpers ─────────────────────────────────────────────────────────
+
+  if (discordLinkState === "error") {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top, paddingHorizontal: 28 }]}>
+        <Text style={styles.errorText}>Discord picks link unavailable</Text>
+        <Text style={[styles.joinSub, { textAlign: "center", marginTop: 12 }]}>
+          {discordLinkError || "This link could not be verified."}
+          {!discordLinkError?.includes("Return to Discord") ? " Return to Discord and request a fresh picks link." : ""}
+        </Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -661,6 +797,17 @@ export default function GameDayRoomScreen() {
   const { room, cards, participant, my_picks, revealed_picks } = roomData;
 
   const isFinalized = room.status === "finalized";
+
+  if (discordLinkState === "success" && !participant && !isFinalized) {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top, paddingHorizontal: 28 }]}>
+        <Text style={styles.errorText}>Discord participant not found</Text>
+        <Text style={[styles.joinSub, { textAlign: "center", marginTop: 12 }]}>
+          We could not confirm your room identity. Return to Discord and request a fresh picks link.
+        </Text>
+      </View>
+    );
+  }
 
   // ── Archived room — show inactive message, block all actions ─────────────
   if (room.archived_at) {
@@ -919,6 +1066,11 @@ export default function GameDayRoomScreen() {
       ) : null}
 
       {/* Open card — only shown while room is live */}
+      {(discordLinkState === "success" || participant?.identity_provider === "discord") && participant ? (
+        <View style={styles.discordIdentityBanner}>
+          <Text style={styles.discordIdentityText}>You&apos;re picking as {discordDisplayName || participant.display_name}</Text>
+        </View>
+      ) : null}
       {openCard ? (
         <PickCard
           card={openCard}
@@ -1029,6 +1181,7 @@ export default function GameDayRoomScreen() {
           isWinner={myIsWinner}
           session={session}
           guestSessionId={guestSessionId}
+          participantSession={participantSession}
         />
       )}
 
@@ -1080,6 +1233,7 @@ function NextGameDayCTA({
   isWinner,
   session,
   guestSessionId,
+  participantSession,
 }: {
   roomId: string;
   roomCode?: string | null;
@@ -1094,6 +1248,7 @@ function NextGameDayCTA({
   isWinner?: boolean | null;
   session: unknown;
   guestSessionId: string | null;
+  participantSession: string | null;
 }) {
   const [ctaState, setCtaState] = useState<"idle" | "email_input" | "submitted">("idle");
   const [ctaEmail, setCtaEmail] = useState("");
@@ -1141,7 +1296,7 @@ function NextGameDayCTA({
             is_winner: isWinner,
           }),
         },
-        { session: session as never, guestSessionId }
+        { session: session as never, guestSessionId, participantSession }
       );
     } catch {
       // fail silently — still show success
@@ -1640,6 +1795,22 @@ function LeaderboardSection({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
   scrollContent: { paddingHorizontal: 16 },
+  discordIdentityBanner: {
+    alignSelf: "stretch",
+    marginBottom: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.tint,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  discordIdentityText: {
+    color: C.text,
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   center: {
     flex: 1,
     backgroundColor: C.background,

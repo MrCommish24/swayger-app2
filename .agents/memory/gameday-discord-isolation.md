@@ -22,10 +22,9 @@ Host Tools bulk archive validates access to every selected room before changing
 any of them, limits a batch to 50 rooms, and rejects finalized rooms as a set.
 Restore uses the same verified-host/admin boundary and records a separate event.
 
-The browser does not directly query Game Day tables; it uses Express routes.
-However, the public Supabase anon client can currently read Game Day tables and
-authorization columns directly, so API response minimization does not provide
-database-level confidentiality.
+The browser uses Express routes, not direct Game Day table access. Check current
+grants and RLS before changing authorization; older deployments once permitted
+direct anonymous reads, so API minimization alone must not be assumed sufficient.
 
 **Why:** A shared bot credential alone cannot distinguish unrelated Discord
 servers; a null web host owner must never become permission for every host or

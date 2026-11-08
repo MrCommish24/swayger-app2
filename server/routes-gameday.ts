@@ -28,6 +28,7 @@ import { settleNumericPropCore, settlePropCore } from "./gameday-settle-helper.j
 import { parseSettlementCorrectAnswers, sameCorrectAnswerSet } from "./correct-answers.js";
 import { getServiceSupabase } from "./supabase-service.js";
 import { getNflTeamCatalog } from "./gameday-nfl-catalog.js";
+import { registerDiscordIdentityRoutes, resolveDiscordParticipantSession } from "./gameday-discord-identity.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
 // Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
@@ -896,18 +897,22 @@ async function resolveRoomRef(
   return (data as any)?.id ?? null;
 }
 
-async function getCallerIdentity(req: Request) {
+async function getCallerIdentity(req: Request, roomRef: string | string[]) {
+  if (Array.isArray(roomRef)) throw Object.assign(new Error("Invalid room reference"), { status: 400 });
+  const roomId = roomRef;
+  const discordParticipantId = await resolveDiscordParticipantSession(req, roomId);
+  if (discordParticipantId) return { userId: null, guestSessionId: null, discordParticipantId };
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) {
     const supabase = getServiceSupabase();
     const {
       data: { user },
     } = await supabase.auth.getUser(auth.slice(7));
-    if (user) return { userId: user.id, guestSessionId: null as string | null };
+    if (user) return { userId: user.id, guestSessionId: null as string | null, discordParticipantId: null };
   }
   const guestSession =
     (req.headers["x-guest-session"] as string | undefined) || null;
-  return { userId: null as string | null, guestSessionId: guestSession };
+  return { userId: null as string | null, guestSessionId: guestSession, discordParticipantId: null };
 }
 
 async function logEvent(
@@ -1741,6 +1746,7 @@ async function createPrivateSundaySlateRoom(
 }
 
 export function registerGamedayRoutes(app: Express) {
+  registerDiscordIdentityRoutes(app, isBotApiKeyValid, APP_URL);
   // Startup recovery: non-blocking — abandon any in_progress settlement ops whose
   // lease has expired (i.e. server restarted before they could write a terminal status).
   setImmediate(() => {
@@ -3999,13 +4005,18 @@ export function registerGamedayRoutes(app: Express) {
         };
       });
 
-      const { userId, guestSessionId } = await getCallerIdentity(req);
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
       console.log(
         `[gameday] room fetch ${roomId}: userId=${userId ? userId.slice(0, 8) + "…" : "null"} guest=${guestSessionId ? guestSessionId.slice(0, 8) + "…" : "null"}`
       );
 
       let participant = null;
-      if (userId) {
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants")
+          .select("id, room_id, display_name, is_guest, created_at")
+          .eq("id", discordParticipantId).eq("room_id", roomId).maybeSingle();
+        participant = data ? { ...data, identity_provider: "discord" } : null;
+      } else if (userId) {
         const { data } = await supabase
           .from("gameday_participants")
           .select("id, room_id, display_name, is_guest, created_at")
@@ -4017,6 +4028,7 @@ export function registerGamedayRoutes(app: Express) {
         const { data } = await supabase
           .from("gameday_participants")
           .select("id, room_id, display_name, is_guest, created_at")
+          .eq("room_id", roomId)
           .eq("guest_session_id", guestSessionId)
           .maybeSingle();
         participant = data;
@@ -4133,8 +4145,14 @@ export function registerGamedayRoutes(app: Express) {
         return;
       }
 
-      const { userId, guestSessionId: existingSession } =
-        await getCallerIdentity(req);
+      const { userId, guestSessionId: existingSession, discordParticipantId } =
+        await getCallerIdentity(req, roomId);
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants")
+          .select("id, room_id, display_name, is_guest").eq("id", discordParticipantId).eq("room_id", roomId).single();
+        res.json({ participant: { ...data, identity_provider: "discord" } });
+        return;
+      }
 
       // ── Logged-in user ──
       if (userId) {
@@ -4414,11 +4432,15 @@ export function registerGamedayRoutes(app: Express) {
         }
       }
 
-      const { userId, guestSessionId } = await getCallerIdentity(req);
       const roomId = (prop.gameday_pick_cards as any)?.room_id;
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
 
       let participant = null;
-      if (userId) {
+      if (discordParticipantId) {
+        const { data } = await supabase.from("gameday_participants").select("*")
+          .eq("id", discordParticipantId).eq("room_id", roomId).maybeSingle();
+        participant = data;
+      } else if (userId) {
         const { data } = await supabase
           .from("gameday_participants")
           .select("*")
@@ -6009,10 +6031,10 @@ export function registerGamedayRoutes(app: Express) {
       const supabase = getServiceSupabase();
 
       // Resolve caller — works for both logged-in users and guests
-      const { userId, guestSessionId } = await getCallerIdentity(req);
+      const { userId, guestSessionId, discordParticipantId } = await getCallerIdentity(req, roomId);
 
       // Look up participant so we can attach participant_id to the event
-      let participantId: string | null = null;
+      let participantId: string | null = discordParticipantId;
       if (userId) {
         const { data: p } = await supabase
           .from("gameday_participants")

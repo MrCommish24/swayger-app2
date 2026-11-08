@@ -215,7 +215,9 @@ function RootLayoutNav() {
   const pathname = usePathname();
   useEffect(() => {
     if (Platform.OS === "web") {
-      capture("$pageview", { $current_url: window.location.href });
+      const analyticsUrl = new URL(window.location.href);
+      analyticsUrl.searchParams.delete("discord_token");
+      capture("$pageview", { $current_url: analyticsUrl.toString() });
     }
   }, [pathname]);
 
