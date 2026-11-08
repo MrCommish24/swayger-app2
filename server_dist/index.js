@@ -8994,6 +8994,44 @@ async function resolveDiscordParticipantSession(req, roomId) {
   return data.participant_id;
 }
 
+// lib/gameday-pick-type.ts
+function normalizePickType(value) {
+  if (value === void 0) return "straight_up";
+  return value === "straight_up" || value === "spread" ? value : null;
+}
+function getPickType(value) {
+  return value === "spread" ? "spread" : "straight_up";
+}
+function parseTeamBSpread(value) {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (text.length > 120) return null;
+  if (/^PK$/i.test(text)) return 0;
+  if (!/^[+-]\d+(?:\.[05])?$/.test(text)) return null;
+  const number = Number(text);
+  return Number.isFinite(number) && Number.isSafeInteger(number * 2) ? number === 0 ? 0 : number : null;
+}
+function formatTeamSpread(value) {
+  return value === 0 ? "PK" : `${value > 0 ? "+" : ""}${value}`;
+}
+function normalizeAtsLine(value) {
+  const spread = parseTeamBSpread(value);
+  return spread === null ? null : formatTeamSpread(spread);
+}
+function buildTeamPickDisplay(pickType, options, lineText) {
+  if (options.length !== 2) return null;
+  const spread = pickType === "spread" ? parseTeamBSpread(lineText) : null;
+  if (pickType === "spread" && spread === null) return null;
+  const display_options = options.map((value, index) => ({
+    value,
+    label: pickType === "spread" ? `${value} ${formatTeamSpread(index === 0 ? -spread : spread)}` : value
+  }));
+  return {
+    matchup_label: display_options.map((option) => option.label).join(" vs "),
+    display_options
+  };
+}
+
 // server/routes-gameday.ts
 var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
 function _tokenFingerprint(token) {
@@ -10318,7 +10356,7 @@ function registerGamedayRoutes(app2) {
         return;
       }
       const { data, error } = await getServiceSupabase().from("gameday_madden_participation_events").select(
-        "id, event_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, submission_version, delivery_sequence, picks, created_at, delivered_at"
+        "id, event_type, pick_type, room_id, card_id, participant_id, room_code, room_name, week_label, discord_guild_id, discord_channel_id, participant_display_name, completed_participant_count, submission_version, delivery_sequence, picks, created_at, delivered_at"
       ).eq("discord_guild_id", guildId).is("delivered_at", null).order("delivery_sequence", { ascending: true, nullsFirst: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).limit(limit);
       if (error) {
         console.error("[gameday] Madden participation event fetch failed:", error.message);
@@ -11360,6 +11398,11 @@ function registerGamedayRoutes(app2) {
         }
       }
       const matchups = normalizeWeeklyPickCardMatchups(req.body.matchups);
+      const pickType = normalizePickType(req.body.pick_type);
+      if (!pickType) {
+        res2.status(400).json({ error: "pick_type must be straight_up or spread" });
+        return;
+      }
       const weeklyConfig = normalizeWeeklyPickCardConfig(
         req.body.format_config,
         matchups?.length ?? 0
@@ -11384,6 +11427,31 @@ function registerGamedayRoutes(app2) {
           error: "format_config must include week_label, minimum_matchups, scoring_mode=all_correct|most_correct, and valid bonus metadata"
         });
         return;
+      }
+      if (pickType === "spread") {
+        const teamMatchups = matchups.map((matchup, index) => ({
+          matchup,
+          rawLine: req.body.matchups[index]?.line_text
+        }));
+        if (weeklyConfig.bonus.game) teamMatchups.push({
+          matchup: weeklyConfig.bonus.game,
+          rawLine: req.body.format_config?.bonus?.game?.line_text
+        });
+        if (weeklyConfig.bonus.enabled && !weeklyConfig.bonus.game) {
+          res2.status(400).json({ error: "ATS Bonus Game must be a two-team matchup with a valid Team B spread" });
+          return;
+        }
+        for (let index = 0; index < teamMatchups.length; index++) {
+          const line = normalizeAtsLine(teamMatchups[index].rawLine);
+          if (line === null) {
+            res2.status(400).json({
+              error: "Every ATS matchup, including Bonus Game, requires Team B's signed integer/half-point spread or PK",
+              matchup_index: index
+            });
+            return;
+          }
+          teamMatchups[index].matchup.line_text = line;
+        }
       }
       const isDiscordManualLock = botAuthed && !hasPickDeadline;
       if (hasPickDeadline && !deadlineIso) {
@@ -11439,6 +11507,7 @@ function registerGamedayRoutes(app2) {
       const cardTitle = weeklyConfig.week_label ? `${weeklyConfig.week_label} Matchups` : "Madden Weekly Matchups";
       const { data: weeklyCard, error: weeklyCardError } = await supabase2.from("gameday_pick_cards").insert({
         room_id: weeklyRoom.id,
+        pick_type: pickType,
         title: cardTitle,
         phase: "pregame",
         status: botAuthed ? "open" : "closed",
@@ -11454,7 +11523,7 @@ function registerGamedayRoutes(app2) {
       }
       const props = matchups.map((matchup, index) => ({
         card_id: weeklyCard.id,
-        question: `Who wins: ${matchup.team_a} vs ${matchup.team_b}?`,
+        question: `Who ${pickType === "spread" ? "covers" : "wins"}: ${matchup.team_a} vs ${matchup.team_b}?`,
         answer_options: [matchup.team_a, matchup.team_b],
         line_text: matchup.line_text,
         prop_role: "main_matchup",
@@ -11466,7 +11535,7 @@ function registerGamedayRoutes(app2) {
         const bonusGame = weeklyConfig.bonus.game;
         props.push({
           card_id: weeklyCard.id,
-          question: bonusGame ? `Bonus Game: Who wins: ${bonusGame.team_a} vs ${bonusGame.team_b}?` : weeklyConfig.bonus.label ?? "Bonus Game",
+          question: bonusGame ? `Bonus Game: Who ${pickType === "spread" ? "covers" : "wins"}: ${bonusGame.team_a} vs ${bonusGame.team_b}?` : weeklyConfig.bonus.label ?? "Bonus Game",
           answer_options: bonusGame ? [bonusGame.team_a, bonusGame.team_b] : weeklyConfig.bonus.answer_options,
           line_text: bonusGame?.line_text ?? null,
           prop_role: "bonus_game",
@@ -11498,6 +11567,7 @@ function registerGamedayRoutes(app2) {
       }
       await logEvent(supabase2, weeklyRoom.id, null, hostId, "room_created", {
         format: "weekly_pick_card",
+        pick_type: pickType,
         sport: "madden",
         matchup_count: matchups.length,
         bonus_enabled: weeklyConfig.bonus.enabled,
@@ -11512,6 +11582,7 @@ ${publicLink2}`;
       res2.json({
         ok: true,
         room_id: weeklyRoom.id,
+        pick_type: pickType,
         room_code: returnedCode2,
         public_link: publicLink2,
         host_link: hostLink2,
@@ -11699,13 +11770,14 @@ ${publicLink2}`;
         return;
       }
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select(
-        "id, room_id, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)"
+        "id, room_id, pick_type, title, phase, status, lock_label, scheduled_open_at, scheduled_lock_at, display_order, created_at, updated_at, gameday_props(id, card_id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)"
       ).eq("room_id", roomId).order("display_order");
       const serverNow = Date.now();
       const cards = (rawCards ?? []).map((card) => {
         const deadlinePassed = !!card.scheduled_lock_at && new Date(card.scheduled_lock_at).getTime() <= serverNow;
         return {
           ...card,
+          pick_type: room.sport === "madden" && room.template_type === "weekly_pick_card" ? getPickType(card.pick_type) : card.pick_type,
           deadline_passed: deadlinePassed,
           can_edit_picks: card.status === "open" && !deadlinePassed,
           gameday_props: [...card.gameday_props ?? []].sort(
@@ -12187,7 +12259,7 @@ ${publicLink2}`;
         res2.status(404).json({ error: "Settlement contract is only available for Madden weekly cards" });
         return;
       }
-      const { data: cards } = await supabase.from("gameday_pick_cards").select("id, phase, status, display_order, gameday_props(id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)").eq("room_id", roomId).order("display_order", { ascending: true });
+      const { data: cards } = await supabase.from("gameday_pick_cards").select("id, pick_type, phase, status, display_order, gameday_props(id, question, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, status, display_order)").eq("room_id", roomId).order("display_order", { ascending: true });
       const card = (cards ?? []).find((item) => item.phase === "pregame") ?? (cards ?? [])[0];
       if (!card) {
         res2.status(404).json({ error: "No playable card found for settlement" });
@@ -12202,6 +12274,7 @@ ${publicLink2}`;
         prop_role: prop.prop_role ?? "main_matchup",
         answer_type: prop.answer_type ?? "choice",
         options: prop.answer_options ?? [],
+        display_options: prop.answer_type !== "integer" ? buildTeamPickDisplay(getPickType(card.pick_type), prop.answer_options ?? [], prop.line_text)?.display_options ?? null : null,
         answer_options: prop.answer_options ?? [],
         numeric_min: prop.numeric_min ?? null,
         numeric_max: prop.numeric_max ?? null,
@@ -12233,6 +12306,7 @@ ${publicLink2}`;
         room_code: room.room_code ?? null,
         room_name: room.room_name ?? null,
         card_id: card?.id ?? null,
+        pick_type: getPickType(card.pick_type),
         card_status: card?.status ?? null,
         matchups,
         playable_matchups: matchups,
@@ -12708,9 +12782,13 @@ ${publicLink2}`;
         res2.json({ ok: true, already: true });
         return;
       }
-      const { error: updateError } = await supabase.from("gameday_rooms").update({ archived_at: null }).eq("id", req.params.roomId).not("archived_at", "is", null);
+      const { data: restoredRoom, error: updateError } = await supabase.from("gameday_rooms").update({ archived_at: null }).eq("id", req.params.roomId).not("archived_at", "is", null).select("id").maybeSingle();
       if (updateError) {
         res2.status(500).json({ error: "Failed to restore room" });
+        return;
+      }
+      if (!restoredRoom) {
+        res2.json({ ok: true, already: true });
         return;
       }
       await logEvent(supabase, req.params.roomId, null, actor.id, "room_restored", {
@@ -12718,7 +12796,7 @@ ${publicLink2}`;
         restore_role: actor.isAdmin ? "gameday_admin" : "room_host",
         source: room.source ?? "app"
       });
-      res2.json({ ok: true });
+      res2.json({ ok: true, restored: true });
     }
   );
   app2.patch(
@@ -13151,6 +13229,7 @@ ${publicLink2}`;
       const { data: rawCards } = await supabase.from("gameday_pick_cards").select("*, gameday_props(*)").eq("room_id", roomId).order("display_order");
       const cards = (rawCards ?? []).map((card) => ({
         ...card,
+        pick_type: room.sport === "madden" && room.template_type === "weekly_pick_card" ? getPickType(card.pick_type) : card.pick_type,
         gameday_props: [...card.gameday_props ?? []].sort(
           (a, b) => a.display_order - b.display_order
         )
@@ -13173,8 +13252,13 @@ ${publicLink2}`;
       const participantIds = (participants ?? []).map((p) => p.id);
       let leaderboard = [];
       if (participantIds.length > 0) {
-        const { data: allPicksLb } = await supabase.from("gameday_picks").select("participant_id, is_correct").in("participant_id", participantIds);
-        const scores = (participants ?? []).map((p) => {
+        const { data: allPicksLb } = await supabase.from("gameday_picks").select("participant_id, prop_id, selected_answer, numeric_answer, is_correct").in("participant_id", participantIds);
+        const isMaddenWeekly = room.sport === "madden" && room.template_type === "weekly_pick_card";
+        const props = cards.flatMap((card) => card.gameday_props ?? []);
+        const mainProps = props.filter(
+          (prop) => weeklyPickCardPropRole(prop) === "main_matchup" && isRequiredWeeklyPickCardProp(prop)
+        );
+        const scores = (isMaddenWeekly ? buildWeeklyPickCardParticipantScores(participants ?? [], allPicksLb ?? [], props) : (participants ?? []).map((p) => {
           const myPicks = (allPicksLb ?? []).filter(
             (pk) => pk.participant_id === p.id
           );
@@ -13184,14 +13268,21 @@ ${publicLink2}`;
           return {
             participant_id: p.id,
             display_name: p.display_name,
+            is_guest: p.is_guest,
             game_day_sp: correct * 10,
-            correct_picks: correct
+            correct_picks: correct,
+            pending_picks: myPicks.filter((pk) => pk.is_correct === null).length,
+            total_picks: myPicks.length
           };
-        }).sort(
+        })).sort(
           (a, b) => b.game_day_sp - a.game_day_sp || b.correct_picks - a.correct_picks
         );
         let rank = 1;
-        leaderboard = scores.map((s, i) => {
+        leaderboard = isMaddenWeekly ? applyPickCardWinnerSemantics(
+          scores,
+          normalizeWeeklyPickCardScoringMode(room.format_config?.scoring_mode) ?? "all_correct",
+          mainProps.length > 0 && mainProps.every((prop) => prop.status === "settled")
+        ) : scores.map((s, i) => {
           if (i > 0 && s.game_day_sp < scores[i - 1].game_day_sp)
             rank = i + 1;
           return { ...s, rank };

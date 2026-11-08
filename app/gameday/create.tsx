@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth-context";
 import { gamedayFetch, GDPropTemplate } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
 import { Analytics } from "@/lib/posthog";
+import { normalizeAtsLine, type PickType } from "@/lib/gameday-pick-type";
 
 const C = Colors.dark;
 
@@ -131,6 +132,12 @@ export default function CreateGameDayRoom() {
   const [maddenBonusEnabled, setMaddenBonusEnabled] = useState(false);
   const [maddenBonusLabel, setMaddenBonusLabel] = useState("");
   const [maddenBonusOptions, setMaddenBonusOptions] = useState("");
+  const [maddenBonusGame, setMaddenBonusGame] = useState<MaddenMatchup>({
+    teamA: "",
+    teamB: "",
+    lineText: "",
+  });
+  const [maddenPickType, setMaddenPickType] = useState<PickType | null>(null);
 
   // Card schedules: phase key → { openAt, lockAt } in "H:MM AM/PM" CDT format
   const [schedules, setSchedules] = useState<Record<string, { openAt: string; lockAt: string }>>({});
@@ -195,17 +202,24 @@ export default function CreateGameDayRoom() {
 
   const handleMaddenCreate = async () => {
     const minimumMatchups = Number(maddenMinimumMatchups);
+    const normalizedBonusLine = normalizeAtsLine(maddenBonusGame.lineText);
     const matchups = maddenMatchups
       .map((matchup) => ({
         team_a: matchup.teamA.trim(),
         team_b: matchup.teamB.trim(),
-        line_text: matchup.lineText.trim() || undefined,
+        line_text: maddenPickType === "spread"
+          ? normalizeAtsLine(matchup.lineText) ?? undefined
+          : matchup.lineText.trim() || undefined,
       }))
       .filter((matchup) => matchup.team_a || matchup.team_b);
     const bonusOptions = candidateList(maddenBonusOptions);
 
     if (!roomName.trim() || !maddenDeadline.trim()) {
       setError("Add a challenge/week name and pick deadline.");
+      return;
+    }
+    if (!maddenPickType) {
+      setError("Choose how participants will pick: Winner or Against the Spread.");
       return;
     }
     if (!Number.isInteger(minimumMatchups) || minimumMatchups < 1) {
@@ -220,7 +234,20 @@ export default function CreateGameDayRoom() {
       setError("Every matchup needs two different teams.");
       return;
     }
-    if (maddenBonusEnabled && (!maddenBonusLabel.trim() || bonusOptions.length < 2)) {
+    if (maddenPickType === "spread" && matchups.some((matchup) => !normalizeAtsLine(matchup.line_text))) {
+      setError("Against the Spread needs a valid Team B line for every matchup. Use a signed integer, half point, or PK.");
+      return;
+    }
+    if (maddenBonusEnabled && maddenPickType === "spread" && (
+      !maddenBonusGame.teamA.trim() ||
+      !maddenBonusGame.teamB.trim() ||
+      maddenBonusGame.teamA.trim().toLowerCase() === maddenBonusGame.teamB.trim().toLowerCase() ||
+      !normalizedBonusLine
+    )) {
+      setError("The Bonus Game needs two different teams and a valid Team B line.");
+      return;
+    }
+    if (maddenBonusEnabled && maddenPickType === "straight_up" && (!maddenBonusLabel.trim() || bonusOptions.length < 2)) {
       setError("The optional bonus needs a question and at least two answer options.");
       return;
     }
@@ -240,6 +267,7 @@ export default function CreateGameDayRoom() {
             room_name: roomName.trim(),
             sport: "madden",
             template_type: "weekly_pick_card",
+            pick_type: maddenPickType,
             is_private: true,
             pick_deadline: maddenDeadline.trim(),
             matchups,
@@ -250,8 +278,17 @@ export default function CreateGameDayRoom() {
               scoring_mode: "all_correct",
               bonus: {
                 enabled: maddenBonusEnabled,
-                label: maddenBonusEnabled ? maddenBonusLabel.trim() : null,
-                answer_options: maddenBonusEnabled ? bonusOptions : [],
+                label: maddenBonusEnabled
+                  ? maddenPickType === "spread" ? "Bonus Game" : maddenBonusLabel.trim()
+                  : null,
+                answer_options: maddenBonusEnabled && maddenPickType === "straight_up" ? bonusOptions : [],
+                ...(maddenBonusEnabled && maddenPickType === "spread" ? {
+                  game: {
+                    team_a: maddenBonusGame.teamA.trim(),
+                    team_b: maddenBonusGame.teamB.trim(),
+                    line_text: normalizedBonusLine,
+                  },
+                } : {}),
               },
             },
           }),
@@ -476,6 +513,33 @@ export default function CreateGameDayRoom() {
           <Text style={styles.maddenIntro}>
             Create a private commissioner card. Participants pick each matchup in Swayger; you settle the results manually after the games.
           </Text>
+          <Text style={styles.listLabel}>Pick type</Text>
+          <Text style={styles.hint}>Choose one format for the whole card. This is separate from the win condition.</Text>
+          <View style={styles.formatRow}>
+            {([
+              ["straight_up", "Winner", "Pick which team wins."],
+              ["spread", "Against the Spread", "Pick which team covers."],
+            ] as Array<[PickType, string, string]>).map(([value, label, description]) => (
+              <TouchableOpacity
+                key={value}
+                style={[styles.pickTypeOption, maddenPickType === value && styles.pickTypeOptionActive]}
+                onPress={() => setMaddenPickType(value)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: maddenPickType === value }}
+              >
+                <Text style={[styles.formatBtnText, maddenPickType === value && styles.formatBtnTextActive]}>{label}</Text>
+                <Text style={styles.pickTypeDescription}>{description}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {maddenPickType === "spread" ? (
+            <View style={styles.helperBox}>
+              <Text style={styles.helperText}>Team B line</Text>
+              <Text style={styles.helperSub}>
+                Enter Team B&apos;s spread, such as -6.5, +3, or PK. Swayger derives Team A&apos;s opposite line. Half points are recommended to avoid pushes; pushes are handled manually by the commissioner.
+              </Text>
+            </View>
+          ) : null}
           <TextInput
             style={styles.input}
             placeholder="Challenge/week name (e.g. Franchise Week 4)"
@@ -531,11 +595,14 @@ export default function CreateGameDayRoom() {
               </View>
               <TextInput
                 style={styles.input}
-                placeholder="Optional line/spread display text"
+                placeholder={maddenPickType === "spread" ? "Team B spread (e.g. -6.5, +3, PK)" : "Optional contextual line text"}
                 placeholderTextColor={C.textMuted}
                 value={matchup.lineText}
                 onChangeText={(value) => updateMaddenMatchup(index, "lineText", value)}
               />
+              {maddenPickType === "spread" ? (
+                <Text style={styles.hint}>Line applies to Team B. Team A receives the opposite line.</Text>
+              ) : null}
               {maddenMatchups.length > 1 ? (
                 <TouchableOpacity onPress={() => setMaddenMatchups((current) => current.filter((_, i) => i !== index))}>
                   <Text style={styles.removeText}>Remove matchup</Text>
@@ -565,21 +632,53 @@ export default function CreateGameDayRoom() {
           </TouchableOpacity>
           {maddenBonusEnabled ? (
             <>
-              <TextInput
-                style={styles.input}
-                placeholder="Bonus question"
-                placeholderTextColor={C.textMuted}
-                value={maddenBonusLabel}
-                onChangeText={setMaddenBonusLabel}
-              />
-              <TextInput
-                style={styles.textArea}
-                placeholder="Answer options, one per line or comma-separated"
-                placeholderTextColor={C.textMuted}
-                value={maddenBonusOptions}
-                onChangeText={setMaddenBonusOptions}
-                multiline
-              />
+              {maddenPickType === "spread" ? (
+                <>
+                  <Text style={styles.listLabel}>Bonus Game</Text>
+                  <View style={styles.row}>
+                    <TextInput
+                      style={[styles.input, styles.half]}
+                      placeholder="Team A"
+                      placeholderTextColor={C.textMuted}
+                      value={maddenBonusGame.teamA}
+                      onChangeText={(teamA) => setMaddenBonusGame((current) => ({ ...current, teamA }))}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.half]}
+                      placeholder="Team B"
+                      placeholderTextColor={C.textMuted}
+                      value={maddenBonusGame.teamB}
+                      onChangeText={(teamB) => setMaddenBonusGame((current) => ({ ...current, teamB }))}
+                    />
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Team B spread (e.g. -3.5 or PK)"
+                    placeholderTextColor={C.textMuted}
+                    value={maddenBonusGame.lineText}
+                    onChangeText={(lineText) => setMaddenBonusGame((current) => ({ ...current, lineText }))}
+                  />
+                  <Text style={styles.hint}>Team B&apos;s line; Team A is shown with the opposite spread.</Text>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Bonus question"
+                    placeholderTextColor={C.textMuted}
+                    value={maddenBonusLabel}
+                    onChangeText={setMaddenBonusLabel}
+                  />
+                  <TextInput
+                    style={styles.textArea}
+                    placeholder="Answer options, one per line or comma-separated"
+                    placeholderTextColor={C.textMuted}
+                    value={maddenBonusOptions}
+                    onChangeText={setMaddenBonusOptions}
+                    multiline
+                  />
+                </>
+              )}
             </>
           ) : null}
         </View>
@@ -815,6 +914,12 @@ const styles = StyleSheet.create({
   formatBtnActive: { borderColor: C.tint, backgroundColor: `${C.tint}18` },
   formatBtnText: { fontSize: 13, fontWeight: "700", color: C.textSecondary },
   formatBtnTextActive: { color: C.tint },
+  pickTypeOption: {
+    flex: 1, minHeight: 76, padding: 12, borderRadius: 10,
+    borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface,
+  },
+  pickTypeOptionActive: { borderColor: C.tint, backgroundColor: `${C.tint}18` },
+  pickTypeDescription: { color: C.textMuted, fontSize: 11, lineHeight: 16, marginTop: 5 },
   // Inputs
   input: {
     backgroundColor: C.surface, borderRadius: 10,

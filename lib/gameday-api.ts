@@ -1,6 +1,7 @@
 import { fetch } from "expo/fetch";
 import { Session } from "@supabase/supabase-js";
 import { getApiUrl } from "@/lib/query-client";
+import type { PickType } from "@/lib/gameday-pick-type";
 
 interface FetchOpts {
   session?: Session | null;
@@ -87,6 +88,11 @@ export interface GDRoom {
       enabled?: boolean;
       label?: string;
       answer_options?: string[];
+      game?: {
+        team_a?: string;
+        team_b?: string;
+        line_text?: string | null;
+      };
     };
   } | null;
   /** Public Slate candidate context; resolved options are always stored on each prop. */
@@ -129,6 +135,8 @@ export interface GDCard {
   phase: string;
   status: "closed" | "open" | "locked" | "settled";
   display_order: number;
+  /** Present for Madden Weekly Pick Cards; absent legacy cards behave as straight_up. */
+  pick_type?: PickType | null;
   lock_label: string | null;
   scheduled_open_at?: string | null;
   scheduled_lock_at?: string | null;

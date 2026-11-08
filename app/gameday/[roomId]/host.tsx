@@ -16,12 +16,13 @@ import QrCodeSvg from "react-native-qrcode-svg";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth-context";
-import { gamedayFetch } from "@/lib/gameday-api";
+import { gamedayFetch, type GDLeaderboardEntry } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
 import { Analytics } from "@/lib/posthog";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
+import { buildTeamPickDisplay, getPickType, type PickType } from "@/lib/gameday-pick-type";
 
 const C = Colors.dark;
 
@@ -32,11 +33,19 @@ function fmtMmSs(totalSecs: number): string {
   return `${m}:${rem.toString().padStart(2, "0")}`;
 }
 
+function isTeamBasedBonusPick(prop: Prop, pickType: PickType, bonusGameTeams?: string[]): boolean {
+  if (prop.prop_role !== "bonus_game" || prop.answer_options.length !== 2) return false;
+  if (pickType === "spread") return true;
+  return !!bonusGameTeams && bonusGameTeams.length === 2 &&
+    bonusGameTeams.every((team) => prop.answer_options.includes(team));
+}
+
 interface Prop {
   id: string;
   question: string;
   answer_options: string[];
   line_text?: string | null;
+  prop_role?: "main_matchup" | "bonus_game" | "bonus_total" | null;
   correct_answer: string | null;
   status: "pending" | "settled";
   display_order: number;
@@ -48,6 +57,7 @@ interface Card {
   phase: string;
   status: "closed" | "open" | "locked" | "settled";
   display_order: number;
+  pick_type?: PickType | null;
   gameday_props: Prop[];
 }
 
@@ -72,7 +82,12 @@ interface Room {
     reward_text?: string;
     minimum_matchups?: number;
     scoring_mode?: "all_correct";
-    bonus?: { enabled?: boolean; label?: string; answer_options?: string[] };
+    bonus?: {
+      enabled?: boolean;
+      label?: string;
+      answer_options?: string[];
+      game?: { team_a?: string; team_b?: string; line_text?: string | null };
+    };
   } | null;
   countdown_phase?: string | null;
   countdown_type?: "opens_soon" | "locks_soon" | null;
@@ -80,13 +95,7 @@ interface Room {
   countdown_started_at?: string | null;
 }
 
-interface LbEntry {
-  participant_id: string;
-  display_name: string;
-  game_day_sp: number;
-  correct_picks: number;
-  rank: number;
-}
+type LbEntry = GDLeaderboardEntry;
 
 interface HostData {
   room: Room;
@@ -967,6 +976,10 @@ export default function HostControlRoom() {
         <HostCard
           key={card.id}
           card={card}
+          isMaddenWeekly={isWeeklyPickCard}
+          bonusGameTeams={room.format_config?.bonus?.game
+            ? [room.format_config.bonus.game.team_a ?? "", room.format_config.bonus.game.team_b ?? ""]
+            : undefined}
           pickCounts={pick_counts}
           roomStatus={room.status}
           onOpen={() => doCardAction(card.id, "open")}
@@ -1242,6 +1255,8 @@ export default function HostControlRoom() {
 
 function HostCard({
   card,
+  isMaddenWeekly,
+  bonusGameTeams,
   pickCounts,
   roomStatus,
   onOpen,
@@ -1250,6 +1265,8 @@ function HostCard({
   actionLoading,
 }: {
   card: Card;
+  isMaddenWeekly: boolean;
+  bonusGameTeams?: string[];
   pickCounts: Record<string, Record<string, number>>;
   roomStatus: string;
   onOpen: () => void;
@@ -1310,6 +1327,15 @@ function HostCard({
 
       {/* Props */}
       {card.gameday_props.map((prop) => {
+        const pickType = getPickType(card.pick_type);
+        const isTeamPick = isMaddenWeekly &&
+          (prop.prop_role === "main_matchup" || isTeamBasedBonusPick(prop, pickType, bonusGameTeams));
+        const teamDisplay = isTeamPick
+          ? buildTeamPickDisplay(pickType, prop.answer_options, prop.line_text)
+          : null;
+        const invalidSpread = isTeamPick && pickType === "spread" && !teamDisplay;
+        const displayLabel = (value: string) =>
+          teamDisplay?.display_options.find((option) => option.value === value)?.label ?? value;
         const counts = pickCounts[prop.id] ?? {};
         const totalPicks = Object.values(counts).reduce((a, b) => a + b, 0);
         // Initial settle available on locked/settled cards for unsettled props
@@ -1321,10 +1347,21 @@ function HostCard({
         return (
           <View key={prop.id} style={styles.propSection}>
             <View style={styles.propHeaderRow}>
-              <Text style={styles.propQuestion}>{prop.question}</Text>
-            {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
+              <View style={styles.propQuestionWrap}>
+                <Text style={styles.propQuestion}>
+                  {isTeamPick ? (pickType === "spread" ? "Who covered?" : "Who won?") : prop.question}
+                </Text>
+                {isTeamPick && teamDisplay ? (
+                  <Text style={styles.windowText}>{teamDisplay.matchup_label}</Text>
+                ) : !isMaddenWeekly && prop.line_text ? (
+                  <Text style={styles.windowText}>Line: {prop.line_text}</Text>
+                ) : null}
+                {invalidSpread ? (
+                  <Text style={styles.teamLineError}>Spread line unavailable — settlement labels are unavailable until the commissioner reviews this matchup.</Text>
+                ) : null}
+              </View>
               {/* Edit Result button — settled props only, not finalized */}
-              {isSettled && !isFinalized && !isEditingThis && (
+              {isSettled && !isFinalized && !isEditingThis && !invalidSpread && (
                 <TouchableOpacity
                   style={styles.editResultBtn}
                   onPress={() => setEditingPropId(prop.id)}
@@ -1333,7 +1370,7 @@ function HostCard({
                 </TouchableOpacity>
               )}
               {/* Cancel edit */}
-              {isSettled && isEditingThis && (
+              {isSettled && isEditingThis && !invalidSpread && (
                 <TouchableOpacity
                   style={styles.cancelEditBtn}
                   onPress={() => setEditingPropId(null)}
@@ -1344,9 +1381,9 @@ function HostCard({
             </View>
 
             {/* Settled answer row */}
-            {isSettled && (
+            {isSettled && !invalidSpread && (
               <View style={styles.settledRow}>
-                <Text style={styles.settledAnswer}>✓ {prop.correct_answer}</Text>
+                <Text style={styles.settledAnswer}>✓ {displayLabel(prop.correct_answer ?? "")}</Text>
                 {isFinalized && (
                   <Text style={styles.finalizedProp}>FINAL</Text>
                 )}
@@ -1361,7 +1398,7 @@ function HostCard({
                 {isEditingThis && (
                   <Text style={styles.editHint}>Select the correct answer:</Text>
                 )}
-                {prop.answer_options.map((ans) => {
+                {(invalidSpread ? [] : prop.answer_options).map((ans) => {
                   const count = counts[ans] ?? 0;
                   const pct = totalPicks > 0 ? (count / totalPicks) * 100 : 0;
                   const isCurrentCorrect = prop.correct_answer === ans;
@@ -1373,7 +1410,7 @@ function HostCard({
                           styles.propAns,
                           isCurrentCorrect && isSettled && { color: C.success },
                         ]}>
-                          {ans}
+                          {displayLabel(ans)}
                         </Text>
                         <View style={styles.barTrack}>
                           <View style={{ flex: 1, flexDirection: "row" }}>
@@ -1419,13 +1456,13 @@ function HostCard({
             ) : null}
 
             {/* Pick distribution bars for closed/open cards (read-only) */}
-            {!canSettle && prop.answer_options.map((ans) => {
+            {!canSettle && (invalidSpread ? [] : prop.answer_options).map((ans) => {
               const count = counts[ans] ?? 0;
               const pct = totalPicks > 0 ? (count / totalPicks) * 100 : 0;
               return (
                 <View key={ans} style={styles.propAnswerRow}>
                   <View style={styles.propAnswerLeft}>
-                    <Text style={styles.propAns}>{ans}</Text>
+                    <Text style={styles.propAns}>{displayLabel(ans)}</Text>
                     <View style={styles.barTrack}>
                       <View style={{ flex: 1, flexDirection: "row" }}>
                         <View style={{ flex: Math.max(pct, 0), height: 4, borderRadius: 2, backgroundColor: C.tint }} />
@@ -1631,7 +1668,10 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 6,
   },
+  propQuestionWrap: { flex: 1 },
   propQuestion: { flex: 1, fontSize: 13, fontWeight: "600", color: C.text },
+  windowText: { fontSize: 11, color: C.textSecondary, marginTop: 4, lineHeight: 16 },
+  teamLineError: { color: C.danger, fontSize: 11, lineHeight: 16, marginTop: 5 },
   settledRow: {
     flexDirection: "row",
     alignItems: "center",

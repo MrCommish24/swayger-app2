@@ -35,6 +35,7 @@ import { CommercialOfferCard } from "@/components/CommercialOfferCard";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
+import { buildTeamPickDisplay, getPickType, type PickType } from "@/lib/gameday-pick-type";
 
 const C = Colors.dark;
 const GUEST_KEY = (roomId: string) => `gd_guest_${roomId}`;
@@ -91,6 +92,13 @@ interface TimelineItem {
   key: string;
   label: string;
   status: "open" | "locked" | "settled" | "coming_up" | "finalized";
+}
+
+function isTeamBasedBonusPick(prop: GDProp, pickType: PickType, bonusGameTeams?: string[]): boolean {
+  if (prop.prop_role !== "bonus_game" || prop.answer_type === "integer" || prop.answer_options.length !== 2) return false;
+  if (pickType === "spread") return true;
+  return !!bonusGameTeams && bonusGameTeams.length === 2 &&
+    bonusGameTeams.every((team) => prop.answer_options.includes(team));
 }
 
 function computeTimeline(cards: GDCard[], isFinalized: boolean): TimelineItem[] {
@@ -832,7 +840,7 @@ export default function GameDayRoomScreen() {
           {room.team_a_name} vs {room.team_b_name}
         </Text>
         <Text style={styles.joinSub}>
-          Make {room.sport === "nfl" ? "NFL" : room.sport === "soccer" ? "soccer" : "NBA"} picks,
+          Make {room.sport === "madden" ? "Madden" : room.sport === "nfl" ? "NFL" : room.sport === "soccer" ? "soccer" : "NBA"} picks,
           track the leaderboard, and see who walks away with the receipts.
         </Text>
 
@@ -1085,6 +1093,10 @@ export default function GameDayRoomScreen() {
           hasSubmitted={hasSubmittedOpenCard}
           canEdit={canEditOpenCard}
           isMaddenWeekly={room.template_type === "weekly_pick_card"}
+          pickType={getPickType(openCard.pick_type)}
+          bonusGameTeams={room.format_config?.bonus?.game
+            ? [room.format_config.bonus.game.team_a ?? "", room.format_config.bonus.game.team_b ?? ""]
+            : undefined}
         />
       ) : null}
 
@@ -1149,6 +1161,10 @@ export default function GameDayRoomScreen() {
             myPicks={my_picks}
             revealedPicks={revealed_picks}
             isMaddenWeekly={room.template_type === "weekly_pick_card"}
+            pickType={getPickType(card.pick_type)}
+            bonusGameTeams={room.format_config?.bonus?.game
+              ? [room.format_config.bonus.game.team_a ?? "", room.format_config.bonus.game.team_b ?? ""]
+              : undefined}
           />
         ))}
 
@@ -1379,6 +1395,8 @@ function PickCard({
   hasSubmitted,
   canEdit,
   isMaddenWeekly,
+  pickType,
+  bonusGameTeams,
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
@@ -1390,6 +1408,8 @@ function PickCard({
   hasSubmitted: boolean;
   canEdit: boolean;
   isMaddenWeekly: boolean;
+  pickType: PickType;
+  bonusGameTeams?: string[];
 }) {
   const answered = card.gameday_props.filter((p) =>
     isPropAnswered(p, myPicks[p.id]),
@@ -1456,6 +1476,9 @@ function PickCard({
           serverPick={serverPicks[prop.id]}
           onSelect={(ans) => onSelect(prop.id, ans)}
           disabled={!canEdit}
+          isMaddenWeekly={isMaddenWeekly}
+          pickType={pickType}
+          bonusGameTeams={bonusGameTeams}
         />
       ))}
 
@@ -1490,14 +1513,26 @@ function PropPicker({
   serverPick,
   onSelect,
   disabled,
+  isMaddenWeekly,
+  pickType,
+  bonusGameTeams,
 }: {
   prop: GDProp;
   selected: string | undefined;
   serverPick: string | undefined;
   onSelect: (ans: string) => void;
   disabled: boolean;
+  isMaddenWeekly: boolean;
+  pickType: PickType;
+  bonusGameTeams?: string[];
 }) {
   const isInteger = prop.answer_type === "integer";
+  const isTeamPick = isMaddenWeekly && prop.answer_type !== "integer" &&
+    (prop.prop_role === "main_matchup" || isTeamBasedBonusPick(prop, pickType, bonusGameTeams));
+  const teamDisplay = isTeamPick
+    ? buildTeamPickDisplay(pickType, prop.answer_options, prop.line_text)
+    : null;
+  const invalidSpread = isTeamPick && pickType === "spread" && !teamDisplay;
   const integerValue = isInteger ? parseIntegerPick(prop, selected) : null;
   const hasIntegerText = isInteger && selected !== undefined && selected !== "";
   const { min, max } = getIntegerBounds(prop);
@@ -1508,8 +1543,17 @@ function PropPicker({
 
   return (
     <View style={styles.propBlock}>
-      <Text style={styles.propQuestion}>{prop.question}</Text>
-      {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
+      <Text style={styles.propQuestion}>
+        {isTeamPick ? (pickType === "spread" ? "Who covers?" : "Who wins?") : prop.question}
+      </Text>
+      {isTeamPick && teamDisplay ? (
+        <Text style={styles.windowText}>{teamDisplay.matchup_label}</Text>
+      ) : !isMaddenWeekly && prop.line_text ? (
+        <Text style={styles.windowText}>Line: {prop.line_text}</Text>
+      ) : null}
+      {invalidSpread ? (
+        <Text style={styles.teamLineError}>Spread line unavailable — ask the commissioner to review this matchup.</Text>
+      ) : null}
       {isInteger ? (
         <>
           <TextInput
@@ -1545,7 +1589,7 @@ function PropPicker({
         </>
       ) : (
         <View style={styles.optionsRow}>
-          {prop.answer_options.map((ans) => {
+          {(teamDisplay?.display_options ?? (invalidSpread ? [] : prop.answer_options.map((value) => ({ value, label: value })))).map(({ value: ans, label }) => {
             const isSelected = selected === ans;
             // Confirmed = saved to server and unchanged locally (green)
             const isConfirmed = isSelected && serverPick === ans;
@@ -1568,7 +1612,7 @@ function PropPicker({
                   isConfirmed && styles.optionTextConfirmed,
                   isPending && styles.optionTextActive,
                 ]}>
-                  {ans}
+                  {label}
                 </Text>
               </TouchableOpacity>
             );
@@ -1586,11 +1630,15 @@ function RevealCard({
   myPicks,
   revealedPicks,
   isMaddenWeekly,
+  pickType,
+  bonusGameTeams,
 }: {
   card: GDCard;
   myPicks: Record<string, string>;
   revealedPicks: Record<string, Record<string, string[]>>;
   isMaddenWeekly: boolean;
+  pickType: PickType;
+  bonusGameTeams?: string[];
 }) {
   const settledProps = card.gameday_props.filter((prop) => prop.status === "settled").length;
   const totalProps = card.gameday_props.length;
@@ -1622,11 +1670,28 @@ function RevealCard({
         const distribute = revealedPicks[prop.id] ?? {};
         const isSettled = prop.status === "settled";
         const correct = prop.correct_answer;
+        const isTeamPick = isMaddenWeekly && prop.answer_type !== "integer" &&
+          (prop.prop_role === "main_matchup" || isTeamBasedBonusPick(prop, pickType, bonusGameTeams));
+        const teamDisplay = isTeamPick
+          ? buildTeamPickDisplay(pickType, prop.answer_options, prop.line_text)
+          : null;
+        const invalidSpread = isTeamPick && pickType === "spread" && !teamDisplay;
+        const displayLabel = (value: string) =>
+          teamDisplay?.display_options.find((option) => option.value === value)?.label ?? value;
 
         return (
           <View key={prop.id} style={styles.revealProp}>
-            <Text style={styles.propQuestion}>{prop.question}</Text>
-            {prop.line_text ? <Text style={styles.windowText}>Line: {prop.line_text}</Text> : null}
+            <Text style={styles.propQuestion}>
+              {isTeamPick ? (pickType === "spread" ? "Who covers?" : "Who wins?") : prop.question}
+            </Text>
+            {isTeamPick && teamDisplay ? (
+              <Text style={styles.windowText}>{teamDisplay.matchup_label}</Text>
+            ) : !isMaddenWeekly && prop.line_text ? (
+              <Text style={styles.windowText}>Line: {prop.line_text}</Text>
+            ) : null}
+            {invalidSpread ? (
+              <Text style={styles.teamLineError}>Spread line unavailable — result labels are unavailable until the commissioner reviews this matchup.</Text>
+            ) : null}
             {prop.answer_type === "integer" ? (
               <View style={[
                 styles.revealAnswer,
@@ -1657,15 +1722,15 @@ function RevealCard({
                 ) : null}
               </View>
             ) : null}
-            {isSettled && correct ? (
+            {isSettled && correct && !invalidSpread ? (
               <View style={styles.correctAnswerRow}>
                 <Text style={styles.correctLabel}>✓ </Text>
-                <Text style={styles.correctAnswer}>{correct}</Text>
+                <Text style={styles.correctAnswer}>{displayLabel(correct)}</Text>
               </View>
-            ) : isMaddenWeekly && prop.answer_type !== "integer" ? (
+            ) : isMaddenWeekly && prop.answer_type !== "integer" && !invalidSpread ? (
               <Text style={styles.pendingSettlement}>Pending settlement · result not available yet</Text>
             ) : null}
-            {prop.answer_type !== "integer" && prop.answer_options.map((ans) => {
+            {prop.answer_type !== "integer" && (invalidSpread ? [] : prop.answer_options).map((ans) => {
               const pickers = distribute[ans] ?? [];
               const isMine = myPick === ans;
               const hasResult = isSettled && !!correct;
@@ -1695,7 +1760,7 @@ function RevealCard({
                         isWinner && styles.revealAnswerTextWinner,
                       ]}
                     >
-                      {ans}
+                      {displayLabel(ans)}
                       {isMine ? " (you)" : ""}
                     </Text>
                     {answerStatus ? (
@@ -1935,6 +2000,7 @@ const styles = StyleSheet.create({
   propBlock: { marginBottom: 20 },
   propQuestion: { fontSize: 14, fontWeight: "600", color: C.text, marginBottom: 10, lineHeight: 20 },
   windowText: { fontSize: 12, color: C.textSecondary, marginBottom: 8 },
+  teamLineError: { color: C.danger, fontSize: 12, lineHeight: 18, marginBottom: 10 },
   optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   numericInput: {
     borderWidth: 1.5,

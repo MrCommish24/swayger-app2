@@ -36,3 +36,17 @@ Madden Weekly Pick Cards support 1–7 supplied matchups. `minimum_matchups` is 
 **Why:** The Discord contract was relaxed to allow one-matchup cards, while the backend normalizer still enforced the earlier three-matchup minimum.
 
 **How to apply:** Discord should send `minimum_matchups: 1` for the general 1–7 contract. Completion and participation events must continue to count every playable prop actually stored on the card.
+
+Pick Card V1 has one explicit card-wide Winner (`straight_up`) or ATS (`spread`)
+mode, separate from Win Condition. Legacy cards remain Winner even with line text.
+Spread detection/imports must never choose the mode for the commissioner.
+
+**Why:** The user locked these product boundaries: legacy lines were contextual,
+and card correctness must not change implicitly when importing or pasting a slate.
+
+**How to apply:** ATS line text is Team B's strict signed integer/half-point or PK;
+derive Team A's opposite only for display. Keep bare team selection/resolution
+values. Include team-based Bonus Game in the same mode; exact-total bonus stays
+separate. V1 excludes mixed types, over/under, player props, automatic ATS results
+and first-class pushes. Integer pushes stay a manual league-rule decision, never
+automatic both-correct/no-action. Preserve submission-time receipt snapshots.
