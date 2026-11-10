@@ -32,6 +32,13 @@ import Colors from "@/constants/colors";
 import { Analytics, detectEntrySource, detectUtmCampaign, GDRoomCtx, GDParticipantCtx } from "@/lib/posthog";
 import { getCommercialPlacement } from "@/lib/commercial-api";
 import { CommercialOfferCard } from "@/components/CommercialOfferCard";
+import {
+  buildBonusGameResult,
+  buildMainResults,
+  buildReceiptPickCard,
+  pickTypeLabel,
+  winConditionLabel,
+} from "@/lib/gameday-final-results";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
@@ -805,6 +812,18 @@ export default function GameDayRoomScreen() {
   const { room, cards, participant, my_picks, revealed_picks } = roomData;
 
   const isFinalized = room.status === "finalized";
+  const isFinalWeekly = isFinalized && room.template_type === "weekly_pick_card";
+  const finalScoringMode: "all_correct" | "most_correct" =
+    room.format_config?.scoring_mode === "most_correct" ? "most_correct" : "all_correct";
+  const finalProps = cards.flatMap((card) => card.gameday_props);
+  const finalPickType = getPickType(
+    [...cards].sort((a, b) => a.display_order - b.display_order)[0]?.pick_type,
+  );
+  const finalBonusTeams = [room.format_config?.bonus?.game?.team_a, room.format_config?.bonus?.game?.team_b]
+    .filter((team): team is string => typeof team === "string");
+  const finalMainResults = isFinalWeekly ? buildMainResults(finalProps, finalPickType) : [];
+  const finalBonusGame = isFinalWeekly ? buildBonusGameResult(finalProps, finalPickType, finalBonusTeams) : null;
+  const finalTotalProp = isFinalWeekly ? finalProps.find((prop) => prop.prop_role === "bonus_total") ?? null : null;
 
   if (discordLinkState === "success" && !participant && !isFinalized) {
     return (
@@ -980,14 +999,6 @@ export default function GameDayRoomScreen() {
                 Reward: {room.format_config.reward_text} · Administered by the commissioner
               </Text>
             ) : null}
-            {isFinalized ? (
-              <Text style={styles.groupChatNote}>
-                Win condition:{" "}
-                {room.format_config?.scoring_mode === "most_correct"
-                  ? "Most Correct"
-                  : "Perfect Card"}
-              </Text>
-            ) : null}
             {weeklyCard?.scheduled_lock_at || room.format_config?.deadline_display_text ? (
               <Text style={styles.groupChatNote}>
                 Pick Deadline / Lock Time:{" "}
@@ -1041,9 +1052,18 @@ export default function GameDayRoomScreen() {
       {isFinalized ? (
         <View style={styles.finalizedBanner}>
           <Text style={styles.finalizedTitle}>🏆 Final Standings</Text>
-          <Text style={styles.finalizedSub}>
-            This room is locked. All picks are revealed and results are final.
-          </Text>
+          {isFinalWeekly ? (
+            <FinalSummary
+              pickType={finalPickType}
+              scoringMode={finalScoringMode}
+              leaderboard={leaderboard}
+              mainTotal={finalMainResults.length}
+            />
+          ) : (
+            <Text style={styles.finalizedSub}>
+              This room is locked. All picks are revealed and results are final.
+            </Text>
+          )}
           <View style={styles.shareRow}>
             <TouchableOpacity
               style={[styles.shareImgBtn, sharing && styles.btnDisabled]}
@@ -1071,6 +1091,32 @@ export default function GameDayRoomScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      ) : null}
+
+      {isFinalWeekly ? (
+        <>
+          <LeaderboardSection
+            leaderboard={leaderboard}
+            myParticipantId={participant?.id}
+            isFinalized
+            isMaddenWeekly
+            scoringMode={finalScoringMode}
+            mainTotal={finalMainResults.length}
+          />
+          <FinalCorrectResults pickType={finalPickType} results={finalMainResults} />
+          <FinalBreakdown
+            pickType={finalPickType}
+            results={finalMainResults}
+            myPicks={my_picks}
+            revealedPicks={revealed_picks}
+          />
+          <FinalBonusSection
+            pickType={finalPickType}
+            game={finalBonusGame}
+            totalProp={finalTotalProp}
+            myPicks={my_picks}
+          />
+        </>
       ) : null}
 
       {/* Open card — only shown while room is live */}
@@ -1152,8 +1198,7 @@ export default function GameDayRoomScreen() {
       )}
 
       {/* Locked/settled cards — reveal */}
-      {cards
-        .filter((c) => c.status === "locked" || c.status === "settled")
+      {(isFinalWeekly ? [] : cards.filter((c) => c.status === "locked" || c.status === "settled"))
         .map((card) => (
           <RevealCard
             key={card.id}
@@ -1168,8 +1213,8 @@ export default function GameDayRoomScreen() {
           />
         ))}
 
-      {/* Leaderboard */}
-      <LeaderboardSection
+      {/* Leaderboard (finalized Pick Cards show it near the top instead) */}
+      {isFinalWeekly ? null : <LeaderboardSection
         leaderboard={leaderboard}
         myParticipantId={participant?.id}
         isFinalized={isFinalized}
@@ -1179,7 +1224,7 @@ export default function GameDayRoomScreen() {
             ? "most_correct"
             : "all_correct"
         }
-      />
+      />}
 
       {/* Next Game Day CTA — only on finalized rooms */}
       {isFinalized && (
@@ -1210,7 +1255,9 @@ export default function GameDayRoomScreen() {
         >
           <GameDayReceiptCard
             roomName={room.room_name}
-            matchup={`${room.team_a_name} vs ${room.team_b_name}`}
+            teamA={room.team_a_name}
+            teamB={room.team_b_name}
+            pickCard={isFinalWeekly ? buildReceiptPickCard(cards, finalBonusTeams) : null}
             gameDate={room.game_date ?? null}
             leaderboard={leaderboard}
             myParticipantId={participant?.id ?? null}
@@ -1794,6 +1841,179 @@ function RevealCard({
   );
 }
 
+// ── Finalized Pick Card results ───────────────────────────────────────────────
+
+function FinalSummary({
+  pickType,
+  scoringMode,
+  leaderboard,
+  mainTotal,
+}: {
+  pickType: PickType;
+  scoringMode: "all_correct" | "most_correct";
+  leaderboard: GDLeaderboardEntry[];
+  mainTotal: number;
+}) {
+  const winners = leaderboard.filter((entry) => entry.is_winner);
+  const topScore = leaderboard.reduce((max, entry) => Math.max(max, entry.correct_picks), 0);
+  const result =
+    winners.length === 0
+      ? scoringMode === "all_correct"
+        ? "No perfect card this week"
+        : "No winner"
+      : winners.length === 1
+        ? `Winner: ${winners[0].display_name}`
+        : `Tie: ${winners.map((entry) => entry.display_name).join(", ")}`;
+  return (
+    <View style={styles.finalSummary}>
+      <Text style={styles.finalSummaryMode}>
+        {pickTypeLabel(pickType)} · {winConditionLabel(scoringMode)}
+      </Text>
+      <Text style={styles.finalSummaryResult}>{result}</Text>
+      {leaderboard.length > 0 ? (
+        <Text style={styles.finalSummaryTop}>Top score: {topScore}/{mainTotal}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function FinalCorrectResults({
+  pickType,
+  results,
+}: {
+  pickType: PickType;
+  results: ReturnType<typeof buildMainResults>;
+}) {
+  if (results.length === 0) return null;
+  return (
+    <View style={styles.finalSection}>
+      <Text style={styles.finalSectionTitle}>
+        {pickType === "spread" ? "Correct ATS Results" : "Correct Results"}
+      </Text>
+      {results.map((result) => (
+        <View key={result.prop_id} style={styles.finalResultRow}>
+          <Text style={result.status === "settled" ? styles.finalCheck : styles.finalPending}>
+            {result.status === "settled" ? "✓" : "…"}
+          </Text>
+          <Text style={styles.finalResultText}>
+            {result.status !== "settled"
+              ? `${result.matchup_label ?? `${result.team_a} vs ${result.team_b}`} · result pending`
+              : result.result_label ?? result.correct_answer ?? "Result unavailable"}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function FinalBreakdown({
+  pickType,
+  results,
+  myPicks,
+  revealedPicks,
+}: {
+  pickType: PickType;
+  results: ReturnType<typeof buildMainResults>;
+  myPicks: Record<string, string>;
+  revealedPicks: Record<string, Record<string, string[]>>;
+}) {
+  if (results.length === 0) return null;
+  return (
+    <View style={styles.finalSection}>
+      <Text style={styles.finalSectionTitle}>Participant picks</Text>
+      {results.map((result, index) => {
+        const options = result.display_options.length > 0
+          ? result.display_options
+          : [result.team_a, result.team_b].filter((v): v is string => !!v).map((v) => ({ value: v, label: v }));
+        const distribute = revealedPicks[result.prop_id] ?? {};
+        return (
+          <View key={result.prop_id} style={[styles.finalBreakdownRow, index > 0 && styles.finalBreakdownDivider]}>
+            <Text style={styles.finalBreakdownTitle}>
+              {pickType === "spread" ? "Covered" : "Winner"}: {result.matchup_label ?? `${result.team_a} vs ${result.team_b}`}
+            </Text>
+            {options.map((option) => {
+              const pickers = distribute[option.value] ?? [];
+              const isMine = myPicks[result.prop_id] === option.value;
+              const isCorrect = result.status === "settled" && option.value === result.correct_answer;
+              const isMiss = result.status === "settled" && !isCorrect && (isMine || pickers.length > 0);
+              return (
+                <View key={option.value} style={styles.finalOptionRow}>
+                  <Text style={isCorrect ? styles.finalCheck : isMiss ? styles.finalMiss : styles.finalNeutral}>
+                    {isCorrect ? "✓" : isMiss ? "✗" : "·"}
+                  </Text>
+                  <Text style={[styles.finalOptionLabel, isCorrect && styles.finalOptionCorrect]}>
+                    {option.label}
+                    {isMine ? " (you)" : ""}
+                  </Text>
+                  <Text style={styles.finalOptionPickers} numberOfLines={2}>
+                    {pickers.length > 0 ? pickers.join(", ") : ""}
+                  </Text>
+                  <Text style={styles.finalOptionCount}>{pickers.length}</Text>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function FinalBonusSection({
+  pickType,
+  game,
+  totalProp,
+  myPicks,
+}: {
+  pickType: PickType;
+  game: ReturnType<typeof buildBonusGameResult>;
+  totalProp: GDProp | null;
+  myPicks: Record<string, string>;
+}) {
+  const labelFor = (value: string | undefined) =>
+    value === undefined ? null : game?.display_options.find((o) => o.value === value)?.label ?? value;
+  const myBonus = game ? myPicks[game.prop_id] : undefined;
+  const bonusCorrect = game && game.status === "settled" && myBonus !== undefined
+    ? myBonus === game.correct_answer
+    : null;
+  const myTotal = totalProp ? myPicks[totalProp.id] : undefined;
+  const actualTotal = totalProp && totalProp.status === "settled" ? totalProp.correct_numeric_answer ?? null : null;
+  return (
+    <>
+      {game ? (
+        <View style={[styles.finalSection, styles.finalBonusSection]}>
+          <Text style={styles.finalSectionTitle}>Bonus Game</Text>
+          <Text style={styles.finalSectionNote}>Scored separately — not part of the main card score.</Text>
+          {game.matchup_label ? <Text style={styles.finalBreakdownTitle}>{game.matchup_label}</Text> : null}
+          <Text style={styles.finalDetailLine}>
+            {pickType === "spread" ? "Covered" : "Result"}:{" "}
+            {game.status === "settled" ? game.result_label ?? game.correct_answer ?? "Unavailable" : "Pending"}
+          </Text>
+          <Text style={styles.finalDetailLine}>
+            Your pick: {myBonus === undefined ? "No pick submitted" : labelFor(myBonus)}
+            {bonusCorrect === null ? "" : bonusCorrect ? "  ✓" : "  ✗"}
+          </Text>
+        </View>
+      ) : null}
+      {totalProp ? (
+        <View style={[styles.finalSection, styles.finalBonusSection]}>
+          <Text style={styles.finalSectionTitle}>Total Points</Text>
+          <Text style={styles.finalSectionNote}>Exact-number prediction — not part of the main card score.</Text>
+          <Text style={styles.finalDetailLine}>
+            Actual total: {actualTotal === null ? "Pending" : actualTotal}
+          </Text>
+          <Text style={styles.finalDetailLine}>
+            Your prediction: {myTotal === undefined ? "No pick submitted" : myTotal}
+            {actualTotal !== null && myTotal !== undefined
+              ? Number(myTotal) === actualTotal ? "  ✓ exact" : "  ✗ missed"
+              : ""}
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 
 function LeaderboardSection({
@@ -1802,12 +2022,15 @@ function LeaderboardSection({
   isFinalized,
   isMaddenWeekly,
   scoringMode,
+  mainTotal,
 }: {
   leaderboard: GDLeaderboardEntry[];
   myParticipantId?: string;
   isFinalized: boolean;
   isMaddenWeekly: boolean;
   scoringMode: "all_correct" | "most_correct";
+  /** Main-matchup count; bonus and total are never part of this denominator. */
+  mainTotal?: number;
 }) {
   if (leaderboard.length === 0) return null;
 
@@ -1821,11 +2044,14 @@ function LeaderboardSection({
           Partial standings · SP reflects settled matchups only. Pending results will update the leaderboard.
         </Text>
       ) : null}
-      {isMaddenWeekly && isFinalized ? (
+      {isMaddenWeekly && isFinalized && mainTotal === undefined ? (
         <Text style={styles.lbNote}>
           Win condition: {scoringMode === "most_correct" ? "Most Correct" : "Perfect Card"}
           {leaderboard.some((entry) => entry.is_winner) ? "" : " · No winner"}
         </Text>
+      ) : null}
+      {mainTotal !== undefined ? (
+        <Text style={styles.lbNote}>Main card score · {mainTotal} matchups. Bonus and Total Points are scored separately.</Text>
       ) : null}
       {leaderboard.map((entry) => {
         const isMe = entry.participant_id === myParticipantId;
@@ -1842,11 +2068,23 @@ function LeaderboardSection({
               {entry.is_winner ? " 🏆" : ""}
             </Text>
             <View style={styles.lbRight}>
-              <Text style={styles.lbSP}>{entry.game_day_sp} SP</Text>
-              <Text style={styles.lbStats}>
-                {entry.correct_picks}✓
-                {entry.pending_picks > 0 ? ` · ${entry.pending_picks} pending` : ""}
-              </Text>
+              {mainTotal !== undefined ? (
+                <>
+                  <Text style={styles.lbSP}>{entry.correct_picks}/{mainTotal}</Text>
+                  <Text style={styles.lbStats}>
+                    {entry.game_day_sp} SP
+                    {entry.pending_picks > 0 ? ` · ${entry.pending_picks} pending` : ""}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.lbSP}>{entry.game_day_sp} SP</Text>
+                  <Text style={styles.lbStats}>
+                    {entry.correct_picks}✓
+                    {entry.pending_picks > 0 ? ` · ${entry.pending_picks} pending` : ""}
+                  </Text>
+                </>
+              )}
             </View>
           </View>
         );
@@ -2148,6 +2386,37 @@ const styles = StyleSheet.create({
   lbStats: { fontSize: 11, color: C.textMuted },
 
   // Finalized room
+  finalSummary: { marginTop: 10, gap: 2 },
+  finalSummaryMode: { fontSize: 13, fontWeight: "700", color: C.tint },
+  finalSummaryResult: { fontSize: 15, fontWeight: "700", color: C.text },
+  finalSummaryTop: { fontSize: 12, color: C.textSecondary },
+  finalSection: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  finalBonusSection: { borderColor: "#C07818" },
+  finalSectionTitle: { fontSize: 13, fontWeight: "700", color: C.text, letterSpacing: 0.5, marginBottom: 6 },
+  finalSectionNote: { fontSize: 11, color: C.textMuted, marginBottom: 6 },
+  finalResultRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
+  finalResultText: { flex: 1, fontSize: 14, color: C.text },
+  finalCheck: { width: 16, color: "#34C759", fontWeight: "800", fontSize: 14, textAlign: "center" },
+  finalMiss: { width: 16, color: "#FF453A", fontWeight: "800", fontSize: 14, textAlign: "center" },
+  finalNeutral: { width: 16, color: C.textMuted, fontSize: 14, textAlign: "center" },
+  finalPending: { width: 16, color: C.textMuted, fontSize: 14, textAlign: "center" },
+  finalBreakdownRow: { paddingVertical: 8 },
+  finalBreakdownDivider: { borderTopWidth: 1, borderTopColor: C.border },
+  finalBreakdownTitle: { fontSize: 12, color: C.textSecondary, marginBottom: 4 },
+  finalOptionRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2 },
+  finalOptionLabel: { fontSize: 13, color: C.textSecondary, minWidth: 110 },
+  finalOptionCorrect: { color: C.text, fontWeight: "700" },
+  finalOptionPickers: { flex: 1, fontSize: 11, color: C.textMuted },
+  finalOptionCount: { fontSize: 12, color: C.textMuted, minWidth: 14, textAlign: "right" },
+  finalDetailLine: { fontSize: 13, color: C.text, marginTop: 2 },
   finalizedBanner: {
     backgroundColor: "#F5A62318",
     borderRadius: 12,

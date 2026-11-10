@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { GDLeaderboardEntry } from "@/lib/gameday-api";
+import { buildReceiptHeader } from "@/lib/gameday-final-results";
 
 const GOLD = "#F5A623";
 const TEAL = "#1DA1F2";
@@ -16,23 +17,41 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 export interface GameDayReceiptCardProps {
   roomName: string;
-  matchup: string;
+  /** Single-game Team A vs Team B; ignored for Pick Cards. */
+  teamA?: string | null;
+  teamB?: string | null;
   gameDate?: string | null;
   leaderboard: GDLeaderboardEntry[];
   myParticipantId?: string | null;
   scoringMode?: "all_correct" | "most_correct";
   roomLink?: string;
+  /** Present only for Pick Cards: replaces the Team A vs Team B header. */
+  pickCard?: {
+    pickType: unknown;
+    /** Number of main matchups (denominator for X/N correct). */
+    mainTotal: number;
+    /** Optional concise lines, e.g. "Bonus Game: Patriots +10". */
+    summaryLines?: string[];
+  } | null;
 }
 
 export default function GameDayReceiptCard({
   roomName,
-  matchup,
+  teamA,
+  teamB,
   gameDate,
   leaderboard,
   myParticipantId,
   scoringMode,
   roomLink,
+  pickCard,
 }: GameDayReceiptCardProps) {
+  const header = buildReceiptHeader({
+    roomName,
+    teamA,
+    teamB,
+    pickCard: pickCard ? { pickType: pickCard.pickType, scoringMode } : null,
+  });
   const myEntry = myParticipantId
     ? leaderboard.find((e) => e.participant_id === myParticipantId) ?? null
     : null;
@@ -61,18 +80,25 @@ export default function GameDayReceiptCard({
 
       {/* Room info */}
       <View style={styles.body}>
-        <Text style={styles.matchup}>{matchup}</Text>
-        <Text style={styles.roomName}>{roomName}</Text>
+        {header.title ? <Text style={styles.matchup}>{header.title}</Text> : null}
+        {header.subtitle ? <Text style={styles.roomName}>{header.subtitle}</Text> : null}
         {formattedDate ? (
           <Text style={styles.date}>{formattedDate}</Text>
         ) : null}
-        {scoringMode ? (
+        {scoringMode && !pickCard ? (
           <Text style={styles.winCondition}>
             Win condition: {scoringMode === "most_correct" ? "Most Correct" : "Perfect Card"}
           </Text>
         ) : null}
         {scoringMode === "all_correct" && winners.length === 0 ? (
           <Text style={styles.noWinner}>No perfect card — no winner.</Text>
+        ) : null}
+        {pickCard && winners.length > 0 ? (
+          <Text style={styles.noWinner}>
+            {winners.length === 1
+              ? `Winner: ${winners[0].display_name}`
+              : `Tie: ${winners.map((entry) => entry.display_name).join(", ")}`}
+          </Text>
         ) : null}
 
         {/* Leaderboard */}
@@ -97,17 +123,31 @@ export default function GameDayReceiptCard({
                   {entry.is_winner ? " 🏆" : ""}
                 </Text>
                 <View style={styles.lbRight}>
-                  <Text style={[styles.lbSP, isMe && styles.lbSPMe]}>
-                    {entry.game_day_sp} pts
-                  </Text>
-                  <Text style={styles.lbCorrect}>
-                    {entry.correct_picks} correct
-                  </Text>
+                  {pickCard ? (
+                    <Text style={[styles.lbSP, isMe && styles.lbSPMe]}>
+                      {entry.correct_picks}/{pickCard.mainTotal} correct
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={[styles.lbSP, isMe && styles.lbSPMe]}>
+                        {entry.game_day_sp} pts
+                      </Text>
+                      <Text style={styles.lbCorrect}>
+                        {entry.correct_picks} correct
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
             );
           })}
         </View>
+
+        {pickCard?.summaryLines?.map((line) => (
+          <Text key={line} style={styles.summaryLine}>
+            {line}
+          </Text>
+        ))}
 
         {/* Personal stat */}
         {myEntry ? (
@@ -205,6 +245,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: TEXT_DIM,
     marginTop: 5,
+  },
+  summaryLine: {
+    fontSize: 11,
+    color: TEXT_DIM,
+    marginTop: 8,
   },
   lbSection: {
     marginTop: 12,

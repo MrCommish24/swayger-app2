@@ -186,6 +186,35 @@ async function main() {
       check(`${kind} finalize`, (await request(`/api/gameday/rooms/${room.id}/finalize`, "PATCH", {}, bot)).status === 200);
       const final = await request(`/api/gameday/rooms/${room.id}/final-standings`);
       check(`${kind} final winner`, final.body.finalized && final.body.winner.participant_id === participant && final.body.all_props_settled);
+      // Final-results contract: ordered, backend-labelled, and kept separate from bonus/total.
+      check(`${kind} final pick type metadata`, final.body.pick_type === kind
+        && final.body.pick_type_label === (kind === "spread" ? "Against the Spread" : "Straight Up")
+        && final.body.win_condition_label === "Most Correct");
+      const mains = final.body.main_results;
+      check(`${kind} final main results ordered`, mains.length === mainCount
+        && mains.every((r: any, i: number) => r.display_order === i && r.prop_role === "main_matchup"));
+      check(`${kind} final main summary excludes bonus`, final.body.main_summary.total_main_props === mainCount
+        && final.body.main_summary.settled_main_props === mainCount
+        && final.body.main_summary.top_correct_picks === mainCount && final.body.total_props === mainCount + 2);
+      body.matchups.forEach((matchup: any, i: number) => {
+        const expectedDisplay = buildTeamPickDisplay(kind, [`Team A${i}`, `Team B${i}`], matchup.line_text)!;
+        const r = mains[i];
+        check(`${kind} final label ${i}`, r.result_label === `${expectedDisplay.display_options[0].label} over ${expectedDisplay.display_options[1].label}`
+          && r.correct_answer === `Team A${i}` && r.pick_type === kind && r.team_a === `Team A${i}` && r.team_b === `Team B${i}`
+          && r.matchup_label === expectedDisplay.matchup_label && r.line_text === (matchup.line_text ?? null));
+      });
+      if (kind === "spread") {
+        check("spread final label shows opposite spread", mains[0].result_label === "Team A0 +6.5 over Team B0 -6.5");
+        check("spread final PK display", mains[4].result_label === "Team A4 PK over Team B4 PK");
+      } else {
+        check("straight-up final label ignores contextual line", mains[1].result_label === "Team A1 over Team B1");
+      }
+      const finalGame = final.body.bonus.game.result;
+      check(`${kind} final bonus game separate`, finalGame.result_label === (kind === "spread" ? "Patriots +10 over Commanders -10" : "Patriots over Commanders")
+        && finalGame.prop_role === "bonus_game"
+        && final.body.bonus.results[0].bonus_game_correct === true && final.body.leaderboard[0].correct_picks === mainCount);
+      check(`${kind} final total separate`, final.body.bonus.total.actual_total === 41 && final.body.bonus.results[0].predicted_total === 41
+        && !("result_label" in final.body.bonus.total));
       // The browser host receipt uses host-data, not the public leaderboard.
       // App-owned weekly cards must use the same main-only scoring projection.
       await db.from("gameday_rooms").update({ host_user_id: hostUserId, source: "app" }).eq("id", room.id);

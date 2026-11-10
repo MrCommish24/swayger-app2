@@ -23,6 +23,7 @@ import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 import { buildTeamPickDisplay, getPickType, type PickType } from "@/lib/gameday-pick-type";
+import { buildReceiptPickCard } from "@/lib/gameday-final-results";
 
 const C = Colors.dark;
 
@@ -47,6 +48,8 @@ interface Prop {
   line_text?: string | null;
   prop_role?: "main_matchup" | "bonus_game" | "bonus_total" | null;
   correct_answer: string | null;
+  answer_type?: "choice" | "integer" | null;
+  correct_numeric_answer?: number | null;
   status: "pending" | "settled";
   display_order: number;
 }
@@ -81,7 +84,7 @@ interface Room {
     week_label?: string;
     reward_text?: string;
     minimum_matchups?: number;
-    scoring_mode?: "all_correct";
+    scoring_mode?: "all_correct" | "most_correct";
     bonus?: {
       enabled?: boolean;
       label?: string;
@@ -1235,10 +1238,27 @@ export default function HostControlRoom() {
       <View ref={receiptRef} collapsable={false} style={styles.hiddenReceipt}>
         <GameDayReceiptCard
           roomName={hostData.room.room_name}
-          matchup={`${hostData.room.team_a_name} vs ${hostData.room.team_b_name}`}
+          teamA={hostData.room.team_a_name}
+          teamB={hostData.room.team_b_name}
           gameDate={hostData.room.game_date ?? null}
           leaderboard={hostData.leaderboard ?? []}
           myParticipantId={null}
+          scoringMode={
+            hostData.room.template_type === "weekly_pick_card"
+              ? hostData.room.format_config?.scoring_mode === "most_correct"
+                ? "most_correct"
+                : "all_correct"
+              : undefined
+          }
+          pickCard={
+            hostData.room.template_type === "weekly_pick_card"
+              ? buildReceiptPickCard(
+                  hostData.cards,
+                  [hostData.room.format_config?.bonus?.game?.team_a, hostData.room.format_config?.bonus?.game?.team_b]
+                    .filter((team): team is string => typeof team === "string"),
+                )
+              : null
+          }
           roomLink={
             hostData.room.room_code
               ? `swayger.app/g/${hostData.room.room_code}`

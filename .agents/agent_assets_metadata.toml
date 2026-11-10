@@ -119,165 +119,207 @@ id = "NhsE_TFTmDPnY5fM-mYHS"
 uri = "file://SWAYGER_STATUS_BRIEF.md"
 type = "text"
 title = "Swayger — Full Product Status Brief"
+logical_id = "e09f4a6b-4f00-429f-980e-5e12937febc6"
 
 [[outputs]]
 id = "uZZbkdAUCN7bMEc8ME3IP"
 uri = "file://SWAYGER_PRODUCT_STATUS.md"
 type = "text"
 title = "Swayger — Product Status Brief"
+logical_id = "d2a44480-8083-4581-98dd-d02e8daa485e"
 
 [[outputs]]
 id = "zD003OZMCb5_nzafSCS9F"
 uri = "file://attached_assets/generated_images/swayger_mm_instagram.png"
 type = "image"
 title = "Swayger — March Madness Leaderboard Challenge (Instagram Post)"
+logical_id = "59272ee0-e284-42d1-8930-539eeb42907a"
 
 [[outputs]]
 id = "-COz1UvTaFzj6Fbe6YUlG"
 uri = "file://attached_assets/generated_images/swayger_mm_instagram_v2.png"
 type = "image"
 title = "Swayger — March Madness Leaderboard Challenge (v2)"
+logical_id = "3f0c1f14-e559-45ac-a1cf-99221863e08e"
 
 [[outputs]]
 id = "irsK6iia--WFQ7JwEIsHP"
 uri = "file://docs/swayger-email-catalog.md"
 type = "text"
 title = "Swayger Email Catalog"
+logical_id = "3f770ab2-cc47-442a-a7ec-f9b9ea2db989"
 
 [[outputs]]
 id = "n7GXbrmQFoEiHSIIdo1lW"
 uri = "file://attached_assets/generated_images/swayger-r32-instagram.png"
 type = "image"
 title = "Swayger — R32 Instagram Post"
+logical_id = "07d55c59-38fd-44cb-90a2-be6c60c23632"
 
 [[outputs]]
 id = "WRFBO4T5rU47xOlfQV8RI"
 uri = "file://attached_assets/generated_images/swayger-r32-instagram-v2.png"
 type = "image"
 title = "Swayger — R32 Instagram Post v2"
+logical_id = "c213a70b-5554-4cf5-a107-841e9fb602ed"
 
 [[outputs]]
 id = "TP-e7D4K0p6YUuQRhzXKA"
 uri = "file://attached_assets/generated_images/swayger-r32-instagram-v3.png"
 type = "image"
 title = "Swayger — R32 Instagram (Trophy Style)"
+logical_id = "67c6ad07-5245-4754-bd2c-fef2e52a3d30"
 
 [[outputs]]
 id = "O1Qy0fkcWhdK299sF8Tn4"
 uri = "file://docs/swayger-wtp-experiments.md"
 type = "text"
 title = "Swayger — Willingness to Pay Experiments"
+logical_id = "fcd143eb-7996-4721-bae7-91b3915c4724"
 
 [[outputs]]
 id = "M_ovpPp1leXTDtZ9WsEEi"
 uri = "file://docs/swayger-referral-system.md"
 type = "text"
 title = "Swayger — Referral System Design"
+logical_id = "0d39af25-ea90-48f7-a160-ee3ccbee60e5"
 
 [[outputs]]
 id = "VDMctB_J6DJVClkpFoMR2"
 uri = "file://attached_assets/generated_images/swayger-logo-concept-a.png"
 type = "image"
 title = "Concept A — The Clash Mark (opposing chevrons, 1v1 tension)"
+logical_id = "c668dc10-c5ba-4cf4-bfa1-d8f67bfb9380"
 
 [[outputs]]
 id = "Nxdj3vB8LqPl22wIwt6Y5"
 uri = "file://attached_assets/generated_images/swayger-logo-concept-b.png"
 type = "image"
 title = "Concept B — The Split S (two sides, one letter)"
+logical_id = "998fc0da-c335-4079-b315-57c2a0d2a429"
 
 [[outputs]]
 id = "ytjBHRUsjd9h5fIIIXfpM"
 uri = "file://attached_assets/generated_images/swayger-logo-concept-c.png"
 type = "image"
 title = "Concept C — The Badge/Stamp (receipt seal, premium)"
+logical_id = "1b9570aa-24cc-43af-a178-ad942067c97d"
 
 [[outputs]]
 id = "sD7AoDh4Or78SYKpaWXlQ"
 uri = "file://attached_assets/generated_images/swayger-refined-a.png"
 type = "image"
 title = "The S-Strike — Bold geometric S, forward energy, lightning conviction"
+logical_id = "bdf23d9e-44cc-405c-8e94-6908c5a6caa5"
 
 [[outputs]]
 id = "UGAfhO1g-fZzRbKWHqRdJ"
 uri = "file://attached_assets/generated_images/swayger-refined-b.png"
 type = "image"
 title = "The Seal — Official stamp mark, receipt authority, declaring it final"
+logical_id = "a60d621b-8a7d-49d3-a13e-2b4cde9ab135"
 
 [[outputs]]
 id = "VyubE6ahbrT2xQoZOIfwu"
 uri = "file://attached_assets/generated_images/swayger-refined-c.png"
 type = "image"
 title = "The Wordmark — Signature underline, signing your name to the bet"
+logical_id = "b725ccc3-b9d5-4c0b-83b4-ef87fd48b158"
 
 [[outputs]]
 id = "8OE07-uFMBB356AhHNZpp"
 uri = "file://attached_assets/generated_images/swayger-lockup-a.png"
 type = "image"
 title = "Lockup A — VS Square Badge + Wordmark"
+logical_id = "1ce1905c-ad2c-470b-a11c-98bbd08100e3"
 
 [[outputs]]
 id = "wOERslkYKursocDfAySPr"
 uri = "file://attached_assets/generated_images/swayger-lockup-b.png"
 type = "image"
 title = "Lockup B — VS Circle Coin + Wordmark"
+logical_id = "af13645d-5519-409b-b9bc-c934990b2342"
 
 [[outputs]]
 id = "bPpv3mPQ4D73lWZYdXs2E"
 uri = "file://attached_assets/generated_images/swayger-lockup-c.png"
 type = "image"
 title = "Lockup C — VS Split Blocks + Wordmark"
+logical_id = "cff98792-e238-4d55-8956-72fdaaeb8961"
 
 [[outputs]]
 id = "dxYoEiDFf_hx4OaOveArH"
 uri = "file://attached_assets/generated_images/swayger-arena-logo.png"
 type = "image"
 title = "Swayger Arena Logo — Wide (16:9, social/banner format)"
+logical_id = "3d3b1604-5d1d-4716-b943-eb08b3569cfb"
 
 [[outputs]]
 id = "Q-WV2Q-shfRZ1EHDA55IV"
 uri = "file://attached_assets/generated_images/swayger-arena-logo-square.png"
 type = "image"
 title = "Swayger Arena Logo — Square (1:1, app icon/profile format)"
+logical_id = "e4f265ad-cbc4-431a-b652-8a995ae581fc"
 
 [[outputs]]
 id = "9ZdklPuUMiZzEY44etDkc"
 uri = "file://attached_assets/generated_images/swayger-slash-icon.png"
 type = "image"
 title = "The Slash Mark — Standalone icon (app icon, social avatar)"
+logical_id = "017d2c45-877e-4610-8b0c-5f794e6396d2"
 
 [[outputs]]
 id = "EWbDneeTky9chzzRshilV"
 uri = "file://attached_assets/generated_images/swayger-slash-lockup.png"
 type = "image"
 title = "Full Lockup — Slash mark stacked above SWAYGER wordmark"
+logical_id = "bb134d44-7a24-4069-9e38-05125c2eb541"
 
 [[outputs]]
 id = "YA6cE2F36szVCZXSuiwED"
 uri = "file://attached_assets/generated_images/swayger-slash-horizontal.png"
 type = "image"
 title = "Horizontal Lockup — Slash mark beside SWAYGER wordmark"
+logical_id = "625a7ec0-150c-4d6f-9342-0971f663290a"
 
 [[outputs]]
 id = "N-DcDI7xbkklOn3h3aPZa"
 uri = "file://attached_assets/generated_images/swayger-arena-slash-icon.png"
 type = "image"
 title = "Arena Slash Icon — Pure mark, no text (app icon / social avatar)"
+logical_id = "126dc461-1d35-4d0c-9fcd-cb7b3a42fa72"
 
 [[outputs]]
 id = "8J9GwJdqkeqt0AGiefash"
 uri = "file://attached_assets/generated_images/swayger-arena-slash-lockup.png"
 type = "image"
 title = "Arena Slash Lockup — Mark + SWAYGER wordmark (square)"
+logical_id = "95a610ad-1943-48de-879d-49653f546cdf"
 
 [[outputs]]
 id = "6DVX1Qpwm3VTRf2vuxV4o"
 uri = "file://attached_assets/generated_images/swayger-arena-slash-wide.png"
 type = "image"
 title = "Arena Slash Wide — Full hero banner (social cover / header)"
+logical_id = "cd27af8d-6844-4934-9460-88725526f6ed"
 
 [[outputs]]
 id = "gkVH6nggTgCr-A0Zvg7IK"
 uri = "file://HANDOFF.md"
 type = "text"
 title = "Swayger — Full Project Handoff Document"
+logical_id = "8d7b9c48-39af-4aa4-9782-9c0769ae4c6b"
+
+[[outputs]]
+id = "MXJx243trvAYhXtQ2c09Y"
+uri = "file://generated-artifacts/final-results/ats.png"
+type = "image"
+title = "Pick Card final-standings image"
+description = "Generated ATS / Perfect Card test image: card metadata, main-only3/6 score, and separate bonus/total summaries. No null team header."
+logical_id = "e73c9b87-ca57-4fb1-8a7f-333a24a6967a"
+content_hash = "sha256:802a8b4bc4e02b47440f5042315a31ee01dd96b836e0a8e2350100fb2a7a0877"
+size = 66279
+mtime_ms = 1794269272011
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/e73c9b87-ca57-4fb1-8a7f-333a24a6967a/cd88df12-af59-4a75-adde-c4a606fdaaed"
+storage_version_token = "1794269492606887"
+content_type = "image/png"

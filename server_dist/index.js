@@ -9032,6 +9032,79 @@ function buildTeamPickDisplay(pickType, options, lineText) {
   };
 }
 
+// lib/gameday-final-results.ts
+function pickTypeLabel(pickType) {
+  return getPickType(pickType) === "spread" ? "Against the Spread" : "Straight Up";
+}
+function winConditionLabel(mode) {
+  return mode === "most_correct" ? "Most Correct" : "Perfect Card";
+}
+function resolvedValue(prop) {
+  if (prop.status !== "settled") return null;
+  const ids = Array.isArray(prop.correct_answer_ids) ? prop.correct_answer_ids : [];
+  if (ids.length > 1) return null;
+  return prop.correct_answer ?? ids[0] ?? null;
+}
+function buildTeamResult(prop, pickType) {
+  const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+  const display = buildTeamPickDisplay(pickType, options, prop.line_text);
+  const correct = resolvedValue(prop);
+  const label = (value) => value === null ? null : display?.display_options.find((o) => o.value === value)?.label ?? null;
+  const correctLabel = display ? label(correct) : null;
+  const opponent = correct !== null && options.length === 2 ? options.find((o) => o !== correct) ?? null : null;
+  const opponentLabel = label(opponent);
+  return {
+    team_a: options[0] ?? null,
+    team_b: options[1] ?? null,
+    line_text: prop.line_text ?? null,
+    status: prop.status === "settled" ? "settled" : "pending",
+    correct_answer: correct,
+    correct_answer_label: correctLabel,
+    opponent_answer: opponent,
+    opponent_label: opponentLabel,
+    matchup_label: display?.matchup_label ?? null,
+    result_label: correctLabel && opponentLabel ? `${correctLabel} over ${opponentLabel}` : null,
+    display_options: display?.display_options ?? []
+  };
+}
+var byOrder = (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0);
+function buildMainResults(props, rawPickType) {
+  const pickType = getPickType(rawPickType);
+  return props.filter((prop) => prop.prop_role === "main_matchup" && prop.answer_type !== "integer").sort(byOrder).map((prop) => ({
+    prop_id: prop.id,
+    display_order: prop.display_order ?? 0,
+    prop_role: "main_matchup",
+    pick_type: pickType,
+    ...buildTeamResult(prop, pickType)
+  }));
+}
+function buildBonusGameResult(props, rawPickType, bonusTeams) {
+  const prop = props.find((p) => p.prop_role === "bonus_game" && p.answer_type !== "integer");
+  if (!prop) return null;
+  const pickType = getPickType(rawPickType);
+  const options = Array.isArray(prop.answer_options) ? prop.answer_options : [];
+  const teamBased = options.length === 2 && (pickType === "spread" || !!bonusTeams && bonusTeams.length === 2 && bonusTeams.every((t) => options.includes(t)));
+  if (teamBased) {
+    return { prop_id: prop.id, display_order: prop.display_order ?? 0, prop_role: "bonus_game", pick_type: pickType, ...buildTeamResult(prop, pickType) };
+  }
+  const correct = resolvedValue(prop);
+  return {
+    prop_id: prop.id,
+    display_order: prop.display_order ?? 0,
+    prop_role: "bonus_game",
+    pick_type: pickType,
+    team_a: null,
+    team_b: null,
+    line_text: prop.line_text ?? null,
+    status: prop.status === "settled" ? "settled" : "pending",
+    correct_answer: correct,
+    correct_answer_label: correct,
+    matchup_label: null,
+    result_label: correct,
+    display_options: options.map((value) => ({ value, label: value }))
+  };
+}
+
 // server/routes-gameday.ts
 var GLOBAL_SETTLEMENT_WRITE_ENABLED = process.env.GLOBAL_SETTLE_ENABLED === "true";
 function _tokenFingerprint(token) {
@@ -13099,7 +13172,7 @@ ${publicLink2}`;
       ) ?? "all_correct";
       const { data: participants } = await supabase.from("gameday_participants").select("id, display_name, is_guest").eq("room_id", roomId);
       const participantIds = (participants ?? []).map((p) => p.id);
-      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)").eq("room_id", roomId);
+      const { data: standingCards } = await supabase.from("gameday_pick_cards").select("id, pick_type, display_order, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)").eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap(
         (card) => (card.gameday_props ?? []).filter(
           (prop) => isRequiredWeeklyPickCardProp(prop)
@@ -13155,6 +13228,18 @@ ${publicLink2}`;
         });
       }
       const winnerRows = leaderboard.filter((entry) => entry.is_winner);
+      const finalPickType = getPickType(
+        [...standingCards ?? []].sort(
+          (a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)
+        )[0]?.pick_type
+      );
+      const finalMainResults = isMaddenWeekly ? buildMainResults(playableProps, finalPickType) : null;
+      const finalBonus = isMaddenWeekly ? serializeWeeklyPickCardBonus(playableProps, leaderboard) : null;
+      const finalBonusGame = isMaddenWeekly ? buildBonusGameResult(
+        playableProps,
+        finalPickType,
+        [room.format_config?.bonus?.game?.team_a, room.format_config?.bonus?.game?.team_b].filter((team) => typeof team === "string")
+      ) : null;
       res2.json({
         finalized: true,
         room_id: roomId,
@@ -13169,6 +13254,20 @@ ${publicLink2}`;
           room_name: room.room_name
         },
         scoring_mode: scoringMode,
+        ...isMaddenWeekly ? {
+          pick_type: finalPickType,
+          pick_type_label: pickTypeLabel(finalPickType),
+          win_condition_label: winConditionLabel(scoringMode),
+          main_results: finalMainResults,
+          main_summary: {
+            total_main_props: totalRequiredProps,
+            settled_main_props: scoringProps.filter((prop) => prop.status === "settled").length,
+            top_correct_picks: leaderboard.reduce(
+              (max, entry) => Math.max(max, entry.correct_picks ?? 0),
+              0
+            )
+          }
+        } : {},
         all_props_settled: allPropsSettled,
         winner_determined: isMaddenWeekly ? allRequiredPropsSettled : true,
         winner: winnerRows[0] ?? null,
@@ -13176,7 +13275,12 @@ ${publicLink2}`;
         winner_participant_ids: winnerRows.map((entry) => entry.participant_id),
         tie: winnerRows.length > 1,
         leaderboard,
-        ...isMaddenWeekly ? { bonus: serializeWeeklyPickCardBonus(playableProps, leaderboard) } : {},
+        ...isMaddenWeekly && finalBonus ? {
+          bonus: {
+            ...finalBonus,
+            game: finalBonus.game ? { ...finalBonus.game, result: finalBonusGame } : null
+          }
+        } : {},
         total_participants: (participants ?? []).length,
         total_props: playableProps.length,
         ...isMaddenWeekly ? { total_main_props: totalRequiredProps } : {}

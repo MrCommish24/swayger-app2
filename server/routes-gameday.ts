@@ -30,6 +30,7 @@ import { getServiceSupabase } from "./supabase-service.js";
 import { getNflTeamCatalog } from "./gameday-nfl-catalog.js";
 import { registerDiscordIdentityRoutes, resolveDiscordParticipantSession } from "./gameday-discord-identity.js";
 import { normalizePickType, getPickType, normalizeAtsLine, buildTeamPickDisplay } from "../lib/gameday-pick-type.js";
+import { buildMainResults, buildBonusGameResult, pickTypeLabel, winConditionLabel } from "../lib/gameday-final-results.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
 // Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
@@ -5955,7 +5956,7 @@ export function registerGamedayRoutes(app: Express) {
       const participantIds = (participants ?? []).map((p: any) => p.id);
       const { data: standingCards } = await supabase
         .from("gameday_pick_cards")
-        .select("id, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
+        .select("id, pick_type, display_order, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
         .eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap((card: any) =>
         (card.gameday_props ?? []).filter(
@@ -6035,6 +6036,27 @@ export function registerGamedayRoutes(app: Express) {
       }
 
       const winnerRows = leaderboard.filter((entry: any) => entry.is_winner);
+      // Additive Pick Card presentation data. Labels come from the shared
+      // helper so consumers never derive the opposite spread themselves.
+      const finalPickType = getPickType(
+        [...(standingCards ?? [])].sort(
+          (a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0),
+        )[0]?.pick_type,
+      );
+      const finalMainResults = isMaddenWeekly
+        ? buildMainResults(playableProps as any[], finalPickType)
+        : null;
+      const finalBonus = isMaddenWeekly
+        ? serializeWeeklyPickCardBonus(playableProps, leaderboard)
+        : null;
+      const finalBonusGame = isMaddenWeekly
+        ? buildBonusGameResult(
+            playableProps as any[],
+            finalPickType,
+            [(room as any).format_config?.bonus?.game?.team_a, (room as any).format_config?.bonus?.game?.team_b]
+              .filter((team): team is string => typeof team === "string"),
+          )
+        : null;
       res.json({
         finalized: true,
         room_id: roomId,
@@ -6049,6 +6071,22 @@ export function registerGamedayRoutes(app: Express) {
           room_name: (room as any).room_name,
         },
         scoring_mode: scoringMode,
+        ...(isMaddenWeekly
+          ? {
+              pick_type: finalPickType,
+              pick_type_label: pickTypeLabel(finalPickType),
+              win_condition_label: winConditionLabel(scoringMode),
+              main_results: finalMainResults,
+              main_summary: {
+                total_main_props: totalRequiredProps,
+                settled_main_props: scoringProps.filter((prop: any) => prop.status === "settled").length,
+                top_correct_picks: leaderboard.reduce(
+                  (max: number, entry: any) => Math.max(max, entry.correct_picks ?? 0),
+                  0,
+                ),
+              },
+            }
+          : {}),
         all_props_settled: allPropsSettled,
         winner_determined: isMaddenWeekly
           ? allRequiredPropsSettled
@@ -6058,8 +6096,15 @@ export function registerGamedayRoutes(app: Express) {
         winner_participant_ids: winnerRows.map((entry: any) => entry.participant_id),
         tie: winnerRows.length > 1,
         leaderboard,
-        ...(isMaddenWeekly
-          ? { bonus: serializeWeeklyPickCardBonus(playableProps, leaderboard) }
+        ...(isMaddenWeekly && finalBonus
+          ? {
+              bonus: {
+                ...finalBonus,
+                game: finalBonus.game
+                  ? { ...finalBonus.game, result: finalBonusGame }
+                  : null,
+              },
+            }
           : {}),
         total_participants: (participants ?? []).length,
         total_props: playableProps.length,

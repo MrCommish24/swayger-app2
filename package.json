@@ -20,6 +20,7 @@
     "test:gameday:discord": "npx tsx server/test-gameday-discord-isolation.ts",
     "test:gameday:discord-identity": "npx tsx server/test-gameday-discord-identity.ts",
     "test:gameday:pick-type": "npx tsx server/test-gameday-pick-type.ts",
+    "test:gameday:final-results": "npx tsx server/test-gameday-final-results.ts",
     "test:gameday:visibility": "npx tsx server/test-gameday-discord-visibility.ts",
     "test:gameday:subscriptions": "npx tsx server/test-gameday-discord-subscriptions.ts",
     "test:gameday:nfl": "npx tsx server/test-gameday-nfl-v1.ts",

@@ -50,3 +50,15 @@ values. Include team-based Bonus Game in the same mode; exact-total bonus stays
 separate. V1 excludes mixed types, over/under, player props, automatic ATS results
 and first-class pushes. Integer pushes stay a manual league-rule decision, never
 automatic both-correct/no-action. Preserve submission-time receipt snapshots.
+
+Final Pick Card results must distinguish the main score from Bonus Game and
+exact Total Points, even when all required props are settled. Summary and standings
+come before matchup detail; share images use the card name/mode, not room-level teams.
+
+**Why:** The user's pilot had six main matchups plus two bonus props; all eight
+were settled but a main score of 3/6 was correct. The inherited single-game
+receipt incorrectly showed null team names for a multi-matchup card.
+
+**How to apply:** Keep the main denominator main-only. Expose resolved team
+labels centrally for web and bot consumers; don't have consumers derive ATS
+opponents or infer mode from line text. Preserve valid single-game team headers.
