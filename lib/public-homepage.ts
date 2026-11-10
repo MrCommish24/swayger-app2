@@ -5,6 +5,13 @@ export function isPublicHomepage(platform: string, pathname: string, hasSession:
   return platform === "web" && pathname === "/" && !hasSession;
 }
 
+/** Presentation only: do not alter session state or auth return destinations. */
+export function homepageAccountLink(hasSession: boolean) {
+  return hasSession
+    ? { label: "Dashboard", href: "/" }
+    : { label: "Sign In", href: "/auth" };
+}
+
 export const PUBLIC_SITE_ORIGIN = "https://www.swayger.app";
 export const PUBLIC_HOME_TITLE = "Swayger — Make sports talk competitive.";
 export const PUBLIC_HOME_DESCRIPTION =

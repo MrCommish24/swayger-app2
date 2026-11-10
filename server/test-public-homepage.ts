@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { isPublicHomepage } from "../lib/public-homepage";
+import { isPublicHomepage, homepageAccountLink } from "../lib/public-homepage";
 import { injectPublicMetadata, publicSitemap } from "./public-site";
 
 let passed = 0;
@@ -10,6 +10,8 @@ function check(name: string, value: unknown) {
   console.log(`PASS ${name}`);
 }
 const read = (path: string) => fs.readFileSync(path, "utf8");
+check("anonymous header links to existing auth route", homepageAccountLink(false).href === "/auth" && homepageAccountLink(false).label === "Sign In");
+check("authenticated header links to existing root dashboard", homepageAccountLink(true).href === "/" && homepageAccountLink(true).label === "Dashboard");
 for (const platform of ["web", "ios", "android"]) {
   for (const route of ["/", "/auth", "/auth-callback", "/username-setup", "/g/CODE", "/gameday", "/gameday/room", "/fantasy/join/league/season", "/invite/CODE", "/admin"]) {
     for (const signedIn of [false, true]) {

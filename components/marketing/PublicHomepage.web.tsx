@@ -4,7 +4,8 @@ import SwaygerMark from "@/components/SwaygerMark";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 import type { GDLeaderboardEntry } from "@/lib/gameday-api";
 import Head from "expo-router/head";
-import { PUBLIC_SITE_ORIGIN, PUBLIC_HOME_TITLE, PUBLIC_HOME_DESCRIPTION } from "@/lib/public-homepage";
+import { PUBLIC_SITE_ORIGIN, PUBLIC_HOME_TITLE, PUBLIC_HOME_DESCRIPTION, homepageAccountLink } from "@/lib/public-homepage";
+import { useAuth } from "@/lib/auth-context";
 
 const C = Colors.dark;
 
@@ -50,7 +51,10 @@ const styles = `
   }
   .swayger-home .skip:focus { transform: translateY(0); }
   .swayger-home .topbar { position: relative; z-index: 2; border-bottom: 1px solid rgba(255,255,255,.09); }
-  .swayger-home .nav { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .swayger-home .nav { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .swayger-home .header-actions { display: flex; align-items: center; gap: 18px; margin-left: auto; flex-shrink: 0; }
+  .swayger-home .account-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--paper); font-size: 14px; text-decoration: underline; text-underline-offset: 4px; white-space: nowrap; }
+  .swayger-home .account-link:hover { color: #AEBBFF; }
   .swayger-home .brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; }
   .swayger-home .brand-word { font-size: 24px; letter-spacing: .055em; line-height: 1; }
   .swayger-home .nav-links { display: flex; gap: clamp(18px, 3vw, 38px); align-items: center; }
@@ -183,10 +187,13 @@ const styles = `
   }
   @media (max-width: 650px) {
     .swayger-home .wrap { width: min(100% - 36px, 520px); }
-    .swayger-home .nav { min-height: 68px; }
-    .swayger-home .brand-word { font-size: 21px; }
+    .swayger-home .nav { min-height: 68px; gap: 10px 12px; padding-block: 8px; }
+    .swayger-home .header-actions { gap: 10px; }
+    .swayger-home .account-link { font-size: 13px; }
+    .swayger-home .brand-word { font-size: 18px; }
+    .swayger-home .brand { gap: 7px; }
     .swayger-home .nav-links { display: none; }
-    .swayger-home .nav-cta { padding: 10px 12px; font-size: 10px; }
+    .swayger-home .nav-cta { padding: 10px 8px; font-size: 10px; }
     .swayger-home .hero { display: flex; flex-direction: column; align-items: stretch; gap: 54px; padding-block: 59px 82px; }
     .swayger-home h1 { font-size: clamp(68px, 18vw, 96px); margin-top: 22px; }
     .swayger-home .hero-line { font-size: 16px; }
@@ -232,6 +239,8 @@ const styles = `
 `;
 
 export default function PublicHomepage() {
+  const { session } = useAuth();
+  const accountLink = homepageAccountLink(!!session);
   return (
     <div className="swayger-home">
       <Head>
@@ -267,7 +276,10 @@ export default function PublicHomepage() {
             <a href="#community">For your group</a>
             <a href="#organizers">For organizers</a>
           </nav>
-          <a className="nav-cta medium" href="/gameday">Play Swayger <span aria-hidden="true">↗</span></a>
+          <div className="header-actions">
+            <a className="account-link medium" href={accountLink.href}>{accountLink.label}</a>
+            <a className="nav-cta medium" href="/gameday">Play Swayger <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </header>
 
