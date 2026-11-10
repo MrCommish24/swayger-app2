@@ -33,6 +33,7 @@ import { registerPushToken, registerOneSignalUser } from "@/lib/notifications";
 import { identifyUser, resetUser, capture } from "@/lib/posthog";
 
 import Colors from "@/constants/colors";
+import { isPublicHomepage } from "@/lib/public-homepage";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -72,6 +73,7 @@ function useProtectedRoute() {
     const inPicks = segments[0] === "picks";   // Browse-first: auth wall fires at submit time
 
     if (inAuthCallback) return;
+    if (isPublicHomepage(Platform.OS, pathname, !!session)) return;
     if (inMMPickLanding) return;
     // Unauthenticated invite visitors get preview mode — no redirect to /auth.
     // Authenticated visitors with needsUsername still fall through to /username-setup.

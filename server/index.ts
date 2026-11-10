@@ -14,6 +14,7 @@ import {
 import { registerGamedayShortLink } from "./gameday-short-link";
 import { registerFantasyReceiptShortLink } from "./fantasy-receipt-short-link";
 import { registerFantasyPickShareShortLink } from "./fantasy-pick-share-short-link";
+import { injectPublicMetadata, publicSitemap } from "./public-site";
 
 const app = express();
 const log = console.log;
@@ -277,7 +278,7 @@ function serveLandingPage({
     .replace(/APP_NAME_PLACEHOLDER/g, appName);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.status(200).send(html);
+  res.status(200).send(injectPublicMetadata(html));
 }
 
 function configureExpoAndLanding(app: express.Application) {
@@ -300,6 +301,9 @@ function configureExpoAndLanding(app: express.Application) {
   app.get("/robots.txt", (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/plain");
     res.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
+  });
+  app.get("/sitemap.xml", (_req: Request, res: Response) => {
+    res.type("application/xml").send(publicSitemap());
   });
 
   // OneSignal service worker — required for web push subscriptions in Chrome/Edge/Firefox
@@ -338,10 +342,15 @@ function configureExpoAndLanding(app: express.Application) {
       const webIndexPath = path.resolve(process.cwd(), "dist", "index.html");
       if (fs.existsSync(webIndexPath)) {
         let html = fs.readFileSync(webIndexPath, "utf-8");
-        html = injectSeoTags(html);
+        html = injectPublicMetadata(html);
         html = injectOneSignal(html);
-        const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
+        // Preserve the existing signed-in root footer. PublicHomepage hides
+        // only this legacy footer while its own accessible footer is mounted.
+        const privacyFooter = `<footer id="swayger-privacy-footer" style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
         html = html.replace("</body>", `${privacyFooter}</body>`);
+        // Useful crawlable content when scripts are unavailable; does not compete
+        // with the authenticated dashboard or the client-rendered public page.
+        html = html.replace("</body>", `<noscript><main><h1>Make sports talk competitive.</h1><p>Make your picks. Prove your takes. Keep the receipts.</p><p>The competitive prediction layer for sports communities.</p><p>Game Day · Fantasy · 1v1</p><a href="/how-it-works">See How It Works</a><p>Enable JavaScript to play Swayger.</p></main></noscript></body>`);
         res.setHeader("Content-Type", "text/html");
         return res.send(html);
       }

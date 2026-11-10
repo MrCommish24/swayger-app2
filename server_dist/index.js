@@ -20159,6 +20159,56 @@ function registerCommercialRoutes(app2) {
 }
 
 // server/routes.ts
+import * as fs3 from "node:fs";
+
+// lib/public-homepage.ts
+var PUBLIC_SITE_ORIGIN = "https://www.swayger.app";
+var PUBLIC_HOME_TITLE = "Swayger \u2014 Make sports talk competitive.";
+var PUBLIC_HOME_DESCRIPTION = "Make your picks. Prove your takes. Keep the receipts. The competitive prediction layer for sports communities. Play Game Day, Fantasy, and 1v1.";
+
+// server/public-site.ts
+var PUBLIC_ORIGIN = PUBLIC_SITE_ORIGIN;
+var HOME_TITLE = PUBLIC_HOME_TITLE;
+var HOME_DESCRIPTION = PUBLIC_HOME_DESCRIPTION;
+function publicMetadata(pathname = "/") {
+  const title = pathname === "/" ? HOME_TITLE : "How Swayger Works \u2014 Pick. Lock. Compete. Settle. Share.";
+  const description = pathname === "/" ? HOME_DESCRIPTION : "See how Game Day, Fantasy, and 1v1 turn sports predictions into competition with locked picks, standings, and shareable receipts.";
+  const url = `${PUBLIC_ORIGIN}${pathname}`;
+  const image = `${PUBLIC_ORIGIN}/assets/marketing/swayger-social.png`;
+  return `<title>${title}</title>
+<meta name="description" content="${description}" />
+<meta name="robots" content="index, follow" />
+<meta name="theme-color" content="#09090B" />
+<link rel="canonical" href="${url}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Swayger" />
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${description}" />
+<meta property="og:url" content="${url}" />
+<meta property="og:image" content="${image}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Swayger. Make sports talk competitive. Make your picks. Prove your takes. Keep the receipts." />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${title}" />
+<meta name="twitter:description" content="${description}" />
+<meta name="twitter:image" content="${image}" />`.replace(/<(title|meta|link)\b/g, '<$1 data-rh="true"');
+}
+function injectPublicMetadata(html, pathname = "/") {
+  const clean = html.replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, "").replace(/<meta\b[^>]*(?:name=["'](?:description|robots|theme-color|twitter:[^"']+)["']|property=["']og:[^"']+["'])[^>]*>/gi, "").replace(/<link\b[^>]*rel=["']canonical["'][^>]*>/gi, "");
+  return clean.replace("</head>", `${publicMetadata(pathname)}
+</head>`);
+}
+function publicSitemap() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>${PUBLIC_ORIGIN}/</loc></url>
+<url><loc>${PUBLIC_ORIGIN}/how-it-works</loc></url>
+<url><loc>${PUBLIC_ORIGIN}/privacy</loc></url>
+</urlset>`;
+}
+
+// server/routes.ts
 function getSupabase4() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -20169,7 +20219,8 @@ async function registerRoutes(app2) {
     res2.sendFile(path3.resolve(process.cwd(), "server/templates/promo.html"));
   });
   app2.get("/how-it-works", (_req, res2) => {
-    res2.sendFile(path3.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"));
+    const html = fs3.readFileSync(path3.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"), "utf-8");
+    res2.type("html").send(injectPublicMetadata(html, "/how-it-works"));
   });
   app2.get("/api/config", (_req, res2) => {
     const domains = (process.env.REPLIT_DOMAINS || "").split(",").map((d) => d.trim()).filter(Boolean);
@@ -20375,7 +20426,7 @@ async function registerRoutes(app2) {
 
 // server/mm-scheduler.ts
 init_email();
-import * as fs3 from "fs";
+import * as fs4 from "fs";
 import * as path4 from "path";
 import { createClient as createClient8 } from "@supabase/supabase-js";
 
@@ -20581,8 +20632,8 @@ async function checkAndAutoScore() {
 var STATE_FILE = path4.resolve(process.cwd(), "mm-email-state.json");
 function loadState() {
   try {
-    if (fs3.existsSync(STATE_FILE)) {
-      const saved = JSON.parse(fs3.readFileSync(STATE_FILE, "utf-8"));
+    if (fs4.existsSync(STATE_FILE)) {
+      const saved = JSON.parse(fs4.readFileSync(STATE_FILE, "utf-8"));
       saved.pre_lock.mar19_last_chance ??= false;
       saved.pre_lock.mar19_10am_leaderboard ??= false;
       saved.score_emails ??= {
@@ -20653,7 +20704,7 @@ function loadState() {
 }
 function saveState(state) {
   try {
-    fs3.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    fs4.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (e) {
     console.error("[mm-scheduler] Failed to save state:", e);
   }
@@ -21117,7 +21168,7 @@ function registerUnsubscribeRoutes(app2) {
 
 // server/index.ts
 init_email();
-import * as fs4 from "fs";
+import * as fs5 from "fs";
 import * as path5 from "path";
 import { createClient as createClient10 } from "@supabase/supabase-js";
 
@@ -21446,7 +21497,7 @@ function injectOneSignal(html) {
 function getAppName() {
   try {
     const appJsonPath = path5.resolve(process.cwd(), "app.json");
-    const appJsonContent = fs4.readFileSync(appJsonPath, "utf-8");
+    const appJsonContent = fs5.readFileSync(appJsonPath, "utf-8");
     const appJson = JSON.parse(appJsonContent);
     return appJson.expo?.name || "App Landing Page";
   } catch {
@@ -21460,13 +21511,13 @@ function serveExpoManifest(platform, res2) {
     platform,
     "manifest.json"
   );
-  if (!fs4.existsSync(manifestPath)) {
+  if (!fs5.existsSync(manifestPath)) {
     return res2.status(404).json({ error: `Manifest not found for platform: ${platform}` });
   }
   res2.setHeader("expo-protocol-version", "1");
   res2.setHeader("expo-sfv-version", "0");
   res2.setHeader("content-type", "application/json");
-  const manifest = fs4.readFileSync(manifestPath, "utf-8");
+  const manifest = fs5.readFileSync(manifestPath, "utf-8");
   res2.send(manifest);
 }
 function serveLandingPage({
@@ -21485,7 +21536,7 @@ function serveLandingPage({
   log(`expsUrl`, expsUrl);
   const html = landingPageTemplate.replace(/BASE_URL_PLACEHOLDER/g, baseUrl).replace(/EXPS_URL_PLACEHOLDER/g, expsUrl).replace(/APP_NAME_PLACEHOLDER/g, appName);
   res2.setHeader("Content-Type", "text/html; charset=utf-8");
-  res2.status(200).send(html);
+  res2.status(200).send(injectPublicMetadata(html));
 }
 function configureExpoAndLanding(app2) {
   const templatePath = path5.resolve(
@@ -21494,10 +21545,10 @@ function configureExpoAndLanding(app2) {
     "templates",
     "landing-page.html"
   );
-  const landingPageTemplate = fs4.readFileSync(templatePath, "utf-8");
+  const landingPageTemplate = fs5.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
   const privacyPolicyPath = path5.resolve(process.cwd(), "server", "templates", "privacy-policy.html");
-  const privacyPolicyHtml = fs4.readFileSync(privacyPolicyPath, "utf-8");
+  const privacyPolicyHtml = fs5.readFileSync(privacyPolicyPath, "utf-8");
   app2.get("/privacy", (_req, res2) => {
     res2.setHeader("Content-Type", "text/html; charset=utf-8");
     res2.status(200).send(privacyPolicyHtml);
@@ -21505,6 +21556,9 @@ function configureExpoAndLanding(app2) {
   app2.get("/robots.txt", (_req, res2) => {
     res2.setHeader("Content-Type", "text/plain");
     res2.send("User-agent: *\nAllow: /\nSitemap: https://www.swayger.app/sitemap.xml\n");
+  });
+  app2.get("/sitemap.xml", (_req, res2) => {
+    res2.type("application/xml").send(publicSitemap());
   });
   app2.get("/OneSignalSDKWorker.js", (_req, res2) => {
     res2.setHeader("Content-Type", "application/javascript");
@@ -21529,12 +21583,13 @@ function configureExpoAndLanding(app2) {
     }
     if (req.path === "/") {
       const webIndexPath = path5.resolve(process.cwd(), "dist", "index.html");
-      if (fs4.existsSync(webIndexPath)) {
-        let html = fs4.readFileSync(webIndexPath, "utf-8");
-        html = injectSeoTags(html);
+      if (fs5.existsSync(webIndexPath)) {
+        let html = fs5.readFileSync(webIndexPath, "utf-8");
+        html = injectPublicMetadata(html);
         html = injectOneSignal(html);
-        const privacyFooter = `<footer style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
+        const privacyFooter = `<footer id="swayger-privacy-footer" style="position:fixed;bottom:0;width:100%;text-align:center;padding:8px;font-family:sans-serif;font-size:12px;color:#64748b;background:#0B1120;z-index:0;"><a href="/privacy" style="color:#1DA1F2;text-decoration:none;">Privacy Policy</a></footer>`;
         html = html.replace("</body>", `${privacyFooter}</body>`);
+        html = html.replace("</body>", `<noscript><main><h1>Make sports talk competitive.</h1><p>Make your picks. Prove your takes. Keep the receipts.</p><p>The competitive prediction layer for sports communities.</p><p>Game Day \xB7 Fantasy \xB7 1v1</p><a href="/how-it-works">See How It Works</a><p>Enable JavaScript to play Swayger.</p></main></noscript></body>`);
         res2.setHeader("Content-Type", "text/html");
         return res2.send(html);
       }
@@ -21556,8 +21611,8 @@ function configureExpoAndLanding(app2) {
       return next();
     }
     const webIndexPath = path5.resolve(process.cwd(), "dist", "index.html");
-    if (fs4.existsSync(webIndexPath)) {
-      let html = fs4.readFileSync(webIndexPath, "utf-8");
+    if (fs5.existsSync(webIndexPath)) {
+      let html = fs5.readFileSync(webIndexPath, "utf-8");
       html = injectSeoTags(html);
       html = injectOneSignal(html);
       res2.setHeader("Content-Type", "text/html");

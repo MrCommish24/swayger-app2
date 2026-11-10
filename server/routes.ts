@@ -11,6 +11,8 @@ import { registerGamedayRoutes } from "./routes-gameday";
 import { registerFantasyRoutes } from "./routes-fantasy";
 import { registerImpactRoutes } from "./routes-impact";
 import { registerCommercialRoutes } from "./routes-commercial";
+import * as fs from "node:fs";
+import { injectPublicMetadata } from "./public-site";
 
 function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
@@ -23,7 +25,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendFile(path.resolve(process.cwd(), "server/templates/promo.html"));
   });
   app.get("/how-it-works", (_req: Request, res: Response) => {
-    res.sendFile(path.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"));
+    const html = fs.readFileSync(path.resolve(process.cwd(), "server/templates/swayger-how-it-works.html"), "utf-8");
+    res.type("html").send(injectPublicMetadata(html, "/how-it-works"));
   });
   app.get("/api/config", (_req: Request, res: Response) => {
     const domains = (process.env.REPLIT_DOMAINS || "")

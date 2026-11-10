@@ -14,6 +14,9 @@ config.resolver = {
     /\/.local\/skills\/\.tmp-.*/,
     /\/.local\/secondary_skills\/\.tmp-.*/,
     /\/\.git\/.*/,
+    // Screenshot delivery creates short-lived copy directories; watching one
+    // after it is removed crashes Metro's fallback file watcher.
+    /\/attached_assets\/testing_screenshot\/.*/,
   ],
 };
 
@@ -35,11 +38,14 @@ config.server = {
       : metroMiddleware;
 
     return (req, res, next) => {
+      const pathname = req.url?.split("?")[0];
       if (
         req.url === "/api"
         || req.url?.startsWith("/api/")
         || req.url === "/p"
         || req.url?.startsWith("/p/")
+        || ["/how-it-works", "/privacy", "/robots.txt", "/sitemap.xml"].includes(pathname)
+        || pathname?.startsWith("/assets/marketing/")
       ) {
         // http-proxy-middleware forwards the incoming request headers
         // (including Authorization, guest-token, and content headers) and

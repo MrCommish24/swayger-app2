@@ -48,3 +48,4 @@
 - [Swayger Run V1A](gameday-swayger-run-v1a.md) — presentation-only Weekly focus UX is league-allowlisted; confirmed picks remain the sole progress/completion source.
 - [Swayger Run V1B](gameday-swayger-run-v1b.md) — persisted My Lock stays feature-gated, verified-identity only, and separate from picks, scoring, settlement, and share privacy.
 - [Swayger Run V1C](gameday-swayger-run-v1c.md) — pick-share aliases snapshot stable answer identity and share kind; never reuse finalized receipt aliases or mutable live picks.
+- [Public homepage boundaries](public-homepage-boundaries.md) — signed-out web only; three product modes, consumer-sports positioning, and no fabricated social proof.

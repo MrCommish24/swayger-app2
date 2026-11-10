@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,6 +7,8 @@ import SwaygerMark from "@/components/SwaygerMark";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
+import { isPublicHomepage } from "@/lib/public-homepage";
+import PublicHomepage from "@/components/marketing/PublicHomepage";
 import AppFeedbackModal, {
   shouldShowAppFeedbackPrompt,
   markAppFeedbackPromptShown,
@@ -127,7 +129,8 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  const { profile } = useAuth();
+  const { profile, session, isLoading } = useAuth();
+  const pathname = usePathname();
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   // ─── App-open feedback prompt ─────────────────────────────────────────────
@@ -145,6 +148,11 @@ export default function TabLayout() {
     return () => clearTimeout(timer);
   }, [profile?.created_at]);
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Keep the app navigator, dashboard queries and tab bar out of the public page.
+  // Wait for session restoration so returning members never see a marketing flash.
+  if (Platform.OS === "web" && pathname === "/" && isLoading) return null;
+  if (isPublicHomepage(Platform.OS, pathname, !!session)) return <PublicHomepage />;
 
   return (
     <>
