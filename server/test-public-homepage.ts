@@ -54,6 +54,7 @@ check("manual result confirmation is explicit", page.includes("hosts and commiss
 const experienceCopy = read("lib/public-homepage.ts");
 check("guest and invitation behavior is disclosed", experienceCopy.includes("Room invites still open directly") && experienceCopy.includes("commissioner’s invite"));
 const modeProofs = read("components/marketing/HomepageModeProofs.web.tsx");
+check("real proof components are connected to the homepage", page.includes("<FantasyModeProof />") && page.includes("<OneVsOneModeProof />"));
 check("Fantasy proof reuses the existing pick and lock UI", modeProofs.includes('from "@/components/fantasy/AnswerSelector"') && modeProofs.includes("isLocked"));
 check("Fantasy proof reuses the existing receipt and standings UI", modeProofs.includes('from "@/components/fantasy/CompactCompetitionReceipt"'));
 check("1v1 proof reuses the existing receipt UI", modeProofs.includes('from "@/components/ReceiptCard"'));

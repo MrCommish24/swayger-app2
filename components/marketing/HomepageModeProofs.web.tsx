@@ -30,6 +30,7 @@ export function FantasyModeProof() {
         <span>LOCKED EXAMPLE</span>
       </div>
       <div className="mode-proof-picker">
+        <p style={{ color: "#fafafa", marginBottom: 12 }}>Who wins the AFC North?</p>
         <AnswerSelector
           options={fantasyPickOptions}
           selectedId="baltimore"

@@ -117,7 +117,7 @@ test("real product proof components fit the viewport at mobile and desktop width
   }
 });
 
-test("public root never intercepts invite, Fantasy join or guest room destinations", async ({ page }) => {
+test("public root never intercepts invite, Fantasy join or guest room destinations", async ({ page, request }) => {
   // Invalid identifiers deliberately avoid creating or changing gameplay data.
   for (const path of ["/invite/AUDITINVALID", "/fantasy/join/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000?wn=2", "/gameday/00000000-0000-0000-0000-000000000000"]) {
     await page.goto(path);
@@ -126,6 +126,11 @@ test("public root never intercepts invite, Fantasy join or guest room destinatio
     expect(new URL(page.url()).pathname).not.toBe("/");
     expect(new URL(page.url()).pathname).not.toBe("/auth");
   }
+  // /g/:code is Express-owned and is not forwarded by the existing Metro proxy.
+  // Verify its unchanged invalid-code response at the backend without creating a room.
+  const shortLink = await request.get(`${process.env.E2E_BACKEND_URL ?? "http://127.0.0.1:5000"}/g/AUDITINVALID`, { maxRedirects: 0 });
+  expect(shortLink.status()).toBe(404);
+  expect(await shortLink.text()).toBe("Room not found");
   await page.goto("/auth");
   await expect(page.getByText("Continue with Google")).toBeVisible();
   await expect(page.locator(".swayger-home")).toHaveCount(0);

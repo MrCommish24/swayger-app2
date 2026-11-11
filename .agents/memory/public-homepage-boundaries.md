@@ -24,3 +24,12 @@ with explicitly labeled example data are distinct from claims of real results.
 
 **How to apply:** Preserve the supplied headline and positioning quotations in
 future edits; use the active mark rather than old glowing-S assets.
+
+Explain that organizers choose the format, invite participants, and manually
+confirm results. Swayger organizes picks, standings, and receipts; marketing
+must not imply fully automatic result confirmation.
+
+**Why:** The user explicitly required this distinction for homepage iteration.
+
+**How to apply:** Keep organizer and settlement explanations accurate when
+shortening copy or changing public CTAs.

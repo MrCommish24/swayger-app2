@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
+import { FantasyModeProof, OneVsOneModeProof } from "@/components/marketing/HomepageModeProofs.web";
 import type { GDLeaderboardEntry } from "@/lib/gameday-api";
 import Head from "expo-router/head";
 import {
@@ -47,7 +48,7 @@ const styles = `
   }
   .swayger-home, .swayger-home * { box-sizing: border-box; }
   .swayger-home a { color: inherit; }
-  .swayger-home a:focus-visible { outline: 3px solid var(--paper); outline-offset: 5px; border-radius: 4px; }
+  .swayger-home a:focus-visible, .swayger-home button:focus-visible { outline: 3px solid var(--paper); outline-offset: 5px; border-radius: 4px; }
   .swayger-home .display { font-family: "BarlowCondensed_800ExtraBold", "Barlow Condensed", sans-serif; font-weight: 800; }
   .swayger-home .medium { font-family: "DMSans_500Medium", "DM Sans", sans-serif; }
   .swayger-home .wrap { width: min(1160px, calc(100% - 48px)); margin-inline: auto; }
@@ -66,7 +67,7 @@ const styles = `
   .swayger-home .nav-links { display: flex; gap: clamp(18px, 3vw, 38px); align-items: center; }
   .swayger-home .nav-links a { text-decoration: none; color: #c3c4cd; font-size: 13px; transition: color .18s ease; }
   .swayger-home .nav-links a:hover { color: var(--paper); }
-  .swayger-home .nav-cta { text-decoration: none; border: 1px solid rgba(255,255,255,.27); padding: 11px 17px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s ease, color .2s ease, border-color .2s ease; }
+  .swayger-home .nav-cta { min-height: 44px; font-family: "DMSans_500Medium", sans-serif; cursor: pointer; text-decoration: none; border: 1px solid rgba(255,255,255,.27); padding: 11px 17px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s ease, color .2s ease, border-color .2s ease; }
   .swayger-home .nav-cta:hover { background: var(--paper); color: var(--ink); border-color: var(--paper); }
   .swayger-home .hero {
     position: relative; min-height: 675px; display: grid; grid-template-columns: 1.08fr .92fr;
@@ -93,8 +94,8 @@ const styles = `
   .swayger-home .button-outline:hover { border-color: rgba(255,255,255,.7); }
   .swayger-home .text-link { color: #aeb8ff; text-decoration-thickness: 1px; text-underline-offset: 5px; font-size: 13px; }
   .swayger-home .hero-art { min-width: 0; position: relative; animation: swayger-rise .85s .12s both; }
-  .swayger-home .art-stamp { position: absolute; z-index: 2; top: -22px; right: -16px; width: 104px; height: 104px; display: grid; place-items: center; border: 1px solid #5472F0; border-radius: 50%; color: #AEBBFF; transform: rotate(10deg); background: rgba(9,9,11,.7); }
-  .swayger-home .art-stamp span { font-size: 10px; line-height: 1.2; text-align: center; letter-spacing: .14em; text-transform: uppercase; }
+  .swayger-home .art-stamp { position: relative; width: fit-content; margin: 0 0 16px auto; padding: 9px 13px; border: 1px solid #5472F0; border-radius: 999px; color: #AEBBFF; background: rgba(9,9,11,.7); }
+  .swayger-home .art-stamp span { font-size: 9px; line-height: 1.2; white-space: nowrap; letter-spacing: .1em; text-transform: uppercase; }
   .swayger-home .receipt-frame { position: relative; padding: 20px; background: linear-gradient(145deg, #262735, #12131a 72%); border: 1px solid rgba(255,255,255,.14); box-shadow: 22px 22px 0 rgba(67,97,238,.17); transform: rotate(1.3deg); }
   .swayger-home .receipt-caption { display: flex; justify-content: space-between; gap: 12px; color: #bbbcc7; font-size: 9px; letter-spacing: .15em; text-transform: uppercase; margin-bottom: 15px; }
   .swayger-home .receipt-preview { display: flex; justify-content: center; overflow: hidden; }
@@ -127,7 +128,7 @@ const styles = `
   .swayger-home .modes h2, .swayger-home .community h2, .swayger-home .organizers h2, .swayger-home .final h2 { font-size: clamp(52px, 7vw, 88px); text-transform: uppercase; line-height: .86; letter-spacing: -.025em; margin: 13px 0 0; }
   .swayger-home .modes-sub { max-width: 280px; color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 3px; }
   .swayger-home .mode-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .swayger-home .mode-card { min-height: 342px; position: relative; overflow: hidden; padding: 27px; border: 1px solid rgba(255,255,255,.12); background: #17181f; display: flex; flex-direction: column; justify-content: space-between; transition: transform .22s ease, border-color .22s ease, background .22s ease; }
+  .swayger-home .mode-card { min-height: 342px; position: relative; overflow: hidden; padding: 27px; border: 1px solid rgba(255,255,255,.12); background: #17181f; display: flex; flex-direction: column; justify-content: flex-start; transition: transform .22s ease, border-color .22s ease, background .22s ease; }
   .swayger-home .mode-card:hover { transform: translateY(-6px); border-color: rgba(116,136,255,.7); background: #1c1e29; }
   .swayger-home .mode-card:after { content: ""; position: absolute; width: 230px; height: 230px; border: 1px solid rgba(255,255,255,.08); border-radius: 50%; right: -102px; top: -106px; box-shadow: 0 0 0 26px rgba(255,255,255,.025), 0 0 0 52px rgba(255,255,255,.018); }
   .swayger-home .mode-index { color: #9698a4; font-size: 10px; letter-spacing: .15em; }
@@ -137,6 +138,16 @@ const styles = `
   .swayger-home .mode-link { display: inline-flex; align-items: center; gap: 13px; width: fit-content; margin-top: 27px; text-decoration: none; color: #b4beff; text-transform: uppercase; font-size: 10px; letter-spacing: .13em; }
   .swayger-home .mode-link span { font-size: 18px; transition: transform .2s ease; }
   .swayger-home .mode-link:hover span { transform: translateX(5px); }
+  .swayger-home .mode-proof-viewport { min-width: 0; overflow: hidden; display: flex; justify-content: center; margin-top: 24px; }
+  .swayger-home .fantasy-proof-viewport { height: 500px; }
+  .swayger-home .onevone-proof-viewport { height: 350px; }
+  .swayger-home .gameday-proof-viewport { height: 420px; }
+  .swayger-home .mode-proof-gameday { flex: 0 0 340px; width: 340px; transform: scale(.83); transform-origin: top center; }
+  .swayger-home .mode-proof-stack { flex: 0 0 360px; width: 360px; transform: scale(.77); transform-origin: top center; }
+  .swayger-home .mode-proof-single { flex: 0 0 320px; width: 320px; transform: scale(.88); transform-origin: top center; }
+  .swayger-home .mode-proof-label { display: flex; justify-content: space-between; gap: 10px; margin: 16px 0 10px; color: #b4beff; font-size: 10px; letter-spacing: .06em; }
+  .swayger-home .mode-proof-picker { padding: 14px; border: 1px solid rgba(255,255,255,.15); border-radius: 12px; background: #101116; }
+  .swayger-home .proof-disclosure { margin-top: 18px; color: #a5a6b0; font-size: 11px; line-height: 1.6; }
   .swayger-home .community { position: relative; padding: 94px 0 101px; background: #202b62; overflow: hidden; }
   .swayger-home .community:after { content: ""; position: absolute; width: 580px; height: 580px; right: -140px; top: -240px; border: 1px solid rgba(255,255,255,.13); border-radius: 50%; box-shadow: 0 0 0 38px rgba(255,255,255,.035), 0 0 0 77px rgba(255,255,255,.025), 0 0 0 116px rgba(255,255,255,.02); pointer-events: none; }
   .swayger-home .community-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr .8fr; align-items: center; gap: 8vw; }
@@ -204,11 +215,14 @@ const styles = `
   .swayger-home .experience-disclosure { margin: 19px 0 0; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.13); color: #d7d8df; font-size: 12px; line-height: 1.65; }
   .swayger-home .experience-disclosure strong { color: #fff; }
   @keyframes swayger-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  @media (max-width: 1100px) {
+    .swayger-home .mode-list { grid-template-columns: 1fr; }
+    .swayger-home .mode-card { width: 100%; max-width: 620px; margin-inline: auto; }
+  }
   @media (max-width: 850px) {
     .swayger-home .hero { min-height: auto; grid-template-columns: 1fr .82fr; gap: 28px; padding-block: 72px 98px; }
     .swayger-home h1 { font-size: clamp(64px, 11vw, 96px); }
     .swayger-home .receipt-frame { padding: 13px; }
-    .swayger-home .art-stamp { width: 82px; height: 82px; right: -9px; }
     .swayger-home .mode-card { padding: 21px; min-height: 330px; }
     .swayger-home .community-grid { gap: 5vw; }
   }
@@ -261,6 +275,20 @@ const styles = `
     .swayger-home .experience-option p { max-width: none; }
     .swayger-home .experience-option a { margin-top: 10px; }
     .swayger-home .experience-dialog-inner { padding: 20px 18px; }
+  }
+  @media (max-width: 360px) {
+    .swayger-home h1 { font-size: 58px; }
+    .swayger-home .receipt-preview > div { transform: scale(.70); margin-bottom: -86px; }
+    .swayger-home .intro h2 { font-size: 46px; }
+    .swayger-home .process h2 { font-size: 54px; }
+    .swayger-home .modes h2, .swayger-home .community h2, .swayger-home .organizers h2 { font-size: 52px; }
+    .swayger-home .difference h2 { font-size: 49px; }
+    .swayger-home .final h2 { font-size: 58px; }
+    .swayger-home .mode-proof-stack { transform: scale(.64); }
+    .swayger-home .mode-proof-single { transform: scale(.72); }
+    .swayger-home .mode-proof-gameday { transform: scale(.68); }
+    .swayger-home .fantasy-proof-viewport { height: 440px; }
+    .swayger-home .onevone-proof-viewport { height: 310px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .swayger-home *, .swayger-home *:before, .swayger-home *:after {
@@ -366,7 +394,7 @@ export default function PublicHomepage() {
             </div>
           </div>
           <div className="hero-art">
-            <div className="art-stamp" aria-hidden="true"><span>Talk<br />is cheap.<br />Receipts<br />aren't.</span></div>
+            <div className="art-stamp" aria-hidden="true"><span>Talk is cheap. Receipts aren’t.</span></div>
             <div className="receipt-frame">
               <div className="receipt-caption"><span>Illustrative component preview</span><span>Example data</span></div>
               <div className="receipt-preview" aria-hidden="true">
@@ -374,12 +402,11 @@ export default function PublicHomepage() {
                   roomName="Sunday picks with the crew"
                   teamA="Ravens"
                   teamB="Bills"
-                  gameDate="2025-10-12"
                   scoringMode="most_correct"
                   leaderboard={exampleStandings}
                 />
               </div>
-              <p className="preview-note">A sample of the standings and shareable receipt. Names and scores are examples.</p>
+              <p className="preview-note">A real Swayger receipt component with illustrative names and scores. No personal or live competition data is shown.</p>
             </div>
           </div>
           <div className="scroll-mark" aria-hidden="true">The friendly competition starts here</div>
@@ -390,7 +417,6 @@ export default function PublicHomepage() {
             <div className="section-kicker">Sports are better together</div>
             <div>
               <h2 id="intro-title" className="display">The competitive prediction layer for sports communities.</h2>
-              <p>Turn the predictions your crew already makes into a friendly competition. Picks lock before the action, standings show how everyone did, and the receipts give the group something to talk about after.</p>
             </div>
           </div>
         </section>
@@ -402,13 +428,13 @@ export default function PublicHomepage() {
                 <div className="section-kicker">A take with a timestamp</div>
                 <h2 id="process-title" className="display">Call it.<br />Lock it.</h2>
               </div>
-              <p className="process-intro">No long setup. Just your call, the group, and a result everyone can see.</p>
+              <p className="process-intro">Make your call before the deadline. Your organizer confirms results; Swayger brings the competition together.</p>
             </div>
             <ol className="steps">
               <li><span className="step-num">01</span><div><h3 className="display">Pick</h3><p>Make the call on the game or matchup.</p></div></li>
               <li><span className="step-num">02</span><div><h3 className="display">Lock</h3><p>Your picks lock at the posted deadline.</p></div></li>
               <li><span className="step-num">03</span><div><h3 className="display">Compete</h3><p>See how your takes stack up with the group.</p></div></li>
-              <li><span className="step-num">04</span><div><h3 className="display">Settle</h3><p>Results are scored against the competition's rules.</p></div></li>
+              <li><span className="step-num">04</span><div><h3 className="display">Settle</h3><p>The organizer confirms results under the competition’s rules.</p></div></li>
               <li><span className="step-num">05</span><div><h3 className="display">Share</h3><p>Pass around the standings and keep the debate going.</p></div></li>
             </ol>
           </div>
@@ -426,17 +452,18 @@ export default function PublicHomepage() {
             <div className="mode-list">
               <article className="mode-card">
                 <div><div className="mode-index">01 / GAME DAY</div><div className="mode-icon" aria-hidden="true">G</div></div>
-                <div><h3 className="display">Game Day</h3><p>Make picks together around a game or slate. Great for an NFL Sunday, a Madden league, or your watch-party chat.</p><a className="mode-link" href="/gameday">Play Game Day <span aria-hidden="true">→</span></a></div>
+                <div><h3 className="display">Game Day</h3><p>One game or slate. One room. Make picks against your watch-party crew and follow the room standings—for an NFL Sunday, Madden matchup, or watch party.</p><a className="mode-link" href="/gameday">Open Game Day <span aria-hidden="true">→</span></a><div className="mode-proof-viewport gameday-proof-viewport"><div className="mode-proof-gameday"><GameDayReceiptCard roomName="Sunday picks with the crew" teamA="Ravens" teamB="Bills" scoringMode="most_correct" leaderboard={exampleStandings} /></div></div></div>
               </article>
               <article className="mode-card">
                 <div><div className="mode-index">02 / FANTASY</div><div className="mode-icon" aria-hidden="true">F</div></div>
-                <div><h3 className="display">Fantasy</h3><p>Give draft day and each week a little more friendly competition. Bring your league together around the picks.</p><a className="mode-link" href="/fantasy/setup">Set up Fantasy <span aria-hidden="true">→</span></a></div>
+                <div><h3 className="display">Fantasy</h3><p>Your existing league, from draft day through weekly pick cards. Commissioners set the card; league members compete across the season.</p><a className="mode-link" href={experienceChoices[1].href}>{experienceChoices[1].action} <span aria-hidden="true">→</span></a><div className="mode-proof-viewport fantasy-proof-viewport"><FantasyModeProof /></div></div>
               </article>
               <article className="mode-card">
                 <div><div className="mode-index">03 / HEAD TO HEAD</div><div className="mode-icon" aria-hidden="true">1:1</div></div>
-                <div><h3 className="display">1v1</h3><p>Challenge one friend and put your predictions side by side. Every call gets a clear moment to prove itself.</p><a className="mode-link" href="/auth">Start a 1v1 <span aria-hidden="true">→</span></a></div>
+                <div><h3 className="display">1v1</h3><p>One prediction. Two friends on opposite sides. Agree on the call, confirm the result, and keep the head-to-head receipt.</p><a className="mode-link" href={experienceChoices[2].href}>{experienceChoices[2].action} <span aria-hidden="true">→</span></a><div className="mode-proof-viewport onevone-proof-viewport"><OneVsOneModeProof /></div></div>
               </article>
             </div>
+            <p className="proof-disclosure">Product previews reuse actual Swayger components with illustrative data. They are examples, not live competitions or customer results.</p>
           </div>
         </section>
 
@@ -445,7 +472,7 @@ export default function PublicHomepage() {
             <div>
               <div className="section-kicker">Made for the people you watch with</div>
               <h2 id="community-title" className="display">Already have the group? Bring Swayger to it.</h2>
-              <p className="community-copy">Keep the community you already have. Swayger gives your group a place to make picks, see the standings, and share the proof—whether the conversation lives on Discord or in the stands.</p>
+              <p className="community-copy">Works alongside your Discord, watch party, fantasy league, or in-venue group. Invite people into the same competition, wherever the conversation happens.</p>
               <button className="button button-primary" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
             </div>
             <div className="community-board" aria-label="Communities that can compete">
@@ -464,7 +491,7 @@ export default function PublicHomepage() {
               <h2 id="difference-title" className="display">Good banter.<br />Better receipts.</h2>
             </div>
             <div>
-              <p className="difference-copy">The best sports takes happen among friends. Swayger makes them easy to call, fair to compare, and fun to revisit—without getting in the way of the game.</p>
+              <p className="difference-copy">A clear record matters more than the loudest take.</p>
               <div className="difference-list">
                 <div className="difference-row"><b>01</b><p><strong>Everyone gets a fair shot.</strong> Picks lock at the deadline, so the call is on record before the result.</p></div>
                 <div className="difference-row"><b>02</b><p><strong>See the whole picture.</strong> Standings and scoring make it clear how the group did.</p></div>
@@ -479,12 +506,11 @@ export default function PublicHomepage() {
             <div>
               <div className="section-kicker">For the friend who gets it going</div>
               <h2 id="organizers-title" className="display">Run the competition. Let Swayger handle the rest.</h2>
-              <p>Set up the format, invite your people, and make the rules clear from the start. Swayger keeps picks and standings together so you can get back to watching.</p>
-              <p>Hosts and commissioners stay in control of setup and result confirmation.</p>
+              <p>You choose the format, set the rules and deadlines, and invite your people. Swayger organizes their picks, standings, and shareable receipts.</p>
               <ul className="organizer-checks">
-                <li>Choose a format that fits your group.</li>
-                <li>Share the competition with the people you want in.</li>
-                <li>Review results and standings when the action is done.</li>
+                <li>You set up the competition and share its existing invitation link.</li>
+                <li>Swayger records picks and keeps the standings together.</li>
+                <li>You manually confirm results under the competition’s rules; Swayger turns them into standings and receipts.</li>
               </ul>
               <button className="button button-outline" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Choose a group format</button>
             </div>
