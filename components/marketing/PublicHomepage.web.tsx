@@ -1,10 +1,16 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
 import type { GDLeaderboardEntry } from "@/lib/gameday-api";
 import Head from "expo-router/head";
-import { PUBLIC_SITE_ORIGIN, PUBLIC_HOME_TITLE, PUBLIC_HOME_DESCRIPTION, homepageAccountLink } from "@/lib/public-homepage";
+import {
+  PUBLIC_SITE_ORIGIN,
+  PUBLIC_HOME_TITLE,
+  PUBLIC_HOME_DESCRIPTION,
+  homepageAccountLink,
+  homepageExperienceChoices,
+} from "@/lib/public-homepage";
 import { useAuth } from "@/lib/auth-context";
 
 const C = Colors.dark;
@@ -79,6 +85,7 @@ const styles = `
   .swayger-home .hero-line { color: #d7d8df; max-width: 470px; font-size: clamp(17px, 1.65vw, 20px); line-height: 1.55; margin: 0; }
   .swayger-home .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; margin-top: 34px; }
   .swayger-home .button { min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 13px; padding: 0 20px; text-decoration: none; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; font-family: "DMSans_500Medium", sans-serif; transition: transform .18s ease, background .18s ease, border-color .18s ease; }
+  .swayger-home button.button { border: 0; cursor: pointer; font: inherit; font-family: "DMSans_500Medium", "DM Sans", sans-serif; }
   .swayger-home .button:hover { transform: translateY(-3px); }
   .swayger-home .button-primary { background: var(--blue); color: #fff; }
   .swayger-home .button-primary:hover { background: #5472f0; }
@@ -176,6 +183,26 @@ const styles = `
   .swayger-home .footer-links { display: flex; gap: 23px; flex-wrap: wrap; }
   .swayger-home .footer-links a { color: #a5a6b0; font-size: 11px; text-decoration: none; }
   .swayger-home .footer-links a:hover { color: var(--paper); }
+  .swayger-home .experience-dialog {
+    width: min(760px, calc(100% - 32px)); max-width: 760px; max-height: min(88dvh, 760px);
+    padding: 0; overflow: auto; border: 1px solid rgba(255,255,255,.2);
+    color: var(--paper); background: #12131a; box-shadow: 0 28px 90px rgba(0,0,0,.6);
+  }
+  .swayger-home .experience-dialog::backdrop { background: rgba(5,6,10,.82); backdrop-filter: blur(5px); }
+  .swayger-home .experience-dialog-inner { padding: clamp(22px, 4vw, 38px); }
+  .swayger-home .experience-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  .swayger-home .experience-dialog h2 { max-width: 580px; margin: 12px 0 10px; font-size: clamp(38px, 6vw, 62px); line-height: .9; text-transform: uppercase; }
+  .swayger-home .experience-intro { max-width: 610px; margin: 0; color: #c3c4cd; font-size: 14px; line-height: 1.65; }
+  .swayger-home .experience-close { flex: 0 0 auto; width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.25); background: transparent; color: var(--paper); font-size: 24px; cursor: pointer; }
+  .swayger-home .experience-close:hover { background: rgba(255,255,255,.1); }
+  .swayger-home .experience-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 25px; }
+  .swayger-home .experience-option { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; padding: 18px; border: 1px solid rgba(255,255,255,.15); background: #191a22; }
+  .swayger-home .experience-option h3 { margin: 0 0 9px; font-size: 26px; line-height: .95; text-transform: uppercase; }
+  .swayger-home .experience-option p { flex: 1; margin: 0; color: #bfc0ca; font-size: 12px; line-height: 1.6; }
+  .swayger-home .experience-option a { display: inline-flex; align-items: center; min-height: 44px; margin-top: 16px; color: #b4beff; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-decoration: underline; text-underline-offset: 4px; text-transform: uppercase; }
+  .swayger-home .experience-option a:hover { color: #fff; }
+  .swayger-home .experience-disclosure { margin: 19px 0 0; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.13); color: #d7d8df; font-size: 12px; line-height: 1.65; }
+  .swayger-home .experience-disclosure strong { color: #fff; }
   @keyframes swayger-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @media (max-width: 850px) {
     .swayger-home .hero { min-height: auto; grid-template-columns: 1fr .82fr; gap: 28px; padding-block: 72px 98px; }
@@ -229,6 +256,11 @@ const styles = `
     .swayger-home .final h2 { font-size: 67px; }
     .swayger-home .footer-inner { align-items: flex-start; flex-direction: column; }
     .swayger-home .footer-links { gap: 18px; }
+    .swayger-home .experience-grid { grid-template-columns: 1fr; gap: 8px; }
+    .swayger-home .experience-option { padding: 16px; }
+    .swayger-home .experience-option p { max-width: none; }
+    .swayger-home .experience-option a { margin-top: 10px; }
+    .swayger-home .experience-dialog-inner { padding: 20px 18px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .swayger-home *, .swayger-home *:before, .swayger-home *:after {
@@ -241,6 +273,43 @@ const styles = `
 export default function PublicHomepage() {
   const { session } = useAuth();
   const accountLink = homepageAccountLink(!!session);
+  const experienceChoices = homepageExperienceChoices(!!session);
+  const [choiceIntent, setChoiceIntent] = useState<"play" | "organize">("play");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const activeTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (dialogOpen && !dialog.open) {
+      dialog.showModal();
+      closeButtonRef.current?.focus();
+    } else if (!dialogOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [dialogOpen]);
+
+  function openExperienceChoices(
+    intent: "play" | "organize",
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) {
+    activeTriggerRef.current = event.currentTarget;
+    setChoiceIntent(intent);
+    setDialogOpen(true);
+  }
+
+  function closeExperienceChoices() {
+    setDialogOpen(false);
+    requestAnimationFrame(() => activeTriggerRef.current?.focus());
+  }
+
+  const dialogTitle = choiceIntent === "organize" ? "Bring Swayger to your group." : "Choose how to compete.";
+  const dialogIntro = choiceIntent === "organize"
+    ? "Pick the format that fits your group. You set up the competition, invite people, and confirm results; Swayger keeps picks, standings, and receipts together."
+    : "Choose one of the three existing Swayger experiences. Invitations still open directly through their current guest and preview flows.";
+
   return (
     <div className="swayger-home">
       <Head>
@@ -278,7 +347,7 @@ export default function PublicHomepage() {
           </nav>
           <div className="header-actions">
             <a className="account-link medium" href={accountLink.href}>{accountLink.label}</a>
-            <a className="nav-cta medium" href="/gameday">Play Swayger <span aria-hidden="true">↗</span></a>
+            <button className="nav-cta medium" type="button" onClick={(event) => openExperienceChoices("play", event)}>Play Swayger <span aria-hidden="true">↗</span></button>
           </div>
         </div>
       </header>
@@ -291,8 +360,8 @@ export default function PublicHomepage() {
             <p className="hero-line">Make your picks. Prove your takes. Keep the receipts.</p>
             <p className="hero-line" style={{ marginTop: 16, fontSize: 15, color: C.textSecondary }}>Turn the sports conversations your group already has into friendly prediction competitions.</p>
             <div className="hero-actions">
-              <a className="button button-primary" href="/gameday">Play Swayger <span aria-hidden="true">↗</span></a>
-              <a className="button button-outline" href="#community">Bring Swayger to Your Group</a>
+              <button className="button button-primary" type="button" onClick={(event) => openExperienceChoices("play", event)}>Play Swayger <span aria-hidden="true">↗</span></button>
+              <button className="button button-outline" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Bring Swayger to Your Group</button>
               <a className="text-link" href="/how-it-works">See How It Works</a>
             </div>
           </div>
@@ -377,7 +446,7 @@ export default function PublicHomepage() {
               <div className="section-kicker">Made for the people you watch with</div>
               <h2 id="community-title" className="display">Already have the group? Bring Swayger to it.</h2>
               <p className="community-copy">Keep the community you already have. Swayger gives your group a place to make picks, see the standings, and share the proof—whether the conversation lives on Discord or in the stands.</p>
-              <a className="button button-primary" href="/gameday">Start with Game Day <span aria-hidden="true">↗</span></a>
+              <button className="button button-primary" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
             </div>
             <div className="community-board" aria-label="Communities that can compete">
               <div className="board-top"><span>Your people. Your competition.</span></div>
@@ -417,7 +486,7 @@ export default function PublicHomepage() {
                 <li>Share the competition with the people you want in.</li>
                 <li>Review results and standings when the action is done.</li>
               </ul>
-              <a className="button button-outline" href="/fantasy/setup">Get started with Fantasy</a>
+              <button className="button button-outline" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Choose a group format</button>
             </div>
             <div className="organizer-visual" aria-hidden="true">
               <div className="visual-mark"><SwaygerMark color={C.text} size={45} /></div>
@@ -431,10 +500,55 @@ export default function PublicHomepage() {
             <div className="section-kicker">Your group has a take</div>
             <h2 id="final-title" className="display">Now put it on the board.</h2>
             <p>Make the next game a little more interesting with the people who already know your calls.</p>
-            <a className="button button-primary" href="/gameday">Play Swayger <span aria-hidden="true">↗</span></a>
+            <button className="button button-primary" type="button" onClick={(event) => openExperienceChoices("play", event)}>Play Swayger <span aria-hidden="true">↗</span></button>
           </div>
         </section>
       </main>
+
+      <dialog
+        ref={dialogRef}
+        className="experience-dialog"
+        aria-labelledby="experience-dialog-title"
+        aria-describedby="experience-dialog-intro"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeExperienceChoices();
+        }}
+        onClick={(event) => {
+          if (event.target === dialogRef.current) closeExperienceChoices();
+        }}
+      >
+        <div className="experience-dialog-inner">
+          <div className="experience-dialog-head">
+            <div>
+              <div className="section-kicker">Three ways to compete</div>
+              <h2 id="experience-dialog-title" className="display">{dialogTitle}</h2>
+            </div>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="experience-close"
+              aria-label="Close experience choices"
+              onClick={closeExperienceChoices}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+          <p id="experience-dialog-intro" className="experience-intro">{dialogIntro}</p>
+          <div className="experience-grid">
+            {experienceChoices.map((choice) => (
+              <article className="experience-option" key={choice.id}>
+                <h3 className="display">{choice.title}</h3>
+                <p>{choice.description}</p>
+                <a href={choice.href}>{choice.action}<span aria-hidden="true"> →</span></a>
+              </article>
+            ))}
+          </div>
+          <p className="experience-disclosure">
+            <strong>Results still need a person:</strong> hosts and commissioners confirm results using each competition’s rules. Swayger organizes picks, standings, and receipts.
+          </p>
+        </div>
+      </dialog>
 
       <footer className="footer">
         <div className="wrap footer-inner">

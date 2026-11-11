@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { isPublicHomepage, homepageAccountLink } from "../lib/public-homepage";
+import {
+  isPublicHomepage,
+  homepageAccountLink,
+  homepageExperienceChoices,
+} from "../lib/public-homepage";
 import { injectPublicMetadata, publicSitemap } from "./public-site";
 
 let passed = 0;
@@ -12,6 +16,14 @@ function check(name: string, value: unknown) {
 const read = (path: string) => fs.readFileSync(path, "utf8");
 check("anonymous header links to existing auth route", homepageAccountLink(false).href === "/auth" && homepageAccountLink(false).label === "Sign In");
 check("authenticated header links to existing root dashboard", homepageAccountLink(true).href === "/" && homepageAccountLink(true).label === "Dashboard");
+const signedOutChoices = homepageExperienceChoices(false);
+const signedInChoices = homepageExperienceChoices(true);
+check("experience chooser exposes exactly three existing modes", signedOutChoices.map((choice) => choice.id).join(",") === "game-day,fantasy,1v1");
+check("signed-out Game Day choice keeps the existing guest-capable hub", signedOutChoices[0].href === "/gameday");
+check("signed-out Fantasy choice uses the existing auth route", signedOutChoices[1].href === "/auth");
+check("signed-out 1v1 choice uses the existing auth route", signedOutChoices[2].href === "/auth");
+check("signed-in Fantasy choice opens existing setup", signedInChoices[1].href === "/fantasy/setup");
+check("signed-in 1v1 choice opens existing create screen", signedInChoices[2].href === "/(tabs)/create");
 for (const platform of ["web", "ios", "android"]) {
   for (const route of ["/", "/auth", "/auth-callback", "/username-setup", "/g/CODE", "/gameday", "/gameday/room", "/fantasy/join/league/season", "/invite/CODE", "/admin"]) {
     for (const signedIn of [false, true]) {
@@ -34,7 +46,21 @@ for (const anchor of ["community", "organizers", "how-it-works", "main-content"]
 }
 check("actual active mark reused", page.includes('from "@/components/SwaygerMark"'));
 check("actual receipt reused", page.includes('from "@/components/GameDayReceiptCard"'));
-check("sample data disclosed", page.includes("Names and scores are examples."));
+check("sample data disclosed", page.includes("illustrative names and scores"));
+check("Play CTAs open the experience chooser", (page.match(/openExperienceChoices\("play"/g) || []).length >= 3);
+check("organizer CTAs open group-start choices", (page.match(/openExperienceChoices\("organize"/g) || []).length >= 3);
+check("choice dialog is semantically labeled", page.includes("<dialog") && page.includes("aria-labelledby=\"experience-dialog-title\""));
+check("manual result confirmation is explicit", page.includes("hosts and commissioners confirm results"));
+const experienceCopy = read("lib/public-homepage.ts");
+check("guest and invitation behavior is disclosed", experienceCopy.includes("Room invites still open directly") && experienceCopy.includes("commissioner’s invite"));
+const modeProofs = read("components/marketing/HomepageModeProofs.web.tsx");
+check("Fantasy proof reuses the existing pick and lock UI", modeProofs.includes('from "@/components/fantasy/AnswerSelector"') && modeProofs.includes("isLocked"));
+check("Fantasy proof reuses the existing receipt and standings UI", modeProofs.includes('from "@/components/fantasy/CompactCompetitionReceipt"'));
+check("1v1 proof reuses the existing receipt UI", modeProofs.includes('from "@/components/ReceiptCard"'));
+check("homepage receipt sample has no stale date", !page.includes('gameDate="2025-10-12"'));
+check("receipt stamp no longer overlays its caption", !page.includes(".art-stamp { position: absolute"));
+check("examples are explicitly labeled", page.includes("illustrative names and scores") && modeProofs.includes("EXAMPLE DATA"));
+check("organizer CTA opens a mode choice, not Fantasy directly", !page.includes('className="button button-outline" href="/fantasy/setup"'));
 check("no old logo", !/swayger-icon\.png|images\/icon\.png|glowing/i.test(page));
 check("no sportsbook language", !/\b(?:wager|wagering|sportsbook|betting|payout|odds)\b/i.test(page));
 check("reduced motion", page.includes("prefers-reduced-motion"));
