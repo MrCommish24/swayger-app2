@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
 import GameDayReceiptCard from "@/components/GameDayReceiptCard";
-import { FantasyModeProof, OneVsOneModeProof } from "@/components/marketing/HomepageModeProofs.web";
+import { FantasyModeProof, OneVsOneModeProof } from "@/components/marketing/HomepageModeProofs";
 import type { GDLeaderboardEntry } from "@/lib/gameday-api";
 import Head from "expo-router/head";
 import {
@@ -67,7 +67,7 @@ const styles = `
   .swayger-home .nav-links { display: flex; gap: clamp(18px, 3vw, 38px); align-items: center; }
   .swayger-home .nav-links a { text-decoration: none; color: #c3c4cd; font-size: 13px; transition: color .18s ease; }
   .swayger-home .nav-links a:hover { color: var(--paper); }
-  .swayger-home .nav-cta { min-height: 44px; font-family: "DMSans_500Medium", sans-serif; cursor: pointer; text-decoration: none; border: 1px solid rgba(255,255,255,.27); padding: 11px 17px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s ease, color .2s ease, border-color .2s ease; }
+  .swayger-home .nav-cta { text-decoration: none; border: 1px solid rgba(255,255,255,.27); padding: 11px 17px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s ease, color .2s ease, border-color .2s ease; }
   .swayger-home .nav-cta:hover { background: var(--paper); color: var(--ink); border-color: var(--paper); }
   .swayger-home .hero {
     position: relative; min-height: 675px; display: grid; grid-template-columns: 1.08fr .92fr;
@@ -128,7 +128,7 @@ const styles = `
   .swayger-home .modes h2, .swayger-home .community h2, .swayger-home .organizers h2, .swayger-home .final h2 { font-size: clamp(52px, 7vw, 88px); text-transform: uppercase; line-height: .86; letter-spacing: -.025em; margin: 13px 0 0; }
   .swayger-home .modes-sub { max-width: 280px; color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 3px; }
   .swayger-home .mode-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .swayger-home .mode-card { min-height: 342px; position: relative; overflow: hidden; padding: 27px; border: 1px solid rgba(255,255,255,.12); background: #17181f; display: flex; flex-direction: column; justify-content: flex-start; transition: transform .22s ease, border-color .22s ease, background .22s ease; }
+  .swayger-home .mode-card { min-height: 342px; position: relative; overflow: hidden; padding: 27px; border: 1px solid rgba(255,255,255,.12); background: #17181f; display: flex; flex-direction: column; justify-content: space-between; transition: transform .22s ease, border-color .22s ease, background .22s ease; }
   .swayger-home .mode-card:hover { transform: translateY(-6px); border-color: rgba(116,136,255,.7); background: #1c1e29; }
   .swayger-home .mode-card:after { content: ""; position: absolute; width: 230px; height: 230px; border: 1px solid rgba(255,255,255,.08); border-radius: 50%; right: -102px; top: -106px; box-shadow: 0 0 0 26px rgba(255,255,255,.025), 0 0 0 52px rgba(255,255,255,.018); }
   .swayger-home .mode-index { color: #9698a4; font-size: 10px; letter-spacing: .15em; }
@@ -141,8 +141,6 @@ const styles = `
   .swayger-home .mode-proof-viewport { min-width: 0; overflow: hidden; display: flex; justify-content: center; margin-top: 24px; }
   .swayger-home .fantasy-proof-viewport { height: 500px; }
   .swayger-home .onevone-proof-viewport { height: 350px; }
-  .swayger-home .gameday-proof-viewport { height: 420px; }
-  .swayger-home .mode-proof-gameday { flex: 0 0 340px; width: 340px; transform: scale(.83); transform-origin: top center; }
   .swayger-home .mode-proof-stack { flex: 0 0 360px; width: 360px; transform: scale(.77); transform-origin: top center; }
   .swayger-home .mode-proof-single { flex: 0 0 320px; width: 320px; transform: scale(.88); transform-origin: top center; }
   .swayger-home .mode-proof-label { display: flex; justify-content: space-between; gap: 10px; margin: 16px 0 10px; color: #b4beff; font-size: 10px; letter-spacing: .06em; }
@@ -215,10 +213,6 @@ const styles = `
   .swayger-home .experience-disclosure { margin: 19px 0 0; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.13); color: #d7d8df; font-size: 12px; line-height: 1.65; }
   .swayger-home .experience-disclosure strong { color: #fff; }
   @keyframes swayger-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-  @media (max-width: 1100px) {
-    .swayger-home .mode-list { grid-template-columns: 1fr; }
-    .swayger-home .mode-card { width: 100%; max-width: 620px; margin-inline: auto; }
-  }
   @media (max-width: 850px) {
     .swayger-home .hero { min-height: auto; grid-template-columns: 1fr .82fr; gap: 28px; padding-block: 72px 98px; }
     .swayger-home h1 { font-size: clamp(64px, 11vw, 96px); }
@@ -286,7 +280,6 @@ const styles = `
     .swayger-home .final h2 { font-size: 58px; }
     .swayger-home .mode-proof-stack { transform: scale(.64); }
     .swayger-home .mode-proof-single { transform: scale(.72); }
-    .swayger-home .mode-proof-gameday { transform: scale(.68); }
     .swayger-home .fantasy-proof-viewport { height: 440px; }
     .swayger-home .onevone-proof-viewport { height: 310px; }
   }
@@ -417,6 +410,7 @@ export default function PublicHomepage() {
             <div className="section-kicker">Sports are better together</div>
             <div>
               <h2 id="intro-title" className="display">The competitive prediction layer for sports communities.</h2>
+              <p>Turn the predictions your crew already makes into a friendly competition. Picks lock before the action, standings show how everyone did, and the receipts give the group something to talk about after.</p>
             </div>
           </div>
         </section>
@@ -452,7 +446,7 @@ export default function PublicHomepage() {
             <div className="mode-list">
               <article className="mode-card">
                 <div><div className="mode-index">01 / GAME DAY</div><div className="mode-icon" aria-hidden="true">G</div></div>
-                <div><h3 className="display">Game Day</h3><p>One game or slate. One room. Make picks against your watch-party crew and follow the room standings—for an NFL Sunday, Madden matchup, or watch party.</p><a className="mode-link" href="/gameday">Open Game Day <span aria-hidden="true">→</span></a><div className="mode-proof-viewport gameday-proof-viewport"><div className="mode-proof-gameday"><GameDayReceiptCard roomName="Sunday picks with the crew" teamA="Ravens" teamB="Bills" scoringMode="most_correct" leaderboard={exampleStandings} /></div></div></div>
+                <div><h3 className="display">Game Day</h3><p>One game or slate. One room. Make picks against your watch-party crew and follow the room standings. NFL Sunday and Madden are examples—not separate modes.</p><a className="mode-link" href="/gameday">Open Game Day <span aria-hidden="true">→</span></a></div>
               </article>
               <article className="mode-card">
                 <div><div className="mode-index">02 / FANTASY</div><div className="mode-icon" aria-hidden="true">F</div></div>
@@ -472,7 +466,7 @@ export default function PublicHomepage() {
             <div>
               <div className="section-kicker">Made for the people you watch with</div>
               <h2 id="community-title" className="display">Already have the group? Bring Swayger to it.</h2>
-              <p className="community-copy">Works alongside your Discord, watch party, fantasy league, or in-venue group. Invite people into the same competition, wherever the conversation happens.</p>
+              <p className="community-copy">Keep the community you already have. Swayger gives your group a place to make picks, see the standings, and share the proof—whether the conversation lives on Discord or in the stands.</p>
               <button className="button button-primary" type="button" onClick={(event) => openExperienceChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
             </div>
             <div className="community-board" aria-label="Communities that can compete">
@@ -491,7 +485,7 @@ export default function PublicHomepage() {
               <h2 id="difference-title" className="display">Good banter.<br />Better receipts.</h2>
             </div>
             <div>
-              <p className="difference-copy">A clear record matters more than the loudest take.</p>
+              <p className="difference-copy">The best sports takes happen among friends. Swayger makes them easy to call, fair to compare, and fun to revisit—without getting in the way of the game.</p>
               <div className="difference-list">
                 <div className="difference-row"><b>01</b><p><strong>Everyone gets a fair shot.</strong> Picks lock at the deadline, so the call is on record before the result.</p></div>
                 <div className="difference-row"><b>02</b><p><strong>See the whole picture.</strong> Standings and scoring make it clear how the group did.</p></div>
