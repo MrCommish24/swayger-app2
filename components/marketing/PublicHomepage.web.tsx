@@ -9,7 +9,7 @@ import {
   homepageAccountLink,
   homepageExperienceChoices,
 } from "@/lib/public-homepage";
-import { prepareHomepageReturn } from "@/lib/homepage-return";
+import { prepareHomepageReturn, prepareHomepagePlay } from "@/lib/homepage-return";
 import { useAuth } from "@/lib/auth-context";
 
 const C = Colors.dark;
@@ -57,7 +57,8 @@ const styles = `
   .swayger-home button.button { border:0; cursor:pointer; font:inherit; font-family:"DMSans_500Medium","DM Sans",sans-serif; }
   .swayger-home .button:hover { transform:translateY(-2px); }
   .swayger-home .button-primary { color:var(--paper); background:var(--blue); }
-  .swayger-home .button-outline { color:var(--paper); background:transparent; border:1px solid rgba(255,255,255,.35); }
+   .swayger-home .button-outline { color:var(--paper); background:transparent; border:1px solid rgba(255,255,255,.55); }
+   .swayger-home button.button.button-outline { border:1px solid rgba(255,255,255,.55); }
   .swayger-home .button-outline:hover { border-color:var(--lime); }
   .swayger-home .text-link { color:#c7d0ff; text-decoration-thickness:1px; text-underline-offset:5px; font-size:12px; }
   .swayger-home .hero-art { min-width:0; position:relative; animation:swayger-rise .8s .1s both; }
@@ -80,13 +81,15 @@ const styles = `
   .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2,.swayger-home .final h2 { margin:13px 0 0; font-size:clamp(50px,6.7vw,82px); line-height:.86; letter-spacing:-.025em; text-transform:uppercase; }
   .swayger-home .modes-sub { max-width:290px; margin:0 0 4px; color:#4d5774; font-size:13px; line-height:1.65; }
   .swayger-home .mode-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
-  .swayger-home .mode-card { min-height:280px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; padding:25px; color:#f5f6fb; text-decoration:none; background:#152248; transition:transform .2s,border-color .2s,background .2s; border:1px solid rgba(16,26,58,.1); }
-  .swayger-home .mode-card:nth-child(2) { background:#20366f; }
-  .swayger-home .mode-card:nth-child(3) { background:#182d58; }
+   .swayger-home .mode-card { min-height:280px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; padding:25px; color:#f5f6fb; text-decoration:none; background:#152248; transition:transform .2s,border-color .2s,background .2s; border:1px solid rgba(174,186,255,.24); border-top:3px solid #aebaff; }
+   .swayger-home .mode-card:nth-child(2) { background:#20366f; border-color:rgba(214,222,255,.35); border-top-color:#f5f6fb; }
+   .swayger-home .mode-card:nth-child(3) { background:#182d58; border-color:rgba(67,97,238,.6); border-top-color:#4361ee; }
   .swayger-home .mode-card:hover { transform:translateY(-5px); background:#263d82; }
   .swayger-home .mode-card:after { content:""; position:absolute; width:230px; height:230px; right:-120px; top:-120px; border:1px solid rgba(233,238,255,.18); border-radius:50%; box-shadow:0 0 0 26px rgba(233,238,255,.04),0 0 0 52px rgba(233,238,255,.025); }
   .swayger-home .mode-index { color:#c0cafa; font-size:9px; letter-spacing:.16em; }
   .swayger-home .mode-glyph { width:44px; height:44px; display:grid; place-items:center; margin-top:29px; border:1px solid rgba(174,186,255,.7); color:var(--lime); font-size:14px; letter-spacing:.04em; }
+   .swayger-home .mode-card:nth-child(2) .mode-glyph { background:rgba(245,246,251,.12); border-color:rgba(245,246,251,.72); }
+   .swayger-home .mode-card:nth-child(3) .mode-glyph { border-style:dashed; border-color:#8298ff; }
   .swayger-home .mode-card h3 { max-width:270px; min-height:84px; margin:20px 0 11px; font-size:clamp(34px,4vw,47px); line-height:.88; text-transform:uppercase; }
   .swayger-home .mode-card p { max-width:290px; min-height:78px; margin:0; color:#d2daf1; font-size:12px; line-height:1.6; }
   .swayger-home .mode-link { display:inline-flex; align-items:center; gap:10px; width:fit-content; margin-top:19px; color:var(--lime); font-size:10px; letter-spacing:.13em; text-transform:uppercase; }
@@ -141,8 +144,9 @@ const styles = `
   .swayger-home .experience-dialog { width:min(760px,calc(100% - 28px)); max-width:760px; max-height:min(88dvh,760px); padding:0; overflow:auto; border:1px solid rgba(255,255,255,.25); color:var(--paper); background:#111d40; box-shadow:0 28px 90px rgba(0,0,0,.55); }
   .swayger-home .experience-dialog::backdrop { background:rgba(5,9,25,.82); backdrop-filter:blur(5px); }
   .swayger-home .experience-dialog-inner { padding:clamp(22px,4vw,38px); }
-  .swayger-home .experience-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
-  .swayger-home .experience-dialog h2 { max-width:580px; margin:12px 0 10px; font-size:clamp(38px,6vw,62px); line-height:.9; text-transform:uppercase; }
+   .swayger-home .experience-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; min-width:0; }
+   .swayger-home .experience-dialog-head > div { min-width:0; flex:1 1 auto; }
+   .swayger-home .experience-dialog h2 { max-width:580px; min-width:0; margin:12px 0 10px; font-size:clamp(38px,6vw,62px); line-height:.9; overflow-wrap:anywhere; text-transform:uppercase; }
   .swayger-home .experience-intro { max-width:610px; margin:0; color:#cbd4ee; font-size:13px; line-height:1.65; }
   .swayger-home .experience-close { flex:0 0 auto; width:44px; height:44px; border:1px solid rgba(255,255,255,.35); background:transparent; color:var(--paper); font-size:24px; cursor:pointer; }
   .swayger-home .experience-close:hover { background:rgba(255,255,255,.1); }
@@ -175,17 +179,18 @@ const styles = `
     .swayger-home .header-actions { gap:10px; }
     .swayger-home .account-link { font-size:12px; }
     .swayger-home .nav-cta { min-height:44px; padding-inline:11px; font-size:9px; }
-    .swayger-home .hero { display:flex; flex-direction:column; align-items:stretch; gap:45px; min-height:0; padding-block:61px 75px; }
+     .swayger-home .hero { display:flex; flex-direction:column; align-items:stretch; gap:36px; min-height:0; padding-block:52px 64px; }
     .swayger-home h1 { font-size:clamp(63px,17.6vw,94px); margin:23px 0 18px; }
     .swayger-home .hero-line { font-size:16px; }
     .swayger-home .hero-actions { align-items:flex-start; flex-direction:column; gap:13px; margin-top:26px; }
     .swayger-home .hero-art { width:calc(100% - 10px); margin-inline:auto; }
     .swayger-home .proof-art { min-height:320px; }
     .swayger-home .hero-index { bottom:20px; }
-    .swayger-home .modes,.swayger-home .process,.swayger-home .community,.swayger-home .organizers { padding-block:68px; }
+     .swayger-home .modes,.swayger-home .process,.swayger-home .community,.swayger-home .organizers { padding-block:58px; }
     .swayger-home .modes-heading,.swayger-home .process-head { display:block; }
-    .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2 { font-size:clamp(49px,14vw,66px); }
-    .swayger-home .modes-sub,.swayger-home .process-intro { margin-top:18px; }
+     .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2 { font-size:clamp(43px,12.5vw,60px); }
+     .swayger-home .process h2 { font-size:clamp(42px,12vw,58px); }
+     .swayger-home .modes-sub,.swayger-home .process-intro { margin-top:15px; }
     .swayger-home .mode-list { grid-template-columns:1fr; gap:9px; }
     .swayger-home .mode-card { min-height:235px; padding:22px; }
     .swayger-home .mode-card h3 { font-size:39px; }
@@ -196,24 +201,29 @@ const styles = `
     .swayger-home .community-grid,.swayger-home .organizer-grid { grid-template-columns:1fr; gap:30px; }
     .swayger-home .community-art { min-height:240px; margin-inline:5px; }
     .swayger-home .organizer-visual { max-width:270px; justify-self:center; }
-    .swayger-home .final { padding:78px 0 84px; }
-    .swayger-home .final h2 { font-size:clamp(52px,14vw,70px); }
+     .swayger-home .final { padding:68px 0 74px; }
+     .swayger-home .final h2 { font-size:clamp(46px,12.5vw,64px); }
     .swayger-home .footer-inner { align-items:flex-start; flex-direction:column; }
     .swayger-home .footer-links { gap:18px; }
     .swayger-home .experience-grid { grid-template-columns:1fr; gap:8px; }
     .swayger-home .experience-option { min-height:0; padding:15px; }
     .swayger-home .experience-option p { max-width:none; }
     .swayger-home .experience-option a { margin-top:8px; }
-    .swayger-home .experience-dialog-inner { padding:20px 18px; }
+     .swayger-home .experience-dialog-inner { padding:18px 16px; }
+     .swayger-home .experience-dialog-head { gap:10px; }
+     .swayger-home .experience-dialog h2 { font-size:clamp(34px,10.5vw,48px); }
   }
   @media(max-width:360px) {
     .swayger-home .wrap { width:calc(100% - 30px); }
     .swayger-home .brand-word { font-size:16px; }
     .swayger-home .header-actions { gap:7px; }
     .swayger-home .nav-cta { padding-inline:8px; }
-    .swayger-home h1 { font-size:58px; }
+     .swayger-home h1 { font-size:54px; }
     .swayger-home .mode-card { padding:19px; }
     .swayger-home .community-art { padding:18px; }
+     .swayger-home .experience-dialog-inner { padding:16px 14px; }
+     .swayger-home .experience-dialog-head { gap:8px; }
+     .swayger-home .experience-dialog h2 { font-size:34px; }
   }
   @media(prefers-reduced-motion:reduce) {
     .swayger-home *, .swayger-home *:before, .swayger-home *:after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; transition-duration:.01ms!important; }
@@ -245,9 +255,16 @@ export default function PublicHomepage() {
     }
   }, [dialogOpen]);
 
-  function openChoices(intent: Intent, event: React.MouseEvent<HTMLButtonElement>) {
+  async function openChoices(intent: Intent, event: React.MouseEvent<HTMLButtonElement>) {
     activeTriggerRef.current = event.currentTarget;
     setNavigationError("");
+    if (intent === "play") {
+      try {
+        await prepareHomepagePlay();
+      } catch {
+        setNavigationError("We couldn’t clear your previous choice. Check your browser storage settings and try again.");
+      }
+    }
     setChoiceIntent(intent);
     setDialogOpen(true);
   }
@@ -270,6 +287,18 @@ export default function PublicHomepage() {
       window.location.assign(href);
     } catch {
       setNavigationError("We couldn’t save your place. Check your browser storage settings and try again.");
+    }
+  }
+
+  async function handlePlay(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    const href = event.currentTarget.href;
+    setNavigationError("");
+    try {
+      await prepareHomepagePlay();
+      window.location.assign(href);
+    } catch {
+      setNavigationError("We couldn’t clear your previous choice. Check your browser storage settings and try again.");
     }
   }
 
@@ -482,8 +511,9 @@ export default function PublicHomepage() {
           ) : (
             <>
               <p id="experience-dialog-intro" className="experience-intro">Use the competition link your host or commissioner shared with you.</p>
+              {navigationError ? <p className="experience-error" role="alert">{navigationError}</p> : null}
               <div className="play-action">
-                <a className="play-link" href={session ? "/" : "/auth"}>{session ? "Continue to competition" : "Sign in to play"} <span aria-hidden="true">↗</span></a>
+                <a className="play-link" href={session ? "/" : "/auth"} onClick={handlePlay}>{session ? "Continue to competition" : "Sign in to play"} <span aria-hidden="true">↗</span></a>
               </div>
               <p className="invite-note">Have an invite? Open your Game Day room link, Fantasy league link, or 1v1 challenge link directly. Existing guest and preview options are available there. No invite? Sign in to your dashboard to see competition available to your account.</p>
             </>

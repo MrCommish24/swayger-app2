@@ -1,5 +1,62 @@
 import { test, expect } from "@playwright/test";
 
+test("organizer dialog fits 320px and secondary hero CTA keeps its outline", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/");
+  const bring = page.getByRole("button", { name: "Bring Swayger to Your Group", exact: true });
+  const border = await bring.evaluate(el => {
+    const style = getComputedStyle(el);
+    return { width: parseFloat(style.borderTopWidth), style: style.borderTopStyle };
+  });
+  expect(border.width).toBeGreaterThanOrEqual(1);
+  expect(border.style).toBe("solid");
+  await bring.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBeTruthy();
+  const headingFits = await dialog.getByRole("heading", { level: 2 }).evaluate(el => el.scrollWidth <= el.clientWidth);
+  expect(headingFits).toBeTruthy();
+  const bounds = await dialog.boundingBox();
+  const close = await dialog.getByRole("button", { name: "Close dialog" }).boundingBox();
+  expect(bounds && close && close.x >= bounds.x && close.x + close.width <= bounds.x + bounds.width).toBeTruthy();
+  for (const option of await dialog.locator(".experience-option").all()) {
+    await option.scrollIntoViewIfNeeded();
+    expect(await option.evaluate(el => el.scrollWidth <= el.clientWidth)).toBeTruthy();
+  }
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBeTruthy();
+});
+
+test("switching from organizer to Play clears only the homepage fallback", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Bring Swayger to Your Group", exact: true }).click();
+  await page.getByRole("dialog").getByRole("link", { name: /Sign in for 1v1/ }).click();
+  await expect(page).toHaveURL(/\/auth$/);
+  expect(await page.evaluate(() => localStorage.getItem("swayger_homepage_return"))).not.toBeNull();
+  await page.goto("/");
+  await page.evaluate(() => {
+    const invite = JSON.stringify({ code: "AUDITINVALID", intent: "view" });
+    localStorage.setItem("swayger_pending_invite", invite);
+    sessionStorage.setItem("swayger_pending_invite", invite);
+    localStorage.setItem("swayger_pending_auth_redirect", "/fantasy/join/keep/this?wn=2");
+    localStorage.setItem("swayger_pending_referral", "keep-referral");
+  });
+  await page.locator("header").getByRole("button", { name: "Play Swayger" }).click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Ready to compete?" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("swayger_homepage_return"))).toBeNull();
+  await page.getByRole("dialog").getByRole("link", { name: /Sign in to play/ }).click();
+  await expect(page).toHaveURL(/\/auth$/);
+  const state = await page.evaluate(() => ({
+    own: localStorage.getItem("swayger_homepage_return"),
+    prior: localStorage.getItem("swayger_pending_auth_redirect"),
+    invite: JSON.parse(sessionStorage.getItem("swayger_pending_invite")!),
+    referral: localStorage.getItem("swayger_pending_referral"),
+  }));
+  expect(state.own).toBeNull();
+  expect(state.prior).toBe("/fantasy/join/keep/this?wn=2");
+  expect(state.invite.code).toBe("AUDITINVALID");
+  expect(state.referral).toBe("keep-referral");
+});
+
 test("header Sign In stays usable beside Play Swayger at mobile and desktop widths", async ({ page }) => {
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 844 });

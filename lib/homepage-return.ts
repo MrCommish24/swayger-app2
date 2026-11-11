@@ -1,9 +1,17 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { peekPendingInvite } from "@/lib/pending-invite";
-import { HOMEPAGE_RETURN_KEY, saveHomepageReturn, takeHomepageReturn } from "@/lib/homepage-return-state";
+import { HOMEPAGE_RETURN_KEY, saveHomepageReturn, takeHomepageReturn, clearHomepageOrganizerReturn } from "@/lib/homepage-return-state";
 
 const hasPendingInvite = async () => !!(await peekPendingInvite())?.code;
+
+/** Explicitly switching to Play must not resume an earlier organizer action.
+ * Let storage errors reach the UI instead of silently retaining that action.
+ */
+export async function prepareHomepagePlay(): Promise<void> {
+  if (Platform.OS !== "web") return;
+  await clearHomepageOrganizerReturn(AsyncStorage);
+}
 
 /** Called only by explicit anonymous organizer actions, never by guest/invite links. */
 export async function prepareHomepageReturn(destination: string): Promise<void> {

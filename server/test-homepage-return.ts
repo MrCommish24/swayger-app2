@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   HOMEPAGE_RETURN_KEY, EXISTING_AUTH_RETURN_KEY, HOMEPAGE_RETURN_MAX_AGE,
   HOMEPAGE_RETURN_ROUTES, isHomepageReturnRoute, canResumeHomepageReturn,
-  saveHomepageReturn, takeHomepageReturn, type ReturnStorage,
+  saveHomepageReturn, takeHomepageReturn, clearHomepageOrganizerReturn, type ReturnStorage,
 } from "../lib/homepage-return-state";
 
 let checks = 0;
@@ -18,6 +18,18 @@ function fixture() {
   return { data, storage };
 }
 async function run() {
+  {
+    const { data, storage } = fixture();
+    for (const key of [HOMEPAGE_RETURN_KEY, EXISTING_AUTH_RETURN_KEY, "swayger_pending_referral", "swayger_pending_invite"]) {
+      data.set(key, `keep:${key}`);
+    }
+    await clearHomepageOrganizerReturn(storage);
+    check(!data.has(HOMEPAGE_RETURN_KEY), "Play clears stale organizer choice");
+    for (const key of [EXISTING_AUTH_RETURN_KEY, "swayger_pending_referral", "swayger_pending_invite"]) {
+      check(data.get(key) === `keep:${key}`, "Play preserves existing invite, referral and interrupted return");
+    }
+    check(await takeHomepageReturn(storage, async () => false, now) === null, "Play cannot resume stale organizer choice");
+  }
   for (const destination of HOMEPAGE_RETURN_ROUTES) {
     const { storage, data } = fixture();
     await saveHomepageReturn(storage, destination, async () => false, now);
@@ -67,6 +79,10 @@ async function run() {
     setItem: async () => {}, removeItem: async () => {},
   };
   await assert.rejects(saveHomepageReturn(unavailable, "/fantasy/setup", async () => false, now));
+  checks++;
+  await assert.rejects(clearHomepageOrganizerReturn({
+    ...unavailable, removeItem: async () => { throw new Error("storage blocked"); },
+  }));
   checks++;
   console.log(`${checks} homepage auth-return checks passed.`);
 }

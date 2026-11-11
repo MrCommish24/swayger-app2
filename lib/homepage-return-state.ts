@@ -12,6 +12,11 @@ export interface ReturnStorage {
   removeItem(key: string): Promise<void>;
 }
 
+/** Explicit participant intent cancels only the optional organizer fallback. */
+export async function clearHomepageOrganizerReturn(storage: ReturnStorage): Promise<void> {
+  await storage.removeItem(HOMEPAGE_RETURN_KEY);
+}
+
 export function isHomepageReturnRoute(value: unknown): value is string {
   return typeof value === "string" && (HOMEPAGE_RETURN_ROUTES as readonly string[]).includes(value);
 }
