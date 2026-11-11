@@ -14,7 +14,8 @@ work, not convenient homepage cleanup. Keep the existing public explainer's
 server ownership rather than adding a second app route for the same URL.
 
 Position Swayger as the competitive prediction layer for sports communities.
-There are exactly three primary products: Game Day, Fantasy, and 1v1.
+There are exactly three primary products: Swayger Game Day, Swayger Fantasy,
+and 1v1 Swaygers.
 NFL, Madden, Discord, and in-venue uses are examples, not additional products.
 Use consumer sports language, not sportsbook/wagering language. Never invent
 testimonials, traction, customer outcomes, or screenshots. Genuine components
@@ -33,3 +34,19 @@ must not imply fully automatic result confirmation.
 
 **How to apply:** Keep organizer and settlement explanations accurate when
 shortening copy or changing public CTAs.
+
+The user confirmed that `game-day-standings.png` is an authentic, settled
+Knicks vs Spurs NBA Finals Game 5 capture and approved its participant display
+names for public use. Use the original capture if supplied; do not reconstruct
+its scores as a substitute. The Discord captures named
+`image(20261111-164214).png` and `image(20261111-164233).png` are authentic,
+but use them only when accessible and safe. Never present the `ats.png` test
+fixture, a `null vs null` receipt, AI sports mockups, or broken/test 1v1
+captures as authentic customer proof.
+
+**Why:** The user explicitly distinguished approved real proof from test and
+generated content for the public homepage.
+
+**How to apply:** If the approved originals are unavailable, clearly disclose
+the missing capture and leave a safe layout placeholder rather than inventing
+a screenshot. Approval of one capture does not establish approval of others.

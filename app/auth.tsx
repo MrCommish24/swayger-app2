@@ -526,22 +526,22 @@ export default function AuthScreen() {
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>1</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>SET THE TERMS</Text>
-                  <Text style={styles.hiwStepDesc}>Name the wager, bet Swayger Points, add a stake note, and lock in your pick.</Text>
+                  <Text style={styles.hiwStepTitle}>{isWeb ? "MAKE YOUR CALL" : "SET THE TERMS"}</Text>
+                  <Text style={styles.hiwStepDesc}>{isWeb ? "Make sports predictions with your friends. Lock in your picks before the deadline." : "Name the wager, bet Swayger Points, add a stake note, and lock in your pick."}</Text>
                 </View>
               </View>
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>2</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>SHARE YOUR CODE</Text>
-                  <Text style={styles.hiwStepDesc}>Send the 5-letter code to your opponent — they join and set their pick.</Text>
+                  <Text style={styles.hiwStepTitle}>{isWeb ? "BRING YOUR PEOPLE" : "SHARE YOUR CODE"}</Text>
+                  <Text style={styles.hiwStepDesc}>{isWeb ? "Open your room, league, or challenge invite to compete with your group." : "Send the 5-letter code to your opponent — they join and set their pick."}</Text>
                 </View>
               </View>
               <View style={styles.hiwStep}>
                 <View style={styles.hiwNum}><Text style={styles.hiwNumText}>3</Text></View>
                 <View style={styles.hiwStepBody}>
-                  <Text style={styles.hiwStepTitle}>WINNER TAKES THE POINTS</Text>
-                  <Text style={styles.hiwStepDesc}>No real money — just Swayger Points, bragging rights, and whatever you put on the line.</Text>
+                  <Text style={styles.hiwStepTitle}>{isWeb ? "KEEP THE RECEIPTS" : "WINNER TAKES THE POINTS"}</Text>
+                  <Text style={styles.hiwStepDesc}>{isWeb ? "Results are confirmed under your competition’s rules. Track Swayger Points (SP), standings, and bragging rights — no real-money play." : "No real money — just Swayger Points, bragging rights, and whatever you put on the line."}</Text>
                 </View>
               </View>
             </View>

@@ -34,6 +34,8 @@ import { identifyUser, resetUser, capture } from "@/lib/posthog";
 
 import Colors from "@/constants/colors";
 import { isPublicHomepage } from "@/lib/public-homepage";
+import { consumeHomepageReturn, discardHomepageReturn } from "@/lib/homepage-return";
+import { canResumeHomepageReturn } from "@/lib/homepage-return-state";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -72,6 +74,13 @@ function useProtectedRoute() {
     const inInvite = segments[0] === "invite"; // Preview-first: let invite screen handle its own auth
     const inPicks = segments[0] === "picks";   // Browse-first: auth wall fires at submit time
 
+    // A newly opened invite supersedes only our optional marketing intent.
+    // It never changes how that invite authenticates, joins, or navigates.
+    if (inInvite ||
+        (segments[0] === "fantasy" && segments[1] && segments[1] !== "setup") ||
+        (segments[0] === "gameday" && segments[1] && segments[1] !== "create")) {
+      void discardHomepageReturn();
+    }
     if (inAuthCallback) return;
     if (isPublicHomepage(Platform.OS, pathname, !!session)) return;
     if (inMMPickLanding) return;
@@ -113,19 +122,32 @@ function useProtectedRoute() {
     } else if (session && !needsUsername && (inAuthGroup || inUsernameSetup)) {
       // Returning user (already has username) — check for saved redirect
       AsyncStorage.getItem(PENDING_AUTH_REDIRECT_KEY)
-        .then((redirect) => {
+        .then(async (redirect) => {
           AsyncStorage.removeItem(PENDING_AUTH_REDIRECT_KEY).catch(() => {});
           if (redirect) {
+            await discardHomepageReturn();
             router.replace(redirect as never);
           } else {
-            router.replace("/(tabs)");
+            // Only the web homepage's explicit organizer action can set this
+            // lower-priority fallback. Profile setup has finished at this point.
+            const homepageReturn = !profileError ? await consumeHomepageReturn() : null;
+            router.replace((homepageReturn || "/(tabs)") as never);
           }
         })
         .catch(() => router.replace("/(tabs)"));
     } else if (session && profileError && (inAuthGroup || inUsernameSetup)) {
       router.replace("/(tabs)");
+    } else if (canResumeHomepageReturn({
+      web: Platform.OS === "web", authenticated: !!session, needsUsername,
+      profileError: !!profileError, pathname,
+    }) && pathname === "/") {
+      // OAuth callbacks still choose their own invite/return first. Only a
+      // normal dashboard landing after completed profile setup can resume here.
+      consumeHomepageReturn().then((destination) => {
+        if (destination) router.replace(destination as never);
+      });
     }
-  }, [session, isLoading, needsUsername, profileError, segments, navigationState?.key]);
+  }, [session, isLoading, needsUsername, profileError, segments, pathname, navigationState?.key]);
 }
 
 function RootLayoutNav() {

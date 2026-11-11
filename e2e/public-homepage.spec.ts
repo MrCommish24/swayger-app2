@@ -13,10 +13,10 @@ test("header Sign In stays usable beside Play Swayger at mobile and desktop widt
     await play.click();
     const chooser = page.getByRole("dialog");
     await expect(chooser).toBeVisible();
-    await expect(chooser.getByRole("link", { name: /Open Game Day/ })).toHaveAttribute("href", "/gameday");
-    await expect(chooser.getByRole("link", { name: /Sign in for Fantasy/ })).toHaveAttribute("href", "/auth");
-    await expect(chooser.getByRole("link", { name: /Sign in for 1v1/ })).toHaveAttribute("href", "/auth");
-    await chooser.getByRole("button", { name: "Close experience choices" }).click();
+    await expect(chooser.getByRole("link", { name: /Sign in to play/ })).toHaveAttribute("href", "/auth");
+    await expect(chooser.locator(".experience-option")).toHaveCount(0);
+    await expect(chooser.getByText(/Have an invite/)).toBeVisible();
+    await chooser.getByRole("button", { name: "Close dialog" }).click();
     const target = await signIn.boundingBox();
     expect(target && target.height >= 44 && target.x >= 0 && target.x + target.width <= width).toBeTruthy();
     const logo = await header.getByRole("link", { name: "Swayger home" }).boundingBox();
@@ -51,10 +51,12 @@ test("anonymous mobile homepage, keyboard access and working CTAs", async ({ pag
   await expect(play).toBeFocused();
   await page.getByRole("button", { name: "Bring Swayger to Your Group", exact: true }).click();
   const organizerDialog = page.getByRole("dialog");
-  await expect(organizerDialog.getByRole("heading", { name: "Bring Swayger to your group." })).toBeVisible();
-  await expect(organizerDialog.getByText(/You set up the competition, invite people, and confirm results/)).toBeVisible();
+  await expect(organizerDialog.getByRole("heading", { name: "Start your competition." })).toBeVisible();
+  await expect(organizerDialog.getByText(/You set it up, share its invite, and confirm results/)).toBeVisible();
   await expect(organizerDialog.getByText(/hosts and commissioners confirm results/)).toBeVisible();
-  await organizerDialog.getByRole("button", { name: "Close experience choices" }).click();
+  await expect(organizerDialog.locator(".experience-option")).toHaveCount(3);
+  await expect(organizerDialog.getByText(/only if your account has Game Day host access/)).toBeVisible();
+  await organizerDialog.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("link", { name: "See How It Works", exact: true }).click();
   await expect(page).toHaveURL(/\/how-it-works$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Make your picks.");
@@ -63,7 +65,7 @@ test("anonymous mobile homepage, keyboard access and working CTAs", async ({ pag
   await expect(page.locator('[id="1v1"]')).toHaveCount(1);
 });
 
-test("desktop root, reduced motion and Play Swayger preserve guest route", async ({ page }) => {
+test("desktop root, reduced motion and Play Swayger enter sign in without promising browsing", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
@@ -74,18 +76,21 @@ test("desktop root, reduced motion and Play Swayger preserve guest route", async
   expect(anchors.every(href => href && !["#", "", "javascript:void(0)"].includes(href))).toBeTruthy();
   await page.locator("header").getByRole("button", { name: "Play Swayger" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByRole("dialog").getByRole("link", { name: /Open Game Day/ }).click();
-  await expect(page).toHaveURL(/\/gameday$/);
+  await page.getByRole("dialog").getByRole("link", { name: /Sign in to play/ }).click();
+  await expect(page).toHaveURL(/\/auth$/);
   await expect(page.locator(".swayger-home")).toHaveCount(0);
+  await expect(page.getByText("MAKE YOUR CALL", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Name the wager/)).toHaveCount(0);
 });
 
-test("real product proof components fit the viewport at mobile and desktop widths", async ({ page }) => {
+test("aligned product cards and honest missing-capture layout fit mobile and desktop", async ({ page }) => {
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await expect(page.locator(".mode-card")).toHaveCount(3);
-    await expect(page.locator(".fantasy-proof-viewport")).toBeVisible();
-    await expect(page.locator(".onevone-proof-viewport")).toBeVisible();
+    await expect(page.getByText("Approved Game Day capture awaiting upload", { exact: true })).toBeVisible();
+    await expect(page.locator(".proof-art-caption")).toContainText("No sample result shown.");
+    await expect(page.getByText(/Illustrative component preview|Example data|Talk is cheap/)).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
     const cards = await page.locator(".mode-card").evaluateAll((els) =>
       els.map((el) => {
@@ -100,21 +105,55 @@ test("real product proof components fit the viewport at mobile and desktop width
       return Array.from(range.getClientRects()).map((rect) => ({ left: rect.left, right: rect.right }));
     });
     expect(headlineFragments.every(({ left, right }) => left >= 0 && right <= width)).toBeTruthy();
-    const previews = await page.locator(".mode-proof-viewport").evaluateAll((els) =>
-      els.map((el) => {
-        const container = el.getBoundingClientRect();
-        const proof = el.firstElementChild?.getBoundingClientRect();
-        return !!proof && proof.left >= container.left && proof.right <= container.right;
-      }),
-    );
-    expect(previews.every(Boolean)).toBeTruthy();
-    const receiptFits = await page.locator(".receipt-preview > div").evaluate((el) => {
-      const container = el.parentElement!.getBoundingClientRect();
-      const preview = el.getBoundingClientRect();
-      return preview.left >= container.left && preview.right <= container.right;
-    });
-    expect(receiptFits).toBeTruthy();
+    const proof = await page.locator(".proof-art").boundingBox();
+    expect(proof && proof.x >= 0 && proof.x + proof.width <= width).toBeTruthy();
+    if (width === 1440) {
+      const titles = await page.locator(".mode-card h3").evaluateAll(els => els.map(el => el.getBoundingClientRect().top));
+      expect(Math.max(...titles) - Math.min(...titles)).toBeLessThan(2);
+    }
+    await page.locator(".swayger-home").evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect(page.locator("footer")).toBeInViewport();
   }
+});
+
+test("each anonymous organizer choice saves its exact post-auth destination", async ({ page }) => {
+  const choices = [
+    [/Sign in to check host access/, "/gameday/create"],
+    [/Sign in for Fantasy/, "/fantasy/setup"],
+    [/Sign in for 1v1/, "/(tabs)/create"],
+  ] as const;
+  for (const [label, destination] of choices) {
+    await page.goto("/");
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+    await page.reload();
+    await page.getByRole("button", { name: "Bring Swayger to Your Group", exact: true }).click();
+    await page.getByRole("dialog").getByRole("link", { name: label }).click();
+    await expect(page).toHaveURL(/\/auth$/);
+    const saved = await page.evaluate(() => localStorage.getItem("swayger_homepage_return"));
+    expect(JSON.parse(saved!).destination).toBe(destination);
+    expect(await page.evaluate(() => localStorage.getItem("swayger_pending_auth_redirect"))).toBeNull();
+  }
+});
+
+test("organizer choice never replaces a pending invitation or interrupted guest return", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    const pending = JSON.stringify({ code: "AUDITINVALID", intent: "view" });
+    sessionStorage.setItem("swayger_pending_invite", pending);
+    localStorage.setItem("swayger_pending_invite", pending);
+    localStorage.setItem("swayger_pending_auth_redirect", "/fantasy/join/keep/this?wn=2");
+  });
+  await page.getByRole("button", { name: "Bring Swayger to Your Group", exact: true }).click();
+  await page.getByRole("dialog").getByRole("link", { name: /Sign in for Fantasy/ }).click();
+  await expect(page).toHaveURL(/\/auth$/);
+  const state = await page.evaluate(() => ({
+    invite: JSON.parse(sessionStorage.getItem("swayger_pending_invite")!),
+    previous: localStorage.getItem("swayger_pending_auth_redirect"),
+    marketing: localStorage.getItem("swayger_homepage_return"),
+  }));
+  expect(state.invite.code).toBe("AUDITINVALID");
+  expect(state.previous).toBe("/fantasy/join/keep/this?wn=2");
+  expect(state.marketing).toBeNull();
 });
 
 test("public root never intercepts invite, Fantasy join or guest room destinations", async ({ page, request }) => {

@@ -20,37 +20,35 @@ export interface HomepageExperienceChoice {
   href: string;
   action: string;
   description: string;
+  returnTo?: string;
 }
 
-/** Use only existing entry points; invite links continue through their own routes. */
-export function homepageExperienceChoices(hasSession: boolean): HomepageExperienceChoice[] {
+/** Organizer entry points only. Participant invites retain their own routes. */
+export function homepageExperienceChoices(hasSession: boolean, _intent: "organize" = "organize"): HomepageExperienceChoice[] {
   return [
     {
       id: "game-day",
       title: "Game Day",
-      href: "/gameday",
-      action: "Open Game Day",
-      description: hasSession
-        ? "Open your Game Day home. Join a room from your host’s link."
-        : "Room invites still open directly for guest play. Game Day home asks you to sign in.",
+      href: hasSession ? "/gameday/create" : "/auth",
+      returnTo: hasSession ? undefined : "/gameday/create",
+      action: hasSession ? "Check host access" : "Sign in to check host access",
+      description: "Create a room only if your account has Game Day host access. Sign in to check; if access is unavailable, join from a host’s invite instead.",
     },
     {
       id: "fantasy",
       title: "Fantasy",
       href: hasSession ? "/fantasy/setup" : "/auth",
+      returnTo: hasSession ? undefined : "/fantasy/setup",
       action: hasSession ? "Set up Fantasy" : "Sign in for Fantasy",
-      description: hasSession
-        ? "Create a league, or open a commissioner’s invite to join."
-        : "Join from a league invite, including as a guest. Sign in to create a league.",
+      description: "Commissioners set up a league, invite members, and confirm results. Joining an existing league? Use your commissioner’s invite.",
     },
     {
       id: "1v1",
       title: "1v1",
       href: hasSession ? "/(tabs)/create" : "/auth",
+      returnTo: hasSession ? undefined : "/(tabs)/create",
       action: hasSession ? "Create a 1v1" : "Sign in for 1v1",
-      description: hasSession
-        ? "Create a new challenge. Existing invites keep their preview and acceptance flow."
-        : "Challenge invites still open for preview. Sign in to create or accept a challenge.",
+      description: "Create a sports prediction challenge and invite a friend. Have an invite already? Open it to preview the challenge.",
     },
   ];
 }
