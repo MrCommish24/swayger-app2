@@ -1,5 +1,24 @@
 import { test, expect } from "@playwright/test";
 
+test("homepage scrolls with user input inside a non-scrolling app shell", async ({ page }) => {
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    const home = page.locator(".swayger-home");
+    await expect(home).toBeVisible();
+    // Reproduce the fixed-height preview/native-navigation shell. Programmatic
+    // scrollIntoView alone can mask an unusable wheel/touch scrolling surface.
+    await page.addStyleTag({ content: "html, body, #root { height:100%; overflow:hidden !important; }" });
+    expect(await home.evaluate(el => el.scrollHeight > el.clientHeight)).toBeTruthy();
+    await page.mouse.move(width / 2, 600);
+    await page.mouse.wheel(0, 700);
+    await expect.poll(() => home.evaluate(el => el.scrollTop)).toBeGreaterThan(100);
+    await page.mouse.wheel(0, 30000);
+    await expect(page.locator("footer")).toBeInViewport();
+    expect(await home.evaluate(el => el.scrollWidth <= el.clientWidth)).toBeTruthy();
+  }
+});
+
 test("organizer dialog fits 320px and secondary hero CTA keeps its outline", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.goto("/");

@@ -64,3 +64,15 @@ product states and Madden's web participant experience from Discord delivery.
 **How to apply:** Preserve capture provenance and truthful captions in future
 marketing edits; never replace an unavailable approved image with test or
 generated content. Keep publishing subject to the user's approval.
+
+The public web homepage must own its vertical scrolling surface inside the
+fixed-height Expo navigation/preview shell; document scrolling alone is not
+reliable there.
+
+**Why:** A standalone browser review could reach the footer while the user's
+embedded preview could not scroll. Programmatic scrollIntoView hid the issue.
+
+**How to apply:** Preserve a viewport-bounded scrollable homepage container.
+Regression checks must use wheel input with document scrolling disabled and
+reach the footer at desktop and narrow phone widths, not just move elements
+into view programmatically.
