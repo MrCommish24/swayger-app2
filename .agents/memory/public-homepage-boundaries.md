@@ -50,3 +50,17 @@ generated content for the public homepage.
 **How to apply:** If the approved originals are unavailable, clearly disclose
 the missing capture and leave a safe layout placeholder rather than inventing
 a screenshot. Approval of one capture does not establish approval of others.
+
+The approved screenshot library depicts real Game Day revealed picks, a settled
+Joker–Antman 1v1, Fantasy Week 10 participant picks, a separate Food Pyramid XX
+Week 1 completed receipt, Madden web participant picks, and Game Day setup.
+Caption the Madden web image exactly “Madden Weekly Pick Card,” not Discord
+or ATS. Do not imply the two Fantasy captures depict the same week.
+Approved real captures do not need developer/example-data disclaimers.
+
+**Why:** The user explicitly approved these captures and distinguished their
+product states and Madden's web participant experience from Discord delivery.
+
+**How to apply:** Preserve capture provenance and truthful captions in future
+marketing edits; never replace an unavailable approved image with test or
+generated content. Keep publishing subject to the user's approval.

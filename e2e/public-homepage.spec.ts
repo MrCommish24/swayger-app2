@@ -148,6 +148,24 @@ test("aligned product cards and approved original standings fit mobile and deskt
     const standings = page.locator(".proof-art img");
     await expect(standings).toHaveAttribute("src", "/assets/marketing/knicks-spurs-final-standings.png");
     await expect.poll(() => standings.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth === 680 && el.naturalHeight === 1022)).toBeTruthy();
+    await expect(page.locator(".mode-card h3")).toHaveText(["Swayger Game Day", "1v1 Swaygers", "Swayger Fantasy"]);
+    for (const filename of [
+      "knicks-spurs-pregame-picks-homepage.jpg",
+      "1v1-nba-playoffs-homepage.jpg",
+      "fantasy-week-10-picks-homepage.jpg",
+      "fantasy-week-1-homepage.jpg",
+      "madden-week-5-pick-card-homepage.jpg",
+      "gameday-organizer-homepage.jpg",
+    ]) {
+      const image = page.locator(`img[src="/assets/marketing/${filename}"]`);
+      await image.scrollIntoViewIfNeeded();
+      await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBeTruthy();
+      await expect(image).toHaveAttribute("alt", /.+/);
+      const bounds = await image.boundingBox();
+      expect(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width).toBeTruthy();
+    }
+    await expect(page.locator(".community-proof figcaption")).toHaveText("Madden Weekly Pick Card");
+    await expect(page.locator('img[src*="discord-week-5"]')).toHaveCount(0);
     await expect(page.getByText(/Capture pending|Approved Game Day capture awaiting upload/)).toHaveCount(0);
     await expect(page.getByText(/Illustrative component preview|Example data|Talk is cheap/)).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
@@ -167,10 +185,10 @@ test("aligned product cards and approved original standings fit mobile and deskt
     const proof = await page.locator(".proof-art").boundingBox();
     expect(proof && proof.x >= 0 && proof.x + proof.width <= width).toBeTruthy();
     if (width === 1440) {
-      const titles = await page.locator(".mode-card h3").evaluateAll(els => els.map(el => el.getBoundingClientRect().top));
-      expect(Math.max(...titles) - Math.min(...titles)).toBeLessThan(2);
+      const imageWidths = await page.locator(".product-shot img").evaluateAll(els => els.map(el => el.getBoundingClientRect().width));
+      expect(imageWidths.every(width => width >= 650)).toBeTruthy();
     }
-    await page.locator(".swayger-home").evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await page.locator("footer").scrollIntoViewIfNeeded();
     await expect(page.locator("footer")).toBeInViewport();
   }
 });

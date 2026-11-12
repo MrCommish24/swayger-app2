@@ -18,113 +18,113 @@ type Intent = "play" | "organize";
 const styles = `
   body:has(.swayger-home) #swayger-privacy-footer { display:none; }
   .swayger-home {
-    --night:#101a3a; --night-deep:#0b1430; --panel:#17234a; --panel-hi:#202f5e;
-    --paper:#f5f6fb; --muted:#bdc7e1; --quiet:#91a0c8; --rule:rgba(229,235,255,.15);
-    --blue:${C.tint}; --blue-light:#aebaff; --lime:${C.text};
+    --night:#0c1533; --night-deep:#081027; --panel:#14234a; --panel-hi:#1a2d5e;
+    --paper:#f4f6fc; --muted:#c0cbea; --quiet:#91a2cb; --rule:rgba(224,232,255,.17);
+    --blue:${C.tint}; --blue-light:#c1cbff; --lime:${C.text};
     color:var(--paper); background:var(--night); font-family:"DMSans_400Regular","DM Sans",sans-serif;
-    min-height:100dvh; height:100dvh; overflow-x:hidden; overflow-y:auto; position:relative; isolation:isolate;
+    min-height:100dvh; overflow-x:clip; position:relative; isolation:isolate;
   }
   .swayger-home,.swayger-home * { box-sizing:border-box; }
   .swayger-home a { color:inherit; }
   .swayger-home a:focus-visible,.swayger-home button:focus-visible { outline:3px solid var(--lime); outline-offset:4px; }
   .swayger-home .display { font-family:"BarlowCondensed_800ExtraBold","Barlow Condensed",sans-serif; font-weight:800; }
   .swayger-home .medium { font-family:"DMSans_500Medium","DM Sans",sans-serif; }
-  .swayger-home .wrap { width:min(1180px,calc(100% - 56px)); margin-inline:auto; }
+  .swayger-home .wrap { width:min(1260px,calc(100% - 64px)); margin-inline:auto; }
   .swayger-home .skip { position:absolute; z-index:20; top:10px; left:10px; padding:12px 16px; color:var(--night); background:var(--lime); transform:translateY(-160%); transition:transform .2s; }
   .swayger-home .skip:focus { transform:translateY(0); }
-  .swayger-home .topbar { position:relative; z-index:3; border-bottom:1px solid var(--rule); background:rgba(11,20,48,.7); }
-  .swayger-home .nav { min-height:78px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+  .swayger-home .topbar { position:relative; z-index:3; border-bottom:1px solid var(--rule); background:rgba(8,16,39,.88); }
+  .swayger-home .nav { min-height:76px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
   .swayger-home .brand { display:inline-flex; align-items:center; gap:11px; text-decoration:none; }
   .swayger-home .brand-word { font-size:23px; letter-spacing:.08em; line-height:1; }
   .swayger-home .nav-links { display:flex; gap:clamp(18px,3vw,38px); align-items:center; }
-  .swayger-home .nav-links a { color:#c6cfea; text-decoration:none; font-size:13px; }
+  .swayger-home .nav-links a { color:#c6cfea; text-decoration:none; font-size:12px; transition:color .18s; }
   .swayger-home .nav-links a:hover,.swayger-home .account-link:hover { color:var(--lime); }
   .swayger-home .header-actions { display:flex; align-items:center; gap:19px; flex-shrink:0; }
   .swayger-home .account-link { display:inline-flex; align-items:center; min-height:44px; font-size:13px; text-underline-offset:4px; }
-  .swayger-home .nav-cta { min-height:44px; padding:0 16px; border:0; background:var(--blue); color:var(--paper); cursor:pointer; font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-family:"DMSans_500Medium","DM Sans",sans-serif; }
+  .swayger-home .nav-cta { min-height:44px; padding:0 16px; border:0; background:var(--blue); color:var(--paper); cursor:pointer; font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-family:"DMSans_500Medium","DM Sans",sans-serif; transition:transform .2s,background .2s; }
   .swayger-home .nav-cta:hover,.swayger-home .button-primary:hover { background:${C.tintLight}; transform:translateY(-2px); }
-  .swayger-home .hero { min-height:650px; position:relative; display:grid; grid-template-columns:1.08fr .92fr; gap:7vw; align-items:center; padding-block:80px 94px; }
-  .swayger-home .hero:before { content:""; position:absolute; z-index:-1; width:760px; height:760px; right:-10%; top:-24%; border-radius:50%; background:radial-gradient(circle,rgba(73,105,244,.32),rgba(73,105,244,0) 69%); pointer-events:none; }
+  .swayger-home .hero { min-height:680px; position:relative; display:grid; grid-template-columns:1fr  .82fr; gap:clamp(30px,6vw,92px); align-items:center; padding-block:74px 98px; }
+  .swayger-home .hero:before { content:""; position:absolute; z-index:-1; width:760px; height:760px; right:-16%; top:-17%; border-radius:50%; background:radial-gradient(circle,rgba(67,97,238,.26),rgba(67,97,238,0) 69%); pointer-events:none; }
   .swayger-home .hero-copy { animation:swayger-rise .65s both; }
   .swayger-home .eyebrow,.swayger-home .section-kicker { color:var(--blue-light); text-transform:uppercase; font-size:10px; letter-spacing:.19em; font-family:"DMSans_500Medium","DM Sans",sans-serif; }
   .swayger-home .eyebrow { display:flex; align-items:center; gap:11px; }
   .swayger-home .eyebrow:before { content:""; width:30px; height:2px; background:var(--lime); }
-  .swayger-home h1 { max-width:720px; margin:27px 0 22px; font-size:clamp(66px,9vw,122px); line-height:.84; letter-spacing:-.03em; text-transform:uppercase; }
+  .swayger-home h1 { max-width:690px; margin:25px 0 20px; font-size:clamp(68px,8.3vw,116px); line-height:.83; letter-spacing:-.025em; text-transform:uppercase; }
   .swayger-home h1 em { color:var(--lime); font-style:normal; }
-  .swayger-home .hero-line { max-width:480px; margin:0; color:#e1e6f5; font-size:clamp(17px,1.65vw,20px); line-height:1.55; }
-  .swayger-home .hero-actions { display:flex; align-items:center; flex-wrap:wrap; gap:13px; margin-top:34px; }
-  .swayger-home .button { min-height:52px; display:inline-flex; align-items:center; justify-content:center; gap:12px; padding:0 20px; text-decoration:none; text-transform:uppercase; letter-spacing:.08em; font-size:11px; font-family:"DMSans_500Medium","DM Sans",sans-serif; transition:transform .18s,background .18s,border-color .18s; }
+  .swayger-home .hero-line { max-width:465px; margin:0; color:#e1e6f5; font-size:clamp(17px,1.6vw,20px); line-height:1.55; }
+  .swayger-home .hero-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:31px; }
+  .swayger-home .button { min-height:52px; display:inline-flex; align-items:center; justify-content:center; gap:12px; padding:0 20px; text-decoration:none; text-transform:uppercase; letter-spacing:.075em; font-size:10px; font-family:"DMSans_500Medium","DM Sans",sans-serif; transition:transform .2s,background .2s,border-color .2s,color .2s; }
   .swayger-home button.button { border:0; cursor:pointer; font:inherit; font-family:"DMSans_500Medium","DM Sans",sans-serif; }
   .swayger-home .button:hover { transform:translateY(-2px); }
   .swayger-home .button-primary { color:var(--paper); background:var(--blue); }
-   .swayger-home .button-outline { color:var(--paper); background:transparent; border:1px solid rgba(255,255,255,.55); }
-   .swayger-home button.button.button-outline { border:1px solid rgba(255,255,255,.55); }
+  .swayger-home .button-outline { color:var(--paper); background:transparent; border:1px solid rgba(255,255,255,.62); }
+  .swayger-home button.button.button-outline { border:1px solid rgba(255,255,255,.62); }
   .swayger-home .button-outline:hover { border-color:var(--lime); }
   .swayger-home .text-link { color:#c7d0ff; text-decoration-thickness:1px; text-underline-offset:5px; font-size:12px; }
   .swayger-home .hero-art { min-width:0; position:relative; animation:swayger-rise .8s .1s both; }
-   .swayger-home .proof-art { min-width:0; margin:0; padding:0; position:relative; overflow:hidden; border:1px solid rgba(217,226,255,.34); background:#101a3a; box-shadow:18px 18px 0 rgba(73,105,244,.2); }
-   .swayger-home .proof-art img { display:block; width:100%; height:auto; }
-   .swayger-home .proof-art-caption { padding:12px 15px 13px; color:#d5def5; font-size:11px; line-height:1.45; }
-   .swayger-home .proof-art-caption strong { display:block; color:var(--lime); font-size:12px; font-weight:500; }
-  .swayger-home .hero-index { position:absolute; right:0; bottom:30px; display:flex; align-items:center; gap:12px; color:#9aa8cf; font-size:9px; letter-spacing:.17em; text-transform:uppercase; }
+  .swayger-home .proof-art { min-width:0; margin:0; padding:0; position:relative; overflow:hidden; border:1px solid rgba(217,226,255,.4); background:#101a3a; box-shadow:16px 18px 0 rgba(67,97,238,.3); }
+  .swayger-home .proof-art img { display:block; width:100%; height:auto; }
+  .swayger-home .proof-art-caption { padding:12px 15px 13px; color:#d5def5; font-size:11px; line-height:1.45; }
+  .swayger-home .proof-art-caption strong { display:block; color:var(--lime); font-size:12px; font-weight:500; }
+  .swayger-home .hero-index { position:absolute; right:0; bottom:27px; display:flex; align-items:center; gap:12px; color:#9aa8cf; font-size:9px; letter-spacing:.17em; text-transform:uppercase; }
   .swayger-home .hero-index:before { content:""; width:34px; height:1px; background:var(--lime); }
-  .swayger-home .modes { padding:88px 0 96px; background:#f0f2fa; color:#101a3a; }
-  .swayger-home .modes-heading { display:flex; justify-content:space-between; align-items:end; gap:25px; margin-bottom:34px; }
+  .swayger-home .modes { padding:84px 0 92px; background:#f0f2fa; color:#101a3a; }
+  .swayger-home .modes-heading { display:flex; justify-content:space-between; align-items:end; gap:25px; margin-bottom:30px; }
   .swayger-home .modes .section-kicker,.swayger-home .process .section-kicker { color:#3c59d6; }
-  .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2,.swayger-home .final h2 { margin:13px 0 0; font-size:clamp(50px,6.7vw,82px); line-height:.86; letter-spacing:-.025em; text-transform:uppercase; }
+  .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2,.swayger-home .final h2 { margin:13px 0 0; font-size:clamp(50px,6.5vw,80px); line-height:.86; letter-spacing:-.025em; text-transform:uppercase; }
   .swayger-home .modes-sub { max-width:290px; margin:0 0 4px; color:#4d5774; font-size:13px; line-height:1.65; }
-  .swayger-home .mode-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
-   .swayger-home .mode-card { min-height:280px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; padding:25px; color:#f5f6fb; text-decoration:none; background:#152248; transition:transform .2s,border-color .2s,background .2s; border:1px solid rgba(174,186,255,.24); border-top:3px solid #aebaff; }
-   .swayger-home .mode-card:nth-child(2) { background:#20366f; border-color:rgba(214,222,255,.35); border-top-color:#f5f6fb; }
-   .swayger-home .mode-card:nth-child(3) { background:#182d58; border-color:rgba(67,97,238,.6); border-top-color:#4361ee; }
-  .swayger-home .mode-card:hover { transform:translateY(-5px); background:#263d82; }
-  .swayger-home .mode-card:after { content:""; position:absolute; width:230px; height:230px; right:-120px; top:-120px; border:1px solid rgba(233,238,255,.18); border-radius:50%; box-shadow:0 0 0 26px rgba(233,238,255,.04),0 0 0 52px rgba(233,238,255,.025); }
+  .swayger-home .mode-list { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }
+  .swayger-home .experience-card { min-width:0; display:grid; grid-template-columns:minmax(0,.55fr) minmax(0,1fr); align-items:center; overflow:hidden; background:#152248; border:1px solid rgba(174,186,255,.24); border-top:3px solid #aebaff; transition:transform .22s,background .22s; }
+  .swayger-home .experience-card:nth-child(2) { background:#20366f; border-color:rgba(214,222,255,.35); border-top-color:#f5f6fb; }
+  .swayger-home .experience-card:nth-child(3) { background:#182d58; border-color:rgba(67,97,238,.6); border-top-color:#4361ee; }
+  .swayger-home .experience-card:hover { transform:translateY(-4px); background:#263d82; }
+  .swayger-home .mode-card { min-height:280px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; padding:23px; color:#f5f6fb; text-decoration:none; background:transparent; border:0; }
+  .swayger-home .mode-card:hover { background:transparent; }
+  .swayger-home .mode-card:after { content:""; position:absolute; width:230px; height:230px; right:-120px; top:-120px; border:1px solid rgba(233,238,255,.18); border-radius:50%; box-shadow:0 0 0 26px rgba(233,238,255,.04),0 0 0 52px rgba(233,238,255,.025); pointer-events:none; }
   .swayger-home .mode-index { color:#c0cafa; font-size:9px; letter-spacing:.16em; }
-  .swayger-home .mode-glyph { width:44px; height:44px; display:grid; place-items:center; margin-top:29px; border:1px solid rgba(174,186,255,.7); color:var(--lime); font-size:14px; letter-spacing:.04em; }
-   .swayger-home .mode-card:nth-child(2) .mode-glyph { background:rgba(245,246,251,.12); border-color:rgba(245,246,251,.72); }
-   .swayger-home .mode-card:nth-child(3) .mode-glyph { border-style:dashed; border-color:#8298ff; }
-  .swayger-home .mode-card h3 { max-width:270px; min-height:84px; margin:20px 0 11px; font-size:clamp(34px,4vw,47px); line-height:.88; text-transform:uppercase; }
-  .swayger-home .mode-card p { max-width:290px; min-height:78px; margin:0; color:#d2daf1; font-size:12px; line-height:1.6; }
-  .swayger-home .mode-link { display:inline-flex; align-items:center; gap:10px; width:fit-content; margin-top:19px; color:var(--lime); font-size:10px; letter-spacing:.13em; text-transform:uppercase; }
+  .swayger-home .mode-glyph { width:44px; height:44px; display:grid; place-items:center; margin-top:25px; border:1px solid rgba(174,186,255,.7); color:var(--lime); font-size:13px; letter-spacing:.04em; }
+  .swayger-home .experience-card:nth-child(2) .mode-glyph { background:rgba(245,246,251,.12); border-color:rgba(245,246,251,.72); }
+  .swayger-home .experience-card:nth-child(3) .mode-glyph { border-style:dashed; border-color:#8298ff; }
+  .swayger-home .mode-card h3 { max-width:270px; min-height:68px; margin:18px 0 10px; font-size:clamp(31px,3.7vw,44px); line-height:.88; text-transform:uppercase; }
+  .swayger-home .mode-card p { max-width:290px; min-height:68px; margin:0; color:#d2daf1; font-size:12px; line-height:1.6; }
+  .swayger-home .mode-link { display:inline-flex; align-items:center; gap:10px; width:fit-content; margin-top:16px; color:var(--lime); font-size:10px; letter-spacing:.13em; text-transform:uppercase; }
   .swayger-home .mode-link span { font-size:17px; transition:transform .2s; }
   .swayger-home .mode-card:hover .mode-link span { transform:translateX(4px); }
-  .swayger-home .process { padding:82px 0 88px; background:#d9e1fa; color:#101a3a; }
-  .swayger-home .process-head { display:flex; align-items:end; justify-content:space-between; gap:25px; margin-bottom:34px; }
-  .swayger-home .process h2 { margin:12px 0 0; font-size:clamp(48px,6.5vw,78px); line-height:.85; text-transform:uppercase; }
-  .swayger-home .process-intro { max-width:320px; margin:0 0 2px; color:#4c587d; font-size:13px; line-height:1.6; }
-  .swayger-home .steps { display:grid; grid-template-columns:repeat(5,1fr); list-style:none; padding:0; margin:0; border-top:1px solid rgba(16,26,58,.26); }
-  .swayger-home .steps li { min-height:144px; padding:17px 14px 0 0; border-right:1px solid rgba(16,26,58,.2); }
-  .swayger-home .steps li+li { padding-left:15px; }
+  .swayger-home .product-captures { display:grid; gap:16px; padding:20px; }
+  .swayger-home .product-shot { min-width:0; margin:0; padding-top:10px; border-top:1px solid rgba(229,235,255,.18); }
+  .swayger-home .product-shot img { display:block; width:100%; height:auto; background:#09090b; }
+  .swayger-home .product-shot figcaption { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:7px 12px; padding:8px 1px 0; color:#e1e6f5; font-size:10px; line-height:1.4; }
+  .swayger-home .full-image-link { display:inline-flex; align-items:center; min-height:38px; color:var(--lime); font-family:"DMSans_500Medium","DM Sans",sans-serif; font-size:10px; text-underline-offset:3px; text-decoration-thickness:1px; white-space:nowrap; }
+  .swayger-home .full-image-link:focus-visible { outline:3px solid var(--lime); outline-offset:2px; }
+  .swayger-home .process { padding:58px 0; background:#d9e1fa; color:#101a3a; }
+  .swayger-home .steps { display:grid; grid-template-columns:repeat(4,1fr); list-style:none; padding:0; margin:0; border-top:1px solid rgba(16,26,58,.26); }
+  .swayger-home .steps li { min-height:92px; display:flex; align-items:center; gap:13px; padding:12px 14px 12px 0; border-right:1px solid rgba(16,26,58,.2); }
+  .swayger-home .steps li+li { padding-left:18px; }
   .swayger-home .steps li:last-child { border:0; }
   .swayger-home .step-num { color:#3c59d6; font-size:10px; letter-spacing:.12em; }
-  .swayger-home .steps h3 { margin:25px 0 7px; font-size:clamp(23px,2.7vw,33px); line-height:.9; text-transform:uppercase; }
-  .swayger-home .steps p { max-width:170px; margin:0; color:#4c5876; font-size:11px; line-height:1.55; }
-  .swayger-home .community { position:relative; overflow:hidden; padding:92px 0 98px; background:#324fc4; }
+  .swayger-home .steps h3 { margin:0; font-size:clamp(22px,2.7vw,34px); line-height:.9; text-transform:uppercase; }
+  .swayger-home .community { position:relative; overflow:hidden; padding:86px 0 92px; background:#324fc4; }
   .swayger-home .community:before { content:""; position:absolute; width:680px; height:680px; right:-200px; top:-315px; border:1px solid rgba(255,255,255,.22); border-radius:50%; box-shadow:0 0 0 38px rgba(255,255,255,.04),0 0 0 78px rgba(255,255,255,.03),0 0 0 118px rgba(255,255,255,.02); }
-  .swayger-home .community-grid { position:relative; z-index:1; display:grid; grid-template-columns:1fr .83fr; align-items:center; gap:8vw; }
+  .swayger-home .community-grid { position:relative; z-index:1; display:grid; grid-template-columns:.72fr 1fr; align-items:center; gap:7vw; }
   .swayger-home .community .section-kicker { color:#d6deff; }
-  .swayger-home .community h2 { max-width:680px; }
-  .swayger-home .community-copy { max-width:460px; margin:22px 0 26px; color:#e1e6ff; font-size:14px; line-height:1.7; }
-   .swayger-home .community-proof { min-width:0; margin:0; padding:10px; border:1px solid rgba(255,255,255,.38); background:rgba(11,20,48,.5); box-shadow:12px 12px 0 rgba(11,20,48,.24); }
-   .swayger-home .community-proof img { display:block; width:100%; height:auto; }
-   .swayger-home .community-proof figcaption { display:grid; gap:6px; padding:13px 5px 3px; color:#e1e6ff; font-size:11px; line-height:1.5; }
-   .swayger-home .community-proof figcaption strong { color:#fff; font-size:13px; font-weight:500; }
-   .swayger-home .community-proof-note { color:#cbd5ff; }
-  .swayger-home .organizers { padding:91px 0 96px; background:#111d40; border-block:1px solid var(--rule); }
-  .swayger-home .organizer-grid { display:grid; grid-template-columns:1fr .72fr; gap:9vw; align-items:center; }
-  .swayger-home .organizers h2 { max-width:670px; }
+  .swayger-home .community h2 { max-width:550px; }
+  .swayger-home .community-copy { max-width:460px; margin:20px 0 25px; color:#e1e6ff; font-size:14px; line-height:1.7; }
+  .swayger-home .community-proof-wrap { min-width:0; }
+  .swayger-home .community-proof { min-width:0; margin:0; padding:10px; border:1px solid rgba(255,255,255,.38); background:rgba(11,20,48,.5); box-shadow:12px 12px 0 rgba(11,20,48,.24); }
+  .swayger-home .community-proof img { display:block; width:100%; height:auto; background:#09090b; }
+  .swayger-home .community-proof figcaption { padding:11px 2px 1px; color:#fff; font-size:13px; font-weight:500; }
+  .swayger-home .community-proof-link { display:inline-flex; margin:4px 0 0 10px; }
+  .swayger-home .organizers { padding:86px 0 90px; background:#111d40; border-block:1px solid var(--rule); }
+  .swayger-home .organizer-grid { display:grid; grid-template-columns:.8fr 1fr; gap:7vw; align-items:center; }
+  .swayger-home .organizers h2 { max-width:700px; }
   .swayger-home .organizers p { max-width:490px; margin:20px 0 24px; color:var(--muted); font-size:14px; line-height:1.7; }
-  .swayger-home .organizer-visual { position:relative; display:grid; place-items:center; width:100%; max-width:335px; aspect-ratio:1; justify-self:end; border:1px solid rgba(255,255,255,.2); background:repeating-linear-gradient(0deg,transparent 0 35px,rgba(255,255,255,.055) 36px 37px),repeating-linear-gradient(90deg,transparent 0 35px,rgba(255,255,255,.055) 36px 37px),#172650; }
-  .swayger-home .organizer-visual:before,.swayger-home .organizer-visual:after { content:""; position:absolute; border:1px solid rgba(174,186,255,.52); border-radius:50%; }
-  .swayger-home .organizer-visual:before { width:72%; aspect-ratio:1; }
-  .swayger-home .organizer-visual:after { width:44%; aspect-ratio:1; border-color:rgba(174,186,255,.6); }
-  .swayger-home .visual-mark { position:relative; z-index:1; width:78px; height:78px; display:grid; place-items:center; background:var(--blue); box-shadow:9px 9px 0 rgba(5,10,28,.6); }
-  .swayger-home .visual-label { position:absolute; left:18px; bottom:15px; color:#b7c3e7; font-size:9px; letter-spacing:.14em; text-transform:uppercase; }
-  .swayger-home .final { padding:104px 0 112px; text-align:center; position:relative; }
+  .swayger-home .organizer-proof { min-width:0; margin:0; padding:10px; border:1px solid rgba(193,203,255,.3); background:#101b3d; }
+  .swayger-home .organizer-proof img { display:block; width:100%; height:auto; background:#09090b; }
+  .swayger-home .organizer-proof figcaption { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 12px; padding:8px 2px 0; color:#e3e9fb; font-size:11px; }
+  .swayger-home .final { padding:92px 0 100px; text-align:center; position:relative; }
   .swayger-home .final:before { content:""; position:absolute; z-index:-1; width:760px; height:430px; left:50%; top:0; transform:translateX(-50%); background:radial-gradient(ellipse,rgba(73,105,244,.25),transparent 70%); }
   .swayger-home .final .section-kicker { display:flex; justify-content:center; }
-  .swayger-home .final h2 { max-width:760px; margin:17px auto 22px; font-size:clamp(54px,7.6vw,92px); }
-  .swayger-home .final p { max-width:430px; margin:0 auto 27px; color:var(--muted); font-size:14px; line-height:1.65; }
+  .swayger-home .final h2 { max-width:760px; margin:17px auto 25px; font-size:clamp(54px,7.6vw,92px); }
   .swayger-home .footer { padding:28px 0; border-top:1px solid var(--rule); }
   .swayger-home .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:22px; }
   .swayger-home .footer-brand { display:flex; align-items:center; gap:10px; }
@@ -157,10 +157,9 @@ const styles = `
   .swayger-home .invite-note { margin:20px 0 0; padding-top:17px; border-top:1px solid var(--rule); color:#cbd4ee; font-size:12px; line-height:1.65; }
   @keyframes swayger-rise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
   @media(max-width:850px) {
-    .swayger-home .hero { min-height:580px; grid-template-columns:1fr .82fr; gap:30px; }
-    .swayger-home h1 { font-size:clamp(62px,10vw,94px); }
-    .swayger-home .proof-art { padding:19px; }
-    .swayger-home .community-grid { gap:5vw; }
+    .swayger-home .hero { min-height:600px; grid-template-columns:1fr .82fr; gap:30px; }
+    .swayger-home h1 { font-size:clamp(62px,9.5vw,94px); }
+    .swayger-home .community-grid,.swayger-home .organizer-grid { gap:5vw; }
   }
   @media(max-width:680px) {
     .swayger-home .wrap { width:min(100% - 36px,540px); }
@@ -171,50 +170,50 @@ const styles = `
     .swayger-home .header-actions { gap:10px; }
     .swayger-home .account-link { font-size:12px; }
     .swayger-home .nav-cta { min-height:44px; padding-inline:11px; font-size:9px; }
-     .swayger-home .hero { display:flex; flex-direction:column; align-items:stretch; gap:36px; min-height:0; padding-block:52px 64px; }
+    .swayger-home .hero { display:flex; flex-direction:column; align-items:stretch; gap:34px; min-height:0; padding-block:50px 64px; }
     .swayger-home h1 { font-size:clamp(63px,17.6vw,94px); margin:23px 0 18px; }
     .swayger-home .hero-line { font-size:16px; }
-    .swayger-home .hero-actions { align-items:flex-start; flex-direction:column; gap:13px; margin-top:26px; }
+    .swayger-home .hero-actions { align-items:stretch; flex-direction:column; gap:10px; margin-top:25px; }
+    .swayger-home .hero-actions .button { width:100%; }
     .swayger-home .hero-art { width:calc(100% - 10px); margin-inline:auto; }
-    .swayger-home .proof-art { min-height:320px; }
     .swayger-home .hero-index { bottom:20px; }
-     .swayger-home .modes,.swayger-home .process,.swayger-home .community,.swayger-home .organizers { padding-block:58px; }
-    .swayger-home .modes-heading,.swayger-home .process-head { display:block; }
-     .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2 { font-size:clamp(43px,12.5vw,60px); }
-     .swayger-home .process h2 { font-size:clamp(42px,12vw,58px); }
-     .swayger-home .modes-sub,.swayger-home .process-intro { margin-top:15px; }
+    .swayger-home .modes,.swayger-home .process,.swayger-home .community,.swayger-home .organizers { padding-block:58px; }
+    .swayger-home .modes-heading { display:block; }
+    .swayger-home .modes h2,.swayger-home .community h2,.swayger-home .organizers h2 { font-size:clamp(43px,12.5vw,60px); }
+    .swayger-home .modes-sub { margin-top:15px; }
     .swayger-home .mode-list { grid-template-columns:1fr; gap:9px; }
+    .swayger-home .experience-card { grid-template-columns:minmax(0,1fr); }
     .swayger-home .mode-card { min-height:235px; padding:22px; }
     .swayger-home .mode-card h3 { font-size:39px; }
-    .swayger-home .steps { grid-template-columns:1fr; border-top:0; }
-    .swayger-home .steps li,.swayger-home .steps li+li { min-height:0; display:grid; grid-template-columns:32px 1fr; column-gap:10px; padding:14px 0; border-right:0; border-top:1px solid rgba(16,26,58,.22); }
-    .swayger-home .steps h3 { margin:0 0 4px; font-size:28px; }
-    .swayger-home .steps p { grid-column:2; max-width:none; }
-    .swayger-home .community-grid,.swayger-home .organizer-grid { grid-template-columns:1fr; gap:30px; }
-     .swayger-home .community-proof { width:100%; }
-    .swayger-home .organizer-visual { max-width:270px; justify-self:center; }
-     .swayger-home .final { padding:68px 0 74px; }
-     .swayger-home .final h2 { font-size:clamp(46px,12.5vw,64px); }
+    .swayger-home .steps { grid-template-columns:1fr 1fr; border-top:0; }
+    .swayger-home .steps li,.swayger-home .steps li+li { min-height:66px; padding:10px 8px 10px 0; border-right:0; border-top:1px solid rgba(16,26,58,.22); }
+    .swayger-home .steps li:nth-child(even) { padding-left:10px; border-left:1px solid rgba(16,26,58,.2); }
+    .swayger-home .steps h3 { font-size:25px; }
+    .swayger-home .community-grid,.swayger-home .organizer-grid { grid-template-columns:1fr; gap:27px; }
+    .swayger-home .community-proof { width:100%; }
+    .swayger-home .final { padding:68px 0 74px; }
+    .swayger-home .final h2 { font-size:clamp(46px,12.5vw,64px); }
     .swayger-home .footer-inner { align-items:flex-start; flex-direction:column; }
     .swayger-home .footer-links { gap:18px; }
     .swayger-home .experience-grid { grid-template-columns:1fr; gap:8px; }
     .swayger-home .experience-option { min-height:0; padding:15px; }
     .swayger-home .experience-option p { max-width:none; }
     .swayger-home .experience-option a { margin-top:8px; }
-     .swayger-home .experience-dialog-inner { padding:18px 16px; }
-     .swayger-home .experience-dialog-head { gap:10px; }
-     .swayger-home .experience-dialog h2 { font-size:clamp(34px,10.5vw,48px); }
+    .swayger-home .experience-dialog-inner { padding:18px 16px; }
+    .swayger-home .experience-dialog-head { gap:10px; }
+    .swayger-home .experience-dialog h2 { font-size:clamp(34px,10.5vw,48px); }
   }
   @media(max-width:360px) {
     .swayger-home .wrap { width:calc(100% - 30px); }
     .swayger-home .brand-word { font-size:16px; }
     .swayger-home .header-actions { gap:7px; }
     .swayger-home .nav-cta { padding-inline:8px; }
-     .swayger-home h1 { font-size:54px; }
+    .swayger-home h1 { font-size:54px; }
     .swayger-home .mode-card { padding:19px; }
-     .swayger-home .experience-dialog-inner { padding:16px 14px; }
-     .swayger-home .experience-dialog-head { gap:8px; }
-     .swayger-home .experience-dialog h2 { font-size:34px; }
+    .swayger-home .hero .button { padding-inline:12px; font-size:9px; letter-spacing:.045em; }
+    .swayger-home .experience-dialog-inner { padding:16px 14px; }
+    .swayger-home .experience-dialog-head { gap:8px; }
+    .swayger-home .experience-dialog h2 { font-size:34px; }
   }
   @media(prefers-reduced-motion:reduce) {
     .swayger-home *, .swayger-home *:before, .swayger-home *:after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; transition-duration:.01ms!important; }
@@ -326,9 +325,9 @@ export default function PublicHomepage() {
             <span className="display brand-word">SWAYGER</span>
           </a>
           <nav className="nav-links" aria-label="Main navigation">
-            <a href="#how-it-works">How it works</a>
-            <a href="#community">For your group</a>
-            <a href="#organizers">For organizers</a>
+            <a href="#experiences">Experiences</a>
+            <a href="#community">Your crew</a>
+            <a href="#organizers">Organize</a>
           </nav>
           <div className="header-actions">
             <a className="account-link medium" href={accountLink.href}>{accountLink.label}</a>
@@ -349,58 +348,86 @@ export default function PublicHomepage() {
               <a className="text-link" href="/how-it-works">See How It Works</a>
             </div>
           </div>
-          <div className="hero-art" aria-label="Swayger proof preview awaiting approved capture">
+          <div className="hero-art">
             <figure className="proof-art">
               <img
                 src="/assets/marketing/knicks-spurs-final-standings.png"
                 width={680}
                 height={1022}
                 loading="eager"
-                alt="Historical user-provided Swayger room record showing final standings for Knicks vs Spurs Game 5, with user-approved public display names."
+                alt="Final standings for Knicks vs Spurs Game 5 in a Swayger room, with participant display names."
               />
               <figcaption className="proof-art-caption">
                 <strong>Knicks vs Spurs · Game 5 final standings</strong>
-                Historical user-provided room record.
+                The final standings are in.
               </figcaption>
             </figure>
           </div>
           <div className="hero-index" aria-hidden="true">The next call is yours</div>
         </section>
 
-        <section className="modes" aria-labelledby="modes-title">
+        <section id="experiences" className="modes" aria-labelledby="modes-title">
           <div className="wrap">
             <div className="modes-heading">
               <div>
                 <div className="section-kicker">Three ways to call it</div>
-                <h2 id="modes-title" className="display">Pick your<br />competition.</h2>
+                <h2 id="modes-title" className="display">Choose your<br />competition.</h2>
               </div>
-              <p className="modes-sub">The competitive prediction layer for sports communities.</p>
+              <p className="modes-sub">Picks with your crew. Locked before the action. Settled with receipts.</p>
             </div>
             <div className="mode-list">
-              {experienceChoices.map((choice, index) => {
-                const descriptions = [
-                  "A game or slate with your crew. Hosting requires approved Game Day access; use a host’s invite to join.",
-                  "Commissioners bring weekly predictions to a fantasy league. Members join through their league’s invite.",
-                  "Create one prediction and invite a friend to take the other side. Confirm the result together.",
-                ];
-                const glyphs = ["GD", "F", "1:1"];
+              {[...experienceChoices]
+                .sort((a, b) => ["game-day", "1v1", "fantasy"].indexOf(a.id) - ["game-day", "1v1", "fantasy"].indexOf(b.id))
+                .map((choice, index) => {
+                const content = {
+                  "game-day": { title: "Swayger Game Day", desc: "Call a game or full slate with your crew. Host access required to start a room; join through your host’s invite.", glyph: "GD" },
+                  "1v1": { title: "1v1 Swaygers", desc: "Put one prediction on the line with a friend. Take opposite sides, then settle the call together.", glyph: "1:1" },
+                  fantasy: { title: "Swayger Fantasy", desc: "Bring weekly predictions to your fantasy league. Commissioners set the slate; members join by invite.", glyph: "F" },
+                }[choice.id];
                 return (
-                  <a
-                    className="mode-card"
-                    href={choice.href}
-                    key={choice.id}
-                    onClick={(event) => handleChoice(event, choice.returnTo)}
-                  >
-                    <div>
-                      <div className="mode-index">0{index + 1} / SWAYGER</div>
-                      <div className="mode-glyph" aria-hidden="true">{glyphs[index]}</div>
+                  <article className="experience-card" key={choice.id}>
+                    <a
+                      className="mode-card"
+                      href={choice.href}
+                      onClick={(event) => handleChoice(event, choice.returnTo)}
+                    >
+                      <div>
+                        <div className="mode-index">0{index + 1} / SWAYGER</div>
+                        <div className="mode-glyph" aria-hidden="true">{content.glyph}</div>
+                      </div>
+                      <div>
+                        <h3 className="display">{content.title}</h3>
+                        <p>{content.desc}</p>
+                        <span className="mode-link">{choice.action}<span aria-hidden="true">→</span></span>
+                      </div>
+                    </a>
+                    <div className="product-captures">
+                      {choice.id === "game-day" ? (
+                        <figure className="product-shot">
+                          <img src="/assets/marketing/knicks-spurs-pregame-picks-homepage.jpg" width={1322} height={472} loading="lazy" alt="Knicks–Spurs Game 5 revealed pregame picks, group pick counts, and correct answers in a Swayger Game Day room." />
+                          <figcaption>Knicks–Spurs · Game 5 revealed picks<a className="full-image-link" href="/assets/marketing/knicks-spurs-pregame-picks-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a></figcaption>
+                        </figure>
+                      ) : null}
+                      {choice.id === "1v1" ? (
+                        <figure className="product-shot">
+                          <img src="/assets/marketing/1v1-nba-playoffs-homepage.jpg" width={1339} height={561} loading="lazy" alt="Settled NBA Playoffs 1v1: Jokic is the creator’s pick, Antman is the opponent’s pick, and the creator wins 25 Swayger Points." />
+                          <figcaption>Joker vs Antman · settled<a className="full-image-link" href="/assets/marketing/1v1-nba-playoffs-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a></figcaption>
+                        </figure>
+                      ) : null}
+                      {choice.id === "fantasy" ? (
+                        <>
+                          <figure className="product-shot">
+                            <img src="/assets/marketing/fantasy-week-10-picks-homepage.jpg" width={1324} height={525} loading="lazy" alt="Week 10 Swayger Fantasy participant predictions with two questions, point values, and Choose Team controls; no answers have been submitted." />
+                            <figcaption>Week 10 · participant picks<a className="full-image-link" href="/assets/marketing/fantasy-week-10-picks-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a></figcaption>
+                          </figure>
+                          <figure className="product-shot">
+                            <img src="/assets/marketing/fantasy-week-1-homepage.jpg" width={1339} height={799} loading="lazy" alt="Food Pyramid XX Week 1 finalized Fantasy receipt, with two co-winners and all four final standings rows." />
+                            <figcaption>Food Pyramid XX · Week 1 finalized receipt<a className="full-image-link" href="/assets/marketing/fantasy-week-1-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a></figcaption>
+                          </figure>
+                        </>
+                      ) : null}
                     </div>
-                    <div>
-                      <h3 className="display">{choice.title === "Game Day" ? "Swayger Game Day" : choice.title === "Fantasy" ? "Swayger Fantasy" : "1v1 Swaygers"}</h3>
-                      <p>{descriptions[index]}</p>
-                      <span className="mode-link">{choice.action}<span aria-hidden="true">→</span></span>
-                    </div>
-                  </a>
+                  </article>
                 );
               })}
             </div>
@@ -408,21 +435,13 @@ export default function PublicHomepage() {
           </div>
         </section>
 
-        <section id="how-it-works" className="process" aria-labelledby="process-title">
+        <section id="how-it-works" className="process" aria-label="How Swayger works">
           <div className="wrap">
-            <div className="process-head">
-              <div>
-                <div className="section-kicker">The call, then the proof</div>
-                <h2 id="process-title" className="display">Pick. Lock.<br />Compete.</h2>
-              </div>
-              <p className="process-intro">Make your call before the action. Your organizer confirms the result; the record keeps it straight.</p>
-            </div>
             <ol className="steps">
-              <li><span className="step-num">01</span><div><h3 className="display">Pick</h3><p>Call the game or matchup.</p></div></li>
-              <li><span className="step-num">02</span><div><h3 className="display">Lock</h3><p>Your pick locks at the deadline.</p></div></li>
-              <li><span className="step-num">03</span><div><h3 className="display">Compete</h3><p>See how your calls compare.</p></div></li>
-              <li><span className="step-num">04</span><div><h3 className="display">Settle</h3><p>An organizer confirms results.</p></div></li>
-              <li><span className="step-num">05</span><div><h3 className="display">Share</h3><p>Bring the proof back to the group.</p></div></li>
+              <li><span className="step-num">01</span><h3 className="display">Pick</h3></li>
+              <li><span className="step-num">02</span><h3 className="display">Lock</h3></li>
+              <li><span className="step-num">03</span><h3 className="display">Compete</h3></li>
+              <li><span className="step-num">04</span><h3 className="display">Get receipts</h3></li>
             </ol>
           </div>
         </section>
@@ -430,24 +449,18 @@ export default function PublicHomepage() {
         <section id="community" className="community" aria-labelledby="community-title">
           <div className="wrap community-grid">
             <div>
-              <div className="section-kicker">Your people. Their takes.</div>
-              <h2 id="community-title" className="display">Already have the group? Bring Swayger to it.</h2>
-              <p className="community-copy">Keep your community where it is. Swayger gives the picks a place to lock, the competition a shared record, and the postgame debate a reason to come back. Bring your Discord, watch party, league, or crew.</p>
-              <button className="button button-primary" type="button" onClick={(event) => openChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
+              <div className="section-kicker">Keep the crew. Keep the receipts.</div>
+              <h2 id="community-title" className="display">Built for your crew</h2>
+              <p className="community-copy">Your group already has the opinions. Give every pick a deadline, every matchup a little heat, and every result a place to live.</p>
+              <button className="button button-outline" type="button" onClick={(event) => openChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
             </div>
-            <figure className="community-proof">
-              <img
-                src="/assets/marketing/discord-week-5-pick-card.png"
-                width={502}
-                height={548}
-                loading="lazy"
-                alt="Discord capture from Swayger Dev Bot showing a Week 5 Parlay pick card with six matchup spreads, Against the Spread pick type, Perfect Card win condition, Dev Upgrade reward, pick deadline, and a Get My Picks Link."
-              />
-              <figcaption>
-                <strong>Discord pick card · Week 5 Parlay.</strong>
-                <span className="community-proof-note">This shows the setup, not a settled result. The Get My Picks Link is part of the screenshot and is not interactive here.</span>
-              </figcaption>
-            </figure>
+            <div className="community-proof-wrap">
+              <figure className="community-proof">
+                <img src="/assets/marketing/madden-week-5-pick-card-homepage.jpg" width={634} height={587} loading="lazy" alt="Madden Week 5 Parlay web participant pick card: Dev Upgrade administered by the commissioner, 8 of 8 answered, with the first three selected matchup picks." />
+                <figcaption>Madden Weekly Pick Card</figcaption>
+              </figure>
+              <a className="full-image-link community-proof-link" href="/assets/marketing/madden-week-5-pick-card-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a>
+            </div>
           </div>
         </section>
 
@@ -455,14 +468,14 @@ export default function PublicHomepage() {
           <div className="wrap organizer-grid">
             <div>
               <div className="section-kicker">For the friend who gets it going</div>
-              <h2 id="organizers-title" className="display">Run the competition. Let Swayger handle the rest.</h2>
-              <p>You choose the format, set the rules and deadline, invite your people, and manually confirm results. Swayger tracks picks, standings, and receipts.</p>
+              <h2 id="organizers-title" className="display">You bring the crew. Swayger brings the competition.</h2>
+              <p>Choose the format, set the rules and deadline, invite your people, then confirm results. Swayger keeps picks, standings, and receipts together.</p>
               <button className="button button-outline" type="button" onClick={(event) => openChoices("organize", event)}>Choose a group format</button>
             </div>
-            <div className="organizer-visual" aria-hidden="true">
-              <div className="visual-mark"><SwaygerMark color={C.text} size={45} /></div>
-              <span className="visual-label">Your rules. Your people.</span>
-            </div>
+            <figure className="organizer-proof">
+              <img src="/assets/marketing/gameday-organizer-homepage.jpg" width={1338} height={564} loading="lazy" alt="New Game Day Room setup screen showing NBA, NFL, Soccer, and Madden sport choices, room details, teams, and optional card scheduling." />
+              <figcaption>New Game Day Room<a className="full-image-link" href="/assets/marketing/gameday-organizer-homepage.jpg" target="_blank" rel="noopener noreferrer">View full-size</a></figcaption>
+            </figure>
           </div>
         </section>
 
@@ -470,7 +483,6 @@ export default function PublicHomepage() {
           <div className="wrap">
             <div className="section-kicker">Next game. New receipts.</div>
             <h2 id="final-title" className="display">Make your call count.</h2>
-            <p>Bring your people in. Lock your pick before the game and let the record speak.</p>
             <button className="button button-primary" type="button" onClick={(event) => openChoices("play", event)}>Play Swayger <span aria-hidden="true">↗</span></button>
           </div>
         </section>
@@ -497,7 +509,9 @@ export default function PublicHomepage() {
               <p id="experience-dialog-intro" className="experience-intro">Choose the format that fits your group. You set it up, share its invite, and confirm results under your rules.</p>
               {navigationError ? <p className="experience-error" role="alert">{navigationError}</p> : null}
               <div className="experience-grid">
-                {experienceChoices.map((choice) => (
+                {[...experienceChoices]
+                  .sort((a, b) => ["game-day", "1v1", "fantasy"].indexOf(a.id) - ["game-day", "1v1", "fantasy"].indexOf(b.id))
+                  .map((choice) => (
                   <article className="experience-option" key={choice.id}>
                     <h3 className="display">
                       {choice.title === "Game Day" ? "Swayger Game Day" : choice.title === "Fantasy" ? "Swayger Fantasy" : "1v1 Swaygers"}

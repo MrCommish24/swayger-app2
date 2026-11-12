@@ -36,13 +36,13 @@ for (const platform of ["web", "ios", "android"]) {
 const page = read("components/marketing/PublicHomepage.web.tsx");
 for (const copy of [
   "Make sports talk ", "competitive.", "Make your picks. Prove your takes. Keep the receipts.",
-  "The competitive prediction layer for sports communities.",
-  "Already have the group? Bring Swayger to it.",
-  "Run the competition. Let Swayger handle the rest.",
+  "Built for your crew",
+  "You bring the crew. Swayger brings the competition.",
+  "Make your call count.",
   "Play Swayger", "Bring Swayger to Your Group", "See How It Works",
 ]) check(`locked copy: ${copy}`, page.includes(copy));
-check("exactly three product cards use the three-mode choices", page.includes("experienceChoices.map") && signedOutChoices.length === 3 && page.includes('className="mode-card"'));
-for (const label of ["Pick", "Lock", "Compete", "Settle", "Share"]) check(`step ${label}`, page.includes(`>${label}</h3>`));
+check("exactly three product cards use the three-mode choices", page.includes("[...experienceChoices]") && signedOutChoices.length === 3 && page.includes('className="mode-card"'));
+for (const label of ["Pick", "Lock", "Compete", "Get receipts"]) check(`step ${label}`, page.includes(`>${label}</h3>`));
 for (const anchor of ["community", "organizers", "how-it-works", "main-content"]) {
   check(`anchor ${anchor} exists`, page.includes(`id="${anchor}"`));
 }
@@ -63,10 +63,22 @@ check("public hero excludes developer labels and old slogan", !/Illustrative com
 check("organizer auth intent wired to existing routes", page.includes("prepareHomepageReturn(returnTo)") && page.includes("handleChoice(event, choice.returnTo)"));
 check("homepage receipt sample has no stale date", !page.includes('gameDate="2025-10-12"'));
 check("receipt stamp no longer overlays its caption", !page.includes(".art-stamp { position: absolute"));
-check("community uses supplied Discord capture without claiming settled results",
-  page.includes("/assets/marketing/discord-week-5-pick-card.png") &&
-  !page.includes("Approved Discord pick-card and leaderboard captures awaiting upload") &&
-  page.includes("not a settled result"));
+check("community identifies the actual Madden web participant capture",
+  page.includes("madden-week-5-pick-card-homepage.jpg") &&
+  page.includes("Madden Weekly Pick Card") &&
+  !page.includes("/assets/marketing/discord-week-5-pick-card.png"));
+for (const filename of [
+  "knicks-spurs-pregame-picks-homepage.jpg",
+  "1v1-nba-playoffs-homepage.jpg",
+  "fantasy-week-10-picks-homepage.jpg",
+  "fantasy-week-1-homepage.jpg",
+  "madden-week-5-pick-card-homepage.jpg",
+  "gameday-organizer-homepage.jpg",
+]) {
+  check(`approved screenshot mapped: ${filename}`, page.includes(filename));
+  check(`approved screenshot exists: ${filename}`, fs.existsSync(`assets/marketing/${filename}`));
+}
+check("no missing-asset placeholders after screenshot library arrived", !/Capture pending|Expected product capture|capture awaiting/i.test(page));
 check("organizer CTA opens a mode choice, not Fantasy directly", !page.includes('className="button button-outline" href="/fantasy/setup"'));
 check("no old logo", !/swayger-icon\.png|images\/icon\.png|glowing/i.test(page));
 check("no sportsbook language", !/\b(?:wager|wagering|sportsbook|betting|payout|odds)\b/i.test(page));
