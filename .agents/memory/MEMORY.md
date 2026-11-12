@@ -33,6 +33,7 @@
 - [Fantasy Multi-League Claims](gameday-fantasy-multi-league-claims.md) — resolve authenticated claims within the requested league; users may have multiple active league memberships.
 - [Fantasy Draft Day team labels](gameday-fantasy-team-labels.md) — season-member IDs stay stable while active answer labels use team names; settled snapshots remain historical.
 - [Game Day participant re-entry](gameday-participant-reentry.md) — private rooms are discoverable only through verified authenticated participant rows; guest history remains separate.
+- [Game Day history requirement](gameday-history-product-requirement.md) — receipts are core value; users need to retrieve contests they participated in and review results.
 - [Fantasy pilot analytics](fantasy-pilot-analytics.md) — success-only weekly milestones suppress replay; guest retention stays device-scoped unless the product identity model changes.
 - [PostHog browser verification](posthog-browser-verification.md) — RN web batches gzip bodies; inspect fetch-boundary bytes, not Playwright request postData alone.
 - [Impact commercial review](impact-commercial-review.md) — review is read-only; shortlist state must remain internal/session-local until a separate approval decision.
