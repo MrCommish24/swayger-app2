@@ -140,13 +140,15 @@ test("desktop root, reduced motion and Play Swayger enter sign in without promis
   await expect(page.getByText(/Name the wager/)).toHaveCount(0);
 });
 
-test("aligned product cards and honest missing-capture layout fit mobile and desktop", async ({ page }) => {
+test("aligned product cards and approved original standings fit mobile and desktop", async ({ page }) => {
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
     await expect(page.locator(".mode-card")).toHaveCount(3);
-    await expect(page.getByText("Approved Game Day capture awaiting upload", { exact: true })).toBeVisible();
-    await expect(page.locator(".proof-art-caption")).toContainText("No sample result shown.");
+    const standings = page.locator(".proof-art img");
+    await expect(standings).toHaveAttribute("src", "/assets/marketing/knicks-spurs-final-standings.png");
+    await expect.poll(() => standings.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth === 680 && el.naturalHeight === 1022)).toBeTruthy();
+    await expect(page.getByText(/Capture pending|Approved Game Day capture awaiting upload/)).toHaveCount(0);
     await expect(page.getByText(/Illustrative component preview|Example data|Talk is cheap/)).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
     const cards = await page.locator(".mode-card").evaluateAll((els) =>

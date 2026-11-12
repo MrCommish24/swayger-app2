@@ -48,7 +48,10 @@ for (const anchor of ["community", "organizers", "how-it-works", "main-content"]
 }
 check("actual active mark reused", page.includes('from "@/components/SwaygerMark"'));
 check("no synthetic hero receipt", !page.includes("exampleStandings") && !page.includes("<GameDayReceiptCard"));
-check("missing approved asset honestly disclosed", page.includes("Approved Game Day capture awaiting upload") && page.includes("No sample result shown."));
+check("hero uses approved original standings capture",
+  page.includes("/assets/marketing/knicks-spurs-final-standings.png") &&
+  !page.includes("Approved Game Day capture awaiting upload") &&
+  !page.includes("Capture pending"));
 check("Play CTAs open participant choices", (page.match(/openChoices\("play"/g) || []).length >= 3);
 check("organizer CTAs open group-start choices", (page.match(/openChoices\("organize"/g) || []).length >= 3);
 check("choice dialog is semantically labeled", page.includes("<dialog") && page.includes("aria-labelledby=\"experience-dialog-title\""));
@@ -60,7 +63,10 @@ check("public hero excludes developer labels and old slogan", !/Illustrative com
 check("organizer auth intent wired to existing routes", page.includes("prepareHomepageReturn(returnTo)") && page.includes("handleChoice(event, choice.returnTo)"));
 check("homepage receipt sample has no stale date", !page.includes('gameDate="2025-10-12"'));
 check("receipt stamp no longer overlays its caption", !page.includes(".art-stamp { position: absolute"));
-check("missing community captures honestly disclosed", page.includes("Approved Discord pick-card and leaderboard captures awaiting upload"));
+check("community uses supplied Discord capture without claiming settled results",
+  page.includes("/assets/marketing/discord-week-5-pick-card.png") &&
+  !page.includes("Approved Discord pick-card and leaderboard captures awaiting upload") &&
+  page.includes("not a settled result"));
 check("organizer CTA opens a mode choice, not Fantasy directly", !page.includes('className="button button-outline" href="/fantasy/setup"'));
 check("no old logo", !/swayger-icon\.png|images\/icon\.png|glowing/i.test(page));
 check("no sportsbook language", !/\b(?:wager|wagering|sportsbook|betting|payout|odds)\b/i.test(page));

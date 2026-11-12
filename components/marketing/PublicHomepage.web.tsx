@@ -62,17 +62,10 @@ const styles = `
   .swayger-home .button-outline:hover { border-color:var(--lime); }
   .swayger-home .text-link { color:#c7d0ff; text-decoration-thickness:1px; text-underline-offset:5px; font-size:12px; }
   .swayger-home .hero-art { min-width:0; position:relative; animation:swayger-rise .8s .1s both; }
-  .swayger-home .proof-art { min-height:364px; padding:26px; position:relative; overflow:hidden; border:1px solid rgba(217,226,255,.28); background:linear-gradient(145deg,rgba(31,48,102,.95),rgba(17,27,62,.96)); box-shadow:18px 18px 0 rgba(73,105,244,.2); }
-  .swayger-home .proof-art:before { content:""; position:absolute; width:330px; height:330px; border:1px solid rgba(195,208,255,.2); border-radius:50%; right:-116px; top:-148px; box-shadow:0 0 0 32px rgba(195,208,255,.04),0 0 0 66px rgba(195,208,255,.025); }
-  .swayger-home .proof-art-top { position:relative; display:flex; justify-content:space-between; gap:16px; padding-bottom:15px; border-bottom:1px solid var(--rule); color:#c5d0f3; font-size:9px; letter-spacing:.15em; text-transform:uppercase; }
-  .swayger-home .proof-mark { position:relative; display:grid; place-items:center; height:205px; margin:17px 0; border:1px dashed rgba(207,218,255,.38); background:rgba(9,18,47,.34); }
-  .swayger-home .proof-mark:before,.swayger-home .proof-mark:after { content:""; position:absolute; border:1px solid rgba(169,187,255,.2); border-radius:50%; }
-  .swayger-home .proof-mark:before { width:155px; height:155px; }
-  .swayger-home .proof-mark:after { width:105px; height:105px; border-color:rgba(174,186,255,.46); }
-  .swayger-home .proof-mark-inner { position:relative; z-index:1; width:56px; height:56px; display:grid; place-items:center; background:var(--blue); }
-  .swayger-home .proof-art-caption { position:relative; max-width:310px; color:#e4e9f9; font-size:14px; line-height:1.45; }
-  .swayger-home .proof-art-caption strong { display:block; color:var(--lime); font-size:15px; font-weight:500; }
-  .swayger-home .proof-art-note { margin:9px 0 0; position:relative; color:#b9c4e4; font-size:10px; }
+   .swayger-home .proof-art { min-width:0; margin:0; padding:0; position:relative; overflow:hidden; border:1px solid rgba(217,226,255,.34); background:#101a3a; box-shadow:18px 18px 0 rgba(73,105,244,.2); }
+   .swayger-home .proof-art img { display:block; width:100%; height:auto; }
+   .swayger-home .proof-art-caption { padding:12px 15px 13px; color:#d5def5; font-size:11px; line-height:1.45; }
+   .swayger-home .proof-art-caption strong { display:block; color:var(--lime); font-size:12px; font-weight:500; }
   .swayger-home .hero-index { position:absolute; right:0; bottom:30px; display:flex; align-items:center; gap:12px; color:#9aa8cf; font-size:9px; letter-spacing:.17em; text-transform:uppercase; }
   .swayger-home .hero-index:before { content:""; width:34px; height:1px; background:var(--lime); }
   .swayger-home .modes { padding:88px 0 96px; background:#f0f2fa; color:#101a3a; }
@@ -112,12 +105,11 @@ const styles = `
   .swayger-home .community .section-kicker { color:#d6deff; }
   .swayger-home .community h2 { max-width:680px; }
   .swayger-home .community-copy { max-width:460px; margin:22px 0 26px; color:#e1e6ff; font-size:14px; line-height:1.7; }
-  .swayger-home .community-art { min-height:290px; position:relative; display:flex; flex-direction:column; justify-content:space-between; padding:23px; border:1px solid rgba(255,255,255,.36); background:linear-gradient(140deg,rgba(11,20,48,.38),rgba(11,20,48,.78)); transform:rotate(1.5deg); }
-  .swayger-home .community-art:before { content:""; position:absolute; inset:14px; border:1px solid rgba(255,255,255,.13); pointer-events:none; }
-  .swayger-home .community-art-top { display:flex; justify-content:space-between; gap:10px; color:#d6deff; font-size:9px; letter-spacing:.15em; text-transform:uppercase; }
-  .swayger-home .community-art-mark { position:relative; display:flex; align-items:center; gap:13px; color:#fff; font-size:clamp(23px,3vw,35px); line-height:.9; text-transform:uppercase; }
-  .swayger-home .community-art-mark span { color:var(--lime); }
-  .swayger-home .community-art-foot { position:relative; max-width:260px; color:#d3dcff; font-size:11px; line-height:1.55; }
+   .swayger-home .community-proof { min-width:0; margin:0; padding:10px; border:1px solid rgba(255,255,255,.38); background:rgba(11,20,48,.5); box-shadow:12px 12px 0 rgba(11,20,48,.24); }
+   .swayger-home .community-proof img { display:block; width:100%; height:auto; }
+   .swayger-home .community-proof figcaption { display:grid; gap:6px; padding:13px 5px 3px; color:#e1e6ff; font-size:11px; line-height:1.5; }
+   .swayger-home .community-proof figcaption strong { color:#fff; font-size:13px; font-weight:500; }
+   .swayger-home .community-proof-note { color:#cbd5ff; }
   .swayger-home .organizers { padding:91px 0 96px; background:#111d40; border-block:1px solid var(--rule); }
   .swayger-home .organizer-grid { display:grid; grid-template-columns:1fr .72fr; gap:9vw; align-items:center; }
   .swayger-home .organizers h2 { max-width:670px; }
@@ -199,7 +191,7 @@ const styles = `
     .swayger-home .steps h3 { margin:0 0 4px; font-size:28px; }
     .swayger-home .steps p { grid-column:2; max-width:none; }
     .swayger-home .community-grid,.swayger-home .organizer-grid { grid-template-columns:1fr; gap:30px; }
-    .swayger-home .community-art { min-height:240px; margin-inline:5px; }
+     .swayger-home .community-proof { width:100%; }
     .swayger-home .organizer-visual { max-width:270px; justify-self:center; }
      .swayger-home .final { padding:68px 0 74px; }
      .swayger-home .final h2 { font-size:clamp(46px,12.5vw,64px); }
@@ -220,7 +212,6 @@ const styles = `
     .swayger-home .nav-cta { padding-inline:8px; }
      .swayger-home h1 { font-size:54px; }
     .swayger-home .mode-card { padding:19px; }
-    .swayger-home .community-art { padding:18px; }
      .swayger-home .experience-dialog-inner { padding:16px 14px; }
      .swayger-home .experience-dialog-head { gap:8px; }
      .swayger-home .experience-dialog h2 { font-size:34px; }
@@ -359,17 +350,19 @@ export default function PublicHomepage() {
             </div>
           </div>
           <div className="hero-art" aria-label="Swayger proof preview awaiting approved capture">
-            <div className="proof-art">
-              <div className="proof-art-top"><span>Game Day / Final standings</span><span>Capture pending</span></div>
-              <div className="proof-mark" aria-hidden="true">
-                <div className="proof-mark-inner"><SwaygerMark color={C.text} size={32} /></div>
-              </div>
-              <div className="proof-art-caption">
-                <strong>Approved Game Day capture awaiting upload</strong>
-                No sample result shown.
-              </div>
-              <p className="proof-art-note">Real picks. A clear deadline. Results confirmed by the organizer.</p>
-            </div>
+            <figure className="proof-art">
+              <img
+                src="/assets/marketing/knicks-spurs-final-standings.png"
+                width={680}
+                height={1022}
+                loading="eager"
+                alt="Historical user-provided Swayger room record showing final standings for Knicks vs Spurs Game 5, with user-approved public display names."
+              />
+              <figcaption className="proof-art-caption">
+                <strong>Knicks vs Spurs · Game 5 final standings</strong>
+                Historical user-provided room record.
+              </figcaption>
+            </figure>
           </div>
           <div className="hero-index" aria-hidden="true">The next call is yours</div>
         </section>
@@ -442,11 +435,19 @@ export default function PublicHomepage() {
               <p className="community-copy">Keep your community where it is. Swayger gives the picks a place to lock, the competition a shared record, and the postgame debate a reason to come back. Bring your Discord, watch party, league, or crew.</p>
               <button className="button button-primary" type="button" onClick={(event) => openChoices("organize", event)}>Choose a group format <span aria-hidden="true">↗</span></button>
             </div>
-            <div className="community-art" aria-label="Swayger community illustration, not a Discord screenshot">
-              <div className="community-art-top"><span>Group energy, documented</span><span>SWAYGER / COMMUNITY</span></div>
-              <div className="community-art-mark"><SwaygerMark color={C.text} size={48} /><div>Make the<br /><span>call together.</span></div></div>
-              <div className="community-art-foot">Approved Discord pick-card and leaderboard captures awaiting upload. No competition result shown.</div>
-            </div>
+            <figure className="community-proof">
+              <img
+                src="/assets/marketing/discord-week-5-pick-card.png"
+                width={502}
+                height={548}
+                loading="lazy"
+                alt="Discord capture from Swayger Dev Bot showing a Week 5 Parlay pick card with six matchup spreads, Against the Spread pick type, Perfect Card win condition, Dev Upgrade reward, pick deadline, and a Get My Picks Link."
+              />
+              <figcaption>
+                <strong>Discord pick card · Week 5 Parlay.</strong>
+                <span className="community-proof-note">This shows the setup, not a settled result. The Get My Picks Link is part of the screenshot and is not interactive here.</span>
+              </figcaption>
+            </figure>
           </div>
         </section>
 
