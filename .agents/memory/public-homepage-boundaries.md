@@ -76,3 +76,17 @@ embedded preview could not scroll. Programmatic scrollIntoView hid the issue.
 Regression checks must use wheel input with document scrolling disabled and
 reach the footer at desktop and narrow phone widths, not just move elements
 into view programmatically.
+
+The user approved the supplied self-contained Game Night HTML as the source
+of truth for the current public homepage, not a reconstruction from a prompt
+or the separately uploaded reference PNG. Preserve its stadium artwork,
+tilted phone with authentic Knicks–Spurs revealed pregame picks, illustrated
+three-product cards, and group organizer section.
+
+**Why:** The user explicitly required the exact HTML and embedded assets,
+and required stopping rather than substituting if the source was unavailable.
+
+**How to apply:** Keep the supplied design and original capture bytes;
+adapt only what is necessary to connect existing participant/organizer
+journeys, responsiveness, accessibility, and app isolation. The current hero
+shows revealed picks, not final standings. Publishing still requires approval.
