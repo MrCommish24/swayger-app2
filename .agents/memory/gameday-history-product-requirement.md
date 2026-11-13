@@ -9,11 +9,11 @@ History receipts are part of the value proposition. The user needs to see which 
 
 **How to apply:** Treat participant-facing completed-contest history as a product capability distinct from host archives. Preserve verified participation boundaries; do not assume that guest or Discord identities belong to an account without a verified link.
 
-The user approved only small backend/identity readiness corrections after the read-only audit. The History UI remains unapproved. Do not build Recent Game Days, View All History, or a receipt redesign without separate approval.
+The user approved V1 participant-facing History UI after the backend readiness pass: Recent Game Days, View All History, and a non-mutating historical result/receipt screen for verified account-linked Game Day participation.
 
-**Why:** The user approved trustworthy historical reads and tie semantics, then explicitly said to stop before building the History UI.
+**Why:** The user explicitly approved the smallest useful participant history experience after approving trustworthy historical reads and tie semantics.
 
-**How to apply:** Keep archive organization and guest/Discord identity boundaries intact. Do not apply migrations, reconcile identities, or expand to 1v1 or Fantasy continuity on this approval.
+**How to apply:** Use the existing history endpoints without changing backend contracts, scoring, archive or identity rules. Preserve active play and host tools. Do not apply migrations, reconcile identities, or expand to 1v1 or Fantasy continuity on this approval.
 
 The intended record covers actual participation: Active → Continue Playing; finished but incompletely settled → Results Pending; Final → personal result, standings, picks versus answers, and receipt. Host-only activity and unjoined invitations are not participation.
 

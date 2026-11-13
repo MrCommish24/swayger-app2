@@ -20,6 +20,8 @@ import { fantasyFetch, getArchivedLeagues, restoreLeague, FANTASY_SPORTS, Fantas
 import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
 import SwaygerMark from "@/components/SwaygerMark";
+import HistoryRecordCard from "@/components/GameDayHistoryRecordCard";
+import { getMyGameDayHistory } from "@/lib/gameday-history";
 
 const C = Colors.dark;
 
@@ -546,6 +548,89 @@ function ContinuePlayingSection() {
   );
 }
 
+function RecentGameDaysSection() {
+  const router = useRouter();
+  const { session, isLoading: authLoading } = useAuth();
+  const historyQuery = useQuery({
+    queryKey: ["gameday", "my-history", session?.user.id],
+    queryFn: () => getMyGameDayHistory(session!),
+    enabled: !!session,
+    staleTime: 30_000,
+  });
+  const records = historyQuery.data?.records ?? [];
+  const openHistory = () => router.push("/gameday/history" as never);
+
+  return (
+    <View style={historyStyles.section}>
+      <View style={historyStyles.header}>
+        <View>
+          <Text style={historyStyles.sectionLabel}>YOUR RECEIPTS</Text>
+          <Text style={historyStyles.title}>Recent Game Days</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={openHistory}
+          style={({ pressed }) => [historyStyles.viewAll, pressed && { opacity: 0.65 }]}
+        >
+          <Text style={historyStyles.viewAllText}>View All History</Text>
+        </Pressable>
+      </View>
+      {authLoading ? (
+        <View style={historyStyles.skeleton} />
+      ) : !session ? (
+        <Pressable
+          accessibilityRole="button"
+          style={({ pressed }) => [historyStyles.accountCard, pressed && { opacity: 0.75 }]}
+          onPress={openHistory}
+        >
+          <Text style={historyStyles.emptyTitle}>Your results, whenever you need them</Text>
+          <Text style={historyStyles.emptyText}>Sign in to return to competitions linked to your account.</Text>
+          <Text style={historyStyles.signInLink}>Sign in to view history  ›</Text>
+        </Pressable>
+      ) : historyQuery.isLoading ? (
+        <>
+          <View style={historyStyles.skeleton} />
+          <View style={[historyStyles.skeleton, { height: 112 }]} />
+        </>
+      ) : historyQuery.isError ? (
+        <View style={historyStyles.accountCard}>
+          <Text style={historyStyles.emptyTitle}>Couldn’t load your receipts</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => historyQuery.refetch()}
+            style={historyStyles.retry}
+          >
+            <Text style={historyStyles.signInLink}>Try again  ›</Text>
+          </Pressable>
+        </View>
+      ) : records.length ? (
+        <>
+          {records.slice(0, 3).map((record) => (
+            <HistoryRecordCard
+              key={record.room.room_id}
+              record={record}
+              compact
+              onPress={() => router.push(`/gameday/history/${encodeURIComponent(record.room.room_id)}` as never)}
+            />
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            onPress={openHistory}
+            style={({ pressed }) => [historyStyles.bottomLink, pressed && { opacity: 0.65 }]}
+          >
+            <Text style={historyStyles.bottomLinkText}>View All History  ›</Text>
+          </Pressable>
+        </>
+      ) : (
+        <View style={historyStyles.accountCard}>
+          <Text style={historyStyles.emptyTitle}>No Game Day receipts yet</Text>
+          <Text style={historyStyles.emptyText}>Play in a competition and your results will be here after picks begin to settle.</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Game Day Home Screen ─────────────────────────────────────────────────────
 export default function GameDayHomeScreen() {
   const router = useRouter();
@@ -634,6 +719,7 @@ export default function GameDayHomeScreen() {
       )}
 
       <ContinuePlayingSection />
+      <RecentGameDaysSection />
 
       {/* ── Fantasy Swayger — always visible after Game Day content ─────── */}
       <FantasySection />
@@ -749,6 +835,68 @@ const continueStyles = StyleSheet.create({
     fontWeight: "700" as const,
     color: C.tint,
   },
+});
+
+const historyStyles = StyleSheet.create({
+  section: {
+    marginTop: 24,
+    paddingTop: 22,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  header: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    alignItems: "flex-end" as const,
+    justifyContent: "space-between" as const,
+    gap: 12,
+    marginBottom: 13,
+    paddingHorizontal: 3,
+  },
+  sectionLabel: {
+    color: C.tint,
+    fontSize: 9,
+    fontWeight: "800" as const,
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
+  title: {
+    color: C.text,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 25,
+    textTransform: "uppercase" as const,
+  },
+  viewAll: {
+    minHeight: 44,
+    justifyContent: "center" as const,
+    paddingHorizontal: 2,
+  },
+  viewAllText: { color: C.tint, fontSize: 11, fontWeight: "700" as const },
+  accountCard: {
+    backgroundColor: C.surface,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 16,
+  },
+  emptyTitle: { color: C.text, fontSize: 14, fontWeight: "700" as const },
+  emptyText: { color: C.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 5 },
+  signInLink: { color: C.tint, fontSize: 12, fontWeight: "700" as const, marginTop: 12 },
+  retry: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center" as const },
+  skeleton: {
+    height: 142,
+    backgroundColor: C.surface,
+    borderColor: C.border,
+    borderWidth: 1,
+    borderRadius: 15,
+    marginBottom: 9,
+  },
+  bottomLink: {
+    minHeight: 44,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  bottomLinkText: { color: C.tint, fontSize: 12, fontWeight: "700" as const },
 });
 
 const cardStyles = StyleSheet.create({
