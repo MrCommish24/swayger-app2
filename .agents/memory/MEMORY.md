@@ -1,4 +1,4 @@
-- [Gameday Phase 1 Navigation](gameday-phase1-nav.md) — tab structure, binding decisions, dgrand2 regression baseline (SP 1671, 104 swaygers, rank 1/11)
+- [Signed-in navigation intent](gameday-phase1-nav.md) — Game Day remains home; Game Day, 1v1 and Fantasy are peers, with contextual host tools.
 - [Global Settlement Architecture](global-settlement-arch.md) — normalization module, grouping key schema, queue route, admin UI structure, legacy flag
 - [Gameday Fantasy Phase 2 Nav](gameday-fantasy-phase2-nav.md) — route structure, discovery entry on Game Day hub, post-setup redirect, retry safety, auth loading pattern
 - [Gameday Fantasy Phase 3 Nav](gameday-fantasy-phase3-nav.md) — seat claim RPC, guest token pattern, join-info route, role-aware hub, 60/60 test pass

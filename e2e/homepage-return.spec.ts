@@ -96,6 +96,6 @@ test("ordinary signed-in root remains the existing dashboard", async ({ page }) 
   await mockMember(page);
   await page.goto("/");
   await expect(page.locator(".swayger-home")).toHaveCount(0);
-  await expect(page.getByText("Swaygers", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("tab", { name: /1v1/ })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/");
 });

@@ -1,20 +1,18 @@
 /**
  * AppSectionHeader
  *
- * Lightweight branded header for the four top-level tab screens.
- * Renders the Swayger brand label (small, accent-colored) above the
- * section title (large, primary) so every top-level screen is clearly
- * attributable to the app without repeating the full sign-in lockup.
+ * Shared compact brand lockup and active tab title for top-level screens.
  *
  * Usage:
  *   <AppSectionHeader title="GAME DAY" />
  *
- * Drop this inside the existing `header` container on each tab screen —
- * outer padding and row layout are owned by the caller.
+ * Outer position and padding are owned by the caller so each tab can align
+ * the same lockup alongside its own page controls.
  */
 
 import { View, Text, StyleSheet } from "react-native";
 import Colors from "@/constants/colors";
+import SwaygerMark from "@/components/SwaygerMark";
 
 interface AppSectionHeaderProps {
   /** Section title displayed in large type below the brand label. */
@@ -35,15 +33,15 @@ export default function AppSectionHeader({
   testID,
 }: AppSectionHeaderProps) {
   return (
-    <View testID={testID}>
-      {/* Brand label — decorative; hidden from a11y tree */}
-      <Text
-        style={styles.brand}
+    <View testID={testID ?? "app-section-header"}>
+      <View
+        style={styles.brandRow}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        SWAYGER
-      </Text>
+        <SwaygerMark color={Colors.dark.tint} size={16} />
+        <Text style={styles.brand}>SWAYGER</Text>
+      </View>
 
       {/* Section title — primary heading for this screen */}
       <Text
@@ -58,20 +56,26 @@ export default function AppSectionHeader({
 }
 
 const styles = StyleSheet.create({
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    height: 16,
+    marginBottom: 2,
+  },
   brand: {
     fontFamily: "BarlowCondensed_700Bold",
-    fontSize: 11,
+    fontSize: 13,
     color: Colors.dark.tint,
     textTransform: "uppercase" as const,
-    letterSpacing: 2,
-    lineHeight: 14,
+    letterSpacing: 1.8,
+    lineHeight: 16,
   },
   title: {
     fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 32,
+    fontSize: 23,
     color: Colors.dark.text,
-    textTransform: "uppercase" as const,
-    letterSpacing: 1,
-    lineHeight: 34,
+    letterSpacing: 0.8,
+    lineHeight: 25,
   },
 });

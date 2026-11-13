@@ -1,31 +1,19 @@
 ---
-name: Gameday Phase 1 Navigation Restructure
-description: Binding decisions and baseline for the Gameday-first tab restructure (Phase 1).
+name: Signed-in navigation intent
+description: Approved peer-experience hierarchy and boundaries for signed-in navigation work.
 ---
 
-## Binding decisions
+Game Day, 1v1, and Fantasy are peer experiences. Game Day remains the signed-in
+landing screen, but Fantasy must not look like a format nested beneath Game Day.
+The approved tab labels/order are Game Day, 1v1, Fantasy, Leaderboard, Profile.
+Use the existing two-dot/forward-slash mark beside SWAYGER in a compact,
+left-aligned shared header, followed by the active tab title.
 
-- **Tab order**: Game Day (index) → My Swaygers (challenges) → Leaderboard → Profile
-- **`create` tab**: hidden from bar via `options={{ href: null }}` in ClassicTabLayout; no NativeTabs.Trigger entry; still routable via `router.push("/(tabs)/create")`
-- **`challenges.tsx`**: full 1v1 experience — SwaygerActionModal, ResultsModal, ChallengeCards, StatsStrip, DashboardScreen, filter bar, SectionList, modal queue. Exports `DashboardScreen` as default.
-- **`index.tsx`**: Gameday-first home — FeaturedRoomCard (first room as hero), MoreRoomsStrip (rooms[1:] horizontal), empty state, "My 1v1 Swaygers →" link. Exports `GameDayHomeScreen` as default.
-- **No new backend endpoints for Phase 1** — index.tsx uses only existing `/api/gameday/public-rooms`.
-- **`Analytics.dashboardViewed()`** fires on both tabs (challenges for backward compat, index for Gameday home focus).
+**Why:** The user approved this hierarchy to make all three ways to play visible
+without turning the Game Day activity feed into a mixed-product feed.
 
-## Test account baseline (dgrand2 / Mr Roarke, uid 0fb8373d)
-
-Captured before any Phase 1 code changes:
-- SP balance: **1,671** (column: `user_balances.swayger_points`)
-- Total swaygers: 104 — active: 3, settled: 41, canceled: 31, invite_expired: 12, settlement_expired: 11, declined: 6
-- Wins: 25, Losses: 14
-- Leaderboard rank: 1 / 11
-
-**Why:** Regression baseline — if these numbers shift after Phase 1, something touched 1v1 data.
-
-## Files touched in Phase 1
-
-| File | Change |
-|---|---|
-| `app/(tabs)/index.tsx` | Replaced with Gameday-first home (GameDayHomeScreen) |
-| `app/(tabs)/challenges.tsx` | Created — copy of old index.tsx minus LiveGameDayRooms/gdStyles |
-| `app/(tabs)/_layout.tsx` | 4-tab structure, create hidden from bar |
+**How to apply:** Keep Ways to Play navigation consistent with the corresponding
+tabs. Keep Madden and other pick-card formats under Game Day, host tools
+contextual, and existing 1v1, Fantasy, room, receipt and invite destinations intact.
+Navigation redesign is not permission to alter authentication, gameplay, host
+permissions, public marketing, or production data.

@@ -337,3 +337,17 @@ mtime_ms = 1794603834162
 storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/cf3da672-d073-4f42-9b9b-99c39cef2bd9/10f5b377-29ad-4a9d-8f2c-ce2d052a3bcb"
 storage_version_token = "1794603866321788"
 content_type = "image/png"
+
+[[outputs]]
+id = "lj1eekr1J06NfMGMdY33X"
+uri = "file://generated-artifacts/signed-in-navigation/home-390.png"
+type = "image"
+title = "Signed-in Game Day preview — 390px"
+description = "Actual development browser capture using browser-only fixture data. Shows shared header, three ways to play, live room, continue and receipt sections; no real competitions were changed."
+logical_id = "cbaa133d-db77-4384-9aa7-9261c157b47f"
+content_hash = "sha256:4b8db97ff2795607db2ceedb2121500db1866fcb478152da79b02ce7653ccd6d"
+size = 56705
+mtime_ms = 1794612833776
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/cbaa133d-db77-4384-9aa7-9261c157b47f/f79704c2-f60c-410d-a8a9-54737e40feae"
+storage_version_token = "1794612866511855"
+content_type = "image/png"

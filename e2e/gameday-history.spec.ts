@@ -79,7 +79,7 @@ async function setup(page: Page, options: { anonymous?: boolean; empty?: boolean
 test("dashboard retains active play and shows distinct recent history without live public rooms", async ({ page }) => {
   const mutations = await setup(page);
   await page.goto("/");
-  await expect(page.getByText("CONTINUE PLAYING", { exact: true })).toBeVisible();
+  await expect(page.getByText("CONTINUE GAME DAYS", { exact: true })).toBeVisible();
   await expect(page.getByText("Active Fixture", { exact: true })).toBeVisible();
   await expect(page.getByText(/Recent Game Days/i).first()).toBeVisible();
   await expect(page.getByText("Week 5 Parlay", { exact: true })).toHaveCount(3);

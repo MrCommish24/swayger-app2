@@ -474,7 +474,7 @@ export default function LeaderboardScreen() {
   const showList = !isLoading && entries.length > 0;
 
   return (
-    <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
+    <View style={[styles.container, { paddingTop: isWeb ? 75 : insets.top + 12 }]}>
       <View style={styles.header}>
         <AppSectionHeader title="LEADERBOARD" />
       </View>
@@ -538,7 +538,7 @@ export default function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
-  header: { paddingHorizontal: 24, paddingVertical: 16 },
+  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
   title: { fontFamily: "BarlowCondensed_800ExtraBold", fontSize: 32, color: Colors.dark.text, textTransform: "uppercase" as const, letterSpacing: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 40 },
   emptyText: { fontSize: 16, color: Colors.dark.textSecondary, textAlign: "center" as const },

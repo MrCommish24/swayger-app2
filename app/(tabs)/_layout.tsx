@@ -1,9 +1,8 @@
 import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import SwaygerMark from "@/components/SwaygerMark";
 
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
@@ -37,8 +36,12 @@ function NativeTabLayout() {
           <Label>Game Day</Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="challenges">
-          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
-          <Label>Swaygers</Label>
+          <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+          <Label>1v1</Label>
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="fantasy">
+          <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
+          <Label>Fantasy</Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="leaderboard">
           <Icon sf={{ default: "trophy", selected: "trophy.fill" }} />
@@ -64,7 +67,21 @@ function ClassicTabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: Colors.dark.tint,
-        tabBarInactiveTintColor: Colors.dark.tabIconDefault,
+        tabBarInactiveTintColor: Colors.dark.textSecondary,
+        tabBarLabelPosition: "below-icon",
+        // The default label clips to the item's padded 54px width at 320px.
+        // Keep the full label centered over its 64px touch target instead.
+        tabBarLabel: ({ color, children }) => (
+          <Text style={{
+            fontFamily: "BarlowCondensed_700Bold",
+            fontSize: 12,
+            lineHeight: 16,
+            color,
+            width: 64,
+            textAlign: "center",
+          }}>{children}</Text>
+        ),
+        tabBarItemStyle: { minWidth: 0 },
         tabBarStyle: {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : Colors.dark.surface,
@@ -93,9 +110,18 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="challenges"
         options={{
-          title: "Swaygers",
+          title: "1v1",
           tabBarIcon: ({ color, size }) => (
-            <SwaygerMark color={color} size={size} />
+            <Ionicons name="people-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="fantasy"
+        options={{
+          title: "Fantasy",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy-outline" color={color} size={size} />
           ),
         }}
       />

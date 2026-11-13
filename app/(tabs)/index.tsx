@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import AppSectionHeader from "@/components/AppSectionHeader";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useRef, useCallback, useState } from "react";
@@ -15,11 +16,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Analytics } from "@/lib/posthog";
 import { getApiUrl } from "@/lib/query-client";
 import { useAuth } from "@/lib/auth-context";
-import { fetchMySwaygers, fetchMyBalance } from "@/lib/swayger";
-import { fantasyFetch, getArchivedLeagues, restoreLeague, FANTASY_SPORTS, FantasyLeague } from "@/lib/fantasy-api";
 import { gamedayFetch } from "@/lib/gameday-api";
 import Colors from "@/constants/colors";
-import SwaygerMark from "@/components/SwaygerMark";
 import HistoryRecordCard from "@/components/GameDayHistoryRecordCard";
 import { getMyGameDayHistory } from "@/lib/gameday-history";
 
@@ -42,367 +40,6 @@ interface JoinedGDRoom {
   sport: string | null;
   template_type: string | null;
   game_date: string | null;
-}
-
-// ─── My Swaygers summary card ──────────────────────────────────────────────────
-// Shown in the empty state only. Reuses fetchMySwaygers + fetchMyBalance from
-// lib/swayger.ts (same functions used by challenges.tsx — no new backend work).
-function MySwaygersCard() {
-  const router = useRouter();
-  const { user } = useAuth();
-
-  const swaygerQuery = useQuery({
-    queryKey: ["swaygers", user?.id],
-    queryFn: () => fetchMySwaygers(user!.id),
-    enabled: !!user,
-    staleTime: 60 * 1000,
-  });
-
-  const balanceQuery = useQuery({
-    queryKey: ["balance", user?.id],
-    queryFn: () => fetchMyBalance(user!.id),
-    enabled: !!user,
-    staleTime: 60 * 1000,
-  });
-
-  const onPress = useCallback(() => {
-    router.push("/(tabs)/challenges" as never);
-  }, [router]);
-
-  // Not signed in — static fallback card
-  if (!user) {
-    return (
-      <Pressable
-        style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
-        onPress={onPress}
-      >
-        <View style={cardStyles.titleRow}>
-          <SwaygerMark color={C.tint} size={18} />
-          <Text style={cardStyles.title}>My Swaygers</Text>
-        </View>
-        <Text style={cardStyles.body}>
-          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
-        </Text>
-        <View style={cardStyles.cta}>
-          <Text style={cardStyles.ctaText}>View My Swaygers →</Text>
-        </View>
-      </Pressable>
-    );
-  }
-
-  // Loading / errored — static fallback card (non-blocking)
-  const swaygers = swaygerQuery.data ?? null;
-  const balance = balanceQuery.data ?? null;
-  const isReady = swaygers !== null;
-
-  const activeCount = isReady
-    ? swaygers.filter((s) => s.status === "active").length
-    : null;
-
-  return (
-    <Pressable
-      style={({ pressed }) => [cardStyles.card, pressed && cardStyles.cardPressed]}
-      onPress={onPress}
-    >
-      <View style={cardStyles.titleRow}>
-        <SwaygerMark color={C.tint} size={18} />
-        <Text style={cardStyles.title}>My Swaygers</Text>
-      </View>
-
-      {!isReady ? (
-        // Still loading — preserve static fallback, never briefly flash "zero Swaygers"
-        <Text style={cardStyles.body}>
-          Create, join, and manage your 1v1 Swaygers while you wait for the next Game Day Room.
-        </Text>
-      ) : swaygers.length === 0 ? (
-        // Query resolved and confirmed empty — show educational copy
-        <Text style={cardStyles.body}>
-          Challenge a friend to a 1v1 sports prediction.
-        </Text>
-      ) : (
-        // Existing users — show descriptor + live activity summary
-        <>
-        <Text style={cardStyles.descriptor}>Your 1v1 sports challenges</Text>
-        <View style={cardStyles.statsRow}>
-          <View style={cardStyles.statItem}>
-            <Text style={cardStyles.statValue}>{activeCount}</Text>
-            <Text style={cardStyles.statLabel}>Active</Text>
-          </View>
-          {balance !== null && (
-            <>
-              <View style={cardStyles.statDivider} />
-              <View style={cardStyles.statItem}>
-                <Text style={[cardStyles.statValue, cardStyles.statValueGold]}>
-                  {balance.balance.toLocaleString()}
-                </Text>
-                <Text style={cardStyles.statLabel}>SP Balance</Text>
-              </View>
-            </>
-          )}
-        </View>
-        </>
-      )}
-
-      <View style={cardStyles.cta}>
-        <Text style={cardStyles.ctaText}>View My Swaygers →</Text>
-      </View>
-    </Pressable>
-  );
-}
-
-// ─── FantasySection ───────────────────────────────────────────────────────────
-// Self-contained: fetches its own data, handles signed-out / loading / empty / has-leagues.
-function FantasySection() {
-  const router = useRouter();
-  const { session, isLoading: authLoading } = useAuth();
-  const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
-  const [leagueLoading, setLeagueLoading] = useState(false);
-  const [fetched, setFetched] = useState(false);
-
-  // Archived leagues (Phase 6E)
-  const [archivedLeagues, setArchivedLeagues]   = useState<FantasyLeague[]>([]);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
-  const [archivedLoading, setArchivedLoading]   = useState(false);
-  const [restoringId, setRestoringId]           = useState<string | null>(null);
-
-  const loadLeagues = useCallback(async () => {
-    if (!session) return;
-    setLeagueLoading(true);
-    try {
-      const d = await fantasyFetch<{ leagues: FantasyLeague[] }>(
-        "/api/fantasy/leagues",
-        {},
-        { session }
-      );
-      setLeagues(d.leagues);
-    } catch {
-      // Silently ignore — promo card already shown in empty state
-    } finally {
-      setLeagueLoading(false);
-      setFetched(true);
-    }
-  }, [session]);
-
-  const loadArchivedLeagues = useCallback(async () => {
-    if (!session) return;
-    setArchivedLoading(true);
-    try {
-      const d = await getArchivedLeagues({ session });
-      setArchivedLeagues(d.leagues);
-    } catch {
-      setArchivedLeagues([]);
-    } finally {
-      setArchivedLoading(false);
-    }
-  }, [session]);
-
-  const handleToggleArchived = useCallback(() => {
-    const next = !archivedExpanded;
-    setArchivedExpanded(next);
-    if (next) loadArchivedLeagues();
-  }, [archivedExpanded, loadArchivedLeagues]);
-
-  const handleRestore = useCallback(async (leagueId: string) => {
-    if (!session) return;
-    setRestoringId(leagueId);
-    try {
-      await restoreLeague(leagueId, { session });
-      // Refresh both lists
-      await Promise.all([loadLeagues(), loadArchivedLeagues()]);
-    } catch { /* silently ignore */ } finally {
-      setRestoringId(null);
-    }
-  }, [session, loadLeagues, loadArchivedLeagues]);
-
-  // Fire when auth resolves on initial render
-  useEffect(() => {
-    if (authLoading) return;
-    if (!session) { setFetched(true); return; }
-    loadLeagues();
-  }, [authLoading, session?.access_token]);
-
-  // Refetch whenever this tab regains focus (e.g. user returns after creating a league)
-  useFocusEffect(
-    useCallback(() => {
-      if (!authLoading && session) loadLeagues();
-    }, [authLoading, session?.access_token, loadLeagues])
-  );
-
-  // Still resolving auth — show nothing to avoid flash
-  if (authLoading && !fetched) return null;
-
-  // ── Signed out ─────────────────────────────────────────────────────────────
-  if (!session) {
-    return (
-      <View style={fantasyStyles.section}>
-        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
-        <Pressable
-          style={({ pressed }) => [fantasyStyles.card, pressed && { opacity: 0.82 }]}
-          onPress={() => router.push("/auth" as never)}
-        >
-          <Text style={fantasyStyles.cardTitle}>Run Your Own Fantasy League</Text>
-          <Text style={fantasyStyles.cardBody}>
-            Bring your fantasy league to Swayger for Draft Day and weekly prediction competitions.
-          </Text>
-          <View style={fantasyStyles.cta}>
-            <Text style={fantasyStyles.ctaText}>Sign In to Get Started →</Text>
-          </View>
-        </Pressable>
-      </View>
-    );
-  }
-
-  // ── Signed in — loading first fetch ───────────────────────────────────────
-  if (leagueLoading && !fetched) {
-    return (
-      <View style={fantasyStyles.section}>
-        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
-        <ActivityIndicator color={C.tint} size="small" style={{ alignSelf: "flex-start", marginTop: 4 }} />
-      </View>
-    );
-  }
-
-  // ── Signed in — no leagues ─────────────────────────────────────────────────
-  if (leagues.length === 0) {
-    return (
-      <View style={fantasyStyles.section}>
-        <Text style={fantasyStyles.sectionLabel}>FANTASY SWAYGER</Text>
-        <Pressable
-          style={({ pressed }) => [fantasyStyles.card, pressed && { opacity: 0.82 }]}
-          onPress={() => router.push("/fantasy/setup" as never)}
-        >
-          <Text style={fantasyStyles.cardTitle}>Create Fantasy League</Text>
-          <Text style={fantasyStyles.cardBody}>
-            Bring your fantasy league to Swayger for Draft Day and weekly prediction competitions.
-          </Text>
-          <View style={fantasyStyles.cta}>
-            <Text style={fantasyStyles.ctaText}>Create Fantasy League →</Text>
-          </View>
-        </Pressable>
-      </View>
-    );
-  }
-
-  // ── Signed in — has leagues ────────────────────────────────────────────────
-  return (
-    <View style={fantasyStyles.section}>
-      <Text style={fantasyStyles.sectionLabel}>MY FANTASY LEAGUES</Text>
-
-      {leagues.map((league) => {
-        const latestSeason = [...(league.fantasy_league_seasons ?? [])]
-          .sort((a, b) => b.season_year - a.season_year)[0];
-        const sportEmoji =
-          FANTASY_SPORTS.find((s) => s.value === league.sport)?.emoji ?? "🏆";
-        return (
-          <Pressable
-            key={league.id}
-            style={({ pressed }) => [fantasyStyles.leagueCard, pressed && { opacity: 0.82 }]}
-            onPress={() => {
-              if (latestSeason) {
-                router.push(`/fantasy/${league.id}/${latestSeason.id}` as never);
-              }
-            }}
-          >
-            <View style={fantasyStyles.leagueTop}>
-              <Text style={fantasyStyles.leagueName}>
-                {sportEmoji}{"  "}{league.league_name}
-              </Text>
-              {latestSeason && (
-                <Text style={fantasyStyles.leagueMeta}>
-                  {latestSeason.season_year} •{" "}
-                  {league.sport.charAt(0).toUpperCase() + league.sport.slice(1)}
-                </Text>
-              )}
-            </View>
-            <View style={fantasyStyles.cta}>
-              <Text style={fantasyStyles.ctaText}>Open League →</Text>
-            </View>
-          </Pressable>
-        );
-      })}
-
-      <Pressable
-        style={({ pressed }) => [fantasyStyles.createMoreLink, pressed && { opacity: 0.6 }]}
-        onPress={() => router.push("/fantasy/setup" as never)}
-      >
-        <Text style={fantasyStyles.createMoreText}>+ Create Fantasy League</Text>
-      </Pressable>
-
-      {/* Archived Leagues — collapsed by default (Phase 6E) */}
-      <Pressable
-        style={({ pressed }) => [fantasyStyles.archivedToggle, pressed && { opacity: 0.7 }]}
-        onPress={handleToggleArchived}
-      >
-        <Text style={fantasyStyles.archivedToggleText}>
-          {archivedExpanded ? "▲" : "▼"}{"  "}Archived Leagues
-        </Text>
-      </Pressable>
-
-      {archivedExpanded && (
-        <>
-          {archivedLoading ? (
-            <ActivityIndicator
-              color={C.tint}
-              size="small"
-              style={{ alignSelf: "flex-start", marginLeft: 8, marginTop: 4 }}
-            />
-          ) : archivedLeagues.length === 0 ? (
-            <Text style={fantasyStyles.archivedEmpty}>No archived leagues</Text>
-          ) : (
-            archivedLeagues.map((lg) => {
-              const latestSeason = [...(lg.fantasy_league_seasons ?? [])]
-                .sort((a, b) => b.season_year - a.season_year)[0];
-              const sportEmoji =
-                FANTASY_SPORTS.find((s) => s.value === lg.sport)?.emoji ?? "🏆";
-              const isRestoring = restoringId === lg.id;
-              return (
-                <View key={lg.id} style={fantasyStyles.archivedCard}>
-                  <View style={fantasyStyles.archivedCardLeft}>
-                    <Text style={fantasyStyles.archivedCardName} numberOfLines={1}>
-                      {sportEmoji}{"  "}{lg.league_name}
-                    </Text>
-                    {latestSeason && (
-                      <Text style={fantasyStyles.archivedCardMeta}>
-                        {latestSeason.season_year} · Archived
-                      </Text>
-                    )}
-                  </View>
-                  <View style={fantasyStyles.archivedCardActions}>
-                    <Pressable
-                      onPress={() => {
-                        if (latestSeason) {
-                          router.push(`/fantasy/${lg.id}/${latestSeason.id}` as never);
-                        }
-                      }}
-                      style={({ pressed }) => [
-                        fantasyStyles.archivedActionBtn,
-                        pressed && { opacity: 0.7 },
-                      ]}
-                    >
-                      <Text style={fantasyStyles.archivedActionText}>View</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => handleRestore(lg.id)}
-                      disabled={isRestoring}
-                      style={({ pressed }) => [
-                        fantasyStyles.archivedActionBtn,
-                        fantasyStyles.archivedRestoreBtn,
-                        (pressed || isRestoring) && { opacity: 0.6 },
-                      ]}
-                    >
-                      {isRestoring
-                        ? <ActivityIndicator color={C.tint} size="small" />
-                        : <Text style={[fantasyStyles.archivedActionText, { color: C.tint }]}>Restore</Text>}
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </>
-      )}
-    </View>
-  );
 }
 
 // ─── FeaturedRoomCard ─────────────────────────────────────────────────────────
@@ -508,7 +145,7 @@ function ContinuePlayingSection() {
 
   return (
     <View style={continueStyles.section}>
-      <Text style={continueStyles.sectionLabel}>CONTINUE PLAYING</Text>
+      <Text style={continueStyles.sectionLabel}>CONTINUE GAME DAYS</Text>
       {joinedRoomsQuery.isLoading ? (
         <ActivityIndicator color={C.tint} size="small" style={continueStyles.loading} />
       ) : (
@@ -540,7 +177,7 @@ function ContinuePlayingSection() {
                 {" · Active"}
               </Text>
             </View>
-            <Text style={continueStyles.cta}>Continue →</Text>
+            <Text style={continueStyles.cta}>Resume →</Text>
           </Pressable>
         ))
       )}
@@ -637,8 +274,7 @@ export default function GameDayHomeScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const hasTrackedSection = useRef(false);
-  const [swaygerFocused, setSwaygerFocused] = useState(false);
-  const [swaygerHovered, setSwaygerHovered] = useState(false);
+  const [focusedWay, setFocusedWay] = useState<"1v1" | "fantasy" | null>(null);
 
   // Keep dashboard_viewed for analytics continuity
   useFocusEffect(useCallback(() => { Analytics.dashboardViewed(); }, []));
@@ -674,91 +310,95 @@ export default function GameDayHomeScreen() {
       style={homeStyles.container}
       contentContainerStyle={[
         homeStyles.content,
-        { paddingTop: isWeb ? 84 : insets.top + 20, paddingBottom: insets.bottom + 80 },
+        { paddingTop: isWeb ? 75 : insets.top + 12, paddingBottom: insets.bottom + 80 },
       ]}
       showsVerticalScrollIndicator={false}
     >
-      <View style={{ paddingHorizontal: 8, marginBottom: 20 }}>
+      <View style={homeStyles.header}>
         <AppSectionHeader title="GAME DAY" />
       </View>
 
+      <View testID="ways-to-play" style={homeStyles.waysSection}>
+        <Text style={homeStyles.waysLabel}>WAYS TO PLAY</Text>
+        <View style={homeStyles.waysRow}>
+          <View
+            testID="way-game-day"
+            accessibilityLabel="Game Day, Live games and slates, selected"
+            style={[homeStyles.wayCard, homeStyles.wayCardSelected]}
+          >
+            <Ionicons name="calendar-outline" size={19} color={C.tint} />
+            <Text style={homeStyles.wayTitle} numberOfLines={1}>Game Day</Text>
+            <Text style={homeStyles.wayDescription} numberOfLines={2}>Live games &amp; slates</Text>
+          </View>
+          <Pressable
+            testID="way-1v1"
+            accessibilityRole="button"
+            accessibilityLabel="1v1, Challenge someone"
+            style={({ pressed }) => [
+              homeStyles.wayCard,
+              focusedWay === "1v1" && homeStyles.wayCardFocused,
+              pressed && homeStyles.wayCardPressed,
+            ]}
+            onFocus={() => setFocusedWay("1v1")}
+            onBlur={() => setFocusedWay(null)}
+            onPress={() => router.push("/(tabs)/challenges" as never)}
+          >
+            <View style={homeStyles.wayIconRow}>
+              <Ionicons name="people-outline" size={19} color={C.textSecondary} />
+              <Ionicons name="arrow-forward" size={14} color={C.textMuted} />
+            </View>
+            <Text style={homeStyles.wayTitle} numberOfLines={1}>1v1</Text>
+            <Text style={homeStyles.wayDescription} numberOfLines={2}>Challenge someone</Text>
+          </Pressable>
+          <Pressable
+            testID="way-fantasy"
+            accessibilityRole="button"
+            accessibilityLabel="Fantasy, Compete in your league"
+            style={({ pressed }) => [
+              homeStyles.wayCard,
+              focusedWay === "fantasy" && homeStyles.wayCardFocused,
+              pressed && homeStyles.wayCardPressed,
+            ]}
+            onFocus={() => setFocusedWay("fantasy")}
+            onBlur={() => setFocusedWay(null)}
+            onPress={() => router.push("/(tabs)/fantasy" as never)}
+          >
+            <View style={homeStyles.wayIconRow}>
+              <Ionicons name="trophy-outline" size={19} color={C.textSecondary} />
+              <Ionicons name="arrow-forward" size={14} color={C.textMuted} />
+            </View>
+            <Text style={homeStyles.wayTitle} numberOfLines={1}>Fantasy</Text>
+            <Text style={homeStyles.wayDescription} numberOfLines={2}>Compete in your league</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <Text style={homeStyles.liveTitle} accessibilityRole="header">Live Game Day</Text>
       {isLoading ? (
         <View style={homeStyles.loadingWrap}>
           <ActivityIndicator color={C.tint} size="small" />
         </View>
       ) : featuredRoom ? (
-        // ── Live state: featured room + strip ─────────────────────────────────
         <>
           <FeaturedRoomCard room={featuredRoom} totalRooms={rooms.length} />
           <MoreRoomsStrip rooms={stripRooms} totalRooms={rooms.length} />
-          {/* 1v1 destination — stays below the live content */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="My 1v1 Swaygers"
-            accessibilityHint="Opens your 1v1 Swaygers"
-            focusable
-            onFocus={() => setSwaygerFocused(true)}
-            onBlur={() => setSwaygerFocused(false)}
-            onHoverIn={() => setSwaygerHovered(true)}
-            onHoverOut={() => setSwaygerHovered(false)}
-            style={({ pressed }) => [
-              homeStyles.swaygerCard,
-              swaygerHovered && homeStyles.swaygerCardHovered,
-              swaygerFocused && homeStyles.swaygerCardFocused,
-              pressed && homeStyles.swaygerCardPressed,
-            ]}
-            onPress={() => router.push("/(tabs)/challenges" as never)}
-          >
-            <View style={homeStyles.swaygerTitleRow}>
-              <CrossedSwordsIcon />
-              <Text style={homeStyles.swaygerTitle}>1v1 SWAYGERS</Text>
-            </View>
-            <Text style={homeStyles.swaygerDescription}>
-              Got a take? Challenge a friend and settle it.
-            </Text>
-            <View style={homeStyles.swaygerAction}>
-              <Text style={homeStyles.swaygerActionText}>My 1v1 Swaygers</Text>
-              <Text style={homeStyles.swaygerArrow} accessibilityElementsHidden>→</Text>
-            </View>
-          </Pressable>
         </>
       ) : (
-        // ── Empty state ───────────────────────────────────────────────────────
-        <>
-          <View style={homeStyles.emptyWrap}>
-            <Text style={homeStyles.emptyEmoji}>🏟️</Text>
-            <Text style={homeStyles.emptyTitle}>Nothing live right now</Text>
-            <Text style={homeStyles.emptySub}>
-              Game Day Rooms are group pick’em competitions that open before and during featured games.
-            </Text>
-            <Text style={homeStyles.emptyInvite}>
-              Have an invite link? Open it from your text or group chat to join directly.
-            </Text>
-          </View>
-
-          <MySwaygersCard />
-        </>
+        <View style={homeStyles.emptyWrap}>
+          <Ionicons name="calendar-outline" size={24} color={C.textMuted} />
+          <Text style={homeStyles.emptyTitle}>Nothing live right now</Text>
+          <Text style={homeStyles.emptySub}>
+            Game Day Rooms are group pick’em competitions that open before and during featured games.
+          </Text>
+          <Text style={homeStyles.emptyInvite}>
+            Have an invite link? Open it from your text or group chat to join directly.
+          </Text>
+        </View>
       )}
 
       <ContinuePlayingSection />
       <RecentGameDaysSection />
-
-      {/* ── Fantasy Swayger — always visible after Game Day content ─────── */}
-      <FantasySection />
     </ScrollView>
-  );
-}
-
-function CrossedSwordsIcon() {
-  return (
-    <View style={homeStyles.swordsIcon} accessibilityElementsHidden>
-      <View style={[homeStyles.swordBlade, homeStyles.swordOne]} />
-      <View style={[homeStyles.swordBlade, homeStyles.swordTwo]} />
-      <View style={[homeStyles.swordGuard, homeStyles.guardOne]} />
-      <View style={[homeStyles.swordGuard, homeStyles.guardTwo]} />
-      <View style={[homeStyles.swordGrip, homeStyles.gripOne]} />
-      <View style={[homeStyles.swordGrip, homeStyles.gripTwo]} />
-    </View>
   );
 }
 
@@ -766,14 +406,58 @@ function CrossedSwordsIcon() {
 const homeStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.background },
   content: { paddingHorizontal: 16 },
-  title: {
-    fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 32,
+  header: { marginHorizontal: 4, paddingTop: 8, paddingBottom: 10 },
+  waysSection: { marginBottom: 18 },
+  waysLabel: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    letterSpacing: 1.1,
+    color: C.textMuted,
+    marginBottom: 8,
+    paddingHorizontal: 3,
+  },
+  waysRow: { flexDirection: "row" as const, gap: 8 },
+  wayCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 100,
+    justifyContent: "flex-start" as const,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  wayCardSelected: {
+    borderColor: "rgba(67,97,238,0.68)",
+    backgroundColor: "#202638",
+  },
+  wayCardFocused: { borderWidth: 2, borderColor: "#8C9BFF" },
+  wayCardPressed: { opacity: 0.75 },
+  wayIconRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
+    height: 21,
+  },
+  wayTitle: {
+    fontSize: 12,
+    fontWeight: "700" as const,
     color: C.text,
-    textTransform: "uppercase" as const,
-    letterSpacing: 1,
-    marginBottom: 20,
-    paddingHorizontal: 8,
+  },
+  wayDescription: {
+    fontSize: 10,
+    lineHeight: 13,
+    color: C.textSecondary,
+  },
+  liveTitle: {
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 23,
+    color: C.text,
+    marginBottom: 10,
+    paddingHorizontal: 3,
   },
   loadingWrap: { alignItems: "center", paddingVertical: 40 },
   emptyWrap: {
@@ -783,7 +467,6 @@ const homeStyles = StyleSheet.create({
     gap: 10,
     marginBottom: 8,
   },
-  emptyEmoji: { fontSize: 48, marginBottom: 4 },
   emptyTitle: {
     fontSize: 20,
     fontWeight: "700" as const,
@@ -802,131 +485,6 @@ const homeStyles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
     marginTop: 2,
-  },
-  swaygerCard: {
-    marginTop: 20,
-    marginHorizontal: 1,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: "#11182A",
-    borderWidth: 1,
-    borderColor: "rgba(67, 97, 238, 0.36)",
-    shadowColor: "#4361EE",
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
-  swaygerCardHovered: {
-    borderColor: "rgba(67, 97, 238, 0.7)",
-    backgroundColor: "#141D33",
-  },
-  swaygerCardFocused: {
-    borderWidth: 2,
-    borderColor: "#8294FF",
-    shadowOpacity: 0.34,
-    shadowRadius: 8,
-  },
-  swaygerCardPressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.99 }],
-  },
-  swaygerTitleRow: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    gap: 10,
-    minHeight: 30,
-  },
-  swordsIcon: {
-    width: 30,
-    height: 30,
-    position: "relative" as const,
-    flexShrink: 0,
-  },
-  swordBlade: {
-    position: "absolute" as const,
-    width: 25,
-    height: 2.5,
-    left: 2,
-    top: 13,
-    borderRadius: 2,
-    backgroundColor: "#AFC0FF",
-  },
-  swordOne: {
-    transform: [{ rotate: "45deg" }],
-  },
-  swordTwo: {
-    transform: [{ rotate: "-45deg" }],
-  },
-  swordGuard: {
-    position: "absolute" as const,
-    width: 7,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: C.tint,
-  },
-  guardOne: {
-    left: 4,
-    top: 20,
-    transform: [{ rotate: "45deg" }],
-  },
-  guardTwo: {
-    right: 4,
-    top: 20,
-    transform: [{ rotate: "-45deg" }],
-  },
-  swordGrip: {
-    position: "absolute" as const,
-    width: 6,
-    height: 2.5,
-    top: 23,
-    borderRadius: 1,
-    backgroundColor: "#D4DCFF",
-  },
-  gripOne: {
-    left: 1,
-    transform: [{ rotate: "45deg" }],
-  },
-  gripTwo: {
-    right: 1,
-    transform: [{ rotate: "-45deg" }],
-  },
-  swaygerTitle: {
-    flexShrink: 1,
-    fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 17,
-    letterSpacing: 1.1,
-    color: C.text,
-  },
-  swaygerDescription: {
-    marginTop: 5,
-    marginBottom: 12,
-    fontFamily: "DMSans_400Regular",
-    fontSize: 13,
-    lineHeight: 18,
-    color: "#AEB8D0",
-  },
-  swaygerAction: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    borderRadius: 9,
-    backgroundColor: C.tint,
-    flexDirection: "row" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 9,
-  },
-  swaygerActionText: {
-    flexShrink: 1,
-    fontFamily: "DMSans_500Medium",
-    fontSize: 14,
-    textAlign: "center" as const,
-    color: C.text,
-  },
-  swaygerArrow: {
-    fontSize: 19,
-    lineHeight: 22,
-    color: C.text,
   },
 });
 
@@ -1040,80 +598,6 @@ const historyStyles = StyleSheet.create({
   bottomLinkText: { color: C.tint, fontSize: 12, fontWeight: "700" as const },
 });
 
-const cardStyles = StyleSheet.create({
-  titleRow: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-    gap: 8,
-  },
-  card: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 20,
-    gap: 14,
-  },
-  cardPressed: { opacity: 0.82 },
-  title: {
-    fontSize: 17,
-    fontWeight: "700" as const,
-    color: C.text,
-  },
-  body: {
-    fontSize: 14,
-    color: C.textSecondary,
-    lineHeight: 21,
-  },
-  descriptor: {
-    fontSize: 13,
-    color: C.textSecondary,
-    lineHeight: 19,
-  },
-  statsRow: {
-    flexDirection: "row" as const,
-    alignItems: "center",
-  },
-  statItem: {
-    flex: 1,
-    alignItems: "center" as const,
-    gap: 3,
-  },
-  statValue: {
-    fontFamily: "BarlowCondensed_800ExtraBold",
-    fontSize: 28,
-    color: C.text,
-  },
-  statValueGold: {
-    color: C.accentGold,
-    fontSize: 22,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: C.textSecondary,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.8,
-    fontWeight: "500" as const,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: C.border,
-    marginHorizontal: 4,
-  },
-  cta: {
-    backgroundColor: C.tint,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: "700" as const,
-    color: "#FFFFFF",
-  },
-});
-
 const featuredStyles = StyleSheet.create({
   card: {
     backgroundColor: C.surface,
@@ -1168,151 +652,6 @@ const featuredStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700" as const,
     color: "#FFFFFF",
-  },
-});
-
-const fantasyStyles = StyleSheet.create({
-  section: {
-    marginTop: 24,
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-  },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: "700" as const,
-    letterSpacing: 1.0,
-    color: C.textMuted,
-    marginBottom: 12,
-    paddingHorizontal: 8,
-  },
-  // Promo / create card (signed-out & no-leagues state)
-  card: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 20,
-    gap: 12,
-    marginBottom: 4,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: "700" as const,
-    color: C.text,
-  },
-  cardBody: {
-    fontSize: 14,
-    color: C.textSecondary,
-    lineHeight: 21,
-  },
-  cta: {
-    backgroundColor: C.tint,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center" as const,
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: "700" as const,
-    color: "#FFFFFF",
-  },
-  // League card (has-leagues state)
-  leagueCard: {
-    backgroundColor: C.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    padding: 20,
-    gap: 12,
-    marginBottom: 10,
-  },
-  leagueTop: { gap: 4 },
-  leagueName: {
-    fontSize: 17,
-    fontWeight: "700" as const,
-    color: C.text,
-  },
-  leagueMeta: {
-    fontSize: 13,
-    color: C.textSecondary,
-  },
-  // "+ Create Fantasy League" link below existing league cards
-  createMoreLink: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    alignItems: "center" as const,
-  },
-  createMoreText: {
-    fontSize: 14,
-    color: C.textMuted,
-    textDecorationLine: "underline" as const,
-  },
-
-  // Phase 6E — Archived leagues section
-  archivedToggle: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: "center" as const,
-    marginTop: 4,
-  },
-  archivedToggleText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    color: C.textMuted,
-    letterSpacing: 0.5,
-  },
-  archivedEmpty: {
-    fontSize: 13,
-    color: C.textMuted,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    fontStyle: "italic" as const,
-  },
-  archivedCard: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    backgroundColor: C.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 8,
-    gap: 10,
-  },
-  archivedCardLeft: { flex: 1 },
-  archivedCardName: {
-    fontSize: 14,
-    fontWeight: "600" as const,
-    color: C.textSecondary,
-  },
-  archivedCardMeta: {
-    fontSize: 12,
-    color: C.textMuted,
-    marginTop: 2,
-  },
-  archivedCardActions: {
-    flexDirection: "row" as const,
-    gap: 8,
-  },
-  archivedActionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: C.border,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    minWidth: 50,
-  },
-  archivedRestoreBtn: {
-    borderColor: C.tint,
-  },
-  archivedActionText: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    color: C.textMuted,
   },
 });
 

@@ -940,7 +940,7 @@ export default function DashboardScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: isWeb ? 67 : insets.top + 20 }]}>
+    <View style={[styles.container, { paddingTop: isWeb ? 75 : insets.top + 12 }]}>
 
       {/* ─── Results Modal (celebration first) ───────────────────────────── */}
       {resultsData && (
@@ -965,7 +965,7 @@ export default function DashboardScreen() {
       )}
 
       <View style={styles.header}>
-        <AppSectionHeader title="MY SWAYGERS" />
+        <AppSectionHeader title="1v1" />
         <View style={styles.headerRight}>
           {user && modalQueue.length > 0 && (
             <Pressable onPress={handleBellPress} style={styles.bellButton} hitSlop={8}>
@@ -1258,8 +1258,9 @@ const styles = StyleSheet.create({
     color: Colors.dark.tint,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
     flexDirection: "row" as const,
     alignItems: "center",
     justifyContent: "space-between",
