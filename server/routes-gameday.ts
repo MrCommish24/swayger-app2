@@ -31,6 +31,8 @@ import { getNflTeamCatalog } from "./gameday-nfl-catalog.js";
 import { registerDiscordIdentityRoutes, resolveDiscordParticipantSession } from "./gameday-discord-identity.js";
 import { normalizePickType, getPickType, normalizeAtsLine, buildTeamPickDisplay } from "../lib/gameday-pick-type.js";
 import { buildMainResults, buildBonusGameResult, pickTypeLabel, winConditionLabel } from "../lib/gameday-final-results.js";
+import { isStandardGameDayScoringRoom, rankStandardGameDayStandings, standardGameDayScoringProps, type StandardStandingScore } from "./gameday-standard-standings.js";
+import { registerGamedayHistoryRoutes } from "./gameday-history.js";
 
 // ── Global Settlement write-path feature flag ─────────────────────────────────
 // Set GLOBAL_SETTLE_ENABLED=true in the server environment to enable the
@@ -3226,6 +3228,15 @@ export function registerGamedayRoutes(app: Express) {
     });
   });
 
+  registerGamedayHistoryRoutes(app, {
+    getUser: getVerifiedGamedayUser,
+    getDb: getServiceSupabase,
+    resolveRoomRef,
+    isRequiredProp: isRequiredWeeklyPickCardProp,
+    buildMaddenScores: buildWeeklyPickCardParticipantScores,
+    rankMadden: applyPickCardWinnerSemantics,
+  });
+
   // ── GET /api/gameday/rooms ──────────────────────────────────────────────
   // Returns all rooms created by the authenticated host, newest first.
   app.get("/api/gameday/rooms", async (req: Request, res: Response) => {
@@ -5758,7 +5769,7 @@ export function registerGamedayRoutes(app: Express) {
       // Check archived status before doing any further work.
       const { data: roomMeta } = await supabase
         .from("gameday_rooms")
-        .select("archived_at, status, sport, template_type, format_config")
+        .select("archived_at, status, sport, template_type, format_config, experience_type")
         .eq("id", roomId)
         .single();
       if ((roomMeta as any)?.archived_at) {
@@ -5779,23 +5790,13 @@ export function registerGamedayRoutes(app: Express) {
         ) ?? "all_correct";
       const { data: standingCards } = await supabase
         .from("gameday_pick_cards")
-        .select("id, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
+        .select("id, phase, status, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
         .eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap((card: any) =>
         (card.gameday_props ?? []).filter(
           (prop: any) => isRequiredWeeklyPickCardProp(prop),
         ),
       );
-      const scoringProps = isMaddenWeekly
-        ? playableProps.filter(
-            (prop: any) => weeklyPickCardPropRole(prop) === "main_matchup",
-          )
-        : playableProps;
-      const totalRequiredProps = scoringProps.length;
-      const allRequiredPropsSettled =
-        totalRequiredProps > 0 &&
-        scoringProps.every((prop: any) => prop.status === "settled");
-
       const { data: participants } = await supabase
         .from("gameday_participants")
         .select("id, display_name, is_guest")
@@ -5821,6 +5822,17 @@ export function registerGamedayRoutes(app: Express) {
             .in("participant_id", participantIds)
             .in("prop_id", playableProps.map((prop: any) => prop.id))
         : { data: [] };
+      const scoringProps = isMaddenWeekly
+        ? playableProps.filter(
+            (prop: any) => weeklyPickCardPropRole(prop) === "main_matchup",
+          )
+        : standardGameDayScoringProps(
+            roomMeta ?? {}, standingCards ?? [], playableProps, allPicks ?? [],
+          );
+      const totalRequiredProps = scoringProps.length;
+      const allRequiredPropsSettled =
+        totalRequiredProps > 0 &&
+        scoringProps.every((prop: any) => prop.status === "settled");
 
       const scores = isMaddenWeekly
         ? buildWeeklyPickCardParticipantScores(
@@ -5864,17 +5876,16 @@ export function registerGamedayRoutes(app: Express) {
             scoringMode,
             allRequiredPropsSettled,
           )
-        : scores.map((s: any, i: number) => {
-            let rank = 1;
-            if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) {
-              rank = i + 1;
-            }
-            return {
-              ...s,
-              rank,
-              is_winner: (roomMeta as any)?.status === "finalized" && i === 0,
-            };
-          });
+        : isStandardGameDayScoringRoom(roomMeta ?? {})
+        ? rankStandardGameDayStandings(
+            scores as StandardStandingScore[],
+            (roomMeta as any)?.status === "finalized" && allRequiredPropsSettled,
+          )
+        : scores.map((score: any, index: number) => ({
+            ...score,
+            rank: index > 0 && score.game_day_sp < (scores[index - 1] as any).game_day_sp ? index + 1 : 1,
+            is_winner: (roomMeta as any)?.status === "finalized" && index === 0,
+          }));
 
       res.json({
         leaderboard,
@@ -5907,7 +5918,7 @@ export function registerGamedayRoutes(app: Express) {
 
       const { data: room } = await supabase
         .from("gameday_rooms")
-        .select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date, sport, template_type, format_config")
+        .select("id, room_name, room_code, status, archived_at, team_a_name, team_b_name, team_a_star, team_b_star, game_date, sport, template_type, format_config, experience_type")
         .eq("id", roomId)
         .single();
 
@@ -5956,35 +5967,37 @@ export function registerGamedayRoutes(app: Express) {
       const participantIds = (participants ?? []).map((p: any) => p.id);
       const { data: standingCards } = await supabase
         .from("gameday_pick_cards")
-        .select("id, pick_type, display_order, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
+        .select("id, phase, status, pick_type, display_order, gameday_props(id, question, status, answer_options, line_text, prop_role, answer_type, numeric_min, numeric_max, correct_answer, correct_answer_ids, correct_numeric_answer, display_order)")
         .eq("room_id", roomId);
       const playableProps = (standingCards ?? []).flatMap((card: any) =>
         (card.gameday_props ?? []).filter(
           (prop: any) => isRequiredWeeklyPickCardProp(prop),
         ),
       );
+      const { data: allPicks } = participantIds.length > 0 && playableProps.length > 0
+        ? await supabase
+            .from("gameday_picks")
+            .select("participant_id, prop_id, selected_answer, numeric_answer, is_correct")
+            .in("participant_id", participantIds)
+            .in("prop_id", playableProps.map((prop: any) => prop.id))
+        : { data: [] };
       const scoringProps = isMaddenWeekly
         ? playableProps.filter(
             (prop: any) => weeklyPickCardPropRole(prop) === "main_matchup",
           )
-        : playableProps;
+        : standardGameDayScoringProps(
+            room, standingCards ?? [], playableProps, allPicks ?? [],
+          );
       const totalRequiredProps = scoringProps.length;
       const allRequiredPropsSettled =
         totalRequiredProps > 0 &&
         scoringProps.every((prop: any) => prop.status === "settled");
+      const requiredForFinal = isMaddenWeekly ? playableProps : scoringProps;
       const allPropsSettled =
-        playableProps.length > 0 &&
-        playableProps.every((prop: any) => prop.status === "settled");
+        requiredForFinal.length > 0 &&
+        requiredForFinal.every((prop: any) => prop.status === "settled");
       let leaderboard: any[] = [];
       if (participantIds.length > 0) {
-        const { data: allPicks } = playableProps.length > 0
-          ? await supabase
-              .from("gameday_picks")
-              .select("participant_id, prop_id, selected_answer, numeric_answer, is_correct")
-              .in("participant_id", participantIds)
-              .in("prop_id", playableProps.map((prop: any) => prop.id))
-          : { data: [] };
-
         const scores = isMaddenWeekly
           ? buildWeeklyPickCardParticipantScores(
               participants ?? [],
@@ -6022,17 +6035,13 @@ export function registerGamedayRoutes(app: Express) {
               scoringMode,
               allRequiredPropsSettled,
             )
-          : scores.map((s: any, i: number) => {
-              let rank = 1;
-              if (i > 0 && s.game_day_sp < (scores[i - 1] as any).game_day_sp) {
-                rank = i + 1;
-              }
-              return {
-                ...s,
-                rank,
-                is_winner: i === 0,
-              };
-            });
+          : isStandardGameDayScoringRoom(room)
+          ? rankStandardGameDayStandings(scores as StandardStandingScore[], allRequiredPropsSettled)
+          : scores.map((score: any, index: number) => ({
+              ...score,
+              rank: index > 0 && score.game_day_sp < (scores[index - 1] as any).game_day_sp ? index + 1 : 1,
+              is_winner: index === 0,
+            }));
       }
 
       const winnerRows = leaderboard.filter((entry: any) => entry.is_winner);
@@ -6088,10 +6097,11 @@ export function registerGamedayRoutes(app: Express) {
             }
           : {}),
         all_props_settled: allPropsSettled,
-        winner_determined: isMaddenWeekly
+        winner_determined: isMaddenWeekly || isStandardGameDayScoringRoom(room)
           ? allRequiredPropsSettled
           : true,
-        winner: winnerRows[0] ?? null,
+        // A tied result has co-winners, never an arbitrary singular winner.
+        winner: winnerRows.length === 1 ? winnerRows[0] : null,
         winners: winnerRows,
         winner_participant_ids: winnerRows.map((entry: any) => entry.participant_id),
         tie: winnerRows.length > 1,
