@@ -323,3 +323,17 @@ mtime_ms = 1794269272011
 storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/e73c9b87-ca57-4fb1-8a7f-333a24a6967a/cd88df12-af59-4a75-adde-c4a606fdaaed"
 storage_version_token = "1794269492606887"
 content_type = "image/png"
+
+[[outputs]]
+id = "udT0NDpHAxQjZp9hDAnJD"
+uri = "file://generated-artifacts/dashboard-1v1/dashboard-390.png"
+type = "image"
+title = "1v1 destination — 390px review"
+description = "Actual signed-in dashboard rendered with browser-only layout fixtures; no real competition data was changed."
+logical_id = "cf3da672-d073-4f42-9b9b-99c39cef2bd9"
+content_hash = "sha256:92efc317f114f21a59a0c4e35eeca3f417cbf42ab189f5d015d2929e0f1de435"
+size = 59941
+mtime_ms = 1794603834162
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/cf3da672-d073-4f42-9b9b-99c39cef2bd9/10f5b377-29ad-4a9d-8f2c-ce2d052a3bcb"
+storage_version_token = "1794603866321788"
+content_type = "image/png"

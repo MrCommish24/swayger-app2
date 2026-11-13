@@ -637,6 +637,8 @@ export default function GameDayHomeScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const hasTrackedSection = useRef(false);
+  const [swaygerFocused, setSwaygerFocused] = useState(false);
+  const [swaygerHovered, setSwaygerHovered] = useState(false);
 
   // Keep dashboard_viewed for analytics continuity
   useFocusEffect(useCallback(() => { Analytics.dashboardViewed(); }, []));
@@ -689,14 +691,34 @@ export default function GameDayHomeScreen() {
         <>
           <FeaturedRoomCard room={featuredRoom} totalRooms={rooms.length} />
           <MoreRoomsStrip rooms={stripRooms} totalRooms={rooms.length} />
-          {/* Subtle link — stays below the live content, does not compete */}
+          {/* 1v1 destination — stays below the live content */}
           <Pressable
-            style={({ pressed }) => [homeStyles.swaygerLink, pressed && homeStyles.swaygerLinkPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="My 1v1 Swaygers"
+            accessibilityHint="Opens your 1v1 Swaygers"
+            focusable
+            onFocus={() => setSwaygerFocused(true)}
+            onBlur={() => setSwaygerFocused(false)}
+            onHoverIn={() => setSwaygerHovered(true)}
+            onHoverOut={() => setSwaygerHovered(false)}
+            style={({ pressed }) => [
+              homeStyles.swaygerCard,
+              swaygerHovered && homeStyles.swaygerCardHovered,
+              swaygerFocused && homeStyles.swaygerCardFocused,
+              pressed && homeStyles.swaygerCardPressed,
+            ]}
             onPress={() => router.push("/(tabs)/challenges" as never)}
           >
-            <View style={homeStyles.swaygerLinkRow}>
-              <SwaygerMark color={C.textSecondary} size={14} />
-              <Text style={homeStyles.swaygerLinkText}>My 1v1 Swaygers →</Text>
+            <View style={homeStyles.swaygerTitleRow}>
+              <CrossedSwordsIcon />
+              <Text style={homeStyles.swaygerTitle}>1v1 SWAYGERS</Text>
+            </View>
+            <Text style={homeStyles.swaygerDescription}>
+              Got a take? Challenge a friend and settle it.
+            </Text>
+            <View style={homeStyles.swaygerAction}>
+              <Text style={homeStyles.swaygerActionText}>My 1v1 Swaygers</Text>
+              <Text style={homeStyles.swaygerArrow} accessibilityElementsHidden>→</Text>
             </View>
           </Pressable>
         </>
@@ -724,6 +746,19 @@ export default function GameDayHomeScreen() {
       {/* ── Fantasy Swayger — always visible after Game Day content ─────── */}
       <FantasySection />
     </ScrollView>
+  );
+}
+
+function CrossedSwordsIcon() {
+  return (
+    <View style={homeStyles.swordsIcon} accessibilityElementsHidden>
+      <View style={[homeStyles.swordBlade, homeStyles.swordOne]} />
+      <View style={[homeStyles.swordBlade, homeStyles.swordTwo]} />
+      <View style={[homeStyles.swordGuard, homeStyles.guardOne]} />
+      <View style={[homeStyles.swordGuard, homeStyles.guardTwo]} />
+      <View style={[homeStyles.swordGrip, homeStyles.gripOne]} />
+      <View style={[homeStyles.swordGrip, homeStyles.gripTwo]} />
+    </View>
   );
 }
 
@@ -768,24 +803,130 @@ const homeStyles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 2,
   },
-  swaygerLink: {
-    marginTop: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-    alignItems: "center",
+  swaygerCard: {
+    marginTop: 20,
+    marginHorizontal: 1,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#11182A",
+    borderWidth: 1,
+    borderColor: "rgba(67, 97, 238, 0.36)",
+    shadowColor: "#4361EE",
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
-  swaygerLinkRow: {
+  swaygerCardHovered: {
+    borderColor: "rgba(67, 97, 238, 0.7)",
+    backgroundColor: "#141D33",
+  },
+  swaygerCardFocused: {
+    borderWidth: 2,
+    borderColor: "#8294FF",
+    shadowOpacity: 0.34,
+    shadowRadius: 8,
+  },
+  swaygerCardPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
+  },
+  swaygerTitleRow: {
     flexDirection: "row" as const,
     alignItems: "center",
-    gap: 6,
+    gap: 10,
+    minHeight: 30,
   },
-  swaygerLinkPressed: { opacity: 0.6 },
-  swaygerLinkText: {
+  swordsIcon: {
+    width: 30,
+    height: 30,
+    position: "relative" as const,
+    flexShrink: 0,
+  },
+  swordBlade: {
+    position: "absolute" as const,
+    width: 25,
+    height: 2.5,
+    left: 2,
+    top: 13,
+    borderRadius: 2,
+    backgroundColor: "#AFC0FF",
+  },
+  swordOne: {
+    transform: [{ rotate: "45deg" }],
+  },
+  swordTwo: {
+    transform: [{ rotate: "-45deg" }],
+  },
+  swordGuard: {
+    position: "absolute" as const,
+    width: 7,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: C.tint,
+  },
+  guardOne: {
+    left: 4,
+    top: 20,
+    transform: [{ rotate: "45deg" }],
+  },
+  guardTwo: {
+    right: 4,
+    top: 20,
+    transform: [{ rotate: "-45deg" }],
+  },
+  swordGrip: {
+    position: "absolute" as const,
+    width: 6,
+    height: 2.5,
+    top: 23,
+    borderRadius: 1,
+    backgroundColor: "#D4DCFF",
+  },
+  gripOne: {
+    left: 1,
+    transform: [{ rotate: "45deg" }],
+  },
+  gripTwo: {
+    right: 1,
+    transform: [{ rotate: "-45deg" }],
+  },
+  swaygerTitle: {
+    flexShrink: 1,
+    fontFamily: "BarlowCondensed_800ExtraBold",
+    fontSize: 17,
+    letterSpacing: 1.1,
+    color: C.text,
+  },
+  swaygerDescription: {
+    marginTop: 5,
+    marginBottom: 12,
+    fontFamily: "DMSans_400Regular",
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#AEB8D0",
+  },
+  swaygerAction: {
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 9,
+    backgroundColor: C.tint,
+    flexDirection: "row" as const,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+  },
+  swaygerActionText: {
+    flexShrink: 1,
+    fontFamily: "DMSans_500Medium",
     fontSize: 14,
-    color: C.textSecondary,
-    fontWeight: "500" as const,
+    textAlign: "center" as const,
+    color: C.text,
+  },
+  swaygerArrow: {
+    fontSize: 19,
+    lineHeight: 22,
+    color: C.text,
   },
 });
 
