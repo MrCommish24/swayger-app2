@@ -236,7 +236,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: isWeb ? 75 : insets.top + 12 }]}>
+    <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
       <View style={styles.header}>
         <AppSectionHeader title="PROFILE" />
       </View>

@@ -3,7 +3,6 @@ import {
   Text,
   View,
   Pressable,
-  Platform,
   ScrollView,
   ActivityIndicator,
 } from "react-native";
@@ -272,7 +271,6 @@ function RecentGameDaysSection() {
 export default function GameDayHomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const isWeb = Platform.OS === "web";
   const hasTrackedSection = useRef(false);
   const [focusedWay, setFocusedWay] = useState<"1v1" | "fantasy" | null>(null);
 
@@ -310,7 +308,7 @@ export default function GameDayHomeScreen() {
       style={homeStyles.container}
       contentContainerStyle={[
         homeStyles.content,
-        { paddingTop: isWeb ? 75 : insets.top + 12, paddingBottom: insets.bottom + 80 },
+        { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 80 },
       ]}
       showsVerticalScrollIndicator={false}
     >

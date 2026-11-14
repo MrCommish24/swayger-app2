@@ -128,3 +128,49 @@ test("empty Game Day has no dead join action; Fantasy setup and host access rema
   await expect(page).toHaveURL(/\/gameday$/);
   expect(mutations).toEqual([]);
 });
+
+for (const inset of [0, 44]) {
+  test(`tab headers respect a single ${inset}px top safe area at 320px`, async ({ page }) => {
+    await member(page);
+    await page.setViewportSize({ width: 320, height: 844 });
+    if (inset) {
+      // Desktop Chromium cannot set a hardware safe-area env value. Override
+      // only the library's hidden measurement probe, not any application node.
+      // This exercises the real SafeAreaProvider/context without a product flag.
+      await page.addInitScript(() => {
+        const original = window.getComputedStyle.bind(window);
+        window.getComputedStyle = (element, pseudo) => {
+          const computed = original(element, pseudo);
+          if (element instanceof HTMLElement && element.style.visibility === "hidden" &&
+              element.style.transitionProperty === "padding" && element.style.width === "0px") {
+            return new Proxy(computed, {
+              get(target, property) {
+                if (property === "paddingTop") return "44px";
+                const value = Reflect.get(target, property, target);
+                return typeof value === "function" ? value.bind(target) : value;
+              },
+            });
+          }
+          return computed;
+        };
+      });
+    }
+    await page.goto("/");
+    await expect(page.getByTestId("ways-to-play")).toBeVisible();
+    const measurements: Record<string, number> = {};
+    for (const [label, title] of [
+      ["Game Day", "GAME DAY"], ["1v1", "1v1"], ["Fantasy", "FANTASY"],
+      ["Leaderboard", "LEADERBOARD"], ["Profile", "PROFILE"],
+    ]) {
+      await page.getByRole("tab").filter({ hasText: label }).click();
+      const header = page.getByTestId("app-section-header").filter({ hasText: title });
+      await expect(header).toBeVisible();
+      await expect.poll(async () => (await header.boundingBox())!.y).toBe(inset + 20);
+      measurements[label] = (await header.boundingBox())!.y;
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    console.log(`Header positions, safe-area=${inset}: ${JSON.stringify(measurements)}`);
+    fs.mkdirSync("generated-artifacts/header-spacing", { recursive: true });
+    await page.screenshot({ path: `generated-artifacts/header-spacing/inset-${inset}.png` });
+  });
+}

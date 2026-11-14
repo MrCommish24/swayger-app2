@@ -7,7 +7,9 @@
  *   <AppSectionHeader title="GAME DAY" />
  *
  * Outer position and padding are owned by the caller so each tab can align
- * the same lockup alongside its own page controls.
+ * the same lockup alongside its own page controls. Tab screens apply the
+ * measured top safe-area inset once, plus 12px; their header wrapper adds 8px.
+ * Do not add a fixed web status-bar allowance or another SafeAreaView here.
  */
 
 import { View, Text, StyleSheet } from "react-native";

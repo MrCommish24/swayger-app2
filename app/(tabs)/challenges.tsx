@@ -940,7 +940,7 @@ export default function DashboardScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: isWeb ? 75 : insets.top + 12 }]}>
+    <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
 
       {/* ─── Results Modal (celebration first) ───────────────────────────── */}
       {resultsData && (

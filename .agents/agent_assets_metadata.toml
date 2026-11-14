@@ -351,3 +351,17 @@ mtime_ms = 1794612833776
 storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/cbaa133d-db77-4384-9aa7-9261c157b47f/f79704c2-f60c-410d-a8a9-54737e40feae"
 storage_version_token = "1794612866511855"
 content_type = "image/png"
+
+[[outputs]]
+id = "Qf3rwN-q5EDPrpKABgKUc"
+uri = "file://generated-artifacts/signed-in-navigation/home-320.png"
+type = "image"
+title = "Corrected header — 320px preview"
+description = "Actual development browser capture using browser-only fixture data. Header begins 20 CSS pixels below the viewport top with zero safe-area inset."
+logical_id = "3c55222b-3471-4881-8835-43f045c74e54"
+content_hash = "sha256:3715d7ee847fcfdf3c7dfd35cc4d61909cfe863e089036207b2092c1ce944626"
+size = 56216
+mtime_ms = 1794617100453
+storage_uri = "gcs://replit-rams-assets-worf/rams/assets/repl:abfe5336-334e-471e-ad27-99fb3e9622a1/3c55222b-3471-4881-8835-43f045c74e54/5c9eb774-7dcd-4699-8535-b23208264c1d"
+storage_version_token = "1794617178819459"
+content_type = "image/png"
